@@ -1,0 +1,14 @@
+{
+  "appId": "com.yorureader.app",
+  "appName": "Yoru Reader",
+  "webDir": "../dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

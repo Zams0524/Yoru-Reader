@@ -1,0 +1,33 @@
+// ProfileInstaller starts asynchronously after launch. Its runtime-only dependencies
+// can be excluded without a Java compile error, so reject that broken graph early.
+['debug', 'release'].each { variant ->
+    def variantName = variant.capitalize()
+    def verifyRuntime = tasks.register("verify${variantName}RuntimeDependencies") {
+        group = 'verification'
+        description = "Checks Android startup dependencies for ${variant}."
+
+        doLast {
+            def components = configurations.getByName("${variant}RuntimeClasspath")
+                .incoming.resolutionResult.allComponents
+            def modules = components.collect { component ->
+                def id = component.id
+                id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier
+                    ? "${id.group}:${id.module}".toString() : null
+            }.findAll { it != null }.toSet()
+
+            def requiredDependencies = [
+                'androidx.profileinstaller:profileinstaller': 'androidx.concurrent:concurrent-futures',
+                'androidx.concurrent:concurrent-futures': 'com.google.guava:listenablefuture'
+            ]
+            requiredDependencies.each { owner, dependency ->
+                if (modules.contains(owner) && !modules.contains(dependency)) {
+                    throw new GradleException("${owner} requires ${dependency} at runtime. Remove the dependency exclusion before packaging the APK.")
+                }
+            }
+        }
+    }
+
+    tasks.matching { it.name == "pre${variantName}Build" }.configureEach {
+        dependsOn verifyRuntime
+    }
+}

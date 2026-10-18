@@ -1,0 +1,329 @@
+name: Build and publish Yoru Reader updates
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: yoru-reader-latest-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+# Google Drive OAuth values (see .env.example). Set them as repository secrets;
+# the prepare job stops the release if they are missing.
+env:
+  VITE_GDRIVE_CLIENT_ID: ${{ secrets.VITE_GDRIVE_CLIENT_ID }}
+  VITE_GDRIVE_CLIENT_SECRET: ${{ secrets.VITE_GDRIVE_CLIENT_SECRET }}
+  VITE_GDRIVE_ANDROID_CLIENT_ID: ${{ secrets.VITE_GDRIVE_ANDROID_CLIENT_ID }}
+
+jobs:
+  prepare:
+    name: Prepare update manifest
+    runs-on: ubuntu-latest
+    outputs:
+      build-version: ${{ steps.meta.outputs.build-version }}
+      app-version: ${{ steps.meta.outputs.app-version }}
+      backend-version: ${{ steps.meta.outputs.backend-version }}
+      native-changed: ${{ steps.meta.outputs.native-changed }}
+    steps:
+      - name: Require Google Drive OAuth secrets
+        run: |
+          if [ -z "$VITE_GDRIVE_CLIENT_ID" ] || [ -z "$VITE_GDRIVE_CLIENT_SECRET" ]; then
+            echo "::error::Missing VITE_GDRIVE_CLIENT_ID / VITE_GDRIVE_CLIENT_SECRET repository secrets; refusing to publish a build with Google Drive sync broken."
+            exit 1
+          fi
+
+      - name: Check out source and history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate published versions
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const pkg = require('./package.json');
+          const manifest = require('./stable.json');
+          const buildVersion = `${pkg.version}.${process.env.RUN_NUMBER}`;
+          let nativeChanged = process.env.EVENT_NAME === 'workflow_dispatch' || !manifest.nativeCommit;
+
+          if (!nativeChanged) {
+            try {
+              const changedFiles = execFileSync('git', ['diff', '--name-only', manifest.nativeCommit, process.env.COMMIT_SHA], { encoding: 'utf8' });
+              nativeChanged = changedFiles.split(/\r?\n/).some(file => /^(backend\/|build\/|package\.json$)/.test(file));
+            } catch {
+              nativeChanged = true;
+            }
+          }
+
+          const appVersion = nativeChanged ? buildVersion : manifest.appVersion;
+          const backendVersion = nativeChanged ? buildVersion : manifest.backendVersion;
+          const output = [
+            `build-version=${buildVersion}`,
+            `app-version=${appVersion}`,
+            `backend-version=${backendVersion}`,
+            `native-changed=${nativeChanged}`
+          ].join('\n') + '\n';
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, output);
+          console.log(`Build ${buildVersion}; native package rebuild: ${nativeChanged}`);
+          NODE
+
+      - name: Generate release manifest
+        env:
+          YORU_BUILD_VERSION: ${{ steps.meta.outputs.build-version }}
+          YORU_APP_VERSION: ${{ steps.meta.outputs.app-version }}
+          YORU_BACKEND_VERSION: ${{ steps.meta.outputs.backend-version }}
+          YORU_NATIVE_COMMIT: ${{ steps.meta.outputs.native-changed == 'true' && github.sha || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node build/prepare-update-manifest.cjs
+
+      - name: Save release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: stable.json
+          retention-days: 2
+
+  build-ota:
+    name: Build frontend update bundle
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Download prepared manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: .
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Create update bundle
+        run: cd dist && zip -qr ../dist.zip .
+
+      - name: Save frontend update
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ota
+          path: dist.zip
+          retention-days: 2
+
+  build-windows:
+    name: Build Windows installer
+    needs: prepare
+    if: needs.prepare.outputs.native-changed == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Download prepared manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: .
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare installer assets
+        run: node build/prepare-nsis.js
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package Windows installer
+        run: npx electron-builder --win nsis --x64 --config.directories.output=dist-electron-installer --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Give the installer a stable download name
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $installer = Get-ChildItem dist-electron-installer -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'electron-builder did not produce a Windows installer.' }
+          Copy-Item -LiteralPath $installer.FullName -Destination release-assets/Yoru-Reader.Setup.exe
+
+      - name: Save Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release-assets/Yoru-Reader.Setup.exe
+          retention-days: 2
+
+  build-mac:
+    name: Build macOS installers
+    needs: prepare
+    if: needs.prepare.outputs.native-changed == 'true'
+    runs-on: macos-14
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Download prepared manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: .
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package macOS installers
+        run: npx electron-builder --mac dmg --x64 --arm64 --config.directories.output=releases/mac --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Give installers stable download names
+        run: |
+          mkdir -p release-assets
+          cp releases/mac/*-arm64.dmg release-assets/Yoru-Reader-arm64.dmg
+          cp releases/mac/*-x64.dmg release-assets/Yoru-Reader-x64.dmg
+
+      - name: Save macOS installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-mac
+          path: release-assets/*.dmg
+          retention-days: 2
+
+  build-linux:
+    name: Build Linux installer
+    needs: prepare
+    if: needs.prepare.outputs.native-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Download prepared manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: .
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y flatpak flatpak-builder elfutils
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.electronjs.Electron2.BaseApp//24.08
+
+      - name: Package Linux installer
+        run: npx electron-builder --linux flatpak --x64 --config.directories.output=releases/linux --publish never
+
+      - name: Give the installer a stable download name
+        run: |
+          mkdir -p release-assets
+          cp releases/linux/*.flatpak release-assets/Yoru-Reader-x86_64.flatpak
+
+      - name: Save Linux installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: release-assets/Yoru-Reader-x86_64.flatpak
+          retention-days: 2
+
+  publish:
+    name: Publish latest update
+    needs: [prepare, build-ota, build-windows, build-mac, build-linux]
+    if: >-
+      always() && needs.prepare.result == 'success' && needs.build-ota.result == 'success' &&
+      (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped') &&
+      (needs.build-mac.result == 'success' || needs.build-mac.result == 'skipped') &&
+      (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Ensure latest release exists and publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_VERSION: ${{ needs.prepare.outputs.build-version }}
+        run: |
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest --title "Yoru Reader ${BUILD_VERSION}" --notes "Latest automatic update channel for Yoru Reader."
+          else
+            gh release edit latest --title "Yoru Reader ${BUILD_VERSION}" --notes "Latest automatic update channel for Yoru Reader."
+          fi
+
+          assets=(release-assets/stable.json release-assets/dist.zip)
+          for asset in release-assets/Yoru-Reader.Setup.exe release-assets/Yoru-Reader-arm64.dmg release-assets/Yoru-Reader-x64.dmg release-assets/Yoru-Reader-x86_64.flatpak; do
+            if [[ -f "$asset" ]]; then assets+=("$asset"); fi
+          done
+          gh release upload latest "${assets[@]}" --clobber
+
+      - name: Publish manifest to main for existing clients
+        env:
+          BUILD_VERSION: ${{ needs.prepare.outputs.build-version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B publish-update-manifest origin/main
+          cp release-assets/stable.json stable.json
+          git add stable.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish update manifest ${BUILD_VERSION}"
+            git push origin HEAD:main
+          fi

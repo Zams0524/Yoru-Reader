@@ -1,0 +1,18 @@
+gradle.beforeProject { project ->
+  if (project.path == ':app') {
+    project.plugins.withId('com.android.application') {
+      def debugSigning = project.extensions.getByName('android').signingConfigs.findByName('debug')
+      debugSigning.storeFile = new File(project.rootDir, 'keystore/yoru-reader-debug.keystore')
+      debugSigning.storePassword = 'android'
+      debugSigning.keyAlias = 'yoru-reader-debug'
+      debugSigning.keyPassword = 'android'
+    }
+  }
+}
+
+allprojects {
+  tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+    options.incremental = false
+  }
+}
+

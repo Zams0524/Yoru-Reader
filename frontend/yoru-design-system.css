@@ -1,0 +1,1229 @@
+/* Yoru Reader interface system: quiet surfaces, warm focus, clear hierarchy. */
+:root {
+  color-scheme: dark;
+  --bg-app: #0b0e12;
+  --bg-card: #141920;
+  --bg-card-hover: #1b222b;
+  --bg-panel: #10151b;
+  --bg-panel-translucent: rgba(13, 17, 22, 0.94);
+  --text-main: #eef1f4;
+  --text-muted: #a4adb8;
+  --text-dark: #798390;
+  --primary: #f2c866;
+  --primary-hover: #ffdc88;
+  --primary-gradient: linear-gradient(135deg, #f5d47e, #d6a940);
+  --button-gradient: linear-gradient(135deg, #f5d47e, #d6a940);
+  --border-light: rgba(204, 216, 228, 0.11);
+  --border-focus: rgba(242, 200, 102, 0.62);
+  --surface-raised: #1a2028;
+  --surface-soft: rgba(255, 255, 255, 0.035);
+  --shadow-panel: 0 18px 55px rgba(0, 0, 0, 0.34);
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-heading: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-japanese: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-app: #f2f4f6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8f9fa;
+  --bg-panel: #ffffff;
+  --bg-panel-translucent: rgba(255, 255, 255, 0.94);
+  --text-main: #202832;
+  --text-muted: #5c6773;
+  --text-dark: #78838e;
+  --primary: #a36b12;
+  --primary-hover: #80520b;
+  --primary-gradient: linear-gradient(135deg, #d7a642, #a36b12);
+  --button-gradient: linear-gradient(135deg, #d7a642, #a36b12);
+  --border-light: rgba(32, 40, 50, 0.12);
+  --border-focus: rgba(163, 107, 18, 0.48);
+  --surface-raised: #f7f8fa;
+  --surface-soft: rgba(25, 33, 42, 0.035);
+  --shadow-panel: 0 18px 48px rgba(30, 42, 54, 0.12);
+}
+
+[data-theme='sepia'] {
+  color-scheme: light;
+  --bg-app: #f2ead9;
+  --bg-card: #fbf6e9;
+  --bg-card-hover: #fffaf0;
+  --bg-panel: #f7f0e2;
+  --bg-panel-translucent: rgba(247, 240, 226, 0.95);
+  --text-main: #3e352b;
+  --text-muted: #756859;
+  --text-dark: #948574;
+  --primary: #946021;
+  --primary-hover: #744a18;
+  --primary-gradient: linear-gradient(135deg, #c08a3d, #946021);
+  --button-gradient: linear-gradient(135deg, #c08a3d, #946021);
+  --border-light: rgba(62, 53, 43, 0.13);
+  --border-focus: rgba(148, 96, 33, 0.48);
+  --surface-raised: #eee4d1;
+  --surface-soft: rgba(62, 53, 43, 0.04);
+  --shadow-panel: 0 18px 48px rgba(70, 52, 32, 0.14);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: var(--bg-app);
+}
+
+body {
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+.sidebar-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.app-container {
+  background:
+    radial-gradient(ellipse at 50% -28%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 52%),
+    var(--bg-app);
+}
+
+/* Desktop app frame */
+@media (min-width: 769px) {
+  .library-container {
+    height: 100dvh;
+    padding-top: 72px;
+    background: var(--bg-app);
+  }
+
+  .library-header {
+    height: 72px;
+    padding-inline: clamp(20px, 3vw, 48px);
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    gap: clamp(12px, 1.5vw, 24px);
+    background: var(--bg-panel-translucent);
+    border-bottom-color: var(--border-light);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+    backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  .library-brand-name {
+    font-family: var(--font-heading);
+    font-size: 1.04rem;
+    letter-spacing: 0.18em;
+    background-image: linear-gradient(110deg, var(--primary), var(--primary-hover));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header-navigation-tabs {
+    justify-self: center;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 5px;
+    gap: 3px;
+    height: 44px;
+    background: var(--surface-soft);
+    border-color: var(--border-light);
+    border-radius: 15px;
+  }
+
+  .header-navigation-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tab-btn {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 7px 15px;
+    border-radius: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-weight: 650;
+    letter-spacing: 0;
+    text-shadow: none;
+  }
+
+  .nav-tab-btn:hover {
+    color: var(--text-main);
+    background: var(--surface-raised);
+    transform: none;
+  }
+
+  .nav-tab-btn.active {
+    color: var(--text-main);
+    background: color-mix(in srgb, var(--primary) 13%, var(--bg-card));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
+    text-shadow: none;
+  }
+
+  .library-header-actions {
+    justify-self: end;
+    width: max-content;
+    max-width: 100%;
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .header-display-settings-btn,
+  .library-header-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    background: var(--surface-soft);
+    border-color: var(--border-light);
+  }
+
+  .header-display-settings-btn:hover,
+  .library-header-btn:hover {
+    color: var(--primary);
+    background: var(--surface-raised);
+    border-color: var(--border-focus);
+    transform: translateY(-1px);
+  }
+
+  .library-layout-wrapper {
+    height: calc(100dvh - 72px);
+    min-height: 0;
+  }
+
+  .library-sidebar {
+    width: 278px;
+    padding: 26px 18px;
+    gap: 24px;
+    background: linear-gradient(180deg, var(--bg-panel), color-mix(in srgb, var(--bg-app) 88%, var(--bg-panel)));
+    border-right-color: var(--border-light);
+  }
+
+  .library-main-content {
+    padding: clamp(30px, 4vw, 58px) clamp(30px, 4.2vw, 72px);
+    background: transparent;
+  }
+
+  .section-header {
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .section-title,
+  .tab-view-title {
+    color: var(--text-main);
+    font-family: var(--font-heading);
+    letter-spacing: -0.035em;
+    text-shadow: none;
+  }
+
+  .section-title {
+    font-size: clamp(1.55rem, 2vw, 2rem);
+  }
+
+  .section-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    min-height: 24px;
+    margin-left: 0;
+    padding: 2px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    background: var(--surface-soft);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+  }
+
+  .books-grid {
+    grid-template-columns: repeat(auto-fill, minmax(max(164px, var(--card-width, 180px)), 1fr));
+    gap: 26px 20px;
+  }
+
+  .book-card {
+    padding: 9px;
+    border-radius: 16px;
+    border-color: var(--border-light);
+    background: linear-gradient(160deg, color-mix(in srgb, var(--bg-card) 96%, white 4%), var(--bg-card));
+    box-shadow: 0 7px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  .book-card:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in srgb, var(--primary) 35%, var(--border-light));
+    background: var(--bg-card-hover);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
+  }
+
+  .book-cover-container {
+    border-radius: 11px;
+    background: var(--surface-raised);
+    box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .book-title {
+    font-weight: 700 !important;
+    letter-spacing: -0.012em;
+  }
+
+  .sidebar-search-input {
+    height: 44px;
+    padding-inline: 14px;
+    border-color: var(--border-light);
+    border-radius: 13px;
+    background: var(--surface-soft);
+    color: var(--text-main);
+  }
+
+  .sidebar-search-input:focus {
+    background: var(--bg-card);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  }
+
+  .sidebar-group-title {
+    padding-left: 10px;
+    color: var(--text-dark);
+    font-size: 0.68rem;
+    letter-spacing: 0.13em;
+  }
+
+  .sidebar-item {
+    min-height: 40px;
+    padding: 9px 11px;
+    border-left: 2px solid transparent;
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .sidebar-item:hover {
+    padding-left: 11px;
+    background: var(--surface-soft);
+    color: var(--text-main);
+  }
+
+  .sidebar-item.active {
+    padding-left: 11px;
+    background: color-mix(in srgb, var(--primary) 9%, transparent);
+    border-left-color: var(--primary);
+    color: var(--primary);
+    text-shadow: none;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1250px) {
+  .library-header {
+    padding-inline: 16px;
+    gap: 12px;
+  }
+
+  .library-brand-name {
+    display: none;
+  }
+
+  .nav-tab-btn {
+    gap: 5px;
+    padding-inline: 8px;
+    font-size: 0.76rem;
+  }
+
+  .library-header-actions {
+    gap: 6px;
+  }
+
+  .header-action-btn-text {
+    padding-inline: 10px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1050px) {
+  .nav-tab-btn span {
+    display: none;
+  }
+
+  .header-navigation-tabs {
+    gap: 1px;
+  }
+}
+
+.app-section-loading {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+}
+
+.app-section-loading-indicator {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: app-section-loading-spin 0.75s linear infinite;
+}
+
+@keyframes app-section-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Shared learning, settings, and dialog surfaces */
+.srs-view-panel,
+.stats-tab-content,
+.progress-dashboard,
+.settings-section-card,
+.settings-panel-section {
+  color: var(--text-main);
+}
+
+.srs-view-panel,
+.stats-tab-content,
+.settings-section-card {
+  border-color: var(--border-light);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.settings-sidebar-modal,
+.settings-modal.migaku-style,
+.settings-popover-card {
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.settings-sidebar-left {
+  background: color-mix(in srgb, var(--bg-app) 70%, var(--bg-panel));
+  border-right-color: var(--border-light);
+}
+
+.settings-sidebar-right {
+  background: var(--bg-panel);
+}
+
+.settings-modal .modal-header,
+.settings-sidebar-title {
+  border-color: var(--border-light);
+}
+
+.settings-section-card,
+.stats-card,
+.settings-panel-section > div {
+  border-color: var(--border-light);
+  border-radius: 14px;
+}
+
+.settings-panel-title,
+.settings-card-title {
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  letter-spacing: -0.015em;
+}
+
+.settings-panel-desc {
+  margin: -8px 0 18px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.settings-dictionary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-dictionary-row {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.settings-dictionary-row:hover {
+  border-color: var(--border-focus);
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface-soft));
+}
+
+.settings-dictionary-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.settings-dictionary-copy strong {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-dictionary-copy small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.settings-dictionary-state {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-dictionary-status {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.settings-dictionary-status.is-enabled {
+  color: #53c999;
+}
+
+.settings-dictionary-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.settings-dictionary-empty {
+  padding: 24px 18px;
+  border: 1px dashed var(--border-light);
+  border-radius: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.55;
+}
+
+.migaku-select,
+.sidebar-search-input,
+.settings-search-input,
+.settings-panel-section input:not([type='checkbox']):not([type='range']),
+.settings-panel-section select {
+  border-color: var(--border-light);
+  border-radius: 11px;
+  background-color: var(--surface-raised);
+  color: var(--text-main);
+}
+
+.modal-overlay {
+  background: rgba(4, 7, 10, 0.68);
+  backdrop-filter: blur(9px) saturate(110%);
+}
+
+.create-profile-save,
+.vocab-action-btn,
+.header-action-btn-text {
+  border-radius: 11px;
+}
+
+.yoru-toast {
+  border-radius: 13px !important;
+  box-shadow: var(--shadow-panel) !important;
+}
+
+@media (min-width: 769px) {
+  .library-sidebar,
+  .library-main-content,
+  .settings-sidebar-left,
+  .settings-sidebar-right,
+  .stats-tab-content,
+  .progress-dashboard,
+  .srs-view-panel,
+  .yomitan-settings-pane,
+  .yomitan-settings-sidebar,
+  .drawer-content {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-dark) 50%, transparent) transparent;
+  }
+
+  .library-sidebar::-webkit-scrollbar,
+  .library-main-content::-webkit-scrollbar,
+  .settings-sidebar-left::-webkit-scrollbar,
+  .settings-sidebar-right::-webkit-scrollbar,
+  .stats-tab-content::-webkit-scrollbar,
+  .progress-dashboard::-webkit-scrollbar,
+  .srs-view-panel::-webkit-scrollbar,
+  .yomitan-settings-pane::-webkit-scrollbar,
+  .yomitan-settings-sidebar::-webkit-scrollbar,
+  .drawer-content::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+    height: 8px;
+  }
+
+  .library-sidebar::-webkit-scrollbar-thumb,
+  .library-main-content::-webkit-scrollbar-thumb,
+  .settings-sidebar-left::-webkit-scrollbar-thumb,
+  .settings-sidebar-right::-webkit-scrollbar-thumb,
+  .stats-tab-content::-webkit-scrollbar-thumb,
+  .progress-dashboard::-webkit-scrollbar-thumb,
+  .srs-view-panel::-webkit-scrollbar-thumb,
+  .yomitan-settings-pane::-webkit-scrollbar-thumb,
+  .yomitan-settings-sidebar::-webkit-scrollbar-thumb,
+  .drawer-content::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-dark) 46%, transparent);
+    background-clip: padding-box;
+  }
+
+  .reader-engine-container,
+  .reader-engine-content,
+  .book-content {
+    scrollbar-width: none;
+  }
+
+  .reader-engine-container::-webkit-scrollbar,
+  .reader-engine-content::-webkit-scrollbar,
+  .book-content::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .library-container {
+    height: 100dvh !important;
+    padding-top: calc(56px + var(--yoru-safe-top, 0px)) !important;
+    background: var(--bg-app);
+  }
+
+  .mobile-top-app-bar {
+    padding-top: var(--yoru-safe-top, 0px);
+    background: var(--bg-panel-translucent);
+    border-bottom-color: var(--border-light);
+    backdrop-filter: blur(16px);
+  }
+
+  .library-layout-wrapper {
+    height: calc(100dvh - 116px - var(--yoru-safe-top, 0px)) !important;
+  }
+
+  .library-main-content {
+    padding: 22px 16px calc(100px + var(--yoru-safe-bottom, 0px));
+  }
+
+  .section-header {
+    margin-bottom: 18px;
+  }
+
+  .section-title {
+    font-size: 1.45rem;
+  }
+
+  .books-grid {
+    grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+    gap: 16px 12px;
+  }
+
+  .book-card {
+    padding: 7px;
+    border-radius: 13px;
+  }
+
+  .settings-dictionary-row {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .settings-dictionary-state {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Native Android shell: keep phone layouts independent from the desktop frame. */
+@media (max-width: 768px) {
+  html.platform-android,
+  html.platform-android body,
+  html.platform-android #root {
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+    overflow-x: clip;
+  }
+
+  html.platform-android .library-container {
+    width: 100%;
+    min-width: 0;
+    height: 100dvh !important;
+    max-height: none !important;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    padding: 0 0 calc(72px + var(--yoru-safe-bottom, 0px)) !important;
+    scroll-padding-top: calc(60px + var(--yoru-safe-top, 0px));
+  }
+
+  html.platform-android .mobile-top-app-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 96px;
+    gap: 8px;
+    align-items: center;
+    justify-content: initial;
+    width: 100%;
+    min-height: 56px;
+    padding: max(8px, var(--yoru-safe-top, 0px)) 12px 8px !important;
+    box-sizing: border-box;
+    isolation: isolate;
+    background:
+      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
+      linear-gradient(180deg, rgba(24, 27, 34, 0.96), rgba(14, 17, 22, 0.94));
+    border-bottom: 1px solid rgba(255, 218, 94, 0.13);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(18px) saturate(1.18);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  }
+
+  html.platform-android .mobile-top-app-bar::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: auto 14px -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 224, 0, 0.7) 24%, rgba(255, 126, 101, 0.62) 76%, transparent);
+    pointer-events: none;
+  }
+
+  html.platform-android .mobile-top-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    color: var(--text-main);
+    font-size: 1.16rem;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.2;
+    text-shadow: 0 1px 14px rgba(255, 218, 94, 0.12);
+  }
+
+  html.platform-android .mobile-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.085);
+    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(35, 39, 47, 0.92), rgba(22, 25, 31, 0.86));
+    color: var(--text-main);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 4px 12px rgba(0, 0, 0, 0.14);
+    touch-action: manipulation;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  html.platform-android .mobile-top-app-bar > .mobile-icon-btn {
+    border-color: rgba(255, 224, 0, 0.24);
+    background: linear-gradient(145deg, rgba(255, 224, 0, 0.13), rgba(255, 126, 101, 0.08));
+    color: #ffe45c;
+  }
+
+  html.platform-android .mobile-icon-btn:active {
+    transform: scale(0.94);
+    border-color: rgba(255, 224, 0, 0.42);
+    background: linear-gradient(145deg, rgba(255, 224, 0, 0.19), rgba(255, 126, 101, 0.12));
+  }
+
+  html.platform-android .mobile-icon-btn:focus-visible {
+    outline: 2px solid rgba(255, 224, 0, 0.82);
+    outline-offset: 2px;
+  }
+
+  html.platform-android .library-layout-wrapper {
+    width: 100%;
+    min-width: 0;
+    height: calc(100dvh - 120px - var(--yoru-safe-top, 0px) - var(--yoru-safe-bottom, 0px)) !important;
+    min-height: 320px;
+  }
+
+  html.platform-android .library-main-content,
+  html.platform-android .mas-screen-container,
+  html.platform-android .stats-tab-content,
+  html.platform-android .progress-dashboard {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: 14px;
+    padding-right: 14px;
+    overflow-x: clip;
+  }
+
+  html.platform-android .library-main-content {
+    padding-top: 20px;
+    padding-bottom: calc(88px + var(--yoru-safe-bottom, 0px));
+    background-image: radial-gradient(ellipse at 92% 0%, rgba(255, 214, 102, 0.08), transparent 34rem);
+  }
+
+  html.platform-android .section-header {
+    align-items: center;
+    gap: 10px;
+    padding: 0 0 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border-light));
+  }
+
+  html.platform-android .section-header::before {
+    content: '読';
+    display: grid;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--primary) 38%, transparent);
+    border-radius: 11px;
+    background: linear-gradient(145deg, rgba(255, 217, 102, 0.16), rgba(255, 122, 97, 0.1));
+    color: var(--primary);
+    font-family: var(--font-japanese);
+    font-size: 1rem;
+    font-weight: 800;
+    box-shadow: 0 6px 18px rgba(255, 196, 61, 0.08);
+  }
+
+  html.platform-android .section-title {
+    min-width: 0;
+    font-size: 1.38rem;
+    letter-spacing: -0.03em;
+  }
+
+  html.platform-android .section-count {
+    min-width: 30px;
+    min-height: 26px;
+    margin-left: auto;
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border-light));
+    background: color-mix(in srgb, var(--primary) 10%, var(--bg-card));
+    color: var(--primary);
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  html.platform-android .books-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  html.platform-android .book-card {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 104px;
+    padding: 9px;
+    border-radius: 17px;
+    border-color: color-mix(in srgb, var(--primary) 12%, var(--border-light));
+    background: linear-gradient(125deg, color-mix(in srgb, var(--bg-card) 94%, var(--primary) 6%), var(--bg-card) 58%);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16), inset 3px 0 0 color-mix(in srgb, var(--primary) 52%, transparent);
+    transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  }
+
+  html.platform-android .book-card:active {
+    transform: scale(0.985);
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border-light));
+  }
+
+  html.platform-android .book-cover-container {
+    width: 76px;
+    height: 96px;
+    aspect-ratio: auto;
+    margin: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+  }
+
+  html.platform-android .book-info {
+    min-width: 0;
+    margin: 0 !important;
+    padding: 0 28px 0 0;
+    gap: 5px !important;
+  }
+
+  html.platform-android .book-title {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--text-main) !important;
+    font-size: 0.92rem !important;
+    line-height: 1.35;
+    white-space: normal !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  html.platform-android .book-series,
+  html.platform-android .book-author {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.76rem !important;
+  }
+
+  html.platform-android .card-menu-trigger-btn {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  html.platform-android .bottom-navigation-bar {
+    height: calc(64px + var(--yoru-safe-bottom, 0px));
+    padding: 4px 8px max(4px, var(--yoru-safe-bottom, 0px));
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+    border-top-color: var(--border-light);
+    backdrop-filter: blur(18px);
+  }
+
+  html.platform-android .bottom-tab-btn {
+    min-width: 0;
+    min-height: 48px;
+    gap: 3px;
+    padding: 4px 2px;
+    touch-action: manipulation;
+  }
+
+  html.platform-android .bottom-tab-btn span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.65rem;
+  }
+
+  html.platform-android .srs-view-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: none !important;
+    height: auto !important;
+    min-height: calc(100dvh - 120px);
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 16px 14px calc(28px + var(--yoru-safe-bottom, 0px)) !important;
+    overflow: visible !important;
+    overflow-wrap: anywhere;
+  }
+
+  html.platform-android .srs-dashboard-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+
+  html.platform-android .srs-subtabs-container {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 4px !important;
+    width: 100%;
+    min-width: 0;
+    padding: 4px;
+    overflow: visible !important;
+    white-space: normal !important;
+    border-radius: 16px !important;
+  }
+
+  html.platform-android .srs-subtabs-container > button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 4px !important;
+    font-size: 0.72rem !important;
+    line-height: 1.15;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  html.platform-android .srs-quick-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px !important;
+    width: 100%;
+  }
+
+  html.platform-android .srs-quick-actions > button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px !important;
+    white-space: nowrap;
+  }
+
+  html.platform-android .srs-deck-list {
+    min-width: 0;
+    padding: 16px !important;
+    margin-bottom: 16px !important;
+    border-radius: 16px !important;
+  }
+
+  html.platform-android .srs-deck-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  html.platform-android .srs-deck-card,
+  html.platform-android .srs-empty-state {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  html.platform-android .srs-empty-state {
+    padding: 24px 16px !important;
+  }
+
+  html.platform-android .srs-empty-hint {
+    margin: 8px auto 0;
+    max-width: 30rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  html.platform-android .yoru-toast {
+    left: 12px;
+    right: 12px !important;
+    bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
+    max-width: calc(100vw - 24px);
+    padding: 12px 14px !important;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Android shell v1.3.6: centered top bar, styled bottom nav, settings that scroll with the page. */
+@media (max-width: 768px) {
+  /* ---- Top bar: equal side columns so the title sits in the true center ---- */
+  html.platform-android .mobile-top-app-bar {
+    grid-template-columns: minmax(92px, 1fr) minmax(0, max-content) minmax(92px, 1fr);
+    gap: 10px;
+    min-height: 60px;
+    padding: max(10px, var(--yoru-safe-top, 0px)) 14px 10px !important;
+    border-bottom-color: rgba(255, 218, 94, 0.1);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  html.platform-android .mobile-top-app-bar > .mobile-cloud-btn {
+    justify-self: start;
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 13px;
+  }
+
+  html.platform-android .mobile-top-title {
+    justify-self: center;
+    max-width: 100%;
+    margin: 0;
+    padding-bottom: 7px;
+    font-size: 1.12rem;
+    background: linear-gradient(90deg, #ffe45c, #ff8a6b) no-repeat center bottom / 22px 3px;
+    border-radius: 0;
+  }
+
+  html.platform-android .mobile-top-actions {
+    display: flex;
+    justify-self: end;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  html.platform-android .mobile-top-actions .mobile-icon-btn {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 13px;
+  }
+
+  /* The top bar already names the screen; drop the repeated page headings. */
+  html.platform-android .settings-page-heading,
+  html.platform-android .progress-page-heading,
+  html.platform-android .progress-page-subtitle {
+    display: none !important;
+  }
+
+  /* ---- Settings: no fixed-height inner scroller, no dead space ---- */
+  html.platform-android .settings-view-panel.tab-view-container {
+    display: flex !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 16px 14px 20px !important;
+  }
+
+  html.platform-android .yomitan-settings-layout {
+    height: auto !important;
+  }
+
+  html.platform-android .yomitan-settings-sidebar,
+  html.platform-android .yomitan-settings-pane {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding-bottom: 8px !important;
+  }
+
+  html.platform-android .yomitan-search-wrapper input {
+    min-height: 44px;
+    border-radius: 12px !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* ---- Statistics: let the page scroller handle it ---- */
+  html.platform-android .stats-tab-content {
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding-bottom: 20px !important;
+  }
+
+  html.platform-android .progress-dashboard-root {
+    min-height: 0 !important;
+    padding-top: 14px !important;
+  }
+
+  /* ---- Bottom navigation ---- */
+  html.platform-android .bottom-navigation-bar {
+    height: calc(68px + var(--yoru-safe-bottom, 0px));
+    padding: 6px 10px max(6px, var(--yoru-safe-bottom, 0px));
+    background:
+      radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
+      linear-gradient(0deg, rgba(12, 14, 19, 0.98), rgba(20, 23, 30, 0.96));
+    border-top: 1px solid rgba(255, 218, 94, 0.1);
+    box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.3);
+  }
+
+  html.platform-android .bottom-navigation-bar::before {
+    content: "";
+    position: absolute;
+    inset: -1px 14px auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 224, 0, 0.55) 24%, rgba(255, 126, 101, 0.5) 76%, transparent);
+    pointer-events: none;
+  }
+
+  html.platform-android .bottom-tab-btn {
+    position: relative;
+    justify-content: center;
+    gap: 4px;
+    min-height: 54px;
+    padding: 6px 2px 4px;
+    color: #7f8494;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.platform-android .bottom-tab-btn::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 58px;
+    height: 30px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 224, 0, 0.2), rgba(255, 126, 101, 0.12));
+    box-shadow: inset 0 0 0 1px rgba(255, 224, 0, 0.22), 0 4px 14px rgba(255, 196, 61, 0.12);
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+    transition: opacity 160ms ease, transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  }
+
+  html.platform-android .bottom-tab-btn svg {
+    position: relative;
+    z-index: 1;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+    transition: transform 160ms ease, color 160ms ease;
+  }
+
+  html.platform-android .bottom-tab-btn span {
+    position: relative;
+    z-index: 1;
+    font-size: 0.66rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+  }
+
+  html.platform-android .bottom-tab-btn.active {
+    color: #fff6cf;
+  }
+
+  html.platform-android .bottom-tab-btn.active::before {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+
+  html.platform-android .bottom-tab-btn.active svg {
+    color: #ffe45c;
+    transform: translateY(-1px);
+  }
+
+  html.platform-android .bottom-tab-btn.active span {
+    font-weight: 800;
+  }
+
+  html.platform-android .bottom-tab-btn:active svg {
+    transform: scale(0.9);
+  }
+
+  html.platform-android .library-container {
+    padding-bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+
+  html.platform-android .yoru-toast {
+    bottom: calc(80px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+}

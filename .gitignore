@@ -1,0 +1,146 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-electron
+dist-ssr
+downloads/
+*.local
+
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+scratch/
+*.mp3
+*.wav
+bin/
+voices/
+
+# Build outputs
+dist-electron-installer
+dist-android
+
+# Releases - ignore binaries but keep folder structure
+releases/dev/*
+releases/stable/*
+releases/mobile/*
+!releases/dev/.gitkeep
+!releases/stable/.gitkeep
+!releases/mobile/.gitkeep
+
+# Temp diff files
+diff_reader.txt
+
+# Certificates
+build/*.pfx
+build/*.cer
+
+
+# ====================================================================
+# DEPENDENCIAS Y NODOS
+# ====================================================================
+node_modules/
+.pnpm-store/
+.yarn/
+
+# ====================================================================
+# COMPILACIONES Y ENTREGABLES (ESCRITORIO / WEB / ANDROID)
+# ====================================================================
+dist/
+dist-android/
+dist-electron/
+/releases/
+# APKs are published as GitHub Release assets, not committed
+mobile/releases/*.apk
+yoru-reader-*/
+dist-electron-v*/
+
+# Local Android build environment (Gradle caches, logs) — see build-apk.ps1
+.android-build-tmp/
+
+# Carpetas de compilación nativa de Android
+android/.gradle/
+android/app/build/
+android/build/
+
+# Archivos pesados internos de Chrome que empaqueta Electron
+chrome_100_percent.pak
+chrome_200_percent.pak
+resources/
+locales/
+
+# ====================================================================
+# AGENTES, ARCHIVOS LOCALES Y DESCARGAS
+# ====================================================================
+# Permitir compartir reglas de agentes
+!.agents/
+.agents/scratch/
+.agents/tmp/
+test_db.js
+test_db.cjs
+public/yoru-reader/
+
+# ====================================================================
+# SEGURIDAD (¡MUY IMPORTANTE!)
+# No subas tus certificados, instaladores privados ni llaves de firma
+# ====================================================================
+*.pfx
+*.cer
+*.keystore
+*.jks
+instalar-certificado*
+android/local.properties
+
+# ====================================================================
+# LOGS Y TEMPORALES DE SISTEMA
+# ====================================================================
+electron_debug.log*
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+
+# ====================================================================
+# CONFIGURACIÓN LOCAL, FRONTEND Y BACKEND
+# ====================================================================
+# Variables de entorno y llaves secretas locales
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+*.env
+!.env.example
+
+# Temporales de frontend y backend
+frontend/build/
+frontend/dist/
+frontend/out/
+frontend/node_modules/
+backend/build/
+backend/dist/
+backend/out/
+backend/node_modules/
+
+# Temporales del subproyecto Svelte
+yoru-reader-svelte/.svelte-kit/
+yoru-reader-svelte/build/
+yoru-reader-svelte/dist/
+yoru-reader-svelte/node_modules/
+yoru-reader-svelte/*.mjs

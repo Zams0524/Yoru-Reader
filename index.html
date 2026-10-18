@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="-mgk-reader-window migaku-app -mgk-windows" data-mgk-lang-selected="ja" data-mgk-interface-lang="es" data-mgk-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+
+    <!-- START - Lang fonts ======================================================= -->
+    <link rel="preconnect" href="https://migaku-public-data.migaku.com" crossorigin="anonymous">
+
+    <!-- Latin (Inter) -->
+    <link rel="preload" href="https://migaku-public-data.migaku.com/fonts/inter/InterVariable.woff2?v=4.0" as="font" type="font/woff2" crossorigin="anonymous">
+    <!-- Latin (GT Maru) -->
+    <link rel="preload" href="https://migaku-public-data.migaku.com/fonts/gt-maru/GT-Maru-Black.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <!-- Japanese -->
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/noto-sans-jp/noto-sans-jp-latin-ext-400-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/noto-sans-jp/noto-sans-jp-japanese-400-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <!-- Chinese (simplified) -->
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/noto-sans-sc/noto-sans-sc-chinese-simplified-400-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/noto-sans-sc/noto-sans-sc-chinese-simplified-700-normal.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <!-- Korean -->
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/line-seed-kr/LINESeedKR-Rg.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="prefetch" href="https://migaku-public-data.migaku.com/fonts/line-seed-kr/LINESeedKR-Bd.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <!-- END - Lang fonts ======================================================= -->
+
+    <meta name="msapplication-TileColor" content="#ff9345">
+    <meta name="theme-color" content="#ff9345">
+
+    <title>Yoru Reader</title>
+    <style>
+      .book-content-container .jiten-word,
+      .jiten-word {
+        display: inline !important;
+        cursor: pointer !important;
+      }
+      .book-content-container .jiten-word.new,
+      .book-content-container .jiten-word[class*="new"],
+      .jiten-word.new {
+        color: #ad7ff0 !important;
+        -webkit-text-fill-color: #ad7ff0 !important;
+      }
+      .book-content-container .jiten-word.young,
+      .book-content-container .jiten-word[class*="young"],
+      .jiten-word.young {
+        color: #ff9800 !important;
+        -webkit-text-fill-color: #ff9800 !important;
+        text-decoration: underline #ff9800 !important;
+      }
+      .book-content-container .jiten-word.learning,
+      .book-content-container .jiten-word[class*="learning"],
+      .jiten-word.learning {
+        color: #60a5fa !important;
+        -webkit-text-fill-color: #60a5fa !important;
+      }
+      .book-content-container .jiten-word.due,
+      .book-content-container .jiten-word[class*="due"],
+      .jiten-word.due {
+        color: #f87171 !important;
+        -webkit-text-fill-color: #f87171 !important;
+      }
+      .book-content-container .jiten-word.mastered,
+      .book-content-container .jiten-word[class*="mastered"],
+      .jiten-word.mastered {
+        color: #4ade80 !important;
+        -webkit-text-fill-color: #4ade80 !important;
+      }
+    </style>
+    <script src="./kuromoji.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/frontend/main.tsx"></script>
+  </body>
+</html>

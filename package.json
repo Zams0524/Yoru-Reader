@@ -1,0 +1,138 @@
+{
+  "name": "lector",
+  "private": true,
+  "version": "1.2.8",
+  "author": "Yoru cafe",
+  "description": "Lector de novelas ligeras en japonés con integración de diccionarios y Anki.",
+  "type": "module",
+  "main": "backend/electron-main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build:backend": "tsc -p tsconfig.backend.json",
+    "build": "npm run build:backend && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
+    "electron:start": "electron --no-sandbox .",
+    "electron:package": "npm run build && electron-packager . Yoru-Reader --platform=win32 --arch=x64 --out=dist-electron --overwrite --ignore=\"(releases|dist-electron|dist-electron-installer|downloads|yoru-reader-svelte)\"",
+    "electron:dev": "npm run build && electron-packager . Yoru-Reader-Dev --platform=win32 --arch=x64 --out=releases/dev --overwrite --ignore=\"(releases|dist-electron|dist-electron-installer|downloads|yoru-reader-svelte)\"",
+    "electron:stable": "npm run build && electron-packager . Yoru-Reader --platform=win32 --arch=x64 --out=releases/stable --overwrite --ignore=\"(releases|dist-electron|dist-electron-installer|downloads|yoru-reader-svelte)\"",
+    "electron:mac": "npm run build && electron-packager . Yoru-Reader --platform=darwin --arch=x64,arm64 --out=releases/mac --overwrite --ignore=\"(releases|dist-electron|dist-electron-installer|downloads|yoru-reader-svelte)\"",
+    "electron:build": "node build/generate-certificate.js && node build/prepare-nsis.js && npm run build && electron-builder",
+    "android:sync": "npm run build && npx cap sync",
+    "android:open": "npx cap open android",
+    "android:build": "npm run build && npx cap sync && npx cap copy android",
+    "android:release": "npm run android:build && xcopy /E /Y android\\app\\build\\outputs\\apk\\release\\* mobile\\releases\\ 2>nul || echo 'Build Android manualmente desde Android Studio'",
+    "mobile:sync": "npm run build && npx cap sync android",
+    "mobile:open": "npx cap open android",
+    "mobile:build": "npm run build && npx cap sync android",
+    "mobile:apk": "node mobile/scripts/build-android.js",
+    "version": "node build/update-android-version.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/core": "^8.4.1",
+    "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
+    "kuromoji": "^0.1.2",
+    "lucide-react": "^1.23.0",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "ts-fsrs": "^5.4.1",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-packager": "^17.1.2",
+    "gh-pages": "^6.3.0",
+    "jimp": "^1.6.1",
+    "oxlint": "^1.71.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.1"
+  },
+  "build": {
+    "appId": "com.yorureader.app",
+    "productName": "Yoru-Reader",
+    "directories": {
+      "output": "dist-electron-installer"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Yoru Reader",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.education"
+    },
+    "dmg": {
+      "artifactName": "Yoru-Reader-${version}-${arch}.dmg"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "flatpak",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Education",
+      "synopsis": "Japanese light novel reader with dictionary and Anki integration"
+    },
+    "flatpak": {
+      "baseVersion": "24.08",
+      "branch": "stable",
+      "finishArgs": [
+        "--share=ipc",
+        "--share=network",
+        "--socket=x11",
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--filesystem=home",
+        "--device=dri"
+      ],
+      "modules": []
+    },
+    "files": [
+      "dist/**/*",
+      "backend/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "backend/reader-ext/**/*"
+    ]
+  }
+}
