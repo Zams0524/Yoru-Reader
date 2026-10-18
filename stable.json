@@ -1,12 +1,13 @@
 {
-  "appVersion": "1.2.8.0",
-  "backendVersion": "1.2.8.0",
-  "hotUpdateVersion": "1.2.8.0",
+  "appVersion": "1.2.8.2",
+  "backendVersion": "1.2.8.2",
+  "hotUpdateVersion": "1.2.8.2",
   "hotUpdateUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
   "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "windowsUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "macArmUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-arm64.dmg",
   "macUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x64.dmg",
   "linuxUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x86_64.flatpak",
-  "description": "Yoru Reader Desktop v1.2.8 (Windows, Mac & Linux)"
+  "description": "Yoru Reader Desktop v1.2.8.2 (Windows, Mac & Linux)",
+  "nativeCommit": "e5598bd394352abe0feef9d4da8608316cd2e38a"
 }
