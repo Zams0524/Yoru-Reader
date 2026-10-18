@@ -4,7 +4,9 @@ App para aprender japonés leyendo (lector de novelas + diccionario tipo Yomitan
 Escritorio: Electron. Android: Capacitor (carpeta `android/`, paquete `com.yorureader.app`). Frontend React + Vite en `frontend/`.
 Repo: https://github.com/Zams0524/Yoru-Reader
 El usuario habla español; responde en español.
-GitHub: el 18 oct se cambiaron todas las referencias de `zams0527-eng` a la cuenta nueva `Zams0524`. El repo es público, porque las actualizaciones automáticas leen `stable.json` y `mobile/mobile-stable.json` desde raw.githubusercontent. Las versiones ya instaladas siguen buscando actualizaciones en la cuenta antigua. Esta carpeta aún no es un repo Git y git no está instalado en el PC.
+GitHub: el 18 oct se cambiaron todas las referencias de `zams0527-eng` a la cuenta nueva `Zams0524`. El repo es público, porque las actualizaciones automáticas leen `stable.json` y `mobile/mobile-stable.json` desde raw.githubusercontent. Las versiones ya instaladas siguen buscando actualizaciones en la cuenta antigua.
+Git: repo público https://github.com/Zams0524/Yoru-Reader, rama `main`, subido el 18 oct. Git y gh instalados con winget (en PowerShell hay que recargar el PATH). `gh` tiene sesión como Zams0524 con permiso `workflow`. Commits con `Zams0524@users.noreply.github.com`. Esta carpeta está marcada como `safe.directory`, porque su dueño es el usuario CodexSandboxOffline.
+Secretos: los valores OAuth de Google Drive están en `.env.local` (no se sube; plantilla en `.env.example`) y se leen con `import.meta.env.VITE_GDRIVE_*` en `googleDriveService.ts`. GitHub push protection bloquea subirlos. El workflow `.github/workflows/build-all-releases.yml` publica releases en cada push a main y se detiene si faltan los secrets `VITE_GDRIVE_CLIENT_ID` y `VITE_GDRIVE_CLIENT_SECRET` (`VITE_GDRIVE_ANDROID_CLIENT_ID` es opcional). Pendiente: que el usuario los cree.
 
 Lee también: `docs/.agentrules`, `docs/PROJECT_GUIDELINES.md`, `docs/YORU_READER_ENGINEERING_PROMPT.md` (objetivo: la mejor app de adquisición de japonés; actuar como programador senior, mantener orden y optimización).
 
