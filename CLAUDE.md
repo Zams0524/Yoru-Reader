@@ -23,6 +23,12 @@ Node: `C:\Users\Zams\.cache\codex-runtimes\codex-primary-runtime\dependencies\no
 La versión se sube en `android/app/build.gradle` (versionCode / versionName). Instalar siempre encima, sin desinstalar (misma firma debug).
 Firma: `android/keystore/yoru-reader-debug.keystore` (SHA-1 F5:0A:…:3E:C2, registrado en Google Cloud). **No borrar ni regenerar**: cambiaría la firma, obligaría a desinstalar y rompería Google Drive. La usa `mobile/scripts/gradle-init.gradle`, que se pasa a Gradle con `--init-script`. `.android-build-tmp/` solo contiene cachés (gradle-home-132) y logs.
 
+## Publicar
+- Android: `COMPILAR-APK.bat` y luego `PUBLICAR-APK.bat` (`publish-apk.ps1`). Sube el APK a la release `latest` como `Yoru-Reader.apk` y reescribe `mobile/mobile-stable.json` (appVersion = versionName de Gradle); el script hace commit y push. La app de Android compara ese valor con la versión del APK instalado (`CapacitorApp.getInfo()` en Library.tsx), no con `stable.json`.
+- Escritorio: cada push a `main` lo publica el workflow. Si cambian `backend/`, `build/` o `package.json` se recompilan los instaladores; si no, solo la OTA (`dist.zip`).
+- Instalador de Windows (NSIS): el tema está en `build/installer.nsh` (paleta de la app, compatible con DPI, Segoe UI, botones oscuros, página de bienvenida, sin texto de marca). Las imágenes se regeneran con `build/make-installer-art.ps1` (a 2x). Para probarlo sin npm: `node node_modules\electron-builder\cli.js --win nsis --x64 --prepackaged dist-electron\Yoru-Reader-win32-x64 --config.directories.output=<tmp>`.
+- SmartScreen («editor desconocido») solo desaparece firmando el .exe con un certificado de firma de código. Aún no está hecho.
+
 ## Historial reciente (Codex, 16-17 oct 2026)
 - SRS rehecho al estilo Anki (usando el código fuente de Anki como referencia), integración con AnkiConnect, parser mejorado con JitenReader, diccionarios incluidos dentro de la app y activos por defecto, gráficos de pitch accent en el popup, actualizaciones automáticas, rediseño de UI, medidor de velocidad de lectura con botón en el lector.
 - Android: se cerraba al arrancar. 1.3.5 lo arregló (faltaba `androidx.concurrent.futures.ResolvableFuture` por una exclusión en Gradle; ahora hay una verificación que lo detecta).

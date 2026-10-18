@@ -1,117 +1,136 @@
-# Yoru Reader 🌙 📖
-> **Lector moderno de novelas ligeras y documentos en japonés con análisis morfológico Kuromoji, diccionario Yomitan integrado, Review Heatmap Anki y sistema SRS con FSRS-6.**
-
 <div align="center">
 
-[![Version](https://img.shields.io/badge/version-v1.1.4-FFE000?style=for-the-badge&logo=electron&logoColor=black)](https://github.com/Zams0524/Yoru-Reader/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-a855f7?style=for-the-badge)](https://github.com/Zams0524/Yoru-Reader/releases)
-[![License](https://img.shields.io/badge/license-MIT-38bdf8?style=for-the-badge)](LICENSE)
-[![FSRS](https://img.shields.io/badge/SRS%20Engine-FSRS--6-22c55e?style=for-the-badge)](https://github.com/open-spaced-repetition/fsrs4anki)
+<img src="build/icons/png/256x256.png" width="112" alt="Yoru Reader" />
+
+# Yoru Reader
+
+**Aprende japonés leyendo.** Lector de novelas ligeras con diccionario al toque, repaso espaciado estilo Anki y estadísticas de lectura.
+
+[![Release](https://img.shields.io/github/v/release/Zams0524/Yoru-Reader?label=release&color=FFE000&labelColor=0c0e13&style=for-the-badge)](https://github.com/Zams0524/Yoru-Reader/releases/latest)
+[![Plataformas](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux%20·%20Android-ff8a6b?style=for-the-badge&labelColor=0c0e13)](#-descargas)
+[![SRS](https://img.shields.io/badge/SRS-FSRS-22c55e?style=for-the-badge&labelColor=0c0e13)](https://github.com/open-spaced-repetition/ts-fsrs)
 
 </div>
 
 ---
 
-## 📥 Descargas Oficiales (v1.1.4)
+## 📥 Descargas
 
-| Plataforma | Paquete / Tipo | Enlace de descarga |
+| Plataforma | Archivo | Descarga directa |
 | :--- | :--- | :--- |
-| **🪟 Windows** | Instalador (`.exe`) / Portable (`.zip`) | [⬇️ Descargar Windows x64](https://github.com/Zams0524/Yoru-Reader/releases/latest) |
-| **🍎 macOS (Apple Silicon)** | DMG / App Bundle (M1 / M2 / M3 / M4) | [⬇️ Descargar macOS arm64](https://github.com/Zams0524/Yoru-Reader/releases/latest) |
-| **🍎 macOS (Intel)** | DMG / App Bundle (Intel x64) | [⬇️ Descargar macOS x64](https://github.com/Zams0524/Yoru-Reader/releases/latest) |
-| **🐧 Linux (Flathub)** | Tienda Oficial Flathub | `flatpak install flathub com.yorureader.app` |
-| **🐧 Linux (Flatpak Standalone)** | Paquete independiente (`.flatpak`) | [⬇️ Descargar Flatpak x86_64](https://github.com/Zams0524/Yoru-Reader/releases/latest) |
-| **📱 Android** | Archivo APK | [⬇️ Descargar Android APK](https://github.com/Zams0524/Yoru-Reader/releases/latest) |
+| 🪟 **Windows** (x64) | Instalador `.exe` | [**Yoru-Reader.Setup.exe**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.Setup.exe) |
+| 📱 **Android** (7.0+) | `.apk` | [**Yoru-Reader.apk**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.apk) |
+| 🍎 **macOS** Apple Silicon (M1–M4) | `.dmg` | [**Yoru-Reader-arm64.dmg**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-arm64.dmg) |
+| 🍎 **macOS** Intel | `.dmg` | [**Yoru-Reader-x64.dmg**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x64.dmg) |
+| 🐧 **Linux** (x86_64) | `.flatpak` | [**Yoru-Reader-x86_64.flatpak**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x86_64.flatpak) |
 
----
+Todas las versiones están en la página de [**Releases**](https://github.com/Zams0524/Yoru-Reader/releases/latest). La app avisa sola cuando hay una versión nueva.
 
-## ✨ Características Principales
+<details>
+<summary><b>Windows dice «Windows protegió tu PC»</b></summary>
 
-### 1. ⚡ Analizador Morfológico Japonés de Alta Precisión (Kuromoji & Yoru Native Parser)
-- **100% de Cobertura de Caracteres**: Identificación morfológica y segmentación precisa de verbos, partículas, adjetivos, conjugaciones e inflexiones.
-- **Estados de Vocabulario en Tiempo Real**: Resaltado automático de palabras según tu nivel SRS (`Nuevo`, `En Aprendizaje`, `Maduro/Conocido`, `Pendiente`).
-- **Soporte Completo de Furigana y Ruby**: Renderizado nativo `<ruby>` y generación automática de lecturas en hiragana.
+El instalador todavía no está firmado con un certificado de editor, así que SmartScreen lo marca como «editor desconocido». Para instalarlo: **Más información → Ejecutar de todas formas**.
+</details>
 
-### 2. 🎴 Anki Review Heatmap & Motor SRS FSRS-6
-- **Review Heatmap Completo (Paridad con Anki Add-on)**: Gráfico de actividad anual con racha actual, récord histórico de días consecutivos, promedio diario, % de días aprendidos e intensidad en 5 niveles de color.
-- **Pronóstico de Repasos Futuros (Forecast)**: Bloques cian que muestran la carga de tarjetas pendientes proyectadas según los intervalos calculados por FSRS-6.
-- **Integración con AnkiConnect**: Exporta e importa tarjetas y mazos con audio TTS, captura de pantalla y contexto de la oración en un solo clic.
+<details>
+<summary><b>Android: cómo instalar el APK</b></summary>
 
-### 3. 🔍 Diccionario Yomitan Offline Integrado
-- **Búsquedas a 0ms de Latencia**: Base de datos IndexedDB local ultra optimizada para diccionarios JMDict, KANJIDIC, frecuencias y meta-bancos.
-- **Gráficos de Acento Tonal (Pitch Accent)**: Visualización de las curvas de entonación (Heiban, Atamadaka, Nakadaka, Odaka).
-- **Pronunciación TTS y Audio Nativo**: Reproducción de audio y síntesis de voz con velocidad ajustable.
+1. Descarga `Yoru-Reader.apk` desde el teléfono.
+2. Ábrelo y permite **Instalar apps desconocidas** para tu navegador o gestor de archivos cuando Android lo pida.
+3. Para actualizar, instala la nueva versión **encima** de la anterior (no desinstales: perderías tus datos locales).
+</details>
 
-### 4. 📖 Experiencia de Lectura Inmersiva
-- **Modos Vertical (Tategaki 縦書き) y Horizontal (Yokogaki 横書き)**: Paginación inteligente fluida, diseño sin saltos y ajuste tipográfico.
-- **Formatos Compatibles**: EPUB, PDF, HTML, TXT y subtítulos de anime/videos (SRT, VTT, ASS).
-- **Estadísticas de Inmersión**: Contador de caracteres leídos por sesión, velocidad de lectura (cpm) y desglose de comprensión por libro.
+<details>
+<summary><b>Linux: instalar el .flatpak</b></summary>
 
-### 5. 🔄 Actualizaciones en Vivo (Live In-App OTA)
-- **Actualización sin reinstalar**: Descarga de actualizaciones directamente dentro de la aplicación con barra de progreso en vivo y reinicio automático instantáneo.
-
----
-
-## 🐧 Instalación en Linux
-
-### Opción A: Flathub (Recomendado)
 ```bash
-# Agregar repositorio Flathub si no lo tienes
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-# Instalar Yoru Reader
-flatpak install flathub com.yorureader.app
-
-# Ejecutar
-flatpak run com.yorureader.app
+flatpak install --user Yoru-Reader-x86_64.flatpak
 ```
 
-### Opción B: Paquete Flatpak descargado (.flatpak)
 ```bash
-flatpak install --user Yoru-Reader-1.1.4-x86_64.flatpak
 flatpak run com.yorureader.app
 ```
+</details>
 
 ---
 
-## ⌨️ Atajos de Teclado Principales
+## ✨ Qué hace
 
-| Atajo | Acción |
+**📖 Lector**
+- EPUB, PDF, HTML, TXT y subtítulos (SRT, VTT, ASS).
+- Texto vertical (縦書き) u horizontal, con paginación o desplazamiento.
+- Furigana, temas claro/sepia/oscuro y ajustes de fuente, márgenes y brillo.
+
+**🔍 Diccionario al toque**
+- Toca o pasa el cursor (con `Shift`) sobre una palabra y aparece su definición.
+- Diccionarios incluidos y activos desde el primer momento, más soporte para diccionarios de Yomitan.
+- Gráfico de acento tonal (pitch accent), frecuencia y audio.
+- Análisis morfológico con Kuromoji: reconoce conjugaciones y la forma base de cada palabra.
+
+**🎴 Repaso espaciado (SRS)**
+- Algoritmo FSRS, como el de Anki, con mazos propios.
+- Integración con **AnkiConnect** para crear tarjetas con la frase de contexto.
+- Calendario de actividad y rachas.
+
+**📊 Estadísticas**
+- Caracteres leídos, tiempo y velocidad de lectura (con medidor de sesión en el lector).
+- Progreso por libro.
+
+**☁️ Sincronización**
+- Copia de seguridad y sincronización entre PC y Android con **Google Drive**.
+
+---
+
+## ⌨️ Atajos (escritorio)
+
+| Tecla | Acción |
 | :--- | :--- |
-| **`Shift` + Cursor / Hover** | Consulta instantánea en el diccionario Yomitan |
-| **`A` / `D`** o **`←` / `→`** | Página anterior / Página siguiente |
-| **`W` / `S`** o **`↑` / `↓`** | Capítulo anterior / Capítulo siguiente |
-| **`F`** | Modo Pantalla Completa |
-| **`Q`** | Panel rápido de ajustes de visualización (fuente, espaciado, vertical) |
-| **`P`** | Pronunciar selección con síntesis de voz |
-| **`S`** | Guardar palabra en mazo de repaso SRS |
+| `→` / `←` | Página siguiente / anterior |
+| `F` | Pantalla completa |
+| `Esc` | Mostrar u ocultar el menú |
+| `T` | Leer en voz alta |
+| `Shift` + cursor | Buscar la palabra en el diccionario |
+
+Se pueden cambiar en **Ajustes → Atajos de teclado**.
 
 ---
 
-## 🛠️ Desarrollo y Compilación Local
+## 🛠️ Desarrollo
 
-Si deseas compilar o contribuir al desarrollo de Yoru Reader:
+Un solo frontend (React + Vite, en `frontend/`) que se empaqueta con **Electron** para escritorio y con **Capacitor** para Android.
 
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/Zams0524/Yoru-Reader.git
-cd Yoru-Reader
-
-# 2. Instalar dependencias
-npm install
-
-# 3. Iniciar entorno de desarrollo
-npm run electron:start
-
-# 4. Compilar para producción (Windows)
-npm run electron:stable
-
-# 5. Compilar para desarrollo con inspector
-npm run electron:dev
+```text
+frontend/        Interfaz compartida (React + TypeScript)
+backend/         Proceso principal de Electron
+android/         Proyecto nativo de Android (Capacitor)
+mobile/scripts/  Compilación y verificación del APK
+build/           Iconos y recursos del instalador
+docs/            Guías del proyecto
 ```
 
----
+**Preparar el entorno**
 
-## 📄 Licencia
+```bash
+npm install
+```
 
-Este proyecto está bajo la Licencia **MIT** - consulta el archivo [LICENSE](LICENSE) para más detalles.
+Copia `.env.example` como `.env.local` y rellena los valores de Google OAuth (necesarios para la sincronización con Google Drive).
+
+**Escritorio**
+
+```bash
+npm run dev
+```
+
+```bash
+npm run electron:start
+```
+
+**Android** (Windows)
+
+- `COMPILAR-APK.bat`: compila el APK firmado en `mobile/releases/`.
+- `PUBLICAR-APK.bat`: lo sube a la release `latest` como `Yoru-Reader.apk` y avisa a las apps instaladas.
+
+**Publicar escritorio**
+
+Cada push a `main` ejecuta [GitHub Actions](.github/workflows/build-all-releases.yml), que compila Windows, macOS y Linux y los publica en la release `latest`.

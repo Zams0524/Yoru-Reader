@@ -8,6 +8,7 @@ import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
 import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { useConfirm } from './ConfirmModal';
 import stableManifest from '../../stable.json';
 import { updateDiscordLibrary } from '../utils/discordRpc';
@@ -208,6 +209,17 @@ const Library = React.memo(function Library({
     return false;
   };
 
+  // Android compares against the installed APK's versionName (mobile-stable.json),
+  // desktop against the bundled stable.json.
+  const getLocalAppVersion = async (): Promise<string> => {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        return (await CapacitorApp.getInfo()).version;
+      } catch (_) { /* fall back to the bundled manifest */ }
+    }
+    return stableManifest.appVersion;
+  };
+
   const fetchRemoteStable = async () => {
     const isAndroid = (window as any).Capacitor && (window as any).Capacitor.getPlatform && (window as any).Capacitor.getPlatform() === 'android';
     const urls = isAndroid
@@ -240,7 +252,7 @@ const Library = React.memo(function Library({
           return;
         }
 
-        const appNewer = isNewerVersion(remote.appVersion, stableManifest.appVersion);
+        const appNewer = isNewerVersion(remote.appVersion, await getLocalAppVersion());
         const backendNewer = isNewerVersion(remote.backendVersion, stableManifest.backendVersion);
 
         setLatestAppVersion(remote.appVersion);
@@ -279,7 +291,7 @@ const Library = React.memo(function Library({
         return;
       }
 
-      const appNewer = isNewerVersion(remote.appVersion, stableManifest.appVersion);
+      const appNewer = isNewerVersion(remote.appVersion, await getLocalAppVersion());
       const backendNewer = isNewerVersion(remote.backendVersion, stableManifest.backendVersion);
 
       setLatestAppVersion(remote.appVersion);

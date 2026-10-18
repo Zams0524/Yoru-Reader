@@ -1,8 +1,6 @@
 {
-  "appVersion": "1.2.5",
-  "versionCode": 125,
-  "hotUpdateVersion": "1.2.5",
-  "hotUpdateUrl": "https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/mobile/mobile-dist.zip",
-  "apkUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/v1.2.5/Yoru-Reader-1.2.5.apk",
-  "description": "Yoru Reader Mobile v1.2.5 (nuevo diseño, diccionario local activo y mejoras de rendimiento)"
+    "appVersion":  "1.3.9",
+    "versionCode":  139,
+    "apkUrl":  "https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.apk",
+    "description":  "Yoru Reader Android v1.3.9"
 }
