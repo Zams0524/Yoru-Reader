@@ -33,10 +33,14 @@ import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
 import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
+import { Capacitor } from '@capacitor/core';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
 import { useReaderSettings, ReaderSettingsState, baseReaderTheme } from '../hooks/useReaderSettings';
+
+// Page-turn keys handled inside ReaderEngine.
+const ENGINE_PAGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ']);
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -426,12 +430,19 @@ export default function Reader({
     apiRef: engineApiRef,
     voice: settings.audioVoiceOption,
     onError: (code) => {
-      const missingVoice = /JAPANESE_VOICE_MISSING|TTS_UNAVAILABLE/.test(code);
-      showToast(missingVoice
-        ? (lang === 'es'
-          ? 'No hay voz japonesa. Instálala en Ajustes de Android → Texto a voz.'
-          : 'No Japanese voice. Install one in Android Settings → Text-to-speech.')
-        : (lang === 'es' ? 'No se pudo leer en voz alta.' : 'Could not read aloud.'), 'error');
+      const es = lang === 'es';
+      const android = Capacitor.isNativePlatform();
+      let message = es ? 'No se pudo leer en voz alta.' : 'Could not read aloud.';
+      if (/EDGE_TTS_FAILED/.test(code)) {
+        message = es
+          ? 'No se pudo conectar con la voz neural (necesita internet). Inténtalo de nuevo.'
+          : 'Could not reach the neural voice (needs internet). Try again.';
+      } else if (/JAPANESE_VOICE_MISSING|TTS_UNAVAILABLE/.test(code)) {
+        message = android
+          ? (es ? 'No hay voz japonesa. Instálala en Ajustes de Android → Texto a voz.' : 'No Japanese voice. Install one in Android Settings → Text-to-speech.')
+          : (es ? 'No hay voz japonesa en este equipo. Elige Nanami o Keita en los ajustes de voz.' : 'No Japanese voice on this computer. Pick Nanami or Keita in the voice settings.');
+      }
+      showToast(message, 'error');
     },
   });
 
@@ -1834,6 +1845,7 @@ export default function Reader({
   };
 
   const handleReaderKeydown = useCallback((e: KeyboardEvent) => {
+    if (!e.isTrusted) return;
     if (isExtSettingsOpen || isJumpModalOpen || isGalleryOpen) return;
     const target = e.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -1885,17 +1897,22 @@ export default function Reader({
       }
     }
 
-    // Next page (Space or J)
-    if (e.code === 'Space' || e.key === 'j' || e.key === 'J') {
+    // Keys the reader engine already turns pages with.
+    if (ENGINE_PAGE_KEYS.has(e.key)) {
+      return;
+    }
+
+    // Next page (J)
+    if (e.key === 'j' || e.key === 'J') {
       e.preventDefault();
-      triggerTtuKeyboardAction('ArrowRight', 'ArrowRight');
+      engineApiRef.current?.turnPage(1);
       return;
     }
 
     // Prev page (K)
     if (e.key === 'k' || e.key === 'K') {
       e.preventDefault();
-      triggerTtuKeyboardAction('ArrowLeft', 'ArrowLeft');
+      engineApiRef.current?.turnPage(-1);
       return;
     }
 
@@ -1907,13 +1924,13 @@ export default function Reader({
 
     if (matchKey(keybindings.nextPage, e)) {
       e.preventDefault();
-      triggerTtuKeyboardAction('ArrowRight', 'ArrowRight');
+      engineApiRef.current?.turnPage(1);
       return;
     }
 
     if (matchKey(keybindings.prevPage, e)) {
       e.preventDefault();
-      triggerTtuKeyboardAction('ArrowLeft', 'ArrowLeft');
+      engineApiRef.current?.turnPage(-1);
       return;
     }
 
@@ -2073,6 +2090,12 @@ export default function Reader({
       setIsHeaderVisible(false);
     }
   }, [sidebarMode, showSettingsPopover, isJumpModalOpen, isGalleryOpen]);
+
+  const hideBarsOnPageTurnRef = useRef(true);
+  hideBarsOnPageTurnRef.current = !showSettingsPopover && !sidebarMode && !isSearchOpen;
+  const handlePageTurn = useCallback(() => {
+    if (hideBarsOnPageTurnRef.current) setIsHeaderVisible(false);
+  }, []);
 
   const handleEngineClick = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement | null;
@@ -2264,6 +2287,7 @@ export default function Reader({
         targetCharPosition={targetCharPosition}
         onCharsUpdate={handleCharsUpdate}
         onClick={handleEngineClick}
+        onPageTurn={handlePageTurn}
         wordStatuses={wordStatuses}
         colors={colors}
       />

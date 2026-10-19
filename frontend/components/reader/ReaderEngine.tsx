@@ -51,6 +51,8 @@ export interface ReaderEngineApi {
   isPaginated: () => boolean;
   /** Paged mode: current page and page count of the open section. */
   getPageInfo: () => { page: number; pages: number };
+  /** Turns one page (1 = forward, -1 = backward), moving to the next/previous section at the ends. */
+  turnPage: (direction: 1 | -1) => void;
 }
 
 export interface ReaderEngineProps {
@@ -60,6 +62,8 @@ export interface ReaderEngineProps {
   onCharsUpdate?: (payload: CharsUpdatePayload) => void;
   onSectionChange?: (sectionIndex: number) => void;
   onClick?: (e: React.MouseEvent) => void;
+  /** Called on every page turn (the reader hides its bars). */
+  onPageTurn?: () => void;
   children?: ReactNode;
   targetSection?: number | null;
   targetParagraphId?: number | null;
@@ -178,6 +182,7 @@ function ReaderEngineComponent({
   onCharsUpdate,
   onSectionChange,
   onClick,
+  onPageTurn,
   children,
   targetSection,
   targetParagraphId,
@@ -187,6 +192,22 @@ function ReaderEngineComponent({
 }: ReaderEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // The memo below skips re-renders, so callbacks are read through a ref.
+  const onPageTurnRef = useRef(onPageTurn);
+  onPageTurnRef.current = onPageTurn;
+  // Touch input is handled in touchend; the click the browser emulates afterwards must not act again.
+  const lastTouchEndRef = useRef(0);
+
+  // Height of the page box (the content element; its height is fixed at 100%, the container may
+  // add padding): a vertical-text page is exactly this tall (see contentStyle).
+  const [boxHeight, setBoxHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setBoxHeight(content.clientHeight || window.innerHeight));
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   // Initialize native parser
   const [parserReady, setParserReady] = useState(false);
@@ -338,7 +359,8 @@ function ReaderEngineComponent({
 
   // Content styles
   const contentStyle = useMemo<React.CSSProperties>(() => {
-    const vp = `${Math.max(10, window.innerHeight * (verticalPadding / 100))}px`;
+    const vpPx = Math.max(10, window.innerHeight * (verticalPadding / 100));
+    const vp = `${vpPx}px`;
     const hp = `${Math.max(10, window.innerWidth * (horizontalPadding / 100))}px`;
 
     const base: React.CSSProperties = {
@@ -363,8 +385,11 @@ function ReaderEngineComponent({
         overflowY: 'hidden',
         width: '100%',
         height: '100%',
-        columnGap: `calc(${hp} * 2)`,
-        columnWidth: `calc(100vw - ${hp} * 2)`,
+        // In vertical-rl a column's width is its height and columns stack downwards: each column
+        // fills the page between the top and bottom margins, and the gap spans both margins, so
+        // page N starts exactly at N * page height.
+        columnGap: `${vpPx * 2}px`,
+        columnWidth: `${Math.max(120, boxHeight - vpPx * 2)}px`,
         columnFill: 'auto',
       };
     } else if (paginated && !vertical) {
@@ -398,7 +423,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
@@ -408,19 +433,21 @@ function ReaderEngineComponent({
     let lastIndex = 0;
     let currChars = 0;
     const pTags = content.querySelectorAll('[index]');
+    const box = paginated ? content.getBoundingClientRect() : null;
+    const onPage = (element: Element) => Array.from(element.getClientRects()).some((r) =>
+      r.bottom > box!.top + 1 && r.top < box!.bottom - 1 && r.right > box!.left + 1 && r.left < box!.right - 1);
 
     for (let i = 0; i < pTags.length; i++) {
-      const rect = pTags[i].getBoundingClientRect();
       lastIndex = Number(pTags[i].getAttribute('index')) || lastIndex;
       currChars = Number(pTags[i].getAttribute('characumm')) || currChars;
 
       // Stop at first visible element
-      if (
-        (!paginated && !vertical && rect.bottom > 0) ||
-        (!paginated && vertical && rect.right > 0) ||
-        (paginated && !vertical && rect.right > 0) ||
-        (paginated && vertical && rect.right > 0)
-      ) {
+      if (box) {
+        if (onPage(pTags[i])) break;
+        continue;
+      }
+      const rect = pTags[i].getBoundingClientRect();
+      if ((!vertical && rect.bottom > 0) || (vertical && rect.right > 0)) {
         break;
       }
     }
@@ -431,13 +458,33 @@ function ReaderEngineComponent({
   }, [paginated, vertical, totalChars, currSection, onCharsUpdate]);
 
   // Calculate total pages in current section
+  // Vertical text: columns stack downwards, so its pages run on the Y axis. Horizontal text: on X.
+  const pagesOnY = useCallback(() => {
+    const content = contentRef.current;
+    return !!content && content.scrollWidth <= content.clientWidth + 2 && content.scrollHeight > content.clientHeight + 2;
+  }, []);
+
   const getMaxPages = useCallback(() => {
     const content = contentRef.current;
     if (!content) return 1;
+    if (pagesOnY()) {
+      return Math.max(1, Math.round(content.scrollHeight / (content.clientHeight || window.innerHeight)));
+    }
     const clientW = content.clientWidth || window.innerWidth;
     const scrollW = content.scrollWidth;
     return Math.max(1, Math.ceil(scrollW / clientW));
-  }, []);
+  }, [pagesOnY]);
+
+  // Pages on Y cannot glide sideways, so the new page slides in (from the left when reading forward
+  // in vertical text, as in ReadEra).
+  const slideIn = useCallback((content: HTMLElement, forward: boolean) => {
+    if (typeof content.animate !== 'function') return;
+    const from = forward === vertical ? '-24%' : '24%';
+    content.animate(
+      [{ transform: `translateX(${from})`, opacity: 0.3 }, { transform: 'translateX(0)', opacity: 1 }],
+      { duration: 260, easing: 'cubic-bezier(0.22, 0.8, 0.3, 1)' },
+    );
+  }, [vertical]);
 
   // Page-turn slide (ReadEra-style): pages sit side by side and glide into place.
   const slideAnimationRef = useRef<number | null>(null);
@@ -478,6 +525,16 @@ function ReaderEngineComponent({
     const content = contentRef.current;
     if (!content) return;
 
+    if (pagesOnY()) {
+      stopSlide();
+      const pageHeight = content.clientHeight || window.innerHeight;
+      const from = Math.round(content.scrollTop / pageHeight);
+      content.scrollTop = targetPage * pageHeight;
+      if (animate && from !== targetPage) slideIn(content, targetPage > from);
+      updateChars();
+      return;
+    }
+
     const clientW = content.clientWidth || window.innerWidth;
     const targetLeft = vertical ? -targetPage * clientW : targetPage * clientW;
     const pagesOnX = content.scrollWidth > content.clientWidth + 2;
@@ -492,23 +549,26 @@ function ReaderEngineComponent({
       content.scrollTo({ left: targetLeft, behavior: 'instant' });
     }
     updateChars();
-  }, [vertical, updateChars, slideTo, stopSlide]);
+  }, [vertical, updateChars, slideTo, stopSlide, pagesOnY, slideIn]);
 
   const statePageIndex = pageIndex;
   // Page flip function (1 = forward, -1 = backward). fromLeft: where a drag started.
   const flipPage = useCallback((multiplier: number, fromLeft?: number) => {
     const content = contentRef.current;
     if (!content) return;
+    onPageTurnRef.current?.();
 
     if (paginated) {
       const maxPages = getMaxPages();
       // The page on screen, read from the scroll position: jumps (search, notes, the page bar)
       // move the content without updating pageIndex. While a slide runs, pageIndex is its target.
-      const pageWidth = content.clientWidth || window.innerWidth;
+      const onY = pagesOnY();
       const pagesOnX = content.scrollWidth > content.clientWidth + 2;
-      const pageIndex = slideAnimationRef.current !== null || !pagesOnX
+      const pageSize = onY ? (content.clientHeight || window.innerHeight) : (content.clientWidth || window.innerWidth);
+      const position = onY ? content.scrollTop : Math.abs(fromLeft ?? content.scrollLeft);
+      const pageIndex = slideAnimationRef.current !== null || (!pagesOnX && !onY)
         ? statePageIndex
-        : Math.max(0, Math.min(maxPages - 1, Math.round(Math.abs(fromLeft ?? content.scrollLeft) / pageWidth)));
+        : Math.max(0, Math.min(maxPages - 1, Math.round(position / pageSize)));
 
       if (multiplier === 1) {
         // Forward
@@ -521,6 +581,7 @@ function ReaderEngineComponent({
           if (currSection < sections.length - 1) {
             setCurrSection(prev => prev + 1);
             setPageIndex(0);
+            requestAnimationFrame(() => { if (contentRef.current) slideIn(contentRef.current, true); });
           }
         }
       } else if (multiplier === -1) {
@@ -538,6 +599,7 @@ function ReaderEngineComponent({
               const lastPage = Math.max(0, prevMax - 1);
               setPageIndex(lastPage);
               applyPagePosition(lastPage);
+              if (contentRef.current) slideIn(contentRef.current, false);
             });
           }
         }
@@ -551,7 +613,7 @@ function ReaderEngineComponent({
       }
       updateChars();
     }
-  }, [paginated, vertical, statePageIndex, currSection, sections.length, getMaxPages, applyPagePosition, updateChars]);
+  }, [paginated, vertical, statePageIndex, currSection, sections.length, getMaxPages, applyPagePosition, updateChars, pagesOnY, slideIn]);
 
   // Jump directly to section
   const goToSection = useCallback((sectionIdx: number) => {
@@ -610,6 +672,16 @@ function ReaderEngineComponent({
     }
   }, [paginated, vertical, getMaxPages, applyPagePosition, updateChars]);
 
+  const showElement = (element: Element) => {
+    if (!paginated) {
+      element.scrollIntoView({ inline: 'center', block: 'center' });
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    revealRange(range);
+  };
+
   const pendingParagraphRef = useRef<number | null>(null);
   const goToParagraph = useCallback((sectionIndex: number, paragraphId: number) => {
     const show = () => {
@@ -667,6 +739,7 @@ function ReaderEngineComponent({
         const pages = onY ? Math.max(1, Math.ceil(content.scrollHeight / (content.clientHeight || 1))) : getMaxPages();
         return { page: Math.min(pageIndex, pages - 1), pages };
       },
+      turnPage: (direction) => flipPage(direction),
     };
   }
 
@@ -676,7 +749,7 @@ function ReaderEngineComponent({
       if (content) {
         const el = content.querySelector(`[index="${targetParagraphId}"]`);
         if (el) {
-          el.scrollIntoView({ inline: 'center', block: 'center' });
+          showElement(el);
           updateChars();
         }
       }
@@ -708,7 +781,7 @@ function ReaderEngineComponent({
               }
             }
             if (targetP) {
-              targetP.scrollIntoView({ inline: 'center', block: 'center' });
+              showElement(targetP);
             }
           }
           updateChars();
@@ -840,6 +913,16 @@ function ReaderEngineComponent({
     let dragBaseLeft = 0;
     let dragging = false;
     let dragCancelled = false;
+    // 'scroll': pages side by side (horizontal text). 'shift': pages on Y, the page itself follows the finger.
+    let dragKind: 'scroll' | 'shift' = 'scroll';
+
+    const canShiftPage = () => {
+      const content = contentRef.current;
+      if (!paginated || !content || !pagesOnY()) return false;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return false;
+      return !document.querySelector('.dict-popup');
+    };
 
     const canDragPages = () => {
       const content = contentRef.current;
@@ -859,6 +942,7 @@ function ReaderEngineComponent({
         dragCancelled = false;
         const content = contentRef.current;
         if (content) {
+          content.style.transform = '';
           // Catch a page that is still sliding.
           stopSlide();
           dragBaseLeft = content.scrollLeft;
@@ -872,18 +956,23 @@ function ReaderEngineComponent({
       const dy = e.touches[0].clientY - touchStartY;
       if (!dragging) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (Math.abs(dy) > Math.abs(dx) || !canDragPages()) {
+        const kind = canDragPages() ? 'scroll' : canShiftPage() ? 'shift' : null;
+        if (Math.abs(dy) > Math.abs(dx) || !kind) {
           dragCancelled = true;
           return;
         }
+        dragKind = kind;
         dragging = true;
       }
       const content = contentRef.current;
-      if (content) content.scrollLeft = dragBaseLeft - dx;
+      if (!content) return;
+      if (dragKind === 'shift') content.style.transform = `translateX(${dx}px)`;
+      else content.scrollLeft = dragBaseLeft - dx;
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
       if (e.changedTouches.length === 0) return;
+      lastTouchEndRef.current = Date.now();
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
       const deltaX = touchEndX - touchStartX;
@@ -899,11 +988,17 @@ function ReaderEngineComponent({
         const width = content?.clientWidth || window.innerWidth;
         // Turn when dragged past a fifth of the page, or on a quick flick.
         const turn = absX > width * 0.2 || (absX > 30 && deltaTime < 250);
+        if (dragKind === 'shift' && content) {
+          content.style.transform = '';
+          if (!turn && typeof content.animate === 'function') {
+            content.animate([{ transform: `translateX(${deltaX}px)` }, { transform: 'translateX(0)' }], { duration: 180, easing: 'ease-out' });
+          }
+        }
         if (turn) {
           // Vertical Japanese: dragging right brings the next page; horizontal text: dragging left.
           const forward = vertical ? deltaX > 0 : deltaX < 0;
-          flipPage(forward ? 1 : -1, dragBaseLeft);
-        } else if (content) {
+          flipPage(forward ? 1 : -1, dragKind === 'scroll' ? dragBaseLeft : undefined);
+        } else if (content && dragKind === 'scroll') {
           slideTo(content, dragBaseLeft, updateChars);
         }
         return;
@@ -988,7 +1083,7 @@ function ReaderEngineComponent({
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [vertical, paginated, flipPage, onClick, slideTo, stopSlide, updateChars]);
+  }, [vertical, paginated, flipPage, onClick, slideTo, stopSlide, updateChars, pagesOnY]);
 
   // Mouse wheel
   useEffect(() => {
@@ -1104,8 +1199,36 @@ function ReaderEngineComponent({
   }, [currentHtml, jitenEnabled, paginated, sections, currSection]);
 
   const handleContentClick = useCallback((e: React.MouseEvent) => {
-    if (onClick) onClick(e);
-  }, [onClick]);
+    const target = e.target as HTMLElement;
+    const onWord = !!target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button');
+    // After a touch, touchend already turned the page or toggled the bars: the emulated click only opens words.
+    if (Date.now() - lastTouchEndRef.current < 800) {
+      if (onWord && onClick) onClick(e);
+      return;
+    }
+    if (onWord || !paginated) {
+      if (onClick) onClick(e);
+      return;
+    }
+    // A click that closes the dictionary popup or ends a text selection does not turn the page.
+    if (document.querySelector('.dict-popup')) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    const width = rect?.width || window.innerWidth;
+    const x = e.clientX - (rect?.left || 0);
+    const invert = readerSettings.invertTapZones || false;
+    if ((readerSettings.tapZoneMode || 'edge') === 'kindle') {
+      flipPage(x < width * 0.2 ? (invert ? 1 : -1) : (invert ? -1 : 1));
+    } else if (x < width * 0.25 || x > width * 0.75) {
+      // Vertical text reads right to left: the left edge is the next page.
+      const dir = (x < width * 0.25) === vertical ? 1 : -1;
+      flipPage(invert ? -dir : dir);
+    } else if (onClick) {
+      onClick(e);
+    }
+  }, [onClick, paginated, vertical, flipPage, readerSettings.tapZoneMode, readerSettings.invertTapZones]);
 
   const maxWidthStyle = readerSettings.readerMaxWidth && readerSettings.readerMaxWidth !== 'none'
     ? { maxWidth: readerSettings.readerMaxWidth, margin: '0 auto' }

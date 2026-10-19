@@ -3524,3 +3524,30 @@ textarea:focus-visible,
     justify-content: flex-end;
   }
 }
+
+/* ---- Phone: library drawer reaches the bottom (the tab bar hides while it is open) ---- */
+@media (max-width: 768px) {
+  html.platform-android .library-sidebar,
+  html.platform-android .sidebar-overlay {
+    height: auto;
+    bottom: 0;
+  }
+
+  html.platform-android .library-sidebar {
+    overflow-y: auto;
+    padding-bottom: calc(20px + var(--yoru-safe-bottom, 0px));
+  }
+}
+
+/* ---- Phone: SRS review utility buttons fit the width ---- */
+html.platform-android .srs-utility-row {
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+}
+
+html.platform-android .srs-utility-row > button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 10px 8px !important;
+}

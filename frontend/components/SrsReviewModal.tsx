@@ -1208,7 +1208,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                 </div>
 
                 {/* Utility Buttons row */}
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                <div className="srs-utility-row" style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     onClick={handleToggleBlacklist}
@@ -1216,7 +1216,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <Ban size={13} style={{ color: '#ef4444' }} />
                     <span>Blacklist</span>
-                    <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>B</span>
+                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>B</span>}
                   </button>
 
                   <button
@@ -1226,7 +1226,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <Star size={13} style={{ color: '#f59e0b' }} />
                     <span>Master</span>
-                    <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>M</span>
+                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>M</span>}
                   </button>
 
                   <button
@@ -1237,15 +1237,9 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <Undo2 size={13} />
                     <span>Undo</span>
-                    <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>Z</span>
+                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>Z</span>}
                   </button>
 
-                  <button
-                    type="button"
-                    style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#ffffff', padding: '8px 18px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <span>... More</span>
-                  </button>
                 </div>
               </div>
             ) : (

@@ -31,7 +31,6 @@ const AZURE_VOICES: Record<string, string> = {
   Nanami: 'ja-JP-NanamiNeural',
   Keita: 'ja-JP-KeitaNeural',
 };
-const isEdgeVoice = (voice?: string) => !voice || voice in AZURE_VOICES || voice === 'Mayu';
 
 // After Edge fails (offline, service change) use the Windows voices for a while instead of
 // waiting for Edge on every sentence.
@@ -47,7 +46,7 @@ function electronSpeak() {
 }
 
 function cacheKey(text: string, options: SpeechOptions) {
-  return `${options.voice || 'Nanami'}|${options.rate}|${text}`;
+  return `${options.voice && options.voice in AZURE_VOICES ? options.voice : 'Nanami'}|${options.rate}|${text}`;
 }
 
 /** Starts synthesising a sentence that will be spoken soon (desktop only; elsewhere a no-op). */
@@ -58,7 +57,7 @@ export function prefetchSentence(text: string, options: SpeechOptions) {
   if (audioCache.has(key)) return;
   audioCache.set(key, Promise.resolve(speakText({
     text,
-    voice: AZURE_VOICES[options.voice || 'Nanami'] || AZURE_VOICES.Nanami,
+    voice: AZURE_VOICES[options.voice || ''] || AZURE_VOICES.Nanami,
     rate: options.rate,
   })).catch(() => null));
   while (audioCache.size > AUDIO_CACHE_LIMIT) {
@@ -91,17 +90,29 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
     };
   }
 
-  // Desktop: Edge neural voice through the main process, Windows voices when it fails.
-  if (electronSpeak() && isEdgeVoice(options.voice) && Date.now() >= edgeUnavailableUntil) {
+  // Desktop: a Windows voice when that is the chosen one, otherwise Edge's neural voice through the
+  // main process (any other saved name, e.g. the old default "masaru", means Edge). Windows voices
+  // stand in while Edge fails, if there are any.
+  if (electronSpeak()) {
     let audio: HTMLAudioElement | null = null;
     let fallback: SpeechHandle | null = null;
     let stopped = false;
     const done = (async () => {
-      prefetchSentence(text, options);
-      const buffer = await audioCache.get(cacheKey(text, options));
-      audioCache.delete(cacheKey(text, options));
+      const windowsVoices = 'speechSynthesis' in window ? await japaneseVoices() : [];
+      if (stopped) return;
+      const chosenWindowsVoice = !!options.voice && windowsVoices.some((voice) => voice.name === options.voice);
+      if (chosenWindowsVoice || (windowsVoices.length > 0 && Date.now() < edgeUnavailableUntil)) {
+        fallback = speakWithWebSpeech(text, chosenWindowsVoice ? options : { ...options, voice: undefined });
+        await fallback.done;
+        return;
+      }
+      const edgeOptions = { ...options, voice: options.voice && options.voice in AZURE_VOICES ? options.voice : 'Nanami' };
+      prefetchSentence(text, edgeOptions);
+      const buffer = await audioCache.get(cacheKey(text, edgeOptions));
+      audioCache.delete(cacheKey(text, edgeOptions));
       if (stopped) return;
       if (!buffer || buffer.byteLength === 0) {
+        if (windowsVoices.length === 0) throw new Error('EDGE_TTS_FAILED');
         edgeUnavailableUntil = Date.now() + 5 * 60_000;
         fallback = speakWithWebSpeech(text, { ...options, voice: undefined });
         await fallback.done;
@@ -119,7 +130,7 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
     return { done, stop: () => { stopped = true; audio?.pause(); fallback?.stop(); } };
   }
 
-  return speakWithWebSpeech(text, isEdgeVoice(options.voice) ? { ...options, voice: undefined } : options);
+  return speakWithWebSpeech(text, options.voice && options.voice in AZURE_VOICES ? { ...options, voice: undefined } : options);
 }
 
 /** Web Speech (Windows voices in Electron, the browser's voices elsewhere). */
