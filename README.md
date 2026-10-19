@@ -134,3 +134,17 @@ npm run electron:start
 **Publicar escritorio**
 
 Cada push a `main` ejecuta [GitHub Actions](.github/workflows/build-all-releases.yml), que compila Windows, macOS y Linux y los publica en la release `latest`.
+
+---
+
+## 🔏 Code signing policy
+
+Se ha solicitado firma de código gratuita a la SignPath Foundation para los instaladores de Windows (pendiente de aprobación). Detalles, roles del equipo y proceso: [**Code signing policy**](docs/CODE_SIGNING_POLICY.md).
+
+## 🔒 Privacidad
+
+Yoru Reader no recopila analíticas ni telemetría; tus datos se quedan en tu dispositivo. Qué servicios externos usa y cuándo: [**Política de privacidad**](docs/PRIVACY.md).
+
+## 📄 Licencia
+
+[MIT](LICENSE)

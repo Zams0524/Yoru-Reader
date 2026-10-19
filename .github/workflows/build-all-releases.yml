@@ -301,10 +301,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUILD_VERSION: ${{ needs.prepare.outputs.build-version }}
         run: |
+          NOTES="Latest automatic update channel for Yoru Reader. Code signing policy: https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/CODE_SIGNING_POLICY.md · Privacy policy: https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/PRIVACY.md"
           if ! gh release view latest >/dev/null 2>&1; then
-            gh release create latest --title "Yoru Reader ${BUILD_VERSION}" --notes "Latest automatic update channel for Yoru Reader."
+            gh release create latest --title "Yoru Reader ${BUILD_VERSION}" --notes "$NOTES"
           else
-            gh release edit latest --title "Yoru Reader ${BUILD_VERSION}" --notes "Latest automatic update channel for Yoru Reader."
+            gh release edit latest --title "Yoru Reader ${BUILD_VERSION}" --notes "$NOTES"
           fi
 
           assets=(release-assets/stable.json release-assets/dist.zip)
