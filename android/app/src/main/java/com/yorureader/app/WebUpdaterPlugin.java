@@ -151,8 +151,8 @@ public class WebUpdaterPlugin extends Plugin {
         String url = call.getString("url");
         String sha256 = call.getString("sha256");
         String version = call.getString("version");
-        Long size = call.getLong("size");
-        Long requiredCode = call.getLong("nativeVersionCode");
+        Long size = getNumber(call, "size");
+        Long requiredCode = getNumber(call, "nativeVersionCode");
         if (url == null || sha256 == null || version == null || size == null || requiredCode == null) {
             call.reject("Faltan datos de la actualización (url, sha256, size, version, nativeVersionCode).");
             return;
@@ -226,6 +226,12 @@ public class WebUpdaterPlugin extends Plugin {
         result.put("currentVersion", prefs.getString(KEY_CURRENT_VERSION, null));
         call.resolve(result);
         executor.execute(() -> removeUnusedBundles(getContext()));
+    }
+
+    /** PluginCall.getLong only accepts values parsed as Long; JSON numbers that fit an int arrive as Integer. */
+    private static Long getNumber(PluginCall call, String name) {
+        Object value = call.getData().opt(name);
+        return value instanceof Number ? ((Number) value).longValue() : null;
     }
 
     // ---- Launch-time state (static: runs before the bridge exists) ----
