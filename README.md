@@ -148,3 +148,5 @@ Yoru Reader no recopila analíticas ni telemetría; tus datos se quedan en tu di
 ## 📄 Licencia
 
 [MIT](LICENSE)
+
+La extensión de lectura que usa la app de escritorio (`backend/reader-ext`) es una versión modificada de [Jiten Reader](https://github.com/Sirush/JitenReader), basada a su vez en [Anki JPDB Reader](https://github.com/Kagu-chan/anki-jpdb.reader). Ambas son MIT; ver [su licencia](backend/reader-ext/LICENSE.md).

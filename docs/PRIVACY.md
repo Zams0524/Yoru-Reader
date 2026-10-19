@@ -11,7 +11,7 @@ The app only sends data to other services in the situations below. Apart from th
 | **Microsoft Edge text-to-speech** (`speech.platform.bing.com`) | When you use read-aloud on desktop | The text being read aloud |
 | **Azure Speech** (`*.tts.speech.microsoft.com`) | Only if you enter your own Azure key | The text being read aloud |
 | **Google Translate text-to-speech** (`translate.google.com`) | When you play audio for a dictionary word | The word being pronounced |
-| **Jiten** (`api.jiten.moe`, sometimes through `api.allorigins.win`) | When a word is not found in the built-in dictionaries | The word being looked up |
+| **Jiten** (`api.jiten.moe`, sometimes through `api.allorigins.win`) | When a word is not found in the built-in dictionaries, and on desktop when the reader extension parses text with your Jiten API key | The word being looked up, or the Japanese text being parsed |
 | **jpdb.io** | Only if you enter your jpdb API key to import decks | Your API key and deck requests |
 | **AnkiConnect** (`127.0.0.1`) | Only if you use Anki integration | Cards you create, sent to Anki on your own computer |
 | **Discord** (local Discord client) | Only if you enable Discord Rich Presence | The book and chapter title shown on your Discord profile (books can be excluded with the blacklist) |
