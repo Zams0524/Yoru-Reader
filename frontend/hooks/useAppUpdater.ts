@@ -164,12 +164,24 @@ export function useAppUpdater() {
     });
   }, [mode, patch]);
 
+  // Progress events arrive several times a second; every patch re-renders the whole library,
+  // so only whole steps of 5% (and the end) reach React state.
+  const progressListener = useCallback(() => {
+    let last = -1;
+    return (p: { percent: number; transferred: number; total: number }) => {
+      const step = p.percent < 0 ? -1 : Math.floor(p.percent / 5);
+      if (step === last && p.percent !== 100) return;
+      last = step;
+      patch({ progress: p });
+    };
+  }, [patch]);
+
   // Android OTA: download the UI bundle; WebUpdaterPlugin applies it on the next start.
   const downloadOta = useCallback(async () => {
     const ota = otaRef.current;
     if (!ota) return;
     patch({ status: 'downloading', error: null, progress: { percent: 0 } });
-    const handle = await WebUpdater.addListener('downloadProgress', p => patch({ progress: p }));
+    const handle = await WebUpdater.addListener('downloadProgress', progressListener());
     const options = {
       url: ota.url,
       sha256: ota.sha256,
@@ -193,7 +205,7 @@ export function useAppUpdater() {
       handle.remove();
     }
     patch({ status: 'ready', progress: { percent: 100 } });
-  }, [patch]);
+  }, [patch, progressListener]);
 
   const check = useCallback(async (options: { autoDownload?: boolean } = {}): Promise<UpdaterState> => {
     if (mode === 'electron') {
@@ -276,7 +288,7 @@ export function useAppUpdater() {
         const url = remoteRef.current?.apkUrl || `https://github.com/${REPO}/releases/latest/download/Yoru-Reader.apk`;
         if (current.status !== 'ready') {
           patch({ status: 'downloading', error: null, progress: { percent: 0 } });
-          const handle = await AppUpdater.addListener('downloadProgress', p => patch({ progress: p }));
+          const handle = await AppUpdater.addListener('downloadProgress', progressListener());
           try {
             await AppUpdater.download({ url });
           } finally {
@@ -303,7 +315,7 @@ export function useAppUpdater() {
       if (mode === 'electron') return;
       patch({ status: 'error', error: err?.message || String(err), progress: null });
     }
-  }, [mode, patch, downloadOta]);
+  }, [mode, patch, downloadOta, progressListener]);
 
   const openFallback = useCallback(async () => {
     if (mode === 'electron') {

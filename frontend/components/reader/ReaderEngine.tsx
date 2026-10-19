@@ -915,6 +915,20 @@ function ReaderEngineComponent({
     let dragCancelled = false;
     // 'scroll': pages side by side (horizontal text). 'shift': pages on Y, the page itself follows the finger.
     let dragKind: 'scroll' | 'shift' = 'scroll';
+    // Touch moves can arrive faster than the screen refreshes: move the page once per frame.
+    let dragDx = 0;
+    let dragFrame: number | null = null;
+    const applyDrag = () => {
+      dragFrame = null;
+      const content = contentRef.current;
+      if (!content || !dragging) return;
+      if (dragKind === 'shift') content.style.transform = `translateX(${dragDx}px)`;
+      else content.scrollLeft = dragBaseLeft - dragDx;
+    };
+    const cancelDragFrame = () => {
+      if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+      dragFrame = null;
+    };
 
     const canShiftPage = () => {
       const content = contentRef.current;
@@ -964,10 +978,8 @@ function ReaderEngineComponent({
         dragKind = kind;
         dragging = true;
       }
-      const content = contentRef.current;
-      if (!content) return;
-      if (dragKind === 'shift') content.style.transform = `translateX(${dx}px)`;
-      else content.scrollLeft = dragBaseLeft - dx;
+      dragDx = dx;
+      if (dragFrame === null) dragFrame = requestAnimationFrame(applyDrag);
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
@@ -983,6 +995,7 @@ function ReaderEngineComponent({
       const absY = Math.abs(deltaY);
 
       if (dragging) {
+        cancelDragFrame();
         dragging = false;
         const content = contentRef.current;
         const width = content?.clientWidth || window.innerWidth;
@@ -1079,6 +1092,7 @@ function ReaderEngineComponent({
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
+      cancelDragFrame();
       container.removeEventListener('touchstart', handleTouchStart);
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);

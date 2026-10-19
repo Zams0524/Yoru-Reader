@@ -3670,3 +3670,29 @@ html.platform-android .srs-utility-row > button {
   from { opacity: 0; transform: translateY(-10px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---- Android performance: fluid scrolling ----
+   backdrop-filter re-blurs whatever moves behind a fixed or sticky bar on every frame,
+   which phones cannot keep up with while scrolling. The surfaces that used it are already
+   ~95% opaque, so on Android they simply drop the blur. */
+html.platform-android *,
+html.platform-android *::before,
+html.platform-android *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.platform-android .comprehension-popover-card {
+  background: rgba(18, 18, 24, 0.97);
+}
+
+/* Fixed and sticky chrome on its own GPU layer, so scrolling never repaints it. */
+html.platform-android .mobile-top-app-bar,
+html.platform-android .bottom-navigation-bar {
+  transform: translateZ(0);
+}
+
+/* Endless glow animations repaint their card every frame. */
+html.platform-android .mas-card-installing {
+  animation: none;
+}
