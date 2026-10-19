@@ -1647,10 +1647,8 @@ export default function Reader({
 
     if (window.electronAPI && window.electronAPI.speakText) {
       try {
-        const azureVoiceName = 
-          vozId === 'Mayu' ? 'ja-JP-MayuNeural' : 
-          vozId === 'Keita' ? 'ja-JP-KeitaNeural' : 
-          'ja-JP-NanamiNeural';
+        // Edge's free service has Nanami and Keita for Japanese (Mayu was withdrawn).
+        const azureVoiceName = vozId === 'Keita' ? 'ja-JP-KeitaNeural' : 'ja-JP-NanamiNeural';
 
         const audioBuffer = await window.electronAPI.speakText({
           text: texto,

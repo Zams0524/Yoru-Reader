@@ -22,15 +22,20 @@ export interface SpeechHandle {
 
 export interface SpeechOptions {
   rate: number;
-  /** Android: a system voice name. Desktop: 'Nanami' | 'Mayu' | 'Keita'. Browser: a Web Speech voice name. */
+  /** Android: a system voice name. Desktop: 'Nanami' | 'Keita' (Edge) or a Windows voice name. Browser: a Web Speech voice name. */
   voice?: string;
 }
 
+// Edge's free read-aloud service only has these Japanese voices (Mayu was withdrawn).
 const AZURE_VOICES: Record<string, string> = {
   Nanami: 'ja-JP-NanamiNeural',
-  Mayu: 'ja-JP-MayuNeural',
   Keita: 'ja-JP-KeitaNeural',
 };
+const isEdgeVoice = (voice?: string) => !voice || voice in AZURE_VOICES || voice === 'Mayu';
+
+// After Edge fails (offline, service change) use the Windows voices for a while instead of
+// waiting for Edge on every sentence.
+let edgeUnavailableUntil = 0;
 
 // Desktop audio is synthesised ahead so sentences follow each other without a gap.
 const audioCache = new Map<string, Promise<ArrayBuffer | null>>();
@@ -86,16 +91,22 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
     };
   }
 
-  // Desktop: Edge neural voice through the main process.
-  if (electronSpeak()) {
+  // Desktop: Edge neural voice through the main process, Windows voices when it fails.
+  if (electronSpeak() && isEdgeVoice(options.voice) && Date.now() >= edgeUnavailableUntil) {
     let audio: HTMLAudioElement | null = null;
+    let fallback: SpeechHandle | null = null;
     let stopped = false;
     const done = (async () => {
       prefetchSentence(text, options);
       const buffer = await audioCache.get(cacheKey(text, options));
       audioCache.delete(cacheKey(text, options));
       if (stopped) return;
-      if (!buffer) throw new Error('TTS_ERROR');
+      if (!buffer || buffer.byteLength === 0) {
+        edgeUnavailableUntil = Date.now() + 5 * 60_000;
+        fallback = speakWithWebSpeech(text, { ...options, voice: undefined });
+        await fallback.done;
+        return;
+      }
       const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/mp3' }));
       audio = new Audio(url);
       await new Promise<void>((resolve, reject) => {
@@ -105,10 +116,14 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
         audio!.play().catch(reject);
       }).finally(() => URL.revokeObjectURL(url));
     })();
-    return { done, stop: () => { stopped = true; audio?.pause(); } };
+    return { done, stop: () => { stopped = true; audio?.pause(); fallback?.stop(); } };
   }
 
-  // Browser: Web Speech.
+  return speakWithWebSpeech(text, isEdgeVoice(options.voice) ? { ...options, voice: undefined } : options);
+}
+
+/** Web Speech (Windows voices in Electron, the browser's voices elsewhere). */
+function speakWithWebSpeech(text: string, options: SpeechOptions): SpeechHandle {
   if ('speechSynthesis' in window) {
     let finished: () => void = () => undefined;
     const done = new Promise<void>((resolve, reject) => {
@@ -152,10 +167,12 @@ export async function listJapaneseVoices(lang: string): Promise<VoiceOption[]> {
       }));
   }
   if (electronSpeak()) {
+    // Edge neural voices (online) plus the Japanese voices installed in Windows (offline).
+    const windowsVoices = 'speechSynthesis' in window ? await japaneseVoices() : [];
     return [
-      { id: 'Nanami', label: 'Nanami', detail: es ? 'Voz neural femenina' : 'Neural female voice' },
-      { id: 'Mayu', label: 'Mayu', detail: es ? 'Voz neural femenina' : 'Neural female voice' },
-      { id: 'Keita', label: 'Keita', detail: es ? 'Voz neural masculina' : 'Neural male voice' },
+      { id: 'Nanami', label: 'Nanami', detail: es ? 'Voz neural femenina · en línea' : 'Neural female voice · online' },
+      { id: 'Keita', label: 'Keita', detail: es ? 'Voz neural masculina · en línea' : 'Neural male voice · online' },
+      ...windowsVoices.map((voice) => ({ id: voice.name, label: voice.name, detail: es ? 'Voz de Windows · sin conexión' : 'Windows voice · offline' })),
     ];
   }
   if ('speechSynthesis' in window) {
