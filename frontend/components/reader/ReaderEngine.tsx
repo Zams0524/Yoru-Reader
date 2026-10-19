@@ -318,6 +318,9 @@ function ReaderEngineComponent({
     horizontalPadding,
     fontFamily,
   } = readerSettings;
+  const fontWeight = readerSettings.fontWeight || 400;
+  const textAlign = readerSettings.textAlign || 'original';
+  const hyphenation = !!readerSettings.hyphenation;
 
   // Outer container styles
   const containerStyle = useMemo<React.CSSProperties>(() => {
@@ -346,6 +349,9 @@ function ReaderEngineComponent({
       backgroundColor: colors.bg,
       color: colors.textMain,
       boxSizing: 'border-box',
+      fontWeight,
+      ...(textAlign !== 'original' ? { textAlign } : {}),
+      ...(hyphenation ? { hyphens: 'auto' as const, WebkitHyphens: 'auto' as const } : {}),
     };
 
     if (paginated && vertical) {
@@ -391,7 +397,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
@@ -1024,6 +1030,7 @@ function ReaderEngineComponent({
         id={`ttu-chapter-${currSection}`}
         style={contentStyle}
         className="reader-engine-content book-content-container"
+        data-align={textAlign !== 'original' ? textAlign : undefined}
         dangerouslySetInnerHTML={{ __html: currentHtml }}
       />
       {children}
@@ -1039,6 +1046,9 @@ export const ReaderEngine = React.memo(ReaderEngineComponent, (prevProps, nextPr
     prevProps.readerSettings.vertical === nextProps.readerSettings.vertical &&
     prevProps.readerSettings.paginated === nextProps.readerSettings.paginated &&
     prevProps.readerSettings.theme === nextProps.readerSettings.theme &&
+    prevProps.readerSettings.fontWeight === nextProps.readerSettings.fontWeight &&
+    prevProps.readerSettings.textAlign === nextProps.readerSettings.textAlign &&
+    prevProps.readerSettings.hyphenation === nextProps.readerSettings.hyphenation &&
     prevProps.readerSettings.fontFamily === nextProps.readerSettings.fontFamily &&
     prevProps.readerSettings.verticalPadding === nextProps.readerSettings.verticalPadding &&
     prevProps.readerSettings.horizontalPadding === nextProps.readerSettings.horizontalPadding &&

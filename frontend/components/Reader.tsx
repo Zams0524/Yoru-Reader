@@ -36,7 +36,7 @@ import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
-import { useReaderSettings, ReaderSettingsState } from '../hooks/useReaderSettings';
+import { useReaderSettings, ReaderSettingsState, baseReaderTheme } from '../hooks/useReaderSettings';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -303,9 +303,11 @@ export default function Reader({
   }, [fsrsRetentionRate, fsrsMaxInterval, fsrsEnableFuzz]);
   const setReaderSetting = useCallback(<K extends keyof ReaderSettingsState>(key: K, value: ReaderSettingsState[K]) => {
     rawSetReaderSetting(key, value);
-    if (key === 'theme' && (value === 'light' || value === 'sepia' || value === 'dark')) {
-      if (settings.theme !== value) {
-        onSaveSettings({ ...settings, theme: value });
+    // The app theme follows the book's base colours (contrast/twilight/console are variants).
+    if (key === 'theme') {
+      const base = baseReaderTheme(String(value));
+      if (settings.theme !== base) {
+        onSaveSettings({ ...settings, theme: base });
       }
     }
   }, [rawSetReaderSetting, settings, onSaveSettings]);
@@ -483,7 +485,8 @@ export default function Reader({
 
   useEffect(() => {
     if (settings.theme === 'light' || settings.theme === 'sepia' || settings.theme === 'dark') {
-      if (readerSettings.theme !== settings.theme) {
+      // Only follow a real change of the app theme, not a variant of the same base.
+      if (baseReaderTheme(readerSettings.theme) !== settings.theme) {
         rawSetReaderSetting('theme', settings.theme);
       }
     }
@@ -1980,8 +1983,48 @@ export default function Reader({
         cardBg: 'rgba(255, 255, 255, 0.05)',
         accent: '#FFE000',
         popoverBg: '#050507',
-      }
-    }[themeName as 'light' | 'sepia' | 'dark'] || {
+      },
+      'night-contrast': {
+        bg: '#000000',
+        headerBg: '#000000',
+        border: 'rgba(255, 255, 255, 0.16)',
+        textMain: '#ffffff',
+        textMuted: 'rgba(255, 255, 255, 0.6)',
+        cardBg: 'rgba(255, 255, 255, 0.06)',
+        accent: '#FFE000',
+        popoverBg: '#000000',
+      },
+      'sepia-contrast': {
+        bg: '#f4ecd8',
+        headerBg: '#f4ecd8',
+        border: 'rgba(59, 42, 24, 0.2)',
+        textMain: '#2e1f0f',
+        textMuted: 'rgba(46, 31, 15, 0.7)',
+        cardBg: '#ebe0c4',
+        accent: '#7a4a1c',
+        popoverBg: '#f4ecd8',
+      },
+      twilight: {
+        bg: '#1c2230',
+        headerBg: '#1c2230',
+        border: 'rgba(201, 209, 224, 0.14)',
+        textMain: '#c9d1e0',
+        textMuted: 'rgba(201, 209, 224, 0.55)',
+        cardBg: 'rgba(201, 209, 224, 0.06)',
+        accent: '#f5c86b',
+        popoverBg: '#171c28',
+      },
+      console: {
+        bg: '#000000',
+        headerBg: '#000000',
+        border: 'rgba(51, 255, 102, 0.2)',
+        textMain: '#33ff66',
+        textMuted: 'rgba(51, 255, 102, 0.55)',
+        cardBg: 'rgba(51, 255, 102, 0.05)',
+        accent: '#33ff66',
+        popoverBg: '#000000',
+      },
+    }[themeName as 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console'] || {
       bg: themeName === 'custom' ? (localStorage.getItem('reader:customBg') || '#08080a') : '#08080a',
       headerBg: themeName === 'custom' ? (localStorage.getItem('reader:customBg') || '#08080a') : '#08080a',
       border: 'rgba(255, 255, 255, 0.12)',
@@ -2045,7 +2088,8 @@ export default function Reader({
     <div 
       ref={containerRef}
       className="reader-container"
-      data-theme={readerSettings.theme || 'dark'}
+      data-theme={baseReaderTheme(readerSettings.theme || 'dark')}
+      data-reader-theme={readerSettings.theme || 'dark'}
       style={{
         width: '100%',
         height: '100vh',

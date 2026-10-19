@@ -4,6 +4,15 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
+/** Book colour modes. The extra ones are variants of light, sepia or dark (see baseReaderTheme). */
+export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console';
+
+export function baseReaderTheme(theme: string): 'light' | 'sepia' | 'dark' {
+  if (theme === 'light') return 'light';
+  if (theme === 'sepia' || theme === 'sepia-contrast') return 'sepia';
+  return 'dark';
+}
+
 export interface ReaderSettingsState {
   fontSize: number;
   lineHeight: number;
@@ -14,7 +23,7 @@ export interface ReaderSettingsState {
   paginated: boolean;
   showFurigana: boolean;
   disableCss: boolean;
-  theme: 'light' | 'sepia' | 'dark';
+  theme: ReaderTheme;
   showProgressLine: boolean;
   direction: 'auto' | 'vertical' | 'horizontal';
   autoScrollEnabled: boolean;
@@ -26,6 +35,10 @@ export interface ReaderSettingsState {
   readerBrightness: number;
   readerMaxWidth: string;
   pagePadding: 'compact' | 'normal' | 'spacious';
+  /** CSS font-weight for the book text (ReadEra's font thickness). */
+  fontWeight: number;
+  textAlign: 'original' | 'justify' | 'left' | 'center' | 'right';
+  hyphenation: boolean;
 }
 
 const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
@@ -50,6 +63,9 @@ const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
   readerBrightness: 'reader:readerBrightness',
   readerMaxWidth: 'reader:readerMaxWidth',
   pagePadding: 'reader:pagePadding',
+  fontWeight: 'reader:fontWeight',
+  textAlign: 'reader:textAlign',
+  hyphenation: 'reader:hyphenation',
 };
 
 function getNumber(key: string, fallback: number): number {
@@ -86,7 +102,7 @@ function loadSettings(): ReaderSettingsState {
     paginated: getBool(LS_KEYS.paginated, true),
     showFurigana: getBool(LS_KEYS.showFurigana, true),
     disableCss: getBool(LS_KEYS.disableCss, false),
-    theme: getString(LS_KEYS.theme, 'dark') as 'light' | 'sepia' | 'dark',
+    theme: getString(LS_KEYS.theme, 'dark') as ReaderTheme,
     showProgressLine: getBool(LS_KEYS.showProgressLine, true),
     direction: getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal',
     autoScrollEnabled: getBool(LS_KEYS.autoScrollEnabled, false),
@@ -98,6 +114,9 @@ function loadSettings(): ReaderSettingsState {
     readerBrightness: getNumber(LS_KEYS.readerBrightness, 100),
     readerMaxWidth: getString(LS_KEYS.readerMaxWidth, 'none'),
     pagePadding: (getString(LS_KEYS.pagePadding, 'normal') as 'compact' | 'normal' | 'spacious'),
+    fontWeight: getNumber(LS_KEYS.fontWeight, 400),
+    textAlign: getString(LS_KEYS.textAlign, 'original') as ReaderSettingsState['textAlign'],
+    hyphenation: getBool(LS_KEYS.hyphenation, false),
   };
 }
 
