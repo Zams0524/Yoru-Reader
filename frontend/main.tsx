@@ -5,6 +5,7 @@ import './index.css'
 import './yoru-design-system.css'
 import App from './App'
 import { applyLocalWordStyles } from './utils/parserSettingsStore'
+import { notifyWebBundleReady } from './hooks/useAppUpdater'
 
 // `?android` in the URL previews the Android look in a desktop browser (local testing).
 const previewAndroid = new URLSearchParams(window.location.search).has('android');
@@ -145,4 +146,6 @@ if (rootEl) {
       </ErrorBoundary>
     </StrictMode>,
   )
+  // Android: confirms a just-applied UI update started; otherwise WebUpdaterPlugin rolls it back.
+  notifyWebBundleReady()
 }

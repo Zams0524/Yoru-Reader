@@ -25,9 +25,12 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
         installCrashReportHandler();
+        // Picks the downloaded web UI (or rolls back a broken one) before the bridge loads it.
+        WebUpdaterPlugin.prepareForLaunch(this);
         registerPlugin(GoogleDriveAuthPlugin.class);
         registerPlugin(AndroidDiagnosticsPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
+        registerPlugin(WebUpdaterPlugin.class);
         registerPlugin(YoruTtsPlugin.class);
         super.onCreate(savedInstanceState);
         blendSystemBarsWithApp();

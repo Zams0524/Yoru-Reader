@@ -8,7 +8,10 @@ import stableManifest from '../../stable.json';
 //   with progress and applies it (silent NSIS install + relaunch, or reload into the new bundle).
 // - Electron (builds older than the updater): the legacy downloadAndInstallUpdate IPC, which
 //   downloads the installer in-app and opens it. Reached when a newer OTA frontend runs there.
-// - Android: AppUpdaterPlugin downloads the APK and opens the system installer.
+// - Android, UI only: WebUpdaterPlugin downloads dist.zip (mobile/mobile-ota.json) in the
+//   background when it was built for the installed APK, and applies it on the next start
+//   or right away from "Reiniciar para actualizar".
+// - Android, native changes: AppUpdaterPlugin downloads the APK and opens the system installer.
 // The GitHub releases page is only offered as a fallback link after an error.
 
 export type UpdaterStatus =
@@ -35,11 +38,32 @@ interface AppUpdaterPlugin {
 
 const AppUpdater = registerPlugin<AppUpdaterPlugin>('AppUpdater');
 
+interface WebUpdaterPlugin {
+  getState(): Promise<{ nativeVersionCode: number; currentVersion: string | null; pendingVersion: string | null; trial: boolean; lastRollback: string | null }>;
+  download(options: { url: string; sha256: string; size: number; version: string; nativeVersionCode: number }): Promise<{ version: string; ready: boolean }>;
+  applyNow(): Promise<void>;
+  notifyAppReady(): Promise<{ currentVersion: string | null }>;
+  addListener(event: 'downloadProgress', listener: (progress: { percent: number; transferred: number; total: number }) => void): Promise<PluginListenerHandle>;
+}
+
+// Only in APKs from 1.3.11 on; older ones update by APK alone.
+const WebUpdater = registerPlugin<WebUpdaterPlugin>('WebUpdater');
+const hasWebUpdater = () => Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('WebUpdater');
+
+/** Tells WebUpdaterPlugin this UI started; without it a freshly applied OTA is rolled back. */
+export function notifyWebBundleReady() {
+  if (hasWebUpdater()) WebUpdater.notifyAppReady().catch(() => {});
+}
+
 const REPO = 'Zams0524/Yoru-Reader';
 export const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const DESKTOP_MANIFESTS = [
   `https://raw.githubusercontent.com/${REPO}/main/stable.json`,
   `https://raw.githubusercontent.com/${REPO}/master/stable.json`
+];
+const ANDROID_OTA_MANIFESTS = [
+  `https://github.com/${REPO}/releases/latest/download/mobile-ota.json`,
+  `https://raw.githubusercontent.com/${REPO}/main/mobile/mobile-ota.json`
 ];
 const ANDROID_MANIFESTS = [
   `https://raw.githubusercontent.com/${REPO}/main/mobile/mobile-stable.json`,
@@ -93,6 +117,7 @@ export function useAppUpdater() {
   const [state, setState] = useState<UpdaterState>(() => initialState(mode));
   const stateRef = useRef(state);
   const remoteRef = useRef<any>(null);
+  const otaRef = useRef<any>(null);
   const patch = useCallback((next: Partial<UpdaterState>) => {
     setState(prev => {
       const merged = { ...prev, ...next };
@@ -115,7 +140,7 @@ export function useAppUpdater() {
   useEffect(() => {
     if (mode !== 'android') return;
     CapacitorApp.getInfo()
-      .then(info => patch({ current: { appVersion: info.version } }))
+      .then(info => patch({ current: { appVersion: info.version, hotVersion: stableManifest.hotUpdateVersion } }))
       .catch(() => {});
   }, [mode, patch]);
 
@@ -139,6 +164,26 @@ export function useAppUpdater() {
     });
   }, [mode, patch]);
 
+  // Android OTA: download the UI bundle; WebUpdaterPlugin applies it on the next start.
+  const downloadOta = useCallback(async () => {
+    const ota = otaRef.current;
+    if (!ota) return;
+    patch({ status: 'downloading', error: null, progress: { percent: 0 } });
+    const handle = await WebUpdater.addListener('downloadProgress', p => patch({ progress: p }));
+    try {
+      await WebUpdater.download({
+        url: ota.url,
+        sha256: ota.sha256,
+        size: ota.size,
+        version: ota.webVersion,
+        nativeVersionCode: ota.nativeVersionCode
+      });
+    } finally {
+      handle.remove();
+    }
+    patch({ status: 'ready', progress: { percent: 100 } });
+  }, [patch]);
+
   const check = useCallback(async (options: { autoDownload?: boolean } = {}): Promise<UpdaterState> => {
     if (mode === 'electron') {
       const s = await (window as any).electronAPI.updater.check(options);
@@ -156,12 +201,35 @@ export function useAppUpdater() {
         const newer = remote.versionCode && installedCode
           ? remote.versionCode > installedCode
           : isNewerVersion(remote.appVersion, info.version);
-        patch({
-          status: newer ? 'available' : 'up-to-date',
-          kind: newer ? 'apk' : null,
-          current: { appVersion: info.version },
-          latest: { appVersion: remote.appVersion, description: remote.description }
-        });
+        const current = { appVersion: info.version, hotVersion: stableManifest.hotUpdateVersion };
+        const latest = { appVersion: remote.appVersion, description: remote.description };
+        if (newer) {
+          // Native code changed: only a new APK brings it (and it replaces any downloaded UI).
+          patch({ status: 'available', kind: 'apk', current, latest });
+        } else if (hasWebUpdater()) {
+          const ota = await fetchFirstJson(ANDROID_OTA_MANIFESTS).catch(() => null);
+          const web = await WebUpdater.getState();
+          const offered = Boolean(ota?.url) && ota.nativeVersionCode === installedCode
+            && ota.webVersion !== web.lastRollback
+            && isNewerVersion(ota.webVersion, current.hotVersion);
+          otaRef.current = offered ? ota : null;
+          if (offered) {
+            const staged = web.pendingVersion === ota.webVersion;
+            patch({
+              status: staged ? 'ready' : 'available',
+              kind: 'ota',
+              current,
+              latest: { ...latest, hotVersion: ota.webVersion }
+            });
+            if (!staged && options.autoDownload) {
+              downloadOta().catch((err: any) => patch({ status: 'error', error: err?.message || String(err), progress: null }));
+            }
+          } else {
+            patch({ status: 'up-to-date', kind: null, current, latest: { ...latest, hotVersion: ota?.webVersion } });
+          }
+        } else {
+          patch({ status: 'up-to-date', kind: null, current, latest });
+        }
       } else {
         const remote = await fetchFirstJson(DESKTOP_MANIFESTS);
         remoteRef.current = remote;
@@ -176,7 +244,7 @@ export function useAppUpdater() {
       patch({ status: 'error', error: err?.message || String(err) });
     }
     return stateRef.current;
-  }, [mode, patch]);
+  }, [mode, patch, downloadOta]);
 
   const updateNow = useCallback(async () => {
     const current = stateRef.current;
@@ -185,6 +253,12 @@ export function useAppUpdater() {
         const api = (window as any).electronAPI.updater;
         if (current.status !== 'ready') await api.download();
         await api.install();
+        return;
+      }
+      if (mode === 'android' && current.kind === 'ota') {
+        if (current.status !== 'ready') await downloadOta();
+        patch({ status: 'installing', error: null });
+        await WebUpdater.applyNow();
         return;
       }
       if (mode === 'android') {
@@ -218,7 +292,7 @@ export function useAppUpdater() {
       if (mode === 'electron') return;
       patch({ status: 'error', error: err?.message || String(err), progress: null });
     }
-  }, [mode, patch]);
+  }, [mode, patch, downloadOta]);
 
   const openFallback = useCallback(async () => {
     if (mode === 'electron') {

@@ -172,10 +172,11 @@ const Library = React.memo(function Library({
   }, [bindingKeyAction, settings, onSaveSettings]);
 
   // Desktop builds with backend/updater.cjs are checked from App.tsx (with background download);
-  // Android and older desktop builds check here when the library opens.
+  // Android and older desktop builds check here when the library opens. On Android a UI-only
+  // update downloads in the background and is applied on the next start.
   useEffect(() => {
     if (updaterMode === 'electron' || updaterMode === 'none') return;
-    checkForAppUpdate().then(state => {
+    checkForAppUpdate({ autoDownload: updaterMode === 'android' }).then(state => {
       if (state.status === 'available') setShowUpdateBanner(true);
     });
   }, []);
@@ -4654,7 +4655,7 @@ const Library = React.memo(function Library({
               </div>
             );
             const progressLabel = updaterState.status === 'installing'
-              ? (isAndroidUpdater
+              ? (isAndroidUpdater && updaterState.kind === 'apk'
                   ? (lang === 'es' ? 'Confirma la instalación en el aviso de Android.' : 'Confirm the install in the Android prompt.')
                   : (lang === 'es' ? 'Instalando y reiniciando Yoru Reader...' : 'Installing and restarting Yoru Reader...'))
               : ready
@@ -4667,7 +4668,7 @@ const Library = React.memo(function Library({
               : updaterState.status === 'installing'
                 ? (lang === 'es' ? 'Instalando...' : 'Installing...')
                 : ready && updaterState.kind === 'ota'
-                  ? (lang === 'es' ? 'Aplicar ahora' : 'Apply now')
+                  ? (isAndroidUpdater ? (lang === 'es' ? 'Reiniciar para actualizar' : 'Restart to update') : (lang === 'es' ? 'Aplicar ahora' : 'Apply now'))
                   : ready
                     ? (isAndroidUpdater ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install'))
                     : (lang === 'es' ? 'Actualizar ahora' : 'Update now');
@@ -4704,8 +4705,8 @@ const Library = React.memo(function Library({
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 4px 0', lineHeight: 1.4 }}>
                   {isAndroidUpdater
                     ? (lang === 'es'
-                        ? 'La nueva versión se descarga dentro de la app; Android solo te pedirá confirmar la instalación.'
-                        : 'The new version downloads inside the app; Android only asks you to confirm the install.')
+                        ? 'Las mejoras de la interfaz se descargan solas y se aplican al volver a abrir la app. Si cambia la parte nativa, se descarga una nueva versión de la app y Android te pedirá confirmar la instalación.'
+                        : 'Interface updates download on their own and apply the next time you open the app. When the native part changes, a new app version downloads and Android asks you to confirm the install.')
                     : (lang === 'es'
                         ? 'Las actualizaciones se descargan e instalan dentro de la app. Con la actualización automática se descargan en segundo plano y se instalan al cerrar Yoru Reader.'
                         : 'Updates download and install inside the app. With automatic updates on, they download in the background and install when you close Yoru Reader.')}
@@ -4718,7 +4719,7 @@ const Library = React.memo(function Library({
                   appOutdated
                 )}
 
-                {!isAndroidUpdater && versionCard(
+                {versionCard(
                   lang === 'es' ? 'Interfaz (actualización rápida)' : 'Interface (quick update)',
                   updaterState.current.hotVersion,
                   latest?.hotVersion,
@@ -7470,9 +7471,13 @@ const Library = React.memo(function Library({
                         : (lang === 'es' ? '¡Nueva versión de Yoru Reader disponible!' : 'New Yoru Reader version available!')}
                     </h4>
                     <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                      {lang === 'es'
-                        ? `La versión v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} se descarga e instala desde aquí, sin salir de la app.`
-                        : `Version v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} downloads and installs from here, without leaving the app.`}
+                      {updaterMode === 'android' && updaterState.kind === 'ota' && updaterState.status === 'ready'
+                        ? (lang === 'es'
+                            ? `La interfaz v${updaterState.latest?.hotVersion} está lista. Se aplicará la próxima vez que abras la app.`
+                            : `Interface v${updaterState.latest?.hotVersion} is ready. It applies the next time you open the app.`)
+                        : lang === 'es'
+                          ? `La versión v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} se descarga e instala desde aquí, sin salir de la app.`
+                          : `Version v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} downloads and installs from here, without leaving the app.`}
                     </p>
                   </div>
                 </div>
@@ -7502,7 +7507,7 @@ const Library = React.memo(function Library({
                     ) : updaterState.status === 'installing' ? (
                       <span>{lang === 'es' ? 'Instalando...' : 'Installing...'}</span>
                     ) : updaterState.status === 'ready' ? (
-                      <span>{updaterState.kind === 'ota' ? (lang === 'es' ? 'Aplicar ahora' : 'Apply now') : updaterMode === 'android' ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install')}</span>
+                      <span>{updaterState.kind === 'ota' ? (updaterMode === 'android' ? (lang === 'es' ? 'Reiniciar para actualizar' : 'Restart to update') : (lang === 'es' ? 'Aplicar ahora' : 'Apply now')) : updaterMode === 'android' ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install')}</span>
                     ) : (
                       <span>{lang === 'es' ? '⚡ Actualizar ahora' : '⚡ Update now'}</span>
                     )}

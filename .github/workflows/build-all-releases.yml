@@ -28,6 +28,8 @@ jobs:
       app-version: ${{ steps.meta.outputs.app-version }}
       backend-version: ${{ steps.meta.outputs.backend-version }}
       native-changed: ${{ steps.meta.outputs.native-changed }}
+      android-version-code: ${{ steps.meta.outputs.android-version-code }}
+      android-ota: ${{ steps.meta.outputs.android-ota }}
     steps:
       - name: Require Google Drive OAuth secrets
         run: |
@@ -65,13 +67,36 @@ jobs:
             }
           }
 
+          // Android OTA: the UI bundle is built against the APK versionCode in build.gradle.
+          // If Android native code changed after that versionCode was set, phones with that
+          // APK lack the new native code, so the bundle is not offered until the version is bumped.
+          const androidVersionCode = Number(fs.readFileSync('android/app/build.gradle', 'utf8').match(/versionCode\s+(\d+)/)[1]);
+          let androidOta = true;
+          try {
+            const base = execFileSync('git', ['log', '-1', '--format=%H', '-G', 'versionCode', '--', 'android/app/build.gradle'], { encoding: 'utf8' }).trim();
+            if (base) {
+              const changed = execFileSync('git', ['diff', '--name-only', base, process.env.COMMIT_SHA], { encoding: 'utf8' })
+                .split(/\r?\n/).filter(file => /^android\//.test(file) || file === 'capacitor.config.json');
+              const pkgDiff = execFileSync('git', ['diff', '-U0', base, process.env.COMMIT_SHA, '--', 'package.json'], { encoding: 'utf8' })
+                .split(/\r?\n/).filter(line => /^[+-][^+-]/.test(line) && /capacitor|cordova/i.test(line));
+              if (changed.length || pkgDiff.length) {
+                androidOta = false;
+                console.log(`::warning::Android native files changed since versionCode ${androidVersionCode} was set (${[...changed, ...pkgDiff].join(', ')}). Bump versionCode and publish an APK; the Android UI update is withheld.`);
+              }
+            }
+          } catch {
+            androidOta = false;
+          }
+
           const appVersion = nativeChanged ? buildVersion : manifest.appVersion;
           const backendVersion = nativeChanged ? buildVersion : manifest.backendVersion;
           const output = [
             `build-version=${buildVersion}`,
             `app-version=${appVersion}`,
             `backend-version=${backendVersion}`,
-            `native-changed=${nativeChanged}`
+            `native-changed=${nativeChanged}`,
+            `android-version-code=${androidVersionCode}`,
+            `android-ota=${androidOta}`
           ].join('\n') + '\n';
           fs.appendFileSync(process.env.GITHUB_OUTPUT, output);
           console.log(`Build ${buildVersion}; native package rebuild: ${nativeChanged}`);
@@ -312,6 +337,12 @@ jobs:
             release-assets/Yoru-Reader-arm64.dmg release-assets/Yoru-Reader-x64.dmg \
             release-assets/Yoru-Reader-x86_64.flatpak
 
+      - name: Write the Android UI update manifest
+        env:
+          YORU_ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.android-version-code }}
+          YORU_ANDROID_OTA: ${{ needs.prepare.outputs.android-ota }}
+        run: node mobile/scripts/prepare-mobile-ota.cjs release-assets/stable.json release-assets/mobile-ota.json
+
       - name: Ensure latest release exists and publish assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -324,14 +355,14 @@ jobs:
             gh release edit latest --title "Yoru Reader ${BUILD_VERSION}" --notes "$NOTES"
           fi
 
-          # stable.json goes last, in its own upload: the in-app updater reads it from this
-          # release, and its assetHashes must not describe files that are still being replaced.
+          # The manifests go last, in their own upload: the in-app updaters read them from this
+          # release, and their hashes must not describe files that are still being replaced.
           assets=(release-assets/dist.zip)
           for asset in release-assets/Yoru-Reader.Setup.exe release-assets/Yoru-Reader-arm64.dmg release-assets/Yoru-Reader-x64.dmg release-assets/Yoru-Reader-x86_64.flatpak; do
             if [[ -f "$asset" ]]; then assets+=("$asset"); fi
           done
           gh release upload latest "${assets[@]}" --clobber
-          gh release upload latest release-assets/stable.json --clobber
+          gh release upload latest release-assets/stable.json release-assets/mobile-ota.json --clobber
 
       - name: Publish manifest to main for existing clients
         env:
@@ -342,7 +373,8 @@ jobs:
           git fetch origin main
           git checkout -B publish-update-manifest origin/main
           cp release-assets/stable.json stable.json
-          git add stable.json
+          cp release-assets/mobile-ota.json mobile/mobile-ota.json
+          git add stable.json mobile/mobile-ota.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: publish update manifest ${BUILD_VERSION}"
             git push origin HEAD:main
