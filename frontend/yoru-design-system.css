@@ -1328,3 +1328,78 @@ textarea:focus-visible,
     font-size: 12px !important;
   }
 }
+
+/* ==========================================================================
+   Reader image gallery on phones (v1.3.10)
+   Full-width image, thumbnails as a bottom strip, close button below the status bar.
+   ========================================================================== */
+@media (max-width: 768px) {
+  .reader-gallery {
+    flex-direction: column !important;
+  }
+
+  .reader-gallery-close {
+    width: 44px;
+    height: 44px;
+    top: calc(10px + var(--yoru-safe-top, 0px)) !important;
+    left: 10px !important;
+    background: rgba(0, 0, 0, 0.65) !important;
+    touch-action: manipulation;
+  }
+
+  .reader-gallery-main {
+    order: 0;
+    flex: 1 1 auto !important;
+    min-height: 0;
+    padding: calc(64px + var(--yoru-safe-top, 0px)) 12px 12px !important;
+  }
+
+  /* Room left after the close button, the counter and (with several images) the strip. */
+  .reader-gallery {
+    --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 160px - var(--yoru-safe-bottom, 0px));
+  }
+
+  .reader-gallery:has(.gallery-sidebar.is-single) {
+    --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 64px - var(--yoru-safe-bottom, 0px));
+  }
+
+  .reader-gallery-frame,
+  .reader-gallery-image {
+    max-width: 100% !important;
+    max-height: var(--gallery-image-max-height) !important;
+  }
+
+  .reader-gallery .gallery-sidebar {
+    order: 1;
+    width: 100% !important;
+    height: calc(96px + var(--yoru-safe-bottom, 0px));
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 10px 12px calc(10px + var(--yoru-safe-bottom, 0px)) !important;
+    gap: 10px !important;
+    border-right: none !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .reader-gallery .gallery-sidebar > div {
+    width: auto !important;
+    height: 100%;
+  }
+
+  .reader-gallery .gallery-sidebar.is-single {
+    display: none !important;
+  }
+
+  .reader-gallery-arrow {
+    padding: 12px 8px !important;
+  }
+
+  .reader-gallery-arrow.is-prev {
+    left: 6px !important;
+  }
+
+  .reader-gallery-arrow.is-next {
+    right: 6px !important;
+  }
+}

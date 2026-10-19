@@ -9,6 +9,7 @@ import { t } from '../utils/i18n';
 import { synthesizeSpeechAzure } from '../utils/azureTtsService';
 import { updateDiscordReading, clearDiscordPresence } from '../utils/discordRpc';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
+import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 
 // Direct reader engine imports
 import ReaderEngine from './reader/ReaderEngine';
@@ -380,6 +381,7 @@ export default function Reader({
   const dictionaryLookupRequestRef = useRef(0);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsKeepAliveRef = useRef<any>(null);
+  const wordAudioRef = useRef<WordAudioPlayback | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10 });
   const [popupMaxHeight, setPopupMaxHeight] = useState(Math.max(160, window.innerHeight - 24));
   const [viewportRevision, setViewportRevision] = useState(0);
@@ -501,6 +503,8 @@ export default function Reader({
 
   useEffect(() => {
     return () => {
+      wordAudioRef.current?.stop();
+      wordAudioRef.current = null;
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -1457,8 +1461,37 @@ export default function Reader({
     }
   };
 
+  // Single words: a native recording or the device voice first (Android has no Web Speech voices).
+  const reproducirPalabra = async (term: string, reading: string) => {
+    wordAudioRef.current?.stop();
+    wordAudioRef.current = null;
+    setIsTtsPlaying(true);
+    const playback = await playWordAudio(term, reading, parseFloat(settings.audioSpeed || '1.0'));
+    if (playback) {
+      wordAudioRef.current = playback;
+      playback.ended.then(() => {
+        if (wordAudioRef.current !== playback) return;
+        wordAudioRef.current = null;
+        setIsTtsPlaying(false);
+      });
+      return;
+    }
+    setIsTtsPlaying(false);
+    reproducirTexto(reading || term);
+  };
+
+  const playSelectedWordAudio = () => {
+    if (!selectedWord) return;
+    const term = dictEntry?.word || selectedWord.basicForm || selectedWord.surface;
+    const reading = dictEntry?.reading || (term === selectedWord.surface ? selectedWord.reading : '') || '';
+    reproducirPalabra(term, reading);
+  };
+
   const reproducirTexto = async (texto: string, vozSeleccionada?: string) => {
     if (!texto || !texto.trim()) return;
+
+    wordAudioRef.current?.stop();
+    wordAudioRef.current = null;
 
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
@@ -1754,6 +1787,8 @@ export default function Reader({
     if (matchKey(keybindings.readAloud, e)) {
       e.preventDefault();
       if (isTtsPlaying) {
+        wordAudioRef.current?.stop();
+        wordAudioRef.current = null;
         if (ttsAudioRef.current) {
           ttsAudioRef.current.pause();
           ttsAudioRef.current = null;
@@ -1764,11 +1799,11 @@ export default function Reader({
         }
         setIsTtsPlaying(false);
       } else if (selectedWord && selectedWord.surface) {
-        reproducirTexto(selectedWord.surface);
+        playSelectedWordAudio();
       }
       return;
     }
-  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, handleMineToAnki]);
+  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, dictEntry, handleMineToAnki]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleReaderKeydown);
@@ -2048,7 +2083,7 @@ export default function Reader({
 
       {/* Image Gallery Viewer Modal */}
       {isGalleryOpen && bookImages.length > 0 && (
-        <div style={{
+        <div className="reader-gallery" role="dialog" aria-modal="true" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -2079,10 +2114,13 @@ export default function Reader({
 
           {/* Close button */}
           <button
-            onClick={() => setIsGalleryOpen(false)}
+            type="button"
+            className="reader-gallery-close"
+            aria-label={lang === 'es' ? 'Cerrar galería' : 'Close gallery'}
+            onClick={(e) => { e.stopPropagation(); setIsGalleryOpen(false); }}
             style={{
               position: 'absolute',
-              top: '16px',
+              top: 'calc(16px + var(--yoru-safe-top, 0px))',
               left: '16px',
               background: 'rgba(0,0,0,0.5)',
               border: 'none',
@@ -2101,7 +2139,7 @@ export default function Reader({
 
           {/* Thumbnails Sidebar (Left) */}
           <div 
-            className="gallery-sidebar"
+            className={`gallery-sidebar${bookImages.length < 2 ? " is-single" : ""}`}
             style={{
               width: '210px',
               background: '#0d0d0f',
@@ -2138,6 +2176,8 @@ export default function Reader({
                 <img
                   src={src}
                   alt={`Thumbnail ${idx + 1}`}
+                  loading="lazy"
+                  decoding="async"
                   style={{
                     width: '100%',
                     height: '100%',
@@ -2149,7 +2189,7 @@ export default function Reader({
           </div>
 
           {/* Main View Area (Center/Right) */}
-          <div style={{
+          <div className="reader-gallery-main" style={{
             flex: 1,
             position: 'relative',
             display: 'flex',
@@ -2161,6 +2201,9 @@ export default function Reader({
             {/* Prev Arrow */}
             {galleryIndex > 0 && (
               <button
+                type="button"
+                className="reader-gallery-arrow is-prev"
+                aria-label={lang === 'es' ? 'Imagen anterior' : 'Previous image'}
                 onClick={() => setGalleryIndex(prev => prev - 1)}
                 style={{
                   position: 'absolute',
@@ -2184,7 +2227,7 @@ export default function Reader({
             )}
 
             {/* Main Image */}
-            <div style={{
+            <div className="reader-gallery-frame" style={{
               maxWidth: '95%',
               maxHeight: '92vh',
               display: 'flex',
@@ -2198,6 +2241,8 @@ export default function Reader({
               <img
                 src={bookImages[galleryIndex]}
                 alt={`Image ${galleryIndex + 1}`}
+                className="reader-gallery-image"
+                decoding="async"
                 style={{
                   maxWidth: '100%',
                   maxHeight: '92vh',
@@ -2209,6 +2254,9 @@ export default function Reader({
             {/* Next Arrow */}
             {galleryIndex < bookImages.length - 1 && (
               <button
+                type="button"
+                className="reader-gallery-arrow is-next"
+                aria-label={lang === 'es' ? 'Imagen siguiente' : 'Next image'}
                 onClick={() => setGalleryIndex(prev => prev + 1)}
                 style={{
                   position: 'absolute',
@@ -2846,7 +2894,7 @@ export default function Reader({
               </span>
               <button
                 type="button"
-                onClick={() => reproducirTexto(selectedWord.reading || selectedWord.surface)}
+                onClick={playSelectedWordAudio}
                 style={{
                   background: 'transparent',
                   border: 'none',

@@ -28,6 +28,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GoogleDriveAuthPlugin.class);
         registerPlugin(AndroidDiagnosticsPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
+        registerPlugin(YoruTtsPlugin.class);
         super.onCreate(savedInstanceState);
         blendSystemBarsWithApp();
     }

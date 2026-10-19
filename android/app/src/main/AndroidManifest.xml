@@ -39,4 +39,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- In-app updates: hand the downloaded APK to the system installer (AppUpdaterPlugin). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Word audio (YoruTtsPlugin): since Android 11 TTS engines are only visible when declared here. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 </manifest>

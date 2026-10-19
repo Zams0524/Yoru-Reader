@@ -5,6 +5,7 @@ import { lookupWord } from '../utils/dictionary';
 import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
 import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard } from '../utils/fsrs';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
+import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -195,6 +196,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const [newCardsLearned, setNewCardsLearned] = useState(0);
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wordAudioRef = useRef<WordAudioPlayback | null>(null);
 
   // Undo History & Display Settings
   const [historyStack, setHistoryStack] = useState<HistoryEntry[]>([]);
@@ -305,6 +307,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       if (ttsAudioRef.current) {
         ttsAudioRef.current.pause();
       }
+      wordAudioRef.current?.stop();
+      wordAudioRef.current = null;
     }
   }, [isOpen]);
 
@@ -580,15 +584,32 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, showAnswer, currentIndex, dueCards, pendingCards, isFinished, historyStack, sessionStats]);
 
-  const playWordTts = (word: string, reading?: string) => {
+  const playWordTts = async (word: string, reading?: string) => {
     if (!word) return;
-    const textToSpeak = reading || word;
+    // Card keys can be "word:reading".
+    const [term, keyReading] = word.split(':');
+    const wordReading = reading || keyReading || '';
+    const textToSpeak = wordReading || term;
     
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
     }
+    wordAudioRef.current?.stop();
+    wordAudioRef.current = null;
 
     setIsTtsPlaying(true);
+
+    // Android: native recording or device voice (the WebView has no speechSynthesis voices).
+    const playback = await playWordAudio(term, wordReading);
+    if (playback) {
+      wordAudioRef.current = playback;
+      playback.ended.then(() => {
+        if (wordAudioRef.current !== playback) return;
+        wordAudioRef.current = null;
+        setIsTtsPlaying(false);
+      });
+      return;
+    }
     
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
