@@ -1,9 +1,11 @@
 package com.yorureader.app;
 
+import android.content.Intent;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -130,6 +132,58 @@ public class YoruTtsPlugin extends Plugin {
             if (best != null) tts.setVoice(best);
         } catch (RuntimeException ignored) {
             // Some engines throw from getVoices(); the language set above is enough.
+        }
+    }
+
+    /** Japanese voices of the default engine, for the voice picker. */
+    @PluginMethod
+    public void getVoices(PluginCall call) {
+        synchronized (waitingCalls) {
+            if (!ready) {
+                if (initFailed) {
+                    call.reject("TTS_UNAVAILABLE");
+                } else {
+                    // Answer once the engine is up.
+                    bridge.execute(() -> {
+                        try { Thread.sleep(800); } catch (InterruptedException ignored) { }
+                        getVoices(call);
+                    });
+                }
+                return;
+            }
+        }
+        JSArray list = new JSArray();
+        try {
+            if (tts.getVoices() != null) {
+                for (Voice voice : tts.getVoices()) {
+                    if (voice.getLocale() == null || !"ja".equals(voice.getLocale().getLanguage())) continue;
+                    JSObject item = new JSObject();
+                    item.put("name", voice.getName());
+                    item.put("network", voice.isNetworkConnectionRequired());
+                    item.put("installed", voice.getFeatures() == null
+                        || !voice.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
+                    list.put(item);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Some engines throw from getVoices(); an empty list is fine.
+        }
+        JSObject response = new JSObject();
+        response.put("voices", list);
+        response.put("engine", tts.getDefaultEngine());
+        call.resolve(response);
+    }
+
+    /** Opens the system text-to-speech settings (to download more voices). */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent("com.android.settings.TTS_SETTINGS");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (RuntimeException error) {
+            call.reject("SETTINGS_UNAVAILABLE");
         }
     }
 

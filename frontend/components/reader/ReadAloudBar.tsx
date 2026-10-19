@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Moon, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
+import { Moon, Pause, Play, Settings, SkipBack, SkipForward, X } from 'lucide-react';
 import { READ_ALOUD_RATES, type ReadAloudStatus } from './useReadAloud';
 
 interface Props {
@@ -14,11 +14,12 @@ interface Props {
   onSkip: (delta: number) => void;
   onRate: (rate: number) => void;
   onSleep: (minutes: number | null) => void;
+  onSettings?: () => void;
   onClose: () => void;
 }
 
 export default function ReadAloudBar({
-  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onClose,
+  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose,
 }: Props) {
   const es = lang === 'es';
   const [, setNow] = useState(Date.now());
@@ -76,6 +77,11 @@ export default function ReadAloudBar({
       </button>
       {position.total > 0 && (
         <span className="read-aloud-progress" aria-hidden="true">{position.index + 1}/{position.total}</span>
+      )}
+      {onSettings && (
+        <button type="button" className="read-aloud-btn" onClick={onSettings} aria-label={es ? 'Ajustes de voz' : 'Voice settings'}>
+          <Settings size={17} />
+        </button>
       )}
       <button type="button" className="read-aloud-btn" onClick={onClose} aria-label={es ? 'Cerrar lectura en voz alta' : 'Close read aloud'}>
         <X size={18} />

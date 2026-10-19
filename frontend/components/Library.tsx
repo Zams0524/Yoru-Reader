@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles } from 'lucide-react';
+import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import { OnboardingTutorialModal } from './OnboardingTutorialModal';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import { db } from '../utils/db';
@@ -6642,20 +6642,29 @@ const Library = React.memo(function Library({
       {/* 1. Sticky Header — Yoru Cafe style */}
       {isMobile ? (
         <header className="mobile-top-app-bar">
-          <button 
-            className="mobile-icon-btn mobile-cloud-btn" 
-            onClick={() => {
-              if (gDriveTokens) {
-                showToast(lang === 'es' ? 'Sincronizado con Google Drive' : 'Synced with Google Drive', 'info');
-              } else {
-                setIsGDriveSyncOpen(true);
-              }
-            }} 
-            title="Google Drive"
-            aria-label="Google Drive"
-          >
-            <Cloud size={22} color={gDriveTokens ? '#4ade80' : '#FFE000'} />
-          </button>
+          {activeTab === 'settings' ? (
+            <button
+              className="mobile-icon-btn"
+              onClick={() => setActiveTab('library')}
+              title={lang === 'es' ? 'Volver' : 'Back'}
+              aria-label={lang === 'es' ? 'Volver' : 'Back'}
+            >
+              <ArrowLeft size={22} />
+            </button>
+          ) : (
+            <button
+              className="mobile-icon-btn"
+              onClick={() => {
+                // The menu lives on the library screen (ReadEra-style drawer).
+                if (activeTab !== 'library') setActiveTab('library');
+                setIsSidebarOpen(true);
+              }}
+              title={lang === 'es' ? 'Menú' : 'Menu'}
+              aria-label={lang === 'es' ? 'Abrir menú' : 'Open menu'}
+            >
+              <Menu size={22} />
+            </button>
+          )}
           <h1 className="mobile-top-title">
             {activeTab === 'library' ? (lang === 'es' ? 'Novelas' : 'Novel') :
              activeTab === 'srs' ? 'Yoru SRS' :
@@ -7235,14 +7244,14 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'all' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'all', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Todos los libros' : 'All books'}</span>
+                  <span className="sidebar-item-label"><BookOpen size={17} />{lang === 'es' ? 'Todos los libros' : 'All books'}</span>
                   <span className="sidebar-item-count">{books.length}</span>
                 </div>
                  <div 
                   className={`sidebar-item ${activeFilter.type === 'unread' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'unread', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Sin iniciar' : 'Not started'}</span>
+                  <span className="sidebar-item-label"><Clock size={17} />{lang === 'es' ? 'Por leer' : 'To read'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'unread' || (!b.status && b.progress.percent === 0)).length}
                   </span>
@@ -7251,7 +7260,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'reading' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'reading', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Leyendo' : 'Reading'}</span>
+                  <span className="sidebar-item-label"><Repeat size={17} />{lang === 'es' ? 'Leyendo ahora' : 'Reading now'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'reading' || (!b.status && b.progress.percent > 0 && b.progress.percent < 100)).length}
                   </span>
@@ -7260,7 +7269,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'completed' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'completed', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Leídos' : 'Read'}</span>
+                  <span className="sidebar-item-label"><CheckCheck size={17} />{lang === 'es' ? 'Leídos' : 'Have read'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'completed' || (!b.status && b.progress.percent >= 100)).length}
                   </span>
@@ -7269,7 +7278,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'paused' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'paused', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Pausados' : 'Paused'}</span>
+                  <span className="sidebar-item-label"><Pause size={17} />{lang === 'es' ? 'Pausados' : 'Paused'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'paused').length}
                   </span>
@@ -7278,7 +7287,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'dropped' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'dropped', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Dropeados' : 'Dropped'}</span>
+                  <span className="sidebar-item-label"><CircleSlash size={17} />{lang === 'es' ? 'Dropeados' : 'Dropped'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'dropped').length}
                   </span>
@@ -7287,7 +7296,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'planning' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'planning', value: null })}
                 >
-                  <span>{lang === 'es' ? 'Planeados' : 'Planned'}</span>
+                  <span className="sidebar-item-label"><Calendar size={17} />{lang === 'es' ? 'Planeados' : 'Planned'}</span>
                   <span className="sidebar-item-count">
                     {books.filter(b => b.status === 'planning').length}
                   </span>
@@ -7314,11 +7323,11 @@ const Library = React.memo(function Library({
               {/* Tags Section */}
               <div className="sidebar-group">
                 <div className="sidebar-group-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Etiquetas' : 'Tags'}</span>
+                  <span>{lang === 'es' ? 'Colecciones' : 'Collections'}</span>
                   <button
-                    title={lang === 'es' ? "Añadir etiqueta" : "Add tag"}
+                    title={lang === 'es' ? "Nueva colección" : "New collection"}
                     onClick={async () => {
-                      const tag = prompt(lang === 'es' ? 'Nueva etiqueta:' : 'New tag:');
+                      const tag = prompt(lang === 'es' ? 'Nueva colección:' : 'New collection:');
                       if (!tag || !tag.trim()) return;
                       const tagTrim = tag.trim();
                       if (selectedBookIds.length > 0) {
@@ -7366,7 +7375,7 @@ const Library = React.memo(function Library({
                   className={`sidebar-item ${activeFilter.type === 'tag' && activeFilter.value === 'untagged' ? 'active' : ''}`}
                   onClick={() => setActiveFilter({ type: 'tag', value: 'untagged' })}
                 >
-                  <span>{lang === 'es' ? 'Sin etiquetas' : 'No tags'}</span>
+                  <span className="sidebar-item-label"><LibraryIcon size={17} />{lang === 'es' ? 'Sin colección' : 'No collection'}</span>
                   <span className="sidebar-item-count">{books.filter(b => !b.tags || b.tags.length === 0).length}</span>
                 </div>
                 {(() => {
@@ -7389,6 +7398,38 @@ const Library = React.memo(function Library({
                     </div>
                   ));
                 })()}
+              </div>
+
+              {/* Footer: account and app settings (Settings left the bottom bar) */}
+              <div className="sidebar-group sidebar-footer-group">
+                <div
+                  className="sidebar-item"
+                  onClick={() => {
+                    if (gDriveTokens) {
+                      showToast(lang === 'es' ? 'Sincronizado con Google Drive' : 'Synced with Google Drive', 'info');
+                    } else {
+                      setIsGDriveSyncOpen(true);
+                    }
+                  }}
+                >
+                  <span className="sidebar-item-label">
+                    <Cloud size={17} color={gDriveTokens ? '#4ade80' : undefined} />
+                    Google Drive
+                  </span>
+                  <span className="sidebar-item-count">{gDriveTokens ? (lang === 'es' ? 'Conectado' : 'Connected') : ''}</span>
+                </div>
+                <div
+                  className="sidebar-item"
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    setActiveTab('settings');
+                  }}
+                >
+                  <span className="sidebar-item-label">
+                    <Settings size={17} />
+                    {lang === 'es' ? 'Ajustes' : 'Settings'}
+                  </span>
+                </div>
               </div>
             </aside>
 
@@ -7635,15 +7676,6 @@ const Library = React.memo(function Library({
           >
             <BarChart3 size={18} />
             <span>{t('statistics', lang)}</span>
-          </button>
-          <button 
-            className={`bottom-tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-            type="button"
-            aria-current={activeTab === 'settings' ? 'page' : undefined}
-          >
-            <Settings size={18} />
-            <span>{t('settings', lang)}</span>
           </button>
         </nav>
       )}

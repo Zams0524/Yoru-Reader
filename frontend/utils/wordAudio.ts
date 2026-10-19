@@ -77,7 +77,10 @@ export async function playWordAudio(term: string, reading = '', rate = 1): Promi
   // Kanji spelling lets the engine look the word up (and its accent); kana-only words stay kana.
   const text = KANJI.test(word) ? word : (reading.trim() || word);
   try {
-    const ended = YoruTts.speak({ text, rate });
+    // The voice chosen for read aloud, so words and sentences sound the same.
+    let voice: string | undefined;
+    try { voice = localStorage.getItem('yoru_read_aloud_voice') || undefined; } catch { voice = undefined; }
+    const ended = YoruTts.speak({ text, rate, voice });
     // An immediate rejection (no Japanese voice installed) lets the caller try its own fallback.
     await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 250))]);
     return { source: 'device-tts', ended: ended.catch(() => undefined), stop: () => { void YoruTts.stop(); } };

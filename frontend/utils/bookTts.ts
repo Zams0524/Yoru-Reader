@@ -7,8 +7,10 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
  */
 
 interface YoruTtsPlugin {
-  speak(options: { text: string; rate?: number }): Promise<void>;
+  speak(options: { text: string; rate?: number; voice?: string }): Promise<void>;
   stop(): Promise<void>;
+  getVoices(): Promise<{ voices: { name: string; network: boolean; installed: boolean }[]; engine?: string }>;
+  openSettings(): Promise<void>;
 }
 
 const YoruTts = registerPlugin<YoruTtsPlugin>('YoruTts');
@@ -20,7 +22,8 @@ export interface SpeechHandle {
 
 export interface SpeechOptions {
   rate: number;
-  voice?: string; // 'Nanami' | 'Mayu' | 'Keita'
+  /** Android: a system voice name. Desktop: 'Nanami' | 'Mayu' | 'Keita'. Browser: a Web Speech voice name. */
+  voice?: string;
 }
 
 const AZURE_VOICES: Record<string, string> = {
@@ -78,7 +81,7 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
   // Android: system engine (the WebView has no Web Speech voices).
   if (Capacitor.isNativePlatform()) {
     return {
-      done: YoruTts.speak({ text, rate: options.rate }),
+      done: YoruTts.speak({ text, rate: options.rate, voice: options.voice }),
       stop: () => { void YoruTts.stop().catch(() => undefined); },
     };
   }
@@ -127,3 +130,43 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
 
   return { done: Promise.reject(new Error('TTS_UNAVAILABLE')), stop: () => undefined };
 }
+
+export interface VoiceOption {
+  id: string;
+  label: string;
+  detail: string;
+}
+
+/** Japanese voices the current platform can use, for the voice picker. */
+export async function listJapaneseVoices(lang: string): Promise<VoiceOption[]> {
+  const es = lang === 'es';
+  if (Capacitor.isNativePlatform()) {
+    const { voices } = await YoruTts.getVoices();
+    return voices
+      .filter((voice) => voice.installed)
+      .sort((a, b) => Number(a.network) - Number(b.network) || a.name.localeCompare(b.name))
+      .map((voice) => ({
+        id: voice.name,
+        label: voice.name,
+        detail: voice.network ? (es ? 'En línea (necesita internet)' : 'Online (needs internet)') : (es ? 'Sin conexión' : 'Offline'),
+      }));
+  }
+  if (electronSpeak()) {
+    return [
+      { id: 'Nanami', label: 'Nanami', detail: es ? 'Voz neural femenina' : 'Neural female voice' },
+      { id: 'Mayu', label: 'Mayu', detail: es ? 'Voz neural femenina' : 'Neural female voice' },
+      { id: 'Keita', label: 'Keita', detail: es ? 'Voz neural masculina' : 'Neural male voice' },
+    ];
+  }
+  if ('speechSynthesis' in window) {
+    return (await japaneseVoices()).map((voice) => ({ id: voice.name, label: voice.name, detail: voice.localService ? (es ? 'Sin conexión' : 'Offline') : (es ? 'En línea' : 'Online') }));
+  }
+  return [];
+}
+
+/** Android only: opens the system TTS settings to download more voices. */
+export function openSystemTtsSettings(): Promise<void> {
+  return Capacitor.isNativePlatform() ? YoruTts.openSettings() : Promise.resolve();
+}
+
+export const canOpenSystemTtsSettings = () => Capacitor.isNativePlatform();

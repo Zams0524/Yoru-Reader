@@ -1991,3 +1991,133 @@ textarea:focus-visible,
   top: 50% !important;
   transform: translateY(-50%);
 }
+
+/* ==========================================================================
+   Library menu (ReadEra-style drawer): icons and the settings footer (v1.3.10)
+   ========================================================================== */
+.sidebar-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sidebar-item-label svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.sidebar-footer-group {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light, rgba(255, 255, 255, 0.08));
+}
+
+@media (max-width: 768px) {
+  .library-sidebar .sidebar-item {
+    min-height: 46px;
+    font-size: 0.95rem;
+  }
+}
+
+/* ==========================================================================
+   Read-aloud voice settings (v1.3.10, ReadEra-style list)
+   ========================================================================== */
+.tts-settings-section-title {
+  margin: 16px 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tts-voice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tts-voice-list li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tts-voice-option {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tts-voice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tts-voice-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tts-voice-detail {
+  font-size: 0.78rem;
+}
+
+.tts-voice-radio {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid;
+  box-shadow: inset 0 0 0 3px var(--bg-panel, #12141a);
+  box-sizing: border-box;
+}
+
+.tts-voice-preview {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.tts-settings-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+  padding: 12px 4px;
+  border: none;
+  background: none;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tts-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px;
+}

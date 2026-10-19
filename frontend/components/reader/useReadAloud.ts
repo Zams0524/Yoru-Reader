@@ -91,11 +91,15 @@ interface Options {
 
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const RATE_STORAGE = 'yoru_read_aloud_rate';
+const VOICE_STORAGE = 'yoru_read_aloud_voice';
 
 export function useReadAloud({ apiRef, voice, onError }: Options) {
   const [status, setStatus] = useState<ReadAloudStatus>('idle');
   const [rate, setRateState] = useState<number>(() => {
     try { return parseFloat(localStorage.getItem(RATE_STORAGE) || '') || 1; } catch { return 1; }
+  });
+  const [chosenVoice, setChosenVoice] = useState<string>(() => {
+    try { return localStorage.getItem(VOICE_STORAGE) || ''; } catch { return ''; }
   });
   const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
   const [position, setPosition] = useState({ index: 0, total: 0 });
@@ -107,6 +111,8 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   const rateRef = useRef(rate);
   const sleepRef = useRef<number | null>(null);
   rateRef.current = rate;
+  const voiceRef = useRef(chosenVoice || voice);
+  voiceRef.current = chosenVoice || voice;
   sleepRef.current = sleepEndsAt;
 
   const stopSpeech = () => {
@@ -142,7 +148,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
       setHighlight(range);
       if (range) apiRef.current?.revealRange(range);
 
-      const options = { rate: rateRef.current, voice };
+      const options = { rate: rateRef.current, voice: voiceRef.current };
       const upcoming = sentencesRef.current[index + 1];
       if (upcoming) prefetchSentence(upcoming.text, options);
       const handle = speakSentence(sentence.text, options);
@@ -171,7 +177,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
       setHighlight(null);
       setStatus('idle');
     }
-  }, [apiRef, voice, onError]);
+  }, [apiRef, onError]);
 
   const start = useCallback(() => {
     const content = apiRef.current?.getContent();
@@ -219,6 +225,17 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     }
   }, [run]);
 
+  const setVoice = useCallback((value: string) => {
+    setChosenVoice(value);
+    voiceRef.current = value || voice;
+    try { localStorage.setItem(VOICE_STORAGE, value); } catch { /* ignore */ }
+    // Hear the new voice at once.
+    if (handleRef.current) {
+      stopSpeech();
+      void run(indexRef.current);
+    }
+  }, [run, voice]);
+
   const setSleepMinutes = useCallback((minutes: number | null) => {
     setSleepEndsAt(minutes ? Date.now() + minutes * 60_000 : null);
   }, []);
@@ -229,5 +246,5 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     setHighlight(null);
   }, []);
 
-  return { status, rate, position, sleepEndsAt, start, pause, resume, skip, stop, setRate, setSleepMinutes };
+  return { status, rate, voice: chosenVoice, position, sleepEndsAt, start, pause, resume, skip, stop, setRate, setVoice, setSleepMinutes };
 }

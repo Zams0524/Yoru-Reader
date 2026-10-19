@@ -15,6 +15,7 @@ import { syncJitenReview } from '../utils/jitenSync';
 // Direct reader engine imports
 import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
 import ReadAloudBar from './reader/ReadAloudBar';
+import ReadAloudSettings from './reader/ReadAloudSettings';
 import BookSearchPanel from './reader/BookSearchPanel';
 import HighlightNoteDialog from './reader/HighlightNoteDialog';
 import {
@@ -407,6 +408,7 @@ export default function Reader({
   const engineApiRef = useRef<ReaderEngineApi | null>(null);
   const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const showToast = useCallback((message: string, type = 'success') => {
@@ -2171,7 +2173,22 @@ export default function Reader({
           onSkip={readAloud.skip}
           onRate={readAloud.setRate}
           onSleep={readAloud.setSleepMinutes}
+          onSettings={() => setIsVoiceSettingsOpen(true)}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
+        />
+      )}
+
+      {isVoiceSettingsOpen && (
+        <ReadAloudSettings
+          voice={readAloud.voice}
+          rate={readAloud.rate}
+          sleepEndsAt={readAloud.sleepEndsAt}
+          onVoice={readAloud.setVoice}
+          onRate={readAloud.setRate}
+          onSleep={readAloud.setSleepMinutes}
+          onClose={() => setIsVoiceSettingsOpen(false)}
+          colors={colors}
+          lang={lang}
         />
       )}
 
