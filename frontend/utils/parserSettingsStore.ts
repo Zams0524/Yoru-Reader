@@ -47,6 +47,11 @@ function readLocal(): Record<string, any> {
   }
 }
 
+/** Synchronous read of a locally stored parser setting (null when unset). */
+export function getLocalParserSetting(key: string): any {
+  return readLocal()[key] ?? null;
+}
+
 let bridgeIdCounter = 0;
 
 function readFromExtension(keys: string[]): Promise<Record<string, any> | null> {
@@ -112,6 +117,7 @@ export async function writeParserSettings(entries: Record<string, any>): Promise
   }
 
   if ('wordStyleConfig' in entries) applyLocalWordStyles();
+  window.dispatchEvent(new CustomEvent('yoru-parser-settings-changed', { detail: { keys: Object.keys(entries) } }));
   if (usesLocalParserSettings()) return savedLocally;
   return (await writeToExtension(entries)) || savedLocally;
 }

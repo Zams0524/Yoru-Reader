@@ -10,6 +10,7 @@ import { synthesizeSpeechAzure } from '../utils/azureTtsService';
 import { updateDiscordReading, clearDiscordPresence } from '../utils/discordRpc';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
+import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
 import ReaderEngine from './reader/ReaderEngine';
@@ -1685,6 +1686,7 @@ export default function Reader({
     const previousState = getPreviousSrsState(currentCard);
     const isNew = previousState === State.New;
     db.addSrsHistory(word, grade, updatedCard.scheduled_days ?? updatedCard.interval ?? 0, updatedCard.source || '', isNew, previousState);
+    syncJitenReview(word, updatedCard.reading || '', grade);
     setSrsCard(db.getSrsCard(word));
     
     if (wordStatuses[word] !== 'learning') {

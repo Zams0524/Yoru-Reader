@@ -6,6 +6,7 @@ import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
 import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard } from '../utils/fsrs';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
+import { syncJitenReview } from '../utils/jitenSync';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -689,6 +690,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
 
     db.saveSrsCard(word, updatedCard);
     db.addSrsHistory(word, grade, updatedCard.scheduled_days ?? updatedCard.interval ?? 0, updatedCard.source || '', isNew, previousState);
+    syncJitenReview(word, updatedCard.reading || '', grade);
 
     const isLearningStep = [State.Learning, State.Relearning].includes(updatedCard.state)
       && new Date(updatedCard.due).getTime() > Date.now();

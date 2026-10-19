@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
-import { tokenizeJapaneseText, setupNativeYoruParser } from '../../utils/yoruParserNative';
+import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph } from '../../utils/yoruParserNative';
+import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
 export interface Chapter {
   title: string;
@@ -77,11 +78,19 @@ function escapeHtmlAttribute(value: string): string {
   }[char] as string));
 }
 
+/** A paragraph rendered with the local parser while it waits for Jiten's parse. */
+interface PendingJitenParagraph {
+  paragraphId: number;
+  text: string;
+  html: string;
+}
+
 function renderSectionContent(
   rawContent: string,
   startParagraphId: number,
   startChars: number,
   wordStatuses: Record<string, string>,
+  jitenPending: PendingJitenParagraph[] | null,
 ): string {
   let paragraphId = startParagraphId;
   let charAccum = startChars;
@@ -124,7 +133,15 @@ function renderSectionContent(
       .replace(/[｀`]/g, '、')
       .replace(/[゜°]/g, '。');
     const jpCount = countJapaneseChars(plainText);
-    const tokenizedHtml = tokenizeJapaneseText(processed, wordStatuses);
+    let tokenizedHtml: string;
+    const jitenText = jitenPending ? jitenPlainText(processed) : '';
+    const jitenTokens = jitenText ? getCachedJitenTokens(jitenText) : undefined;
+    if (jitenTokens) {
+      tokenizedHtml = renderJitenParagraph(processed, jitenTokens, getJitenWord);
+    } else {
+      tokenizedHtml = tokenizeJapaneseText(processed, wordStatuses);
+      if (jitenPending && jitenText.trim()) jitenPending.push({ paragraphId, text: jitenText, html: processed });
+    }
     const html = `<p class="chapter-content" index="${paragraphId}" characumm="${charAccum}">${tokenizedHtml}</p>`;
     charAccum += jpCount;
     paragraphId++;
@@ -798,8 +815,23 @@ function ReaderEngineComponent({
     };
   }, [verticalPadding, horizontalPadding, paginated, pageIndex, applyPagePosition]);
 
+  // Jiten parser (when the user saved a Jiten API key and there is no reader extension).
+  const [jitenEnabled, setJitenEnabled] = useState(() => isJitenParserEnabled());
+  useEffect(() => {
+    const refresh = () => setJitenEnabled(isJitenParserEnabled());
+    window.addEventListener('yoru-parser-settings-changed', refresh);
+    const unsubscribe = onJitenChange(refresh);
+    return () => {
+      window.removeEventListener('yoru-parser-settings-changed', refresh);
+      unsubscribe();
+    };
+  }, []);
+  const jitenPendingRef = useRef<PendingJitenParagraph[]>([]);
+
   // Build current section HTML
   const currentHtml = useMemo(() => {
+    const pending: PendingJitenParagraph[] = [];
+    jitenPendingRef.current = pending;
     const renderSection = (section: Section) => {
       const chapterContent = book.chapters?.[section.chapterIndex]?.content || '';
       return renderSectionContent(
@@ -807,6 +839,7 @@ function ReaderEngineComponent({
         section.startParagraphId,
         section.startChars,
         wordStatuses,
+        jitenEnabled ? pending : null,
       );
     };
 
@@ -815,7 +848,32 @@ function ReaderEngineComponent({
       return currentSection ? renderSection(currentSection) : '';
     }
     return sections.map(renderSection).join('');
-  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady]);
+  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled]);
+
+  // Ask Jiten for the paragraphs on screen, then swap them in place (same text, so the page does not move).
+  useEffect(() => {
+    if (!jitenEnabled) return;
+    let pending = jitenPendingRef.current;
+    if (!paginated) {
+      // Continuous mode renders the whole book: only parse around the current section.
+      const near = sections.slice(Math.max(0, currSection - 1), currSection + 2);
+      pending = pending.filter((item) => near.some((section) => item.paragraphId >= section.startParagraphId && item.paragraphId <= section.lastIndex));
+    }
+    if (pending.length === 0) return;
+    // Not cancelled on re-run: a paragraph that left the page simply is not found, and one still
+    // shown must be swapped even if a newer request skipped it as already in flight.
+    parseWithJiten(pending.map((item) => item.text)).then((parsed) => {
+      const content = contentRef.current;
+      if (!content || parsed.length === 0) return;
+      for (const item of pending) {
+        const tokens = getCachedJitenTokens(item.text);
+        const element = content.querySelector(`p.chapter-content[index="${item.paragraphId}"]`);
+        if (tokens && element && !element.querySelector('[data-jiten]')) {
+          element.innerHTML = renderJitenParagraph(item.html, tokens, getJitenWord);
+        }
+      }
+    });
+  }, [currentHtml, jitenEnabled, paginated, sections, currSection]);
 
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     if (onClick) onClick(e);

@@ -6,6 +6,7 @@ const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import { db } from './utils/db';
 import { ankiConnectRequest } from './utils/ankiConnect';
+import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 
@@ -593,7 +594,16 @@ export default function App() {
     }
   };
 
+  // Send Jiten anything queued while offline or before the app was closed.
+  useEffect(() => {
+    void flushJitenQueue();
+    const flush = () => { void flushJitenQueue(); };
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
+  }, []);
+
   const handleSetWordStatus = async (word: string, status: string, wordData: any = null) => {
+    syncJitenWordStatus(word, wordData?.reading || '', status, wordStatuses[word]);
     const updatedStatuses = db.setWordStatus(word, status);
     setWordStatuses(updatedStatuses);
 

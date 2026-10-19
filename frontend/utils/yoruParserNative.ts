@@ -232,3 +232,100 @@ export async function setupNativeYoruParser(onWordClick?: (word: string, element
     document.removeEventListener('click', handleNativeClick);
   };
 }
+
+// ── Jiten parser output ────────────────────────────────────────────────
+
+export interface JitenRenderToken {
+  start: number;
+  end: number;
+  key: string;
+}
+
+export interface JitenRenderWord {
+  spelling: string;
+  reading: string;
+  states: string[];
+}
+
+interface ParagraphUnit {
+  start: number;
+  end: number;
+  html: string;
+}
+
+// Splits a sanitized paragraph into units over its plain text (ruby bases count, furigana does not).
+function splitParagraphUnits(text: string): { plain: string; units: ParagraphUnit[] } {
+  const parts = text.split(/(<ruby\b[^>]*>[\s\S]*?<\/ruby>|<img\b[^>]*>)/gi);
+  const units: ParagraphUnit[] = [];
+  let plain = '';
+
+  for (const part of parts) {
+    if (!part) continue;
+    const rubyData = readRubyMarkup(part);
+    if (rubyData) {
+      const start = plain.length;
+      plain += rubyData.surface;
+      units.push({ start, end: plain.length, html: rubyData.reading ? rubyData.html : escapeHtmlText(rubyData.surface) });
+      continue;
+    }
+    const imageSource = readImageSource(part);
+    if (imageSource !== null) {
+      units.push({
+        start: plain.length,
+        end: plain.length,
+        html: `<img src="${escapeHtmlText(imageSource)}" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`,
+      });
+      continue;
+    }
+    for (let i = 0; i < part.length; i++) {
+      units.push({ start: plain.length + i, end: plain.length + i + 1, html: escapeHtmlText(part[i]) });
+    }
+    plain += part;
+  }
+  return { plain, units };
+}
+
+/** The text Jiten parses for a paragraph: what the reader shows, without furigana. */
+export function jitenPlainText(text: string): string {
+  return splitParagraphUnits(text).plain;
+}
+
+/** Renders a paragraph with Jiten's word boundaries and card states. */
+export function renderJitenParagraph(
+  text: string,
+  tokens: JitenRenderToken[],
+  getWord: (key: string) => JitenRenderWord | undefined,
+): string {
+  const { units } = splitParagraphUnits(text);
+  let html = '';
+  let tokenIndex = 0;
+  let openEnd = -1;
+
+  for (const unit of units) {
+    const isText = unit.end > unit.start;
+    if (openEnd >= 0 && isText && unit.start >= openEnd) {
+      html += '</span>';
+      openEnd = -1;
+    }
+    if (openEnd < 0 && isText) {
+      while (tokenIndex < tokens.length && tokens[tokenIndex].end <= unit.start) tokenIndex++;
+      const token = tokens[tokenIndex];
+      if (token && token.start < unit.end && token.end > unit.start) {
+        const word = getWord(token.key);
+        const states = word?.states?.length ? word.states.join(' ') : 'new';
+        const spelling = word?.spelling || '';
+        html += `<span class="jiten-word ${escapeHtmlText(states)}" data-jiten="${escapeHtmlText(token.key)}"`
+          + (spelling ? ` data-word="${escapeHtmlText(spelling)}"` : '')
+          + (word?.reading ? ` data-reading="${escapeHtmlText(word.reading)}"` : '')
+          + '>';
+        openEnd = token.end;
+        tokenIndex++;
+      }
+    }
+    // A ruby base is never split: a word that ends inside it takes the whole base.
+    if (openEnd >= 0 && unit.end > openEnd) openEnd = unit.end;
+    html += unit.html;
+  }
+  if (openEnd >= 0) html += '</span>';
+  return html;
+}

@@ -4,7 +4,15 @@ import {
   writeParserSettings as writeSettings,
   type WordEffect,
   type WordStyleThemeConfig,
+  usesLocalParserSettings,
 } from '../../utils/parserSettingsStore';
+import {
+  flushJitenQueue,
+  getJitenConnectionState,
+  getPendingJitenSyncCount,
+  onJitenChange,
+  testJitenApiKey,
+} from '../../utils/jitenSync';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface YoruParserSettingsProps {
@@ -56,6 +64,9 @@ interface SettingsValues {
   jitenDisableReviews: boolean;
   jitenUseTwoGrades: boolean;
   jitenAutoMineOnReview: boolean;
+  // jiten.moe account
+  jitenApiKey: string;
+  jitenUseParser: boolean;
   // Keybinds
   parseKey: string;
   showPopupKey: string;
@@ -275,6 +286,8 @@ const DEFAULTS: SettingsValues = {
   jitenDisableReviews: false,
   jitenUseTwoGrades: false,
   jitenAutoMineOnReview: false,
+  jitenApiKey: '',
+  jitenUseParser: true,
   parseKey: 'Alt+P',
   showPopupKey: 'Shift',
   lookupSelectionKey: 'Alt+L',
@@ -449,6 +462,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         jitenDisableReviews: parseBool(safeVals.jitenDisableReviews, DEFAULTS.jitenDisableReviews),
         jitenUseTwoGrades: parseBool(safeVals.jitenUseTwoGrades, DEFAULTS.jitenUseTwoGrades),
         jitenAutoMineOnReview: parseBool(safeVals.jitenAutoMineOnReview, DEFAULTS.jitenAutoMineOnReview),
+        jitenApiKey: typeof safeVals.jitenApiKey === 'string' ? safeVals.jitenApiKey : DEFAULTS.jitenApiKey,
+        jitenUseParser: parseBool(safeVals.jitenUseParser, DEFAULTS.jitenUseParser),
         parseKey: parseKeybindDisplay(safeVals.parseKey, DEFAULTS.parseKey),
         showPopupKey: parseKeybindDisplay(safeVals.showPopupKey, DEFAULTS.showPopupKey),
         lookupSelectionKey: parseKeybindDisplay(safeVals.lookupSelectionKey, DEFAULTS.lookupSelectionKey),
@@ -595,6 +610,20 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   // ── Tab Content Renderers ──────────────────────────────────────────
   const renderGeneral = () => (
     <>
+      {/* jiten.moe account */}
+      <div style={sectionTitleStyle}>{t('Sincronizar con Jiten', 'Sync with Jiten')}</div>
+      <JitenAccountCard
+        apiKey={settings.jitenApiKey}
+        useParser={settings.jitenUseParser}
+        onSaveKey={(v) => updateSetting('jitenApiKey', v)}
+        onToggleParser={(v) => updateSetting('jitenUseParser', v)}
+        t={t}
+        colors={colors}
+        cardStyle={cardStyle}
+        labelStyle={labelStyle}
+        descStyle={descStyle}
+      />
+
       {/* Appearance */}
       <div style={sectionTitleStyle}>{t('Apariencia del Parser', 'Parser Appearance')}</div>
       <div style={cardStyle}>
@@ -1528,6 +1557,157 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 };
 
 // ── Sub-components ─────────────────────────────────────────────────────
+
+interface JitenAccountCardProps {
+  apiKey: string;
+  useParser: boolean;
+  onSaveKey: (key: string) => void;
+  onToggleParser: (value: boolean) => void;
+  t: (es: string, en: string) => string;
+  colors: YoruParserSettingsProps['colors'];
+  cardStyle: React.CSSProperties;
+  labelStyle: React.CSSProperties;
+  descStyle: React.CSSProperties;
+}
+
+const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
+  apiKey, useParser, onSaveKey, onToggleParser, t, colors, cardStyle, labelStyle, descStyle,
+}) => {
+  const [draft, setDraft] = useState(apiKey);
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'rejected' | 'offline' | null>(null);
+  const [, setTick] = useState(0);
+
+  useEffect(() => setDraft(apiKey), [apiKey]);
+  useEffect(() => onJitenChange(() => setTick((n) => n + 1)), []);
+
+  if (!usesLocalParserSettings()) {
+    return (
+      <div style={cardStyle}>
+        <div style={labelStyle}>{t('Gestionado por la extensión', 'Handled by the extension')}</div>
+        <div style={descStyle}>
+          {t('En escritorio, la extensión de lectura se conecta a Jiten con su propia configuración.', 'On desktop the reader extension connects to Jiten with its own settings.')}
+        </div>
+      </div>
+    );
+  }
+
+  const saveAndTest = async () => {
+    const key = draft.trim();
+    if (key !== apiKey) onSaveKey(key);
+    if (!key) {
+      setTestResult(null);
+      return;
+    }
+    setTesting(true);
+    const result = await testJitenApiKey(key);
+    setTesting(false);
+    setTestResult(result);
+    if (result === 'ok') void flushJitenQueue();
+  };
+
+  const state = getJitenConnectionState();
+  const pending = getPendingJitenSyncCount();
+  const shownResult = testResult ?? (apiKey ? (state === 'rejected' ? 'rejected' : state === 'offline' ? 'offline' : null) : null);
+  const statusText = shownResult === 'ok'
+    ? t('Conectado a tu cuenta de Jiten.', 'Connected to your Jiten account.')
+    : shownResult === 'rejected'
+      ? t('Jiten rechazó la clave. Revísala.', 'Jiten rejected the key. Check it.')
+      : shownResult === 'offline'
+        ? t('No se pudo contactar con Jiten. Se reintentará.', 'Could not reach Jiten. It will retry.')
+        : '';
+  const statusColor = shownResult === 'ok' ? '#4ade80' : shownResult === 'rejected' ? '#f87171' : colors.textMuted;
+
+  const inputStyle: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    padding: '8px 10px',
+    borderRadius: '8px',
+    border: `1px solid ${colors.border}`,
+    background: colors.cardBg,
+    color: colors.textMain,
+    fontSize: '0.85rem',
+    fontFamily: 'ui-monospace, monospace',
+    outline: 'none',
+  };
+  const buttonStyle: React.CSSProperties = {
+    padding: '8px 12px',
+    borderRadius: '8px',
+    border: `1px solid ${colors.border}`,
+    background: colors.cardBg,
+    color: colors.textMain,
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+
+  return (
+    <>
+      <div style={cardStyle}>
+        <div style={labelStyle}>{t('Clave API de Jiten', 'Jiten API key')}</div>
+        <div style={descStyle}>
+          {t(
+            'Cópiala en jiten.moe → Ajustes → API. Con ella, Yoru usa el parser de Jiten, colorea las palabras con tus estados de Jiten y envía a Jiten tus repasos y palabras marcadas.',
+            "Copy it from jiten.moe → Settings → API. With it, Yoru uses Jiten's parser, colours words with your Jiten states and sends your reviews and marked words to Jiten.",
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+          <input
+            type={showKey ? 'text' : 'password'}
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setTestResult(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void saveAndTest(); }}
+            placeholder={t('Pega tu clave aquí', 'Paste your key here')}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            style={inputStyle}
+            aria-label={t('Clave API de Jiten', 'Jiten API key')}
+          />
+          <button type="button" style={buttonStyle} onClick={() => setShowKey((v) => !v)}>
+            {showKey ? t('Ocultar', 'Hide') : t('Ver', 'Show')}
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => void saveAndTest()}
+            disabled={testing}
+            style={{ ...buttonStyle, background: colors.accent, color: '#111', border: 'none', opacity: testing ? 0.6 : 1 }}
+          >
+            {testing ? t('Comprobando…', 'Checking…') : t('Guardar y comprobar', 'Save and check')}
+          </button>
+          {apiKey && (
+            <button type="button" style={buttonStyle} onClick={() => { setDraft(''); setTestResult(null); onSaveKey(''); }}>
+              {t('Desconectar', 'Disconnect')}
+            </button>
+          )}
+        </div>
+        {statusText && <div style={{ ...descStyle, color: statusColor, marginTop: '8px' }}>{statusText}</div>}
+        {apiKey && pending > 0 && (
+          <div style={{ ...descStyle, marginTop: '4px' }}>
+            {t(`${pending} cambios esperando para enviarse a Jiten.`, `${pending} changes waiting to be sent to Jiten.`)}
+          </div>
+        )}
+      </div>
+      {apiKey && (
+        <div style={cardStyle}>
+          <ToggleRow
+            label={t('Usar el parser de Jiten', "Use Jiten's parser")}
+            desc={t('Divide el texto en palabras con Jiten (necesita internet). Sin conexión se usa el parser local.', 'Splits text into words with Jiten (needs internet). Offline, the local parser is used.')}
+            value={useParser}
+            onChange={onToggleParser}
+            colors={colors}
+            labelStyle={labelStyle}
+            descStyle={descStyle}
+          />
+        </div>
+      )}
+    </>
+  );
+};
 
 interface ToggleRowProps {
   label: string;
