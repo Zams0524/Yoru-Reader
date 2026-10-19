@@ -8,12 +8,11 @@ import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
 import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
-import { App as CapacitorApp } from '@capacitor/app';
 import { useConfirm } from './ConfirmModal';
-import stableManifest from '../../stable.json';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
 import AppAbout from './AppAbout';
+import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -115,41 +114,17 @@ const Library = React.memo(function Library({
   const { showConfirm, confirmModal } = useConfirm();
   const [deleteAllState, setDeleteAllState] = useState(null); // null | 'confirm' | 'deleting' | 'success'
 
-  // Updates states
+  // Updates: downloaded and applied inside the app on every platform (hooks/useAppUpdater.ts).
+  const { state: updaterState, mode: updaterMode, check: checkForAppUpdate, updateNow: runAppUpdate, openFallback: openUpdateFallback } = useAppUpdater();
   const [checkingUpdates, setCheckingUpdates] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [latestBackendVersion, setLatestBackendVersion] = useState('Unknown');
-  const [latestAppVersion, setLatestAppVersion] = useState('Unknown');
-  const [backendStatus, setBackendStatus] = useState('up-to-date'); // 'up-to-date' | 'out-of-date'
-  const [appStatus, setAppStatus] = useState('up-to-date'); // 'up-to-date' | 'out-of-date'
-  const [currentBackendVersion, setCurrentBackendVersion] = useState(stableManifest.backendVersion);
-  const [currentAppVersion, setCurrentAppVersion] = useState(stableManifest.appVersion || '1.1.4');
-  const [currentHotVersion, setCurrentHotVersion] = useState(stableManifest.hotUpdateVersion || '1.1.4');
-  const [latestHotVersion, setLatestHotVersion] = useState('Unknown');
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
-  const [showAppUpdateModal, setShowAppUpdateModal] = useState(false);
-  const [showDownloadCompleteNotif, setShowDownloadCompleteNotif] = useState(false);
-  const [remoteManifest, setRemoteManifest] = useState<any>(null);
+  const updating = updaterState.status === 'downloading' || updaterState.status === 'installing';
+  const updateProgress = updaterState.progress?.percent ?? 0;
+  const updateAvailable = Boolean(updaterState.kind) && ['available', 'ready', 'error'].includes(updaterState.status);
+  const currentAppVersion = updaterState.current.appVersion;
+  const latestAppVersion = updaterState.latest?.appVersion;
   const [bindingKeyAction, setBindingKeyAction] = useState(null);
-  const [updateProgress, setUpdateProgress] = useState(0);
-  const [updatePhase, setUpdatePhase] = useState<'downloading' | 'installing' | null>(null);
   const [showTutorialModal, setShowTutorialModal] = useState<boolean>(() => !localStorage.getItem('yoru_tutorial_seen_v1'));
-
-  useEffect(() => {
-    if (window.electronAPI && window.electronAPI.onUpdateDownloadProgress) {
-      const unsubscribe = window.electronAPI.onUpdateDownloadProgress((data: any) => {
-        if (data && typeof data.percent === 'number') {
-          setUpdateProgress(data.percent);
-        }
-        if (data && data.status) {
-          setUpdatePhase(data.status);
-        }
-      });
-      return () => {
-        unsubscribe();
-      };
-    }
-  }, []);
 
   useEffect(() => {
     if (!bindingKeyAction) return;
@@ -194,83 +169,18 @@ const Library = React.memo(function Library({
     };
   }, [bindingKeyAction, settings, onSaveSettings]);
 
-  // --- Semver comparison helper ---
-  const isNewerVersion = (remote: string, local: string) => {
-    if (!remote || !local) return false;
-    const rParts = remote.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
-    const lParts = local.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
-    const maxLen = Math.max(rParts.length, lParts.length);
-    for (let i = 0; i < maxLen; i++) {
-      const rv = rParts[i] || 0;
-      const lv = lParts[i] || 0;
-      if (rv > lv) return true;
-      if (rv < lv) return false;
-    }
-    return false;
-  };
-
-  // Android compares against the installed APK's versionName (mobile-stable.json),
-  // desktop against the bundled stable.json.
-  const getLocalAppVersion = async (): Promise<string> => {
-    if (Capacitor.getPlatform() === 'android') {
-      try {
-        return (await CapacitorApp.getInfo()).version;
-      } catch (_) { /* fall back to the bundled manifest */ }
-    }
-    return stableManifest.appVersion;
-  };
-
-  const fetchRemoteStable = async () => {
-    const isAndroid = (window as any).Capacitor && (window as any).Capacitor.getPlatform && (window as any).Capacitor.getPlatform() === 'android';
-    const urls = isAndroid
-      ? [
-          'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/mobile/mobile-stable.json',
-          'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/master/mobile/mobile-stable.json'
-        ]
-      : [
-          'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/stable.json',
-          'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/master/stable.json'
-        ];
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          return data as { appVersion: string; backendVersion: string; url: string; description: string; apkUrl?: string; hotUpdateUrl?: string };
-        }
-      } catch (_) { /* try next */ }
-    }
-    return null;
-  };
+  // Desktop builds with backend/updater.cjs are checked from App.tsx (with background download);
+  // Android and older desktop builds check here when the library opens.
+  useEffect(() => {
+    if (updaterMode === 'electron' || updaterMode === 'none') return;
+    checkForAppUpdate().then(state => {
+      if (state.status === 'available') setShowUpdateBanner(true);
+    });
+  }, []);
 
   useEffect(() => {
-    const checkForUpdates = async () => {
-      try {
-        const remote = await fetchRemoteStable();
-        if (!remote) {
-          console.warn('Could not fetch remote stable.json — offline or repo unreachable.');
-          return;
-        }
-
-        const appNewer = isNewerVersion(remote.appVersion, await getLocalAppVersion());
-        const backendNewer = isNewerVersion(remote.backendVersion, stableManifest.backendVersion);
-
-        setLatestAppVersion(remote.appVersion);
-        setLatestBackendVersion(remote.backendVersion);
-        setRemoteManifest(remote);
-        setAppStatus(appNewer ? 'out-of-date' : 'up-to-date');
-        setBackendStatus(backendNewer ? 'out-of-date' : 'up-to-date');
-
-        if (appNewer || backendNewer) {
-          setShowUpdateBanner(true);
-        }
-      } catch (err) {
-        console.error('Error checking updates:', err);
-      }
-    };
-
-    checkForUpdates();
-  }, []);
+    if (updaterState.status === 'available' || updaterState.status === 'ready') setShowUpdateBanner(true);
+  }, [updaterState.status]);
 
   useEffect(() => {
     updateDiscordLibrary(settings);
@@ -279,125 +189,37 @@ const Library = React.memo(function Library({
   const handleCheckUpdates = async () => {
     setCheckingUpdates(true);
     try {
-      const remote = await fetchRemoteStable();
-      if (!remote) {
-        showToast(
-          lang === 'es'
-            ? 'No se pudo conectar al repositorio. Verifica tu conexión a internet.'
-            : 'Could not connect to repository. Check your internet connection.',
-          'error'
-        );
-        setCheckingUpdates(false);
-        return;
-      }
-
-      const appNewer = isNewerVersion(remote.appVersion, await getLocalAppVersion());
-      const backendNewer = isNewerVersion(remote.backendVersion, stableManifest.backendVersion);
-
-      setLatestAppVersion(remote.appVersion);
-      setLatestBackendVersion(remote.backendVersion);
-      setRemoteManifest(remote);
-      setAppStatus(appNewer ? 'out-of-date' : 'up-to-date');
-      setBackendStatus(backendNewer ? 'out-of-date' : 'up-to-date');
-
-      if (appNewer || backendNewer) {
+      const state = await checkForAppUpdate();
+      if (state.status === 'error') {
+        showToast(lang === 'es' ? 'No se pudo buscar actualizaciones. Verifica tu conexión a internet.' : 'Could not check for updates. Check your internet connection.', 'error');
+      } else if (state.status === 'available' || state.status === 'ready') {
         setShowUpdateBanner(true);
-        showToast(
-          lang === 'es'
-            ? 'Nuevas actualizaciones encontradas.'
-            : 'New updates found.',
-          'info'
-        );
-      } else {
-        showToast(
-          lang === 'es'
-            ? 'Ya tienes la última versión.'
-            : 'You are up to date.',
-          'success'
-        );
+        showToast(lang === 'es' ? 'Nueva actualización encontrada.' : 'New update found.', 'info');
+      } else if (state.status === 'up-to-date') {
+        showToast(lang === 'es' ? 'Ya tienes la última versión.' : 'You are up to date.', 'success');
+      } else if (state.status === 'disabled') {
+        showToast(lang === 'es' ? 'Las actualizaciones no están disponibles en esta versión.' : 'Updates are not available in this build.', 'info');
       }
     } catch (err) {
       console.error('Error checking updates:', err);
-      showToast(
-        lang === 'es'
-          ? 'Error al buscar actualizaciones.'
-          : 'Error checking for updates.',
-        'error'
-      );
+      showToast(lang === 'es' ? 'Error al buscar actualizaciones.' : 'Error checking for updates.', 'error');
     }
     setCheckingUpdates(false);
   };
 
-  const handleTriggerApkInstall = async () => {
-    setShowAppUpdateModal(false);
-    setShowDownloadCompleteNotif(true);
-    await handleUpdateNow();
+  const handleUpdateNow = () => {
+    if (updating) return;
+    runAppUpdate();
   };
 
-  const handleUpdateNow = async () => {
-    const isAndroid = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
-    const isElectron = window.electronAPI !== undefined;
+  const updateErrorMessage = updaterState.status === 'error' || updaterState.error === 'android-permission'
+    ? (updaterState.error === 'android-permission'
+        ? (lang === 'es'
+            ? 'Permite «Instalar apps desconocidas» para Yoru Reader y vuelve a pulsar «Actualizar ahora».'
+            : 'Allow "Install unknown apps" for Yoru Reader, then tap "Update now" again.')
+        : `${lang === 'es' ? 'No se pudo actualizar' : 'Update failed'}: ${updaterState.error || ''}`)
+    : null;
 
-    if (isElectron) {
-      setUpdating(true);
-      setUpdateProgress(0);
-      setUpdatePhase('downloading');
-      
-      const version = remoteManifest?.appVersion || stableManifest.appVersion || '1.1.4';
-      const targetUrl = remoteManifest?.windowsUrl || remoteManifest?.url || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${version}/Yoru-Reader.Setup.${version}.exe`;
-      
-      try {
-        await window.electronAPI.downloadAndInstallUpdate(targetUrl);
-      } catch (err: any) {
-        console.error('Error during auto-update:', err);
-        setUpdating(false);
-        setUpdatePhase(null);
-        showToast(
-          lang === 'es'
-            ? `Error al descargar actualización: ${err?.message || 'Revisa tu conexión e intenta de nuevo'}`
-            : `Update download error: ${err?.message || 'Check your connection and try again'}`,
-          'error'
-        );
-      }
-    } else {
-      setUpdating(true);
-
-      // Detect platform for correct download link
-      const version = remoteManifest?.appVersion || stableManifest.appVersion || '1.1.4';
-      const ua = navigator.userAgent.toLowerCase();
-      const platform = ((navigator as any).userAgentData?.platform || navigator.platform || '').toLowerCase();
-      const isMacArm = (platform.includes('mac') || ua.includes('mac')) && (ua.includes('arm') || ua.includes('apple'));
-      const isMac = platform.includes('mac') || ua.includes('macintosh');
-      const isLinux = (platform.includes('linux') || ua.includes('linux')) && !isAndroid;
-
-      let targetUrl: string;
-      if (isAndroid) {
-        targetUrl = remoteManifest?.apkUrl || `https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/mobile/releases/Yoru-Reader-v${version}.apk`;
-      } else if (isMacArm) {
-        targetUrl = remoteManifest?.macArmUrl || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${version}/Yoru-Reader-${version}-arm64.dmg`;
-      } else if (isMac) {
-        targetUrl = remoteManifest?.macUrl || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${version}/Yoru-Reader-${version}-x64.dmg`;
-      } else if (isLinux) {
-        targetUrl = remoteManifest?.linuxUrl || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${version}/Yoru-Reader-${version}-x86_64.flatpak`;
-      } else {
-        // Default: Windows
-        targetUrl = remoteManifest?.windowsUrl || remoteManifest?.url || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${version}/Yoru-Reader.Setup.${version}.exe`;
-      }
-        
-      window.open(targetUrl, '_blank');
-      
-      setTimeout(() => {
-        setUpdating(false);
-        showToast(
-          lang === 'es'
-            ? 'Se abrió la página de descargas en tu navegador. Descarga e instala la última versión.'
-            : 'Download page opened in your browser. Download and install the latest version.',
-          'info'
-        );
-      }, 1500);
-    }
-  };
-  
   // Book Manager states
   const [isParsing, setIsParsing] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -4736,19 +4558,71 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Actualizaciones */}
-          {matchesSearch('updates update actualizaciones actualizar version check beta') && (settingsSearchQuery || activeSettingsSection === 'sec-updates') && (
+          {matchesSearch('updates update actualizaciones actualizar version check beta') && (settingsSearchQuery || activeSettingsSection === 'sec-updates') && (() => {
+            const isAndroidUpdater = updaterMode === 'android';
+            const latest = updaterState.latest;
+            const appOutdated = Boolean(latest) && isNewerVersion(latest.appVersion, updaterState.current.appVersion);
+            // When the installer is outdated, the new interface comes inside it.
+            const uiOutdated = Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
+            const ready = updaterState.status === 'ready';
+            const canUpdate = updateAvailable && !updating;
+            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false) => (
+              <div style={{
+                background: 'var(--bg-card)',
+                border: `1px solid ${outdated ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-light)'}`,
+                borderRadius: '10px',
+                padding: '14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>{title}</span>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {lang === 'es' ? 'Actual: ' : 'Current: '}{current || '—'}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {lang === 'es' ? 'Última: ' : 'Latest: '}{latestVersion || '—'}
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: outdated ? '#10b981' : '#3b82f6' }}>
+                  {outdated
+                    ? (lang === 'es' ? 'Disponible' : 'Available')
+                    : latest ? (lang === 'es' ? 'Actualizado' : 'Up to date') : '—'}
+                </span>
+              </div>
+            );
+            const progressLabel = updaterState.status === 'installing'
+              ? (isAndroidUpdater
+                  ? (lang === 'es' ? 'Confirma la instalación en el aviso de Android.' : 'Confirm the install in the Android prompt.')
+                  : (lang === 'es' ? 'Instalando y reiniciando Yoru Reader...' : 'Installing and restarting Yoru Reader...'))
+              : ready
+                ? (lang === 'es' ? 'Descarga completada.' : 'Download complete.')
+                : updateProgress >= 0
+                  ? (lang === 'es' ? 'Descargando actualización...' : 'Downloading update...')
+                  : (lang === 'es' ? 'Descargando actualización (tamaño desconocido)...' : 'Downloading update (unknown size)...');
+            const updateButtonLabel = updaterState.status === 'downloading'
+              ? (lang === 'es' ? `Descargando (${Math.max(0, updateProgress)}%)...` : `Downloading (${Math.max(0, updateProgress)}%)...`)
+              : updaterState.status === 'installing'
+                ? (lang === 'es' ? 'Instalando...' : 'Installing...')
+                : ready && updaterState.kind === 'ota'
+                  ? (lang === 'es' ? 'Aplicar ahora' : 'Apply now')
+                  : ready
+                    ? (isAndroidUpdater ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install'))
+                    : (lang === 'es' ? 'Actualizar ahora' : 'Update now');
+            return (
             <div id="sec-updates" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <RefreshCw size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Actualizaciones' : 'Updates'}</span>
               </h3>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
                 {/* Auto Update Checkbox */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                   <span>{lang === 'es' ? 'Actualización automática:' : 'Automatic updates:'}</span>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={settings.autoUpdate || false}
                     onChange={(e) => onSaveSettings({ ...settings, autoUpdate: e.target.checked })}
                     style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
@@ -4758,8 +4632,8 @@ const Library = React.memo(function Library({
                 {/* Beta Updates Checkbox */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                   <span>{lang === 'es' ? 'Actualizaciones beta:' : 'Beta updates:'}</span>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={settings.betaUpdates || false}
                     onChange={(e) => onSaveSettings({ ...settings, betaUpdates: e.target.checked })}
                     style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
@@ -4767,96 +4641,34 @@ const Library = React.memo(function Library({
                 </div>
 
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 4px 0', lineHeight: 1.4 }}>
-                  {lang === 'es' ? 'Comprueba tanto el paquete del backend como la aplicación de escritorio desde aquí.' : 'Check both the backend package and the desktop application from here.'}
+                  {isAndroidUpdater
+                    ? (lang === 'es'
+                        ? 'La nueva versión se descarga dentro de la app; Android solo te pedirá confirmar la instalación.'
+                        : 'The new version downloads inside the app; Android only asks you to confirm the install.')
+                    : (lang === 'es'
+                        ? 'Las actualizaciones se descargan e instalan dentro de la app. Con la actualización automática se descargan en segundo plano y se instalan al cerrar Yoru Reader.'
+                        : 'Updates download and install inside the app. With automatic updates on, they download in the background and install when you close Yoru Reader.')}
                 </p>
 
-                {/* Card 1: Backend de Yoru Reader */}
-                <div style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '10px',
-                  padding: '14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      Backend de Yoru Reader
-                    </span>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {lang === 'es' ? 'Actual: ' : 'Current: '}{currentBackendVersion}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {lang === 'es' ? 'Última: ' : 'Latest: '}{latestBackendVersion}
-                    </div>
-                  </div>
-                  <span 
-                    onClick={() => {
-                      if (backendStatus !== 'up-to-date') {
-                        handleUpdateNow();
-                      }
-                    }}
-                    style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      color: backendStatus === 'up-to-date' ? '#3b82f6' : 'var(--primary)',
-                      cursor: backendStatus === 'up-to-date' ? 'default' : 'pointer',
-                      textDecoration: backendStatus === 'up-to-date' ? 'none' : 'underline'
-                    }}
-                  >
-                    {backendStatus === 'up-to-date' ? (lang === 'es' ? 'Actualizado' : 'Updated') : (lang === 'es' ? 'Actualizar' : 'Update')}
-                  </span>
-                </div>
+                {versionCard(
+                  isAndroidUpdater ? (lang === 'es' ? 'Aplicación Android' : 'Android app') : (lang === 'es' ? 'Aplicación de escritorio' : 'Desktop app'),
+                  updaterState.current.appVersion,
+                  latest?.appVersion,
+                  appOutdated
+                )}
 
-                {/* Card 2: Electron Application */}
-                <div style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '10px',
-                  padding: '14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      Aplicación Electron
-                    </span>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {lang === 'es' ? 'Actual: ' : 'Current: '}{currentAppVersion}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {lang === 'es' ? 'Última: ' : 'Latest: '}{latestAppVersion}
-                    </div>
-                  </div>
-                  <span 
-                    onClick={() => {
-                      if (appStatus !== 'up-to-date') {
-                        handleUpdateNow();
-                      }
-                    }}
-                    style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      color: appStatus === 'up-to-date' ? '#3b82f6' : 'var(--primary)',
-                      cursor: appStatus === 'up-to-date' ? 'default' : 'pointer',
-                      textDecoration: appStatus === 'up-to-date' ? 'none' : 'underline'
-                    }}
-                  >
-                    {appStatus === 'up-to-date' ? (lang === 'es' ? 'Actualizado' : 'Updated') : (lang === 'es' ? 'Actualizar' : 'Update')}
-                  </span>
-                </div>
+                {!isAndroidUpdater && versionCard(
+                  lang === 'es' ? 'Interfaz (actualización rápida)' : 'Interface (quick update)',
+                  updaterState.current.hotVersion,
+                  latest?.hotVersion,
+                  uiOutdated
+                )}
 
                 {/* Progress Bar */}
-                {updating && window.electronAPI && (
+                {(updating || ready) && (
                   <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      <span>
-                        {updatePhase === 'installing' || updateProgress >= 100
-                          ? (lang === 'es' ? '⚙️ Instalando actualización y reiniciando...' : '⚙️ Installing update and restarting...')
-                          : (lang === 'es' ? `📥 Descargando actualización... (${updateProgress}%)` : `📥 Downloading update... (${updateProgress}%)`)}
-                      </span>
+                      <span>{progressLabel}</span>
                       <span>{updateProgress >= 0 ? `${updateProgress}%` : ''}</span>
                     </div>
                     <div style={{
@@ -4869,10 +4681,28 @@ const Library = React.memo(function Library({
                       <div style={{
                         width: `${updateProgress >= 0 ? updateProgress : 0}%`,
                         height: '100%',
-                        background: updatePhase === 'installing' || updateProgress >= 100 ? '#10b981' : 'var(--primary)',
+                        background: ready || updaterState.status === 'installing' ? '#10b981' : 'var(--primary)',
                         transition: 'width 0.2s ease-out'
                       }} />
                     </div>
+                  </div>
+                )}
+
+                {updateErrorMessage && (
+                  <div style={{ fontSize: '0.82rem', color: '#f87171', lineHeight: 1.4 }}>
+                    {updateErrorMessage}
+                    {updaterState.status === 'error' && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          onClick={() => openUpdateFallback()}
+                          style={{ background: 'none', border: 'none', padding: 0, color: '#3b82f6', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit' }}
+                        >
+                          {lang === 'es' ? 'Descargar manualmente' : 'Download manually'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -4904,43 +4734,30 @@ const Library = React.memo(function Library({
                   <button
                     type="button"
                     onClick={handleUpdateNow}
-                    disabled={(appStatus === 'up-to-date' && backendStatus === 'up-to-date') || updating}
+                    disabled={!canUpdate}
                     style={{
                       flex: 1,
                       padding: '10px',
                       borderRadius: '8px',
                       fontSize: '0.85rem',
                       fontWeight: 600,
-                      background: ((appStatus === 'up-to-date' && backendStatus === 'up-to-date') || updating) ? 'var(--bg-card)' : 'rgba(16, 185, 129, 0.1)',
-                      border: ((appStatus === 'up-to-date' && backendStatus === 'up-to-date') || updating) ? '1px solid var(--border-light)' : '1px solid #10b981',
-                      color: ((appStatus === 'up-to-date' && backendStatus === 'up-to-date') || updating) ? 'var(--text-muted)' : '#10b981',
-                      cursor: ((appStatus === 'up-to-date' && backendStatus === 'up-to-date') || updating) ? 'not-allowed' : 'pointer',
+                      background: canUpdate ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)',
+                      border: canUpdate ? '1px solid #10b981' : '1px solid var(--border-light)',
+                      color: canUpdate ? '#10b981' : 'var(--text-muted)',
+                      cursor: canUpdate ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       transition: 'all 0.2s'
                     }}
                   >
-                    {updating ? (
-                      window.electronAPI ? (
-                        updatePhase === 'installing' || updateProgress >= 100 ? (
-                          lang === 'es' ? 'Instalando...' : 'Installing...'
-                        ) : (
-                          lang === 'es'
-                            ? `Descargando (${updateProgress}%)...`
-                            : `Downloading (${updateProgress}%)...`
-                        )
-                      ) : (
-                        lang === 'es' ? 'Actualizando...' : 'Updating...'
-                      )
-                    ) : (
-                      lang === 'es' ? 'Actualizar ahora' : 'Update now'
-                    )}
+                    {updateButtonLabel}
                   </button>
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Card: Danger Zone */}
           {matchesSearch('danger zone eliminar borrar todos datos irreversible reset clear storage') && (settingsSearchQuery || activeSettingsSection === 'sec-danger') && (
@@ -7535,22 +7352,14 @@ const Library = React.memo(function Library({
                   <RefreshCw size={20} className="animate-spin" style={{ color: '#3b82f6', animationDuration: '4s', flexShrink: 0 }} />
                   <div>
                     <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      {lang === 'es' 
-                        ? (appStatus === 'out-of-date' && backendStatus === 'out-of-date'
-                            ? '¡Actualización de Yoru (Aplicación y Backend) Disponible!'
-                            : appStatus === 'out-of-date'
-                                ? '¡Actualización de Aplicación Yoru Disponible!'
-                                : '¡Actualización de Backend de Yoru Disponible!')
-                        : (appStatus === 'out-of-date' && backendStatus === 'out-of-date'
-                            ? 'Yoru Update (Application & Backend) Available!'
-                            : appStatus === 'out-of-date'
-                                ? 'Yoru Application Update Available!'
-                                : 'Yoru Backend Update Available!')}
+                      {updaterState.kind === 'ota'
+                        ? (lang === 'es' ? '¡Actualización rápida de Yoru disponible!' : 'Yoru quick update available!')
+                        : (lang === 'es' ? '¡Nueva versión de Yoru Reader disponible!' : 'New Yoru Reader version available!')}
                     </h4>
                     <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                      {lang === 'es' 
-                        ? `Hay una nueva versión estable lista (v${latestAppVersion !== 'Unknown' ? latestAppVersion : latestBackendVersion}). Haz clic para ver detalles y actualizar.`
-                        : `A new stable version is ready (v${latestAppVersion !== 'Unknown' ? latestAppVersion : latestBackendVersion}). Click to view details and update.`}
+                      {lang === 'es'
+                        ? `La versión v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} se descarga e instala desde aquí, sin salir de la app.`
+                        : `Version v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} downloads and installs from here, without leaving the app.`}
                     </p>
                   </div>
                 </div>
@@ -7575,16 +7384,12 @@ const Library = React.memo(function Library({
                       gap: '6px'
                     }}
                   >
-                    {updating ? (
-                      window.electronAPI ? (
-                        updatePhase === 'installing' || updateProgress >= 100 ? (
-                          <span>{lang === 'es' ? '⚙️ Instalando...' : '⚙️ Installing...'}</span>
-                        ) : (
-                          <span>{lang === 'es' ? `📥 Descargando (${updateProgress}%)...` : `📥 Downloading (${updateProgress}%)...`}</span>
-                        )
-                      ) : (
-                        <span>{lang === 'es' ? 'Actualizando...' : 'Updating...'}</span>
-                      )
+                    {updaterState.status === 'downloading' ? (
+                      <span>{lang === 'es' ? `Descargando (${Math.max(0, updateProgress)}%)...` : `Downloading (${Math.max(0, updateProgress)}%)...`}</span>
+                    ) : updaterState.status === 'installing' ? (
+                      <span>{lang === 'es' ? 'Instalando...' : 'Installing...'}</span>
+                    ) : updaterState.status === 'ready' ? (
+                      <span>{updaterState.kind === 'ota' ? (lang === 'es' ? 'Aplicar ahora' : 'Apply now') : updaterMode === 'android' ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install')}</span>
                     ) : (
                       <span>{lang === 'es' ? '⚡ Actualizar ahora' : '⚡ Update now'}</span>
                     )}

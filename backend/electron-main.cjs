@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const { synthesizeEdgeTts } = require('./edgeTts.cjs');
+const { setupUpdater } = require('./updater.cjs');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'yoru-reader-ext', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
@@ -55,6 +56,8 @@ console.error = function(...args) {
 
 let oauthServer = null;
 let mainWindow = null;
+
+const updater = setupUpdater({ app, ipcMain, shell, net, BrowserWindow, getMainWindow: () => mainWindow });
 
 function getExtensionPath() {
   const possiblePaths = [
@@ -157,21 +160,8 @@ function createWindow() {
     }
   });
 
-  // Load the compiled index.html (from built-in app bundle first, then OTA if applicable)
-  const defaultIndex = path.join(__dirname, '../dist/index.html');
-  if (fs.existsSync(defaultIndex)) {
-    console.log('[main] Loading built-in frontend bundle from:', defaultIndex);
-    win.loadFile(defaultIndex);
-  } else {
-    const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-    const otaIndex = path.join(otaDistDir, 'index.html');
-    if (fs.existsSync(otaIndex)) {
-      console.log('[OTA] Loading updated frontend bundle from:', otaIndex);
-      win.loadFile(otaIndex);
-    } else {
-      win.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
-    }
-  }
+  // Built-in frontend, or the newer OTA bundle from userData when it matches this build.
+  win.loadFile(updater.resolveIndexFile());
 }
 
 const crypto = require('crypto');
@@ -396,274 +386,6 @@ ipcMain.handle('download-google-drive', async (event, { urlString, id }) => {
     
     download(urlString);
   });
-});
-
-ipcMain.handle('download-and-install-update', async (event, { urlString }) => {
-  console.log('[update-downloader] Starting in-app update download from:', urlString);
-  const installerPath = path.join(app.getPath('temp'), 'Yoru-Reader-Update-Setup.exe');
-  
-  // Clean up existing installer if it exists
-  try {
-    if (fs.existsSync(installerPath)) {
-      fs.unlinkSync(installerPath);
-    }
-  } catch (e) {
-    console.error('[update-downloader] Error unlinking existing installer:', e);
-  }
-
-  return new Promise((resolve, reject) => {
-    let fileStream = null;
-    let redirectCount = 0;
-    const maxRedirects = 10;
-    
-    function download(urlToDownload) {
-      if (redirectCount > maxRedirects) {
-        reject(new Error('Demasiadas redirecciones al descargar la actualización.'));
-        return;
-      }
-
-      const client = urlToDownload.startsWith('http:') ? http : https;
-      const options = {
-        headers: {
-          'User-Agent': 'Yoru-Reader-Updater/1.1.4'
-        }
-      };
-      
-      client.get(urlToDownload, options, (res) => {
-        console.log('[update-downloader] Response status:', res.statusCode);
-        
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          redirectCount++;
-          let redirectUrl = res.headers.location;
-          if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
-            // Relative redirect
-            const parsedBase = new URL(urlToDownload);
-            redirectUrl = new URL(redirectUrl, parsedBase.origin).toString();
-          }
-          console.log('[update-downloader] Redirecting to:', redirectUrl);
-          download(redirectUrl);
-          return;
-        }
-        
-        if (res.statusCode !== 200) {
-          if (res.statusCode === 404) {
-            if (urlToDownload.includes('/download/yorureader/')) {
-              const fallbackUrl = urlToDownload.replace('/download/yorureader/', '/download/v1.1.4/');
-              console.log('[update-downloader] 404 on yorureader tag, retrying with v1.1.4 tag:', fallbackUrl);
-              download(fallbackUrl);
-              return;
-            }
-            if (urlToDownload.includes('.Setup.')) {
-              const fallbackUrl = urlToDownload.replace('.Setup.', '%20Setup%20');
-              console.log('[update-downloader] 404 encountered, trying fallback URL:', fallbackUrl);
-              download(fallbackUrl);
-              return;
-            }
-          }
-          reject(new Error(`HTTP ${res.statusCode} al descargar la actualización.`));
-          return;
-        }
-        
-        const totalLength = parseInt(res.headers['content-length'], 10) || 0;
-        let downloadedLength = 0;
-        
-        fileStream = fs.createWriteStream(installerPath);
-        
-        fileStream.on('error', (err) => {
-          console.error('[update-downloader] Write stream error:', err);
-          try { fs.unlinkSync(installerPath); } catch (_) {}
-          reject(err);
-        });
-
-        res.on('data', (chunk) => {
-          downloadedLength += chunk.length;
-          if (totalLength > 0) {
-            const percent = Math.min(99, Math.round((downloadedLength / totalLength) * 100));
-            event.sender.send('update-download-progress', { percent, downloadedBytes: downloadedLength, totalBytes: totalLength, status: 'downloading' });
-          } else {
-            event.sender.send('update-download-progress', { percent: -1, downloadedBytes: downloadedLength, totalBytes: -1, status: 'downloading' });
-          }
-        });
-
-        res.pipe(fileStream);
-        
-        fileStream.on('finish', () => {
-          console.log('[update-downloader] Download completed. Installer saved to:', installerPath);
-          event.sender.send('update-download-progress', { percent: 100, status: 'installing' });
-          
-          try {
-            console.log('[update-downloader] Executing installer...');
-            const { spawn } = require('child_process');
-            const child = spawn(installerPath, [], {
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.unref();
-            
-            // Quit current app instance so installer can write new files
-            setTimeout(() => {
-              app.quit();
-            }, 800);
-            
-            resolve({ success: true });
-          } catch (spawnErr) {
-            console.error('[update-downloader] Error launching installer:', spawnErr);
-            shell.openPath(installerPath);
-            setTimeout(() => { app.quit(); }, 800);
-            resolve({ success: true });
-          }
-        });
-        
-      }).on('error', (err) => {
-        console.error('[update-downloader] Request error:', err);
-        if (fileStream) {
-          fileStream.end();
-        }
-        reject(err);
-      });
-    }
-    
-    download(urlString);
-  });
-});
-
-ipcMain.handle('reload-app', () => {
-  if (mainWindow) {
-    const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-    const otaIndex = path.join(otaDistDir, 'index.html');
-    if (fs.existsSync(otaIndex)) {
-      mainWindow.loadFile(otaIndex);
-    } else {
-      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-    }
-  }
-  return true;
-});
-
-ipcMain.handle('clear-ota-cache', () => {
-  try {
-    const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-    if (fs.existsSync(otaDistDir)) {
-      fs.rmSync(otaDistDir, { recursive: true, force: true });
-    }
-  } catch (e) {}
-  return true;
-});
-
-ipcMain.handle('check-hot-update', async (event) => {
-  const appName = app.getName();
-  const execPath = process.execPath;
-  const isDevBuild = appName.toLowerCase().includes('dev') || execPath.toLowerCase().includes('dev') || !app.isPackaged;
-  if (isDevBuild) {
-    console.log('[OTA] Running in Dev version, skipping hot update checks.');
-    return { available: false, updated: false };
-  }
-  console.log('[OTA] Checking for frontend hot updates...');
-  const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-  const otaManifestFile = path.join(otaDistDir, 'ota_manifest.json');
-  
-  let currentHotVersion = '0.0.0';
-  try {
-    if (fs.existsSync(otaManifestFile)) {
-      const data = JSON.parse(fs.readFileSync(otaManifestFile, 'utf8'));
-      if (data.hotUpdateVersion) currentHotVersion = data.hotUpdateVersion;
-    }
-  } catch (_) {}
-
-  // Fetch stable.json
-  const urls = [
-    'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/stable.json',
-    'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/master/stable.json'
-  ];
-
-  let remoteManifest = null;
-  for (const u of urls) {
-    try {
-      const res = await fetch(u, { cache: 'no-store' });
-      if (res.ok) {
-        remoteManifest = await res.json();
-        break;
-      }
-    } catch (_) {}
-  }
-
-  if (!remoteManifest || !remoteManifest.hotUpdateVersion) {
-    return { available: false, currentVersion: currentHotVersion };
-  }
-
-  const remoteHotVersion = remoteManifest.hotUpdateVersion;
-  const isNewer = (remoteVer, localVer) => {
-    const rParts = (remoteVer || '').split('.').map(n => parseInt(n, 10) || 0);
-    const lParts = (localVer || '').split('.').map(n => parseInt(n, 10) || 0);
-    for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
-      const rv = rParts[i] || 0;
-      const lv = lParts[i] || 0;
-      if (rv > lv) return true;
-      if (rv < lv) return false;
-    }
-    return false;
-  };
-
-  if (!isNewer(remoteHotVersion, currentHotVersion)) {
-    return { available: false, currentVersion: currentHotVersion, latestVersion: remoteHotVersion };
-  }
-
-  console.log(`[OTA] New hot update detected: ${remoteHotVersion} (Current: ${currentHotVersion}). Downloading bundle...`);
-  
-  const distUrl = remoteManifest.hotUpdateUrl || `https://github.com/Zams0524/Yoru-Reader/releases/download/v${remoteManifest.appVersion || '1.1.4'}/dist.zip`;
-  
-  try {
-    const JSZip = require('jszip');
-    const res = await fetch(distUrl);
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status || res.statusCode} al descargar dist.zip`);
-    }
-    const arrayBuf = await res.arrayBuffer();
-    const zip = await JSZip.loadAsync(Buffer.from(arrayBuf));
-
-    const stagingDir = path.join(app.getPath('userData'), 'ota_dist_staging');
-    if (fs.existsSync(stagingDir)) {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(stagingDir, { recursive: true });
-
-    for (const [filename, fileObj] of Object.entries(zip.files)) {
-      const destPath = path.join(stagingDir, filename);
-      if (fileObj.dir) {
-        fs.mkdirSync(destPath, { recursive: true });
-      } else {
-        const parent = path.dirname(destPath);
-        if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
-        const content = await fileObj.async('nodebuffer');
-        fs.writeFileSync(destPath, content);
-      }
-    }
-
-    if (!fs.existsSync(path.join(stagingDir, 'index.html'))) {
-      throw new Error('El archivo dist.zip no contiene un index.html válido.');
-    }
-
-    fs.writeFileSync(path.join(stagingDir, 'ota_manifest.json'), JSON.stringify({
-      hotUpdateVersion: remoteHotVersion,
-      updatedAt: new Date().toISOString()
-    }, null, 2));
-
-    if (fs.existsSync(otaDistDir)) {
-      fs.rmSync(otaDistDir, { recursive: true, force: true });
-    }
-    fs.renameSync(stagingDir, otaDistDir);
-
-    console.log(`[OTA] Hot update ${remoteHotVersion} successfully installed!`);
-    return {
-      available: true,
-      updated: true,
-      version: remoteHotVersion,
-      description: remoteManifest.description
-    };
-  } catch (err) {
-    console.error('[OTA] Error applying hot update:', err);
-    return { available: true, updated: false, error: err.message };
-  }
 });
 
 ipcMain.handle('speak-text', async (event, { text, voice, rate }) => {

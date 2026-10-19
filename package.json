@@ -132,7 +132,8 @@
     "files": [
       "dist/**/*",
       "backend/**/*",
-      "package.json"
+      "package.json",
+      "stable.json"
     ],
     "asarUnpack": [
       "backend/reader-ext/**/*"

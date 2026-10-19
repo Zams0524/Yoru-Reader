@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, protocol, session, webContents } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, protocol, session, webContents, net as electronNet } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
@@ -6,7 +6,11 @@ import https from 'https';
 import url from 'url';
 import net from 'net';
 import { createHash, randomBytes } from 'crypto';
+import { createRequire } from 'module';
 import { synthesizeEdgeTts } from './edgeTts.js';
+
+// Shared with electron-main.cjs; resolves to backend/updater.cjs from backend/dist.
+const { setupUpdater } = createRequire(import.meta.url)('../updater.cjs');
 
 let mainWindow: BrowserWindow | null = null;
 let readerExtensionId: string | null = null;
@@ -15,11 +19,7 @@ let cancelGoogleOAuth: (() => void) | null = null;
 // Ext word map to map numeric word IDs back to dictionary spelling
 const extWordMap: Record<string, string> = {};
 
-// Hot-update Version Configuration
-const CURRENT_APP_VERSION = '1.2.8';
-const CURRENT_BACKEND_VERSION = '1.2.8';
-const CURRENT_HOT_UPDATE_VERSION = '1.2.8.0';
-const STABLE_JSON_URL = 'https://raw.githubusercontent.com/Zams0524/Yoru-Reader/main/stable.json';
+const updater = setupUpdater({ app, ipcMain, shell, net: electronNet, BrowserWindow, getMainWindow: () => mainWindow });
 
 // Shared API Key for native communication with Yoru Reader extension
 const READER_EXT_SHARED_API_KEY = 'yoru-reader-internal-key-v1';
@@ -133,25 +133,8 @@ function createWindow(): void {
     }
   });
 
-  // 1. Check if an OTA update bundle is installed in userData (Stable only)
-  const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-  const otaIndex = path.join(otaDistDir, 'index.html');
-  const appName = app.getName();
-  const execPath = process.execPath;
-  const isDevBuild = appName.toLowerCase().includes('dev') || execPath.toLowerCase().includes('dev');
-
-  if (!isDevBuild && fs.existsSync(otaIndex)) {
-    console.log('[OTA] Loading updated frontend bundle from:', otaIndex);
-    win.loadFile(otaIndex);
-  } else {
-    const defaultIndex = path.join(__dirname, '../dist/index.html');
-    if (fs.existsSync(defaultIndex)) {
-      console.log('[main] Loading built-in frontend bundle from:', defaultIndex);
-      win.loadFile(defaultIndex);
-    } else {
-      win.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
-    }
-  }
+  // Built-in frontend, or the newer OTA bundle from userData when it matches this build.
+  win.loadFile(updater.resolveIndexFile());
 }
 
 // -------------------------------------------------------------
@@ -252,158 +235,6 @@ ipcMain.handle('open-reader-extension-settings', async (_event, theme = 'dark') 
   } catch (err) {
     console.error('[main] Failed to open extension settings:', err);
     return false;
-  }
-});
-
-// ── Production-Grade Live OTA Hot Updater & Extractor ─────────────────────
-ipcMain.handle('check-hot-update', async () => {
-  const appName = app.getName();
-  const execPath = process.execPath;
-  const isDevBuild = appName.toLowerCase().includes('dev') || execPath.toLowerCase().includes('dev') || !app.isPackaged;
-  
-  if (isDevBuild) {
-    console.log('[OTA] Running in Dev version, skipping hot update checks.');
-    return { hasUpdate: false, isDev: true };
-  }
-
-  // Check currently installed OTA version from disk if available
-  let activeVersion = CURRENT_HOT_UPDATE_VERSION;
-  try {
-    const versionFile = path.join(app.getPath('userData'), 'ota_version.json');
-    if (fs.existsSync(versionFile)) {
-      const saved = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
-      if (saved.version) activeVersion = saved.version;
-    }
-  } catch (e) {
-    console.warn('[OTA] Error reading ota_version.json:', e);
-  }
-
-  return new Promise((resolve) => {
-    https.get(STABLE_JSON_URL, { headers: { 'User-Agent': 'Yoru-Reader-App' } }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const config = JSON.parse(data);
-          const remoteHotVersion = config.hotUpdateVersion;
-          if (remoteHotVersion && remoteHotVersion !== activeVersion) {
-            resolve({
-              hasUpdate: true,
-              currentVersion: activeVersion,
-              version: remoteHotVersion,
-              url: config.hotUpdateUrl,
-              description: config.description || 'Mejoras de rendimiento y correcciones del sistema.'
-            });
-          } else {
-            resolve({ hasUpdate: false, currentVersion: activeVersion });
-          }
-        } catch {
-          resolve({ hasUpdate: false, currentVersion: activeVersion });
-        }
-      });
-    }).on('error', () => resolve({ hasUpdate: false, currentVersion: activeVersion }));
-  });
-});
-
-ipcMain.handle('download-hot-update', async (_event, { url, version }) => {
-  try {
-    const JSZip = (await import('jszip')).default;
-    const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-    const versionFile = path.join(app.getPath('userData'), 'ota_version.json');
-    
-    console.log('[OTA] Starting download of update from:', url);
-
-    const downloadZip = (targetUrl: string): Promise<Buffer> => {
-      return new Promise((resolve, reject) => {
-        https.get(targetUrl, { headers: { 'User-Agent': 'Yoru-Reader-App' } }, (res) => {
-          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            return downloadZip(res.headers.location).then(resolve).catch(reject);
-          }
-          if (res.statusCode !== 200) {
-            return reject(new Error(`Download failed with HTTP status: ${res.statusCode}`));
-          }
-
-          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
-          let receivedBytes = 0;
-          const chunks: Buffer[] = [];
-
-          res.on('data', (chunk) => {
-            chunks.push(chunk);
-            receivedBytes += chunk.length;
-            if (totalBytes > 0 && mainWindow) {
-              const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
-              mainWindow.webContents.send('ota-download-progress', { percent, receivedBytes, totalBytes });
-            }
-          });
-
-          res.on('end', () => {
-            resolve(Buffer.concat(chunks));
-          });
-          res.on('error', reject);
-        }).on('error', reject);
-      });
-    };
-
-    const zipBuffer = await downloadZip(url);
-    console.log('[OTA] Download complete (' + zipBuffer.length + ' bytes). Extracting bundle...');
-
-    const zip = await JSZip.loadAsync(zipBuffer);
-    
-    // Ensure clean destination directory
-    if (fs.existsSync(otaDistDir)) {
-      fs.rmSync(otaDistDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(otaDistDir, { recursive: true });
-
-    // Extract all files
-    const entries = Object.keys(zip.files);
-    for (const filename of entries) {
-      const entry = zip.files[filename];
-      const destPath = path.join(otaDistDir, filename);
-      if (entry.dir) {
-        fs.mkdirSync(destPath, { recursive: true });
-      } else {
-        const dir = path.dirname(destPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const content = await entry.async('nodebuffer');
-        fs.writeFileSync(destPath, content);
-      }
-    }
-
-    // Save installed version marker
-    fs.writeFileSync(versionFile, JSON.stringify({ version, installedAt: new Date().toISOString() }, null, 2));
-    console.log('[OTA] Update successfully extracted and verified to:', otaDistDir);
-
-    return { success: true, version };
-  } catch (err: any) {
-    console.error('[OTA] Failed to download and extract update:', err);
-    return { success: false, error: err.message };
-  }
-});
-
-ipcMain.handle('apply-hot-update-and-relaunch', () => {
-  console.log('[OTA] Relaunching application to apply update...');
-  app.relaunch();
-  app.exit(0);
-});
-
-ipcMain.handle('clear-ota-cache', async () => {
-  try {
-    const otaDistDir = path.join(app.getPath('userData'), 'ota_dist');
-    if (fs.existsSync(otaDistDir)) {
-      fs.rmSync(otaDistDir, { recursive: true, force: true });
-      console.log('[OTA] Cache cleared safely:', otaDistDir);
-    }
-    return true;
-  } catch (err) {
-    console.error('[OTA] Error clearing cache:', err);
-    return false;
-  }
-});
-
-ipcMain.handle('reload-app', () => {
-  if (mainWindow) {
-    mainWindow.reload();
   }
 });
 

@@ -38,19 +38,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   replyParseText: (result) => ipcRenderer.send('reply-parse-text', result),
   updateDiscordPresence: (presence) => ipcRenderer.invoke('update-discord-presence', presence),
-  downloadAndInstallUpdate: (urlString) => ipcRenderer.invoke('download-and-install-update', { urlString }),
-  onUpdateDownloadProgress: (callback) => {
-    const listener = (event, data) => callback(data);
-    ipcRenderer.on('update-download-progress', listener);
-    return () => ipcRenderer.off('update-download-progress', listener);
-  },
-  checkHotUpdate: () => ipcRenderer.invoke('check-hot-update'),
-  downloadHotUpdate: (params) => ipcRenderer.invoke('download-hot-update', params),
-  applyHotUpdateAndRelaunch: () => ipcRenderer.invoke('apply-hot-update-and-relaunch'),
-  onOtaDownloadProgress: (callback) => {
-    const listener = (_event, data) => callback(data);
-    ipcRenderer.on('ota-download-progress', listener);
-    return () => ipcRenderer.off('ota-download-progress', listener);
+  updater: {
+    getState: () => ipcRenderer.invoke('updater:get-state'),
+    check: (options) => ipcRenderer.invoke('updater:check', options),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    setAutoInstallOnQuit: (value) => ipcRenderer.invoke('updater:set-auto-install', value),
+    openFallback: () => ipcRenderer.invoke('updater:open-fallback'),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('updater-state', listener);
+      return () => ipcRenderer.off('updater-state', listener);
+    }
   },
   clearOtaCache: () => ipcRenderer.invoke('clear-ota-cache'),
   reloadApp: () => ipcRenderer.invoke('reload-app')

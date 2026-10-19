@@ -89,6 +89,8 @@ export default function App() {
   const [infoBook, setInfoBook] = useState<any | null>(null);
   const [showHotUpdateBanner, setShowHotUpdateBanner] = useState(false);
   const [hotUpdateVersion, setHotUpdateVersion] = useState('');
+  // 'ota' | 'installer' when backend/updater.cjs has an update downloaded; null for the legacy OTA banner.
+  const [readyUpdateKind, setReadyUpdateKind] = useState<string | null>(null);
 
   const { showConfirm, confirmModal } = useConfirm();
 
@@ -96,9 +98,27 @@ export default function App() {
   const vocabCacheInFlightRef = useRef(new Set<string>());
   const [vocabCacheRevision, setVocabCacheRevision] = useState(0);
 
-  // Apply the desktop installer update first when a native release is available,
-  // then check for the lightweight frontend bundle.
+  // Desktop updates. backend/updater.cjs checks stable.json, downloads the installer or the
+  // OTA bundle in the background when automatic updates are on, and installs a downloaded
+  // installer when the app quits. Older native builds without it use the legacy IPC below.
   useEffect(() => {
+    const updater = window.electronAPI?.updater;
+    if (updater) {
+      updater.setAutoInstallOnQuit(Boolean(settings.autoUpdate)).catch(() => {});
+      const showReady = (state: any) => {
+        if (state?.status !== 'ready') return;
+        setHotUpdateVersion(state.kind === 'ota' ? state.latest?.hotVersion : state.latest?.appVersion);
+        setReadyUpdateKind(state.kind);
+        setShowHotUpdateBanner(true);
+      };
+      const off = updater.onState(showReady);
+      updater.getState().then(showReady).catch(() => {});
+      const timer = setTimeout(() => {
+        updater.check({ autoDownload: Boolean(settings.autoUpdate) }).catch(() => {});
+      }, 3500);
+      return () => { clearTimeout(timer); off(); };
+    }
+
     const isDev = window.location.href.toLowerCase().includes('dev') ||
                   document.title.toLowerCase().includes('dev') ||
                   (typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('dev'));
@@ -883,13 +903,24 @@ export default function App() {
         }}>
           <span style={{ fontSize: '1.2rem' }}>⚡</span>
           <span style={{ fontSize: '0.86rem', fontWeight: 500 }}>
-            {lang === 'es' 
-              ? `Actualización rápida instalada (v${hotUpdateVersion}). Recarga para ver los cambios.` 
-              : `Hot update installed (v${hotUpdateVersion}). Reload to apply changes.`}
+            {readyUpdateKind === 'installer'
+              ? (lang === 'es'
+                  ? `Yoru Reader v${hotUpdateVersion} está descargada. Se instalará al cerrar la app, o ahora mismo con un reinicio.`
+                  : `Yoru Reader v${hotUpdateVersion} is downloaded. It installs when you close the app, or now with a restart.`)
+              : readyUpdateKind === 'ota'
+                ? (lang === 'es'
+                    ? `Actualización v${hotUpdateVersion} lista. Aplícala para ver los cambios.`
+                    : `Update v${hotUpdateVersion} is ready. Apply it to see the changes.`)
+                : (lang === 'es'
+                    ? `Actualización rápida instalada (v${hotUpdateVersion}). Recarga para ver los cambios.`
+                    : `Hot update installed (v${hotUpdateVersion}). Reload to apply changes.`)}
           </span>
           <button
             onClick={() => {
-              if (window.electronAPI && window.electronAPI.reloadApp) {
+              if (readyUpdateKind && window.electronAPI?.updater) {
+                setShowHotUpdateBanner(false);
+                window.electronAPI.updater.install().catch((err: any) => console.error('[updater] Install failed:', err));
+              } else if (window.electronAPI && window.electronAPI.reloadApp) {
                 window.electronAPI.reloadApp();
               } else {
                 window.location.reload();
@@ -908,7 +939,11 @@ export default function App() {
               transition: 'background 0.2s'
             }}
           >
-            {lang === 'es' ? 'Recargar ahora' : 'Reload now'}
+            {readyUpdateKind === 'installer'
+              ? (lang === 'es' ? 'Reiniciar y actualizar' : 'Restart and update')
+              : readyUpdateKind === 'ota'
+                ? (lang === 'es' ? 'Aplicar ahora' : 'Apply now')
+                : (lang === 'es' ? 'Recargar ahora' : 'Reload now')}
           </button>
           <button
             onClick={() => setShowHotUpdateBanner(false)}

@@ -305,6 +305,13 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Record update asset hashes in the manifest
+        run: |
+          node build/add-update-hashes.cjs release-assets/stable.json \
+            release-assets/dist.zip release-assets/Yoru-Reader.Setup.exe \
+            release-assets/Yoru-Reader-arm64.dmg release-assets/Yoru-Reader-x64.dmg \
+            release-assets/Yoru-Reader-x86_64.flatpak
+
       - name: Ensure latest release exists and publish assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -317,11 +324,14 @@ jobs:
             gh release edit latest --title "Yoru Reader ${BUILD_VERSION}" --notes "$NOTES"
           fi
 
-          assets=(release-assets/stable.json release-assets/dist.zip)
+          # stable.json goes last, in its own upload: the in-app updater reads it from this
+          # release, and its assetHashes must not describe files that are still being replaced.
+          assets=(release-assets/dist.zip)
           for asset in release-assets/Yoru-Reader.Setup.exe release-assets/Yoru-Reader-arm64.dmg release-assets/Yoru-Reader-x64.dmg release-assets/Yoru-Reader-x86_64.flatpak; do
             if [[ -f "$asset" ]]; then assets+=("$asset"); fi
           done
           gh release upload latest "${assets[@]}" --clobber
+          gh release upload latest release-assets/stable.json --clobber
 
       - name: Publish manifest to main for existing clients
         env:

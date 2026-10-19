@@ -27,6 +27,7 @@ public class MainActivity extends BridgeActivity {
         installCrashReportHandler();
         registerPlugin(GoogleDriveAuthPlugin.class);
         registerPlugin(AndroidDiagnosticsPlugin.class);
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         blendSystemBarsWithApp();
     }
