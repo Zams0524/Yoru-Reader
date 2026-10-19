@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Flame, BookOpen, RefreshCw } from 'lucide-react';
+import { isPhoneUI } from '../utils/platform';
 
 interface Book {
   id: number;
@@ -359,7 +360,9 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
             {hoveredDay ? (
               `${hoveredDay.dateStr}: ${formatDuration(hoveredDay.time)} — ${hoveredDay.chars.toLocaleString()} ${t.chars}`
             ) : (
-              lang === 'es' ? 'Toca o pasa el cursor sobre un día' : 'Tap or hover a day for details'
+              isPhoneUI()
+                ? (lang === 'es' ? 'Toca un día para ver el detalle' : 'Tap a day for details')
+                : (lang === 'es' ? 'Pasa el cursor sobre un día para ver el detalle' : 'Hover a day for details')
             )}
           </div>
         </div>

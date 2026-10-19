@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Bookmark as BookmarkIcon, StickyNote, Copy } from 'lucide-react';
 import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
+import { isPhoneUI } from '../../utils/platform';
 
 interface ReaderColors {
   textMain: string;
@@ -332,7 +333,9 @@ function NotesContent({ highlights, onGo, onEdit, onExport, colors, lang }: Note
         <StickyNote size={32} style={{ opacity: 0.3, marginBottom: '12px' }} />
         <p>{isEs ? 'Aún no hay subrayados' : 'No highlights yet'}</p>
         <p style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '8px' }}>
-          {isEs ? 'Mantén pulsado el texto, elige un color o «Nota».' : 'Long-press text, then pick a colour or "Note".'}
+          {isPhoneUI()
+            ? (isEs ? 'Mantén pulsado el texto, elige un color o «Nota».' : 'Long-press text, then pick a colour or "Note".')
+            : (isEs ? 'Selecciona texto con el ratón y elige un color o «Nota».' : 'Select text with the mouse, then pick a colour or "Note".')}
         </p>
       </div>
     );

@@ -3443,7 +3443,7 @@ const Library = React.memo(function Library({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
                   {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management', Database, 'vocabulario vocabulary import export jpdb anki file frequency')}
                   {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync')}
-                  {renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist')}
+                  {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist')}
                 </div>
               </div>
   
@@ -3626,8 +3626,8 @@ const Library = React.memo(function Library({
                     </div>
                     <div style={{ fontSize: '0.82rem', color: '#a0a0b0', marginTop: '2px' }}>
                       {lang === 'es' 
-                        ? 'Repasa los atajos esenciales, consulta con Shift + Cursor, pronunciación y Yoru SRS.' 
-                        : 'Revisit keyboard shortcuts, Shift + Hover lookups, audio pitch, and Yoru SRS.'}
+                        ? 'Vuelve a ver la guía: diccionario, lectura en voz alta, Yoru SRS y opciones de lectura.'
+                        : 'See the guide again: dictionary, read aloud, Yoru SRS and reading options.'}
                     </div>
                   </div>
                 </div>
@@ -5638,7 +5638,9 @@ const Library = React.memo(function Library({
                       {lang === 'es' ? 'No tienes palabras en el sistema de repaso' : 'No words in the review system'}
                     </p>
                     <p className="srs-empty-hint">
-                      {lang === 'es' ? 'Abre un libro, toca una palabra y guárdala en un mazo para empezar.' : 'Open a book, tap a word, and save it to a deck to get started.'}
+                      {isMobile
+                        ? (lang === 'es' ? 'Abre un libro, toca una palabra y guárdala en un mazo para empezar.' : 'Open a book, tap a word, and save it to a deck to get started.')
+                        : (lang === 'es' ? 'Abre un libro, haz clic en una palabra y guárdala en un mazo para empezar.' : 'Open a book, click a word, and save it to a deck to get started.')}
                     </p>
                   </div>
                 ) : (
@@ -6266,7 +6268,8 @@ const Library = React.memo(function Library({
               </div>
             </div>
 
-            {/* Keyboard Shortcuts Section */}
+            {/* Keyboard Shortcuts Section (desktop only: phones have no keyboard) */}
+            {!isMobile && (
             <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {lang === 'es' ? 'Atajos de Teclado del Repaso' : 'Review Keyboard Shortcuts'}
@@ -6302,6 +6305,7 @@ const Library = React.memo(function Library({
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
       </div>

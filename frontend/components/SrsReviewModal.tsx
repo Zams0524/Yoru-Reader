@@ -7,6 +7,7 @@ import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard } from '../util
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
+import { isPhoneUI } from '../utils/platform';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -195,6 +196,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const [sessionCount, setSessionCount] = useState(0);
   const [sessionStats, setSessionStats] = useState({ correct: 0, incorrect: 0 });
   const [newCardsLearned, setNewCardsLearned] = useState(0);
+  // Keyboard hints (Space, 1-4, Z) only make sense with a keyboard.
+  const showKeyHints = !isPhoneUI();
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const wordAudioRef = useRef<WordAudioPlayback | null>(null);
@@ -1131,7 +1134,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.again}</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Again</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>1</div>
+                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>1</div>}
                   </button>
 
                   {/* Hard */}
@@ -1154,7 +1157,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.hard}</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Hard</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>2</div>
+                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>2</div>}
                   </button>
 
                   {/* Good */}
@@ -1177,7 +1180,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.good}</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Good</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>3</div>
+                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>3</div>}
                   </button>
 
                   {/* Easy */}
@@ -1200,7 +1203,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   >
                     <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.easy}</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Easy</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>4</div>
+                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>4</div>}
                   </button>
                 </div>
 
@@ -1256,7 +1259,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   style={{ background: 'transparent', border: 'none', color: historyStack.length > 0 ? '#a1a1aa' : '#3f3f46', fontSize: '0.78rem', fontWeight: 650, cursor: historyStack.length > 0 ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', transition: 'all 0.15s' }}
                 >
                   <Undo2 size={13} />
-                  <span>Undo Z</span>
+                  <span>{showKeyHints ? 'Undo Z' : 'Undo'}</span>
                 </button>
 
                 {/* Show Answer button */}
@@ -1283,7 +1286,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                   onMouseLeave={e => e.currentTarget.style.background = '#18181b'}
                 >
                   <span>Show Answer</span>
-                  <span style={{ fontSize: '0.74rem', background: '#27272a', color: '#a1a1aa', padding: '2px 8px', borderRadius: '4px' }}>Space</span>
+                  {showKeyHints && <span style={{ fontSize: '0.74rem', background: '#27272a', color: '#a1a1aa', padding: '2px 8px', borderRadius: '4px' }}>Space</span>}
                 </button>
               </div>
             )}

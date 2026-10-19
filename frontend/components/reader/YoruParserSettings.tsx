@@ -15,6 +15,7 @@ import {
   testJitenApiKey,
 } from '../../utils/jitenSync';
 import WordStyleCheck from './WordStyleCheck';
+import { isPhoneUI } from '../../utils/platform';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface YoruParserSettingsProps {
@@ -394,6 +395,10 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('general');
+  // Phone: only what the native reader uses (Jiten account, word styles). Desktop: the extension's
+  // full settings; its Jiten connection is configured in the extension itself.
+  const phone = isPhoneUI();
+  const visibleTabs = phone ? TABS.filter((tab) => tab.id === 'general' || tab.id === 'styling') : TABS;
   const [expandedState, setExpandedState] = useState<string | null>(null);
   const [previewVertical, setPreviewVertical] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -637,9 +642,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   };
 
   // ── Tab Content Renderers ──────────────────────────────────────────
-  const renderGeneral = () => (
+  const jitenSection = (
     <>
-      {/* jiten.moe account */}
       <div style={sectionTitleStyle}>{t('Sincronizar con Jiten', 'Sync with Jiten')}</div>
       <JitenAccountCard
         apiKey={settings.jitenApiKey}
@@ -652,6 +656,11 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         labelStyle={labelStyle}
         descStyle={descStyle}
       />
+    </>
+  );
+
+  const renderGeneral = () => phone ? jitenSection : (
+    <>
 
       {/* Appearance */}
       <div style={sectionTitleStyle}>{t('Apariencia del Parser', 'Parser Appearance')}</div>
@@ -966,10 +975,11 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         {/* Word States List Accordion */}
         <div style={sectionTitleStyle}>{t('Estados de Palabras', 'Word States')}</div>
         <div style={{ ...descStyle, margin: '-4px 0 10px' }}>
-          {t(
-            'Toca un estado para ver y editar sus efectos. «+ Efecto» añade un color, subrayado, fondo, opacidad o sombra.',
-            'Tap a state to see and edit its effects. "+ Effect" adds a color, underline, background, opacity or shadow.',
-          )}
+          {phone
+            ? t('Toca un estado para ver y editar sus efectos. «+ Efecto» añade un color, subrayado, fondo, opacidad o sombra.',
+              'Tap a state to see and edit its effects. "+ Effect" adds a color, underline, background, opacity or shadow.')
+            : t('Haz clic en un estado para ver y editar sus efectos. «+ Efecto» añade un color, subrayado, fondo, opacidad o sombra.',
+              'Click a state to see and edit its effects. "+ Effect" adds a color, underline, background, opacity or shadow.')}
         </div>
         <div className="yoru-parser-states" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {STATES_LIST.map((state) => {
@@ -1532,7 +1542,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
             overflowX: 'auto',
           }}
         >
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -1562,8 +1572,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                <span style={{ fontSize: '0.9rem' }}>{tab.icon}</span>
-                {lang === 'es' ? tab.labelEs : tab.labelEn}
+                <span style={{ fontSize: '0.9rem' }}>{phone && tab.id === 'general' ? '🔗' : tab.icon}</span>
+                {phone && tab.id === 'general' ? 'Jiten' : (lang === 'es' ? tab.labelEs : tab.labelEn)}
               </button>
             );
           })}

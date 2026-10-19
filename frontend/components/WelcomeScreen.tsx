@@ -7,7 +7,7 @@ import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_I
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { DictionaryStep, GuideDots, SlideView, featureSlides, useDictionaryInstall, useSwipe } from './onboarding/GuideSlides';
+import { DictionaryStep, GuideDots, SlideView, featureSlides, useArrowKeys, useDictionaryInstall, useSwipe } from './onboarding/GuideSlides';
 
 declare global {
   interface Window {
@@ -390,6 +390,11 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
   const goPrev = () => setStep((value) => Math.max(0, value - 1));
   const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep && !dictionary.installing) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
   const es = lang === 'es';
+  useArrowKeys(
+    () => { if (step <= lastGuideStep && !dictionary.installing) goNext(); },
+    () => { if (step > 0 && step <= lastGuideStep) goPrev(); },
+    step <= lastGuideStep,
+  );
 
   const setLanguage = (selectedLang: string) => {
     localStorage.setItem('app_language', selectedLang);

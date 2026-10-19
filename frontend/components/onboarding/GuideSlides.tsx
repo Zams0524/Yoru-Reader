@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Check, Download, Headphones, Hand, Loader2, Volume2, Zap } from 'lucide-react';
+import { BookOpen, Check, Download, Headphones, Hand, Loader2, MousePointer2, Volume2, Zap } from 'lucide-react';
 import { getInstalledDictionaries, installBundledDictionary } from '../../utils/yomitanDB';
+import { isPhoneUI } from '../../utils/platform';
 
 /**
  * Pieces of the first-run guide and the tutorial: feature slides with small mock-ups of the real
@@ -13,7 +14,7 @@ const tr = (lang: Lang, es: string, en: string) => (lang === 'es' ? es : en);
 
 // ── Mock-ups ───────────────────────────────────────────────────────────
 
-function WordMock({ lang }: { lang: Lang }) {
+function WordMock({ lang, phone }: { lang: Lang; phone: boolean }) {
   return (
     <div className="guide-mock guide-mock-page" aria-hidden="true">
       <div className="guide-mock-vertical">
@@ -34,7 +35,7 @@ function WordMock({ lang }: { lang: Lang }) {
           <span>{tr(lang, 'Conocida', 'Known')}</span>
         </div>
       </div>
-      <Hand className="guide-mock-finger" size={26} />
+      {phone ? <Hand className="guide-mock-finger" size={26} /> : <MousePointer2 className="guide-mock-finger" size={22} />}
     </div>
   );
 }
@@ -76,7 +77,18 @@ function SrsMock({ lang }: { lang: Lang }) {
   );
 }
 
-function GesturesMock({ lang }: { lang: Lang }) {
+function GesturesMock({ lang, phone }: { lang: Lang; phone: boolean }) {
+  if (!phone) {
+    // Desktop: mouse and keyboard.
+    return (
+      <div className="guide-mock guide-mock-gestures" aria-hidden="true">
+        <div className="guide-gesture"><span className="guide-gesture-icon">⇄</span><span>{tr(lang, 'Flechas, rueda o clic en los bordes para pasar página', 'Arrow keys, wheel or edge clicks to turn pages')}</span></div>
+        <div className="guide-gesture"><span className="guide-gesture-icon">⌨</span><span>{tr(lang, 'Atajos de teclado (personalizables en Ajustes)', 'Keyboard shortcuts (customisable in Settings)')}</span></div>
+        <div className="guide-gesture"><span className="guide-gesture-icon">✎</span><span>{tr(lang, 'Selecciona texto: subrayar y notas', 'Select text: highlight and notes')}</span></div>
+        <div className="guide-gesture"><span className="guide-gesture-icon">⌕</span><span>{tr(lang, 'Busca en todo el libro', 'Search the whole book')}</span></div>
+      </div>
+    );
+  }
   return (
     <div className="guide-mock guide-mock-gestures" aria-hidden="true">
       <div className="guide-gesture">
@@ -107,23 +119,23 @@ export interface GuideSlide {
   mock: React.ReactNode;
 }
 
-export function featureSlides(lang: Lang): GuideSlide[] {
+export function featureSlides(lang: Lang, phone: boolean = isPhoneUI()): GuideSlide[] {
   return [
     {
       id: 'word',
       icon: <BookOpen size={16} />,
-      title: tr(lang, 'Toca cualquier palabra', 'Tap any word'),
+      title: phone ? tr(lang, 'Toca cualquier palabra', 'Tap any word') : tr(lang, 'Haz clic en cualquier palabra', 'Click any word'),
       body: tr(lang,
         'Verás su lectura, significado, acento tonal y audio. Márcala para aprenderla y Yoru la colorea en todo el libro.',
         'See its reading, meaning, pitch accent and audio. Mark it to learn it and Yoru colours it across the book.'),
-      mock: <WordMock lang={lang} />,
+      mock: <WordMock lang={lang} phone={phone} />,
     },
     {
       id: 'listen',
       icon: <Headphones size={16} />,
       title: tr(lang, 'Escucha el libro', 'Listen to the book'),
       body: tr(lang,
-        'Pulsa 🎧 y Yoru lee en voz alta, resaltando cada frase y pasando las páginas solo. Elige voz y velocidad.',
+        'Pulsa 🎧 y Yoru lee en voz alta, resaltando cada frase y pasando las páginas sola. Elige voz y velocidad.',
         'Press 🎧 and Yoru reads aloud, highlighting each sentence and turning pages for you. Pick the voice and speed.'),
       mock: <ListenMock />,
     },
@@ -143,7 +155,7 @@ export function featureSlides(lang: Lang): GuideSlide[] {
       body: tr(lang,
         'Vertical (縦書き) u horizontal, modos de color, tamaño de letra… todo desde ⚙ dentro del libro.',
         'Vertical (縦書き) or horizontal, colour modes, font size… all from ⚙ inside the book.'),
-      mock: <GesturesMock lang={lang} />,
+      mock: <GesturesMock lang={lang} phone={phone} />,
     },
   ];
 }
@@ -271,4 +283,19 @@ export function SlideView({ slide }: { slide: GuideSlide }) {
       <p className="guide-body">{slide.body}</p>
     </div>
   );
+}
+
+/** Desktop: ← and → move between steps (ignored while typing in a field). */
+export function useArrowKeys(onNext: () => void, onPrev: () => void, enabled = true) {
+  useEffect(() => {
+    if (!enabled) return;
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (event.key === 'ArrowRight') onNext();
+      else if (event.key === 'ArrowLeft') onPrev();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onNext, onPrev, enabled]);
 }

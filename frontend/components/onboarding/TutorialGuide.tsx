@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
-import { DictionaryStep, GuideDots, SlideView, featureSlides, useDictionaryInstall, useSwipe } from './GuideSlides';
+import { DictionaryStep, GuideDots, SlideView, featureSlides, useArrowKeys, useDictionaryInstall, useSwipe } from './GuideSlides';
 
 interface Props {
   isOpen: boolean;
@@ -26,6 +26,7 @@ export default function TutorialGuide({ isOpen, onClose, onImportBook, lang = 'e
   const next = () => (step < total - 1 ? setStep(step + 1) : finish());
   const prev = () => setStep(Math.max(0, step - 1));
   const swipe = useSwipe(() => { if (!dictionary.installing) next(); }, prev);
+  useArrowKeys(() => { if (!dictionary.installing) next(); }, prev, isOpen);
 
   if (!isOpen) return null;
 

@@ -834,8 +834,17 @@ textarea:focus-visible,
   }
 
   html.platform-android .section-count {
+    /* The centring rules only exist in the desktop block; without them the number sat in a corner. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
     min-width: 30px;
     min-height: 26px;
+    padding: 2px 9px;
+    border: 1px solid;
+    border-radius: 999px;
+    line-height: 1;
     margin-left: auto;
     border-color: color-mix(in srgb, var(--primary) 28%, var(--border-light));
     background: color-mix(in srgb, var(--primary) 10%, var(--bg-card));
@@ -3436,4 +3445,82 @@ textarea:focus-visible,
   display: block;
   margin: -6px 0 10px -8px;
   text-decoration: none;
+}
+
+/* ==========================================================================
+   Desktop adaptation (v1.3.10): one-row reader bar; no phone-only library pieces
+   ========================================================================== */
+@media (min-width: 769px) {
+  /* Reader: back · title/author/section · actions, on one row. */
+  .reader-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+  }
+
+  .reader-topbar-row {
+    display: contents;
+  }
+
+  .reader-topbar-row > .reader-topbar-btn {
+    order: 0;
+  }
+
+  .reader-topbar-info {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+
+  .reader-topbar-title {
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 1rem;
+  }
+
+  .reader-topbar-sub {
+    margin-top: 0;
+    font-size: 0.8rem;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .reader-topbar-actions {
+    order: 2;
+  }
+
+  .readera-settings {
+    top: 60px;
+    right: 16px;
+  }
+
+  .reader-pagebar {
+    left: 50%;
+    right: auto;
+    width: min(720px, calc(100vw - 32px));
+    bottom: 14px;
+    transform: translateX(-50%);
+    padding: 10px 22px 12px;
+    border: 1px solid rgba(255, 218, 94, 0.12);
+    border-radius: 16px;
+  }
+
+  .read-aloud-bar.is-raised {
+    bottom: 124px;
+  }
+
+  /* Library: the sidebar and the header tabs already hold these on desktop. */
+  .library-sidebar .sidebar-footer-group,
+  .library-quick-chips {
+    display: none !important;
+  }
+
+  .library-quick-bar {
+    justify-content: flex-end;
+  }
 }
