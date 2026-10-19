@@ -56,6 +56,32 @@ console.error = function(...args) {
 let oauthServer = null;
 let mainWindow = null;
 
+function getExtensionPath() {
+  const possiblePaths = [
+    path.join(__dirname, '../backend/reader-ext'),
+    path.join(__dirname, 'backend/reader-ext'),
+    path.join(__dirname, 'reader-ext'),
+    path.join(__dirname, '../reader-ext'),
+    path.join(app.getAppPath(), 'backend/reader-ext'),
+    path.join(app.getAppPath(), 'reader-ext'),
+    path.join(process.resourcesPath, 'app/backend/reader-ext'),
+    path.join(process.resourcesPath, 'backend/reader-ext')
+  ];
+  for (const p of possiblePaths) {
+    let cleanP = p;
+    if (cleanP.includes('app.asar')) {
+      cleanP = cleanP.replace('app.asar', 'app.asar.unpacked');
+    }
+    if (fs.existsSync(cleanP)) return cleanP;
+  }
+  return path.join(__dirname, '../backend/reader-ext');
+}
+
+function getAjbPath() {
+  const extDir = getExtensionPath();
+  return path.join(extDir, 'js/ajb.js');
+}
+
 function createWindow() {
   // Clear HTTP cache on startup to ensure we don't load old compiled reader assets
   if (session && session.defaultSession) {
@@ -113,33 +139,10 @@ function createWindow() {
     console.log(`[RENDERER CONSOLE] (${sourceFile}:${line}): ${message}`);
   });
 
-function getExtensionPath() {
-  const possiblePaths = [
-    path.join(__dirname, '../backend/reader-ext'),
-    path.join(__dirname, 'backend/reader-ext'),
-    path.join(__dirname, 'reader-ext'),
-    path.join(__dirname, '../reader-ext'),
-    path.join(app.getAppPath(), 'backend/reader-ext'),
-    path.join(app.getAppPath(), 'reader-ext'),
-    path.join(process.resourcesPath, 'app/backend/reader-ext'),
-    path.join(process.resourcesPath, 'backend/reader-ext')
-  ];
-  for (const p of possiblePaths) {
-    let cleanP = p;
-    if (cleanP.includes('app.asar')) {
-      cleanP = cleanP.replace('app.asar', 'app.asar.unpacked');
-    }
-    if (fs.existsSync(cleanP)) return cleanP;
-  }
-  return path.join(__dirname, '../backend/reader-ext');
-}
-
-function getAjbPath() {
-  const extDir = getExtensionPath();
-  return path.join(extDir, 'js/ajb.js');
-}
-
   win.webContents.on('did-finish-load', () => {
+    // When the extension is loaded natively, ajb.js already runs as its content
+    // script (with chrome.storage). Manual injection is only a fallback.
+    if (readerExtensionId) return;
     try {
       const ajbPath = getAjbPath();
       if (fs.existsSync(ajbPath)) {

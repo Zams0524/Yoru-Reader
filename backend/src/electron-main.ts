@@ -116,6 +116,9 @@ function createWindow(): void {
   });
 
   win.webContents.on('did-finish-load', () => {
+    // When the extension is loaded natively, ajb.js already runs as its content
+    // script (with chrome.storage). Manual injection is only a fallback.
+    if (readerExtensionId) return;
     try {
       const ajbPath = getAjbPath();
       if (fs.existsSync(ajbPath)) {
