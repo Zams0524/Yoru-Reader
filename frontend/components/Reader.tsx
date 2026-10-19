@@ -1863,6 +1863,8 @@ export default function Reader({
       e.preventDefault();
       const newVertical = !readerSettings.vertical;
       setReaderSetting('vertical', newVertical);
+      setReaderSetting('direction', newVertical ? 'vertical' : 'horizontal');
+      if (newVertical) setReaderSetting('paginated', true);
       onSaveSettings({ ...settings, readingOrientation: newVertical ? 'vertical' : 'horizontal' });
       showToast(lang === 'es' ? (newVertical ? 'Modo Vertical (Tategaki)' : 'Modo Horizontal (Yokogaki)') : (newVertical ? 'Vertical Mode' : 'Horizontal Mode'), 'info');
       return;

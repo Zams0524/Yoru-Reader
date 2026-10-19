@@ -92,19 +92,21 @@ export const BUILT_IN_FONTS = [
 ];
 
 function loadSettings(): ReaderSettingsState {
+  const direction = getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal';
   return {
     fontSize: getNumber(LS_KEYS.fontSize, 20),
     lineHeight: getNumber(LS_KEYS.lineHeight, 1.8),
     fontFamily: getString(LS_KEYS.fontFamily, '__default__'),
     verticalPadding: getNumber(LS_KEYS.verticalPadding, 3),
     horizontalPadding: getNumber(LS_KEYS.horizontalPadding, 8),
-    vertical: getBool(LS_KEYS.vertical, false),
+    // Japanese books read top-to-bottom, right-to-left by default; 'auto' means vertical too.
+    vertical: direction !== 'horizontal',
     paginated: getBool(LS_KEYS.paginated, true),
     showFurigana: getBool(LS_KEYS.showFurigana, true),
     disableCss: getBool(LS_KEYS.disableCss, false),
     theme: getString(LS_KEYS.theme, 'dark') as ReaderTheme,
     showProgressLine: getBool(LS_KEYS.showProgressLine, true),
-    direction: getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal',
+    direction,
     autoScrollEnabled: getBool(LS_KEYS.autoScrollEnabled, false),
     autoScrollSpeed: getNumber(LS_KEYS.autoScrollSpeed, 1.0),
     tapZoneMode: (getString(LS_KEYS.tapZoneMode, 'edge') as 'edge' | 'kindle'),
