@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   List,
@@ -8,6 +8,8 @@ import {
   Timer,
   Headphones,
   Search,
+  MoreVertical,
+  StickyNote,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -35,6 +37,8 @@ interface ReaderNavbarProps {
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
   bookTitle: string;
+  bookAuthor?: string;
+  sectionTitle?: string;
   colors: ReaderColors;
   lang?: string;
   isBookCompleted?: boolean;
@@ -45,14 +49,21 @@ interface ReaderNavbarProps {
   isReadingAloud?: boolean;
   onToggleReadAloud?: () => void;
   onOpenSearch?: () => void;
+  onOpenNotes?: () => void;
 }
 
+/**
+ * Reader top bar, ReadEra-style: back on the left, read aloud / search / contents / settings /
+ * more on the right, and the book title, author and current section underneath.
+ */
 export default function ReaderNavbar({
   visible,
   onBack,
   onToggleToc,
   onToggleSettings,
   bookTitle,
+  bookAuthor,
+  sectionTitle,
   colors,
   lang = 'es',
   onOpenGallery,
@@ -65,152 +76,130 @@ export default function ReaderNavbar({
   isReadingAloud = false,
   onToggleReadAloud,
   onOpenSearch,
+  onOpenNotes,
 }: ReaderNavbarProps) {
-  const btnStyle: React.CSSProperties = {
-    background: 'transparent',
-    border: 'none',
-    color: '#e0e0ea',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '8px',
-    borderRadius: '50%',
-    outline: 'none',
-    transition: 'background 0.15s ease',
+  const es = lang === 'es';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!visible) setMenuOpen(false);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menuOpen]);
+
+  const runAndClose = (action?: () => void) => () => {
+    setMenuOpen(false);
+    action?.();
   };
+
+  const speedLabel = `${isReadingSpeedPaused ? (es ? 'Pausada · ' : 'Paused · ') : ''}${readingSpeed.toLocaleString()} ${es ? 'car/h' : 'ch/h'}`;
 
   return (
     <div
+      className="reader-topbar"
       onMouseLeave={onMouseLeave}
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 'max(8px, var(--yoru-safe-top, 0px)) 12px 8px 12px',
-        background: 'rgba(14, 14, 18, 0.95)',
-        backdropFilter: 'blur(16px)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         transform: visible ? 'translateY(0)' : 'translateY(-110%)',
         opacity: visible ? 1 : 0,
-        transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease',
         pointerEvents: visible ? 'auto' : 'none',
-        boxSizing: 'border-box',
       }}
     >
-      {/* Left: Back button */}
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        <button style={btnStyle} onClick={onBack} title={lang === 'es' ? 'Volver' : 'Back'}>
+      <div className="reader-topbar-row">
+        <button type="button" className="reader-topbar-btn" onClick={onBack} title={es ? 'Volver' : 'Back'} aria-label={es ? 'Volver' : 'Back'}>
           <ArrowLeft size={22} />
         </button>
+
+        <div className="reader-topbar-actions">
+          {onToggleReadAloud && (
+            <button
+              type="button"
+              className={`reader-topbar-btn${isReadingAloud ? ' is-active' : ''}`}
+              onClick={onToggleReadAloud}
+              title={es ? 'Leer en voz alta' : 'Read aloud'}
+              aria-label={es ? 'Leer en voz alta' : 'Read aloud'}
+              aria-pressed={isReadingAloud}
+              style={isReadingAloud ? { color: colors.accent } : undefined}
+            >
+              <Headphones size={21} />
+            </button>
+          )}
+          {onOpenSearch && (
+            <button type="button" className="reader-topbar-btn" onClick={onOpenSearch} title={es ? 'Buscar en el libro' : 'Search in book'} aria-label={es ? 'Buscar en el libro' : 'Search in book'}>
+              <Search size={21} />
+            </button>
+          )}
+          <button type="button" className="reader-topbar-btn" onClick={onToggleToc} title={es ? 'Capítulos' : 'Chapters'} aria-label={es ? 'Capítulos' : 'Chapters'}>
+            <List size={22} />
+          </button>
+          <button type="button" className="reader-topbar-btn" onClick={onToggleSettings} title={es ? 'Ajustes' : 'Settings'} aria-label={es ? 'Ajustes' : 'Settings'}>
+            <Settings size={21} />
+          </button>
+          <div className="reader-topbar-more" ref={menuRef}>
+            <button
+              type="button"
+              className="reader-topbar-btn"
+              onClick={() => setMenuOpen((open) => !open)}
+              title={es ? 'Más opciones' : 'More options'}
+              aria-label={es ? 'Más opciones' : 'More options'}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreVertical size={21} />
+            </button>
+            {menuOpen && (
+              <div className="reader-topbar-menu" role="menu" style={{ background: colors.popoverBg || '#16181f' }}>
+                {onToggleReadingSpeed && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onToggleReadingSpeed)}>
+                    <Activity size={18} />
+                    <span>
+                      {isReadingSpeedActive ? (es ? 'Terminar medición' : 'Finish measuring') : (es ? 'Medir velocidad' : 'Measure speed')}
+                      {isReadingSpeedActive && <small>{speedLabel}</small>}
+                    </span>
+                  </button>
+                )}
+                {onToggleSession && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onToggleSession)}>
+                    <Timer size={18} />
+                    <span>{es ? 'Sesión de lectura' : 'Reading session'}</span>
+                  </button>
+                )}
+                {onOpenNotes && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onOpenNotes)}>
+                    <StickyNote size={18} />
+                    <span>{es ? 'Subrayados y notas' : 'Highlights & notes'}</span>
+                  </button>
+                )}
+                {onOpenGallery && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onOpenGallery)}>
+                    <Image size={18} />
+                    <span>{es ? 'Imágenes del libro' : 'Book images'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Center: Novel Title */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          padding: '0 12px',
-        }}
-      >
-        <span
-          style={{
-            fontSize: '0.95rem',
-            fontWeight: 700,
-            color: '#ffffff',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            maxWidth: '100%',
-            textAlign: 'center',
-          }}
-        >
-          {bookTitle}
-        </span>
-      </div>
-
-      {/* Right: Gallery, Chapters TOC, Settings */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        {onToggleReadingSpeed && (
-          <button
-            onClick={onToggleReadingSpeed}
-            aria-label={isReadingSpeedActive
-              ? (lang === 'es' ? 'Finalizar medición de velocidad' : 'Finish speed measurement')
-              : (lang === 'es' ? 'Iniciar medición de velocidad' : 'Start speed measurement')}
-            title={isReadingSpeedActive
-              ? `${lang === 'es' ? 'Finalizar medición' : 'Finish measurement'} · ${readingSpeed.toLocaleString()} ${lang === 'es' ? 'caracteres/h' : 'chars/h'}`
-              : (lang === 'es' ? 'Activar medición de velocidad de lectura' : 'Start reading speed measurement')}
-            style={{
-              ...btnStyle,
-              borderRadius: '999px',
-              padding: '7px 10px',
-              gap: '6px',
-              border: `1px solid ${isReadingSpeedActive ? `${colors.accent}80` : 'rgba(255,255,255,0.14)'}`,
-              background: isReadingSpeedActive ? `${colors.accent}18` : 'rgba(255,255,255,0.04)',
-              color: isReadingSpeedActive ? colors.accent : '#e0e0ea',
-              whiteSpace: 'nowrap',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-            }}
-          >
-            <Activity size={18} />
-            <span className="reader-speed-pill-label">
-              {!isReadingSpeedActive
-                ? (lang === 'es' ? 'Medir velocidad' : 'Measure speed')
-                : `${isReadingSpeedPaused ? (lang === 'es' ? 'Pausada' : 'Paused') : ''}${isReadingSpeedPaused ? ' · ' : ''}${readingSpeed.toLocaleString()} ${lang === 'es' ? 'car/h' : 'ch/h'}`}
-            </span>
-          </button>
-        )}
-        {onToggleSession && (
-          <button
-            style={btnStyle}
-            onClick={onToggleSession}
-            title={lang === 'es' ? 'Sesión y controles de medición' : 'Session and measurement controls'}
-            aria-label={lang === 'es' ? 'Abrir sesión de lectura' : 'Open reading session'}
-          >
-            <Timer size={20} />
-          </button>
-        )}
-        {onOpenSearch && (
-          <button
-            style={btnStyle}
-            onClick={onOpenSearch}
-            title={lang === 'es' ? 'Buscar en el libro' : 'Search in book'}
-            aria-label={lang === 'es' ? 'Buscar en el libro' : 'Search in book'}
-          >
-            <Search size={20} />
-          </button>
-        )}
-        {onToggleReadAloud && (
-          <button
-            style={{ ...btnStyle, color: isReadingAloud ? colors.accent : btnStyle.color, background: isReadingAloud ? `${colors.accent}18` : 'transparent' }}
-            onClick={onToggleReadAloud}
-            title={lang === 'es' ? 'Leer en voz alta' : 'Read aloud'}
-            aria-label={lang === 'es' ? 'Leer en voz alta' : 'Read aloud'}
-            aria-pressed={isReadingAloud}
-          >
-            <Headphones size={20} />
-          </button>
-        )}
-        {onOpenGallery && (
-          <button style={btnStyle} onClick={onOpenGallery} title={lang === 'es' ? 'Galería' : 'Gallery'}>
-            <Image size={20} />
-          </button>
-        )}
-        <button style={btnStyle} onClick={onToggleToc} title={lang === 'es' ? 'Capítulos' : 'Chapters'}>
-          <List size={22} />
-        </button>
-        <button style={btnStyle} onClick={onToggleSettings} title={lang === 'es' ? 'Ajustes' : 'Settings'}>
-          <Settings size={22} />
-        </button>
+      <div className="reader-topbar-info">
+        <div className="reader-topbar-title">{bookTitle}</div>
+        {bookAuthor && <div className="reader-topbar-sub">{bookAuthor}</div>}
+        <div className="reader-topbar-sub">
+          {sectionTitle && <span>{es ? 'Sección: ' : 'Section: '}{sectionTitle}</span>}
+          {isReadingSpeedActive && (
+            <button type="button" className="reader-topbar-speed" onClick={onToggleReadingSpeed} style={{ color: colors.accent, borderColor: `${colors.accent}66` }}>
+              <Activity size={13} /> {speedLabel}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

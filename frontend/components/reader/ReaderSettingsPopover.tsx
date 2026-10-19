@@ -1,6 +1,6 @@
 import React from 'react';
-import { ChevronRight, Check } from 'lucide-react';
-import { ReaderSettingsState } from '../../hooks/useReaderSettings';
+import { ChevronDown, MinusCircle, PlusCircle } from 'lucide-react';
+import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
 
 interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
@@ -11,6 +11,10 @@ interface ReaderSettingsPopoverProps {
   lang: string;
 }
 
+/**
+ * Quick reader settings, laid out like ReadEra's book settings card: a dropdown card under the
+ * top bar with one row per setting (pickers, − value + steppers and switches).
+ */
 export default function ReaderSettingsPopover({
   settings,
   onClose,
@@ -19,392 +23,169 @@ export default function ReaderSettingsPopover({
   lang,
   onSettingChange,
 }: ReaderSettingsPopoverProps) {
-  const {
-    fontSize,
-    lineHeight,
-    verticalPadding,
-    horizontalPadding,
-    vertical,
-    paginated,
-    theme,
-    showProgressLine,
-    disableCss,
-    direction,
-  } = settings;
+  const { fontSize, lineHeight, verticalPadding, horizontalPadding, paginated, theme, showProgressLine, disableCss, direction, fontFamily } = settings;
+  const es = lang === 'es';
 
-  const isEs = lang === 'es';
-
-  // Helper to adjust numerical settings with bounds
-  const adjustValue = (
-    key: 'fontSize' | 'lineHeight' | 'verticalPadding' | 'horizontalPadding',
-    step: number,
-    min: number,
-    max: number
-  ) => {
-    const newVal = Math.max(min, Math.min(max, settings[key] + step));
-    // Round to 2 decimals to prevent JS floating point precision issues (like 1.35000000002)
-    onSettingChange(key, Math.round(newVal * 100) / 100);
+  const clampSet = (key: 'fontSize' | 'lineHeight' | 'verticalPadding' | 'horizontalPadding', value: number, min: number, max: number) => {
+    onSettingChange(key, Math.round(Math.max(min, Math.min(max, value)) * 100) / 100);
   };
 
-  // Sync flow segment changes to vertical state
-  const handleFlowChange = (isPaged: boolean) => {
+  // Page flipping: paged, or continuous scrolling (continuous is horizontal text only).
+  const setFlow = (value: string) => {
+    const isPaged = value === 'paged';
     onSettingChange('paginated', isPaged);
     if (!isPaged) {
-      // Continuous mode is only for horizontal mode.
-      // Force horizontal direction
       onSettingChange('direction', 'horizontal');
       onSettingChange('vertical', false);
     }
   };
 
-  // Sync direction segment changes to vertical state
-  const handleDirectionChange = (mode: 'auto' | 'vertical' | 'horizontal') => {
+  const setDirection = (mode: 'auto' | 'vertical' | 'horizontal') => {
     onSettingChange('direction', mode);
-    if (mode === 'vertical') {
-      onSettingChange('vertical', true);
-    } else if (mode === 'horizontal') {
-      onSettingChange('vertical', false);
-    } else {
-      // Auto: defaults to vertical LN standard
-      onSettingChange('vertical', true);
-    }
-
-    // Auto and Vertical can only be Paged. Switch flow to Paged if active.
-    if (mode === 'auto' || mode === 'vertical') {
-      onSettingChange('paginated', true);
-    }
+    onSettingChange('vertical', mode !== 'horizontal');
+    if (mode !== 'horizontal') onSettingChange('paginated', true);
   };
 
-  const activeTheme = theme || 'dark';
-  const activeDirection = direction || 'auto';
+  const fonts = BUILT_IN_FONTS.some((font) => font.value === fontFamily)
+    ? BUILT_IN_FONTS
+    : [...BUILT_IN_FONTS, { label: fontFamily, value: fontFamily }];
 
   return (
     <>
-      {/* Click outside backdrop for popover closing */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 10001,
-          background: 'transparent',
-        }}
-        onClick={onClose}
-      />
+      <div className="readera-settings-backdrop" onClick={onClose} />
+      <div className="readera-settings" role="dialog" aria-label={es ? 'Ajustes del libro' : 'Book settings'}>
+        <div className="readera-settings-title">{es ? 'AJUSTES DEL LIBRO · EPUB, TXT, HTML' : 'BOOK SETTINGS · EPUB, TXT, HTML'}</div>
 
-      <div className="settings-popover-card">
-        {/* Top arrow */}
-        <div className="settings-popover-arrow" />
-
-        {/* Header (Fixed) */}
-        <div className="settings-popover-header">
-          <span className="settings-popover-title">
-            READER SETTINGS
-          </span>
-          <button className="settings-popover-done" onClick={onClose}>
-            Done
-          </button>
+        <div className="readera-settings-body">
+          <PickerRow
+            label={es ? 'Paso de página' : 'Page flipping'}
+            value={paginated ? 'paged' : 'continuous'}
+            options={[
+              { value: 'paged', label: es ? 'Por páginas' : 'Paged' },
+              { value: 'continuous', label: es ? 'Continuo (desplazar)' : 'Continuous (scroll)' },
+            ]}
+            onChange={setFlow}
+          />
+          <PickerRow
+            label={es ? 'Modo de color' : 'Color mode'}
+            value={theme || 'dark'}
+            options={[
+              { value: 'light', label: es ? 'Día' : 'Day' },
+              { value: 'sepia', label: es ? 'Papel' : 'Paper' },
+              { value: 'dark', label: es ? 'Noche' : 'Night' },
+            ]}
+            onChange={(value) => onSettingChange('theme', value as ReaderSettingsState['theme'])}
+          />
+          <PickerRow
+            label={es ? 'Fuente' : 'Font face'}
+            value={fontFamily || '__default__'}
+            options={fonts.map((font) => ({ value: font.value, label: font.value === '__default__' ? (es ? 'Predeterminada' : 'Default') : font.label }))}
+            onChange={(value) => onSettingChange('fontFamily', value)}
+          />
+          <StepperRow
+            label={es ? 'Tamaño de letra' : 'Font size'}
+            display={String(fontSize)}
+            onMinus={() => clampSet('fontSize', fontSize - 1, 10, 60)}
+            onPlus={() => clampSet('fontSize', fontSize + 1, 10, 60)}
+            es={es}
+          />
+          <StepperRow
+            label={es ? 'Interlineado' : 'Line spacing'}
+            display={`${Math.round(lineHeight * 100)}%`}
+            onMinus={() => clampSet('lineHeight', lineHeight - 0.05, 1, 3)}
+            onPlus={() => clampSet('lineHeight', lineHeight + 0.05, 1, 3)}
+            es={es}
+          />
+          <StepperRow
+            label={es ? 'Márgenes laterales' : 'Side margins'}
+            display={`${horizontalPadding}%`}
+            onMinus={() => clampSet('horizontalPadding', horizontalPadding - 1, 0, 30)}
+            onPlus={() => clampSet('horizontalPadding', horizontalPadding + 1, 0, 30)}
+            es={es}
+          />
+          <StepperRow
+            label={es ? 'Márgenes arriba/abajo' : 'Top/bottom margins'}
+            display={`${verticalPadding}%`}
+            onMinus={() => clampSet('verticalPadding', verticalPadding - 1, 0, 20)}
+            onPlus={() => clampSet('verticalPadding', verticalPadding + 1, 0, 20)}
+            es={es}
+          />
+          <PickerRow
+            label={es ? 'Dirección del texto' : 'Text direction'}
+            value={direction || 'auto'}
+            options={[
+              { value: 'auto', label: es ? 'Automática' : 'Automatic' },
+              { value: 'vertical', label: es ? 'Escritura vertical' : 'Vertical writing' },
+              { value: 'horizontal', label: es ? 'Escritura horizontal' : 'Horizontal writing' },
+            ]}
+            onChange={(value) => setDirection(value as 'auto' | 'vertical' | 'horizontal')}
+          />
+          <SwitchRow
+            label={es ? 'Barra de progreso' : 'Progress line'}
+            checked={!!showProgressLine}
+            onChange={(value) => onSettingChange('showProgressLine', value)}
+          />
+          <SwitchRow
+            label={es ? 'Formato del editor' : 'Publisher formatting'}
+            checked={!disableCss}
+            onChange={(value) => onSettingChange('disableCss', !value)}
+          />
+          {onOpenExtensionSettings && (
+            <button type="button" className="readera-settings-row readera-settings-link" onClick={onOpenExtensionSettings}>
+              {es ? 'Ajustes de parseo / extensión' : 'Parse / extension settings'}
+            </button>
+          )}
         </div>
 
-        {/* Scrollable body */}
-        <div className="settings-popover-body">
-          {/* FLOW: Paged / Continuous */}
-          <div className="flow-container">
-            <div className="settings-popover-section-label">
-              FLOW
-            </div>
-            <div className="settings-segmented-container">
-              <button
-                className={`settings-segmented-btn ${paginated ? 'active' : ''}`}
-                onClick={() => handleFlowChange(true)}
-              >
-                Paged
-              </button>
-              <button
-                className={`settings-segmented-btn ${!paginated ? 'active' : ''}`}
-                onClick={() => handleFlowChange(false)}
-              >
-                Continuous
-              </button>
-            </div>
-          </div>
-
-          {/* DIRECTION: Auto / Vertical / Horizontal */}
-          <div className="direction-container">
-            <div className="settings-popover-section-label">
-              DIRECTION
-            </div>
-            <div className="settings-segmented-container">
-              <button
-                className={`settings-segmented-btn ${activeDirection === 'auto' ? 'active' : ''}`}
-                onClick={() => handleDirectionChange('auto')}
-                disabled={!paginated}
-                style={!paginated ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-              >
-                Auto
-              </button>
-              <button
-                className={`settings-segmented-btn ${activeDirection === 'vertical' ? 'active' : ''}`}
-                onClick={() => handleDirectionChange('vertical')}
-                disabled={!paginated}
-                style={!paginated ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-              >
-                Vertical
-              </button>
-              <button
-                className={`settings-segmented-btn ${activeDirection === 'horizontal' ? 'active' : ''}`}
-                onClick={() => handleDirectionChange('horizontal')}
-              >
-                Horizontal
-              </button>
-            </div>
-          </div>
-
-          {/* TYPE */}
-          <div>
-            <div className="settings-popover-section-label" style={{ marginBottom: '10px' }}>
-              TYPE
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* Font size slider */}
-              <div className="settings-slider-card">
-                <div className="settings-slider-header">
-                  <span>Font size</span>
-                  <span className="settings-slider-value">{fontSize} px</span>
-                </div>
-                <div className="settings-slider-controls">
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('fontSize', -1, 10, 60)}
-                  >
-                    −
-                  </button>
-                  <input
-                    type="range"
-                    min="10"
-                    max="60"
-                    step="1"
-                    value={fontSize}
-                    onChange={(e) => onSettingChange('fontSize', Number(e.target.value))}
-                    className="settings-slider-input"
-                  />
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('fontSize', 1, 10, 60)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Line height slider */}
-              <div className="settings-slider-card">
-                <div className="settings-slider-header">
-                  <span>Line height</span>
-                  <span className="settings-slider-value">{lineHeight.toFixed(2)}</span>
-                </div>
-                <div className="settings-slider-controls">
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('lineHeight', -0.05, 1.0, 3.0)}
-                  >
-                    −
-                  </button>
-                  <input
-                    type="range"
-                    min="1.0"
-                    max="3.0"
-                    step="0.05"
-                    value={lineHeight}
-                    onChange={(e) => onSettingChange('lineHeight', Number(e.target.value))}
-                    className="settings-slider-input"
-                  />
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('lineHeight', 0.05, 1.0, 3.0)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Side margin slider (Horizontal padding) */}
-              <div className="settings-slider-card">
-                <div className="settings-slider-header">
-                  <span>Side margin</span>
-                  <span className="settings-slider-value">{horizontalPadding}%</span>
-                </div>
-                <div className="settings-slider-controls">
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('horizontalPadding', -1, 0, 30)}
-                  >
-                    −
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="30"
-                    step="1"
-                    value={horizontalPadding}
-                    onChange={(e) => onSettingChange('horizontalPadding', Number(e.target.value))}
-                    className="settings-slider-input"
-                  />
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('horizontalPadding', 1, 0, 30)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Top/bottom margin slider (Vertical padding) */}
-              <div className="settings-slider-card">
-                <div className="settings-slider-header">
-                  <span>Top/bottom margin</span>
-                  <span className="settings-slider-value">{verticalPadding}%</span>
-                </div>
-                <div className="settings-slider-controls">
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('verticalPadding', -1, 0, 20)}
-                  >
-                    −
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    step="1"
-                    value={verticalPadding}
-                    onChange={(e) => onSettingChange('verticalPadding', Number(e.target.value))}
-                    className="settings-slider-input"
-                  />
-                  <button
-                    className="settings-slider-btn"
-                    onClick={() => adjustValue('verticalPadding', 1, 0, 20)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* STYLE */}
-          <div>
-            <div className="settings-popover-section-label" style={{ marginBottom: '10px' }}>
-              STYLE
-            </div>
-            
-            {/* Book theme */}
-            <div style={{ marginBottom: '14px' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, opacity: 0.9, textAlign: 'left', marginBottom: '2px' }}>Book theme</div>
-              <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.4)', textAlign: 'left', marginBottom: '10px' }} className="style-option-desc">Applies only to the book page</div>
-              <div className="theme-cards-container">
-                {/* White theme */}
-                <div 
-                  className={`theme-card ${activeTheme === 'light' ? 'active' : ''}`}
-                  onClick={() => onSettingChange('theme', 'light')}
-                >
-                  <div style={{ background: '#ffffff', color: '#121214', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(0,0,0,0.1)' }}>
-                    Aa
-                  </div>
-                  <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700 }}>White</div>
-                </div>
-
-                {/* Paper theme */}
-                <div 
-                  className={`theme-card ${activeTheme === 'sepia' ? 'active' : ''}`}
-                  onClick={() => onSettingChange('theme', 'sepia')}
-                >
-                  <div style={{ background: '#fcfaf2', color: '#5c4b37', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(92, 75, 55, 0.2)' }}>
-                    Aa
-                  </div>
-                  <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700 }}>Paper</div>
-                </div>
-
-                {/* Dark theme */}
-                <div 
-                  className={`theme-card ${activeTheme === 'dark' ? 'active' : ''}`}
-                  onClick={() => onSettingChange('theme', 'dark')}
-                >
-                  <div style={{ background: '#1c1c1e', color: '#ffffff', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(255,255,255,0.15)' }}>
-                    Aa
-                  </div>
-                  <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700 }}>Dark</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Checkboxes Options */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* Footer progress */}
-              <div 
-                className="style-option-card"
-                onClick={() => onSettingChange('showProgressLine', !showProgressLine)}
-              >
-                <div className="style-option-info">
-                  <span className="style-option-title">Footer progress</span>
-                  <span className="style-option-desc">Show the thin chapter progress line</span>
-                </div>
-                <div className={`style-option-checkbox ${showProgressLine ? 'checked' : ''}`}>
-                  {showProgressLine && <Check size={12} color="#fff" strokeWidth={3} />}
-                </div>
-              </div>
-
-              {/* Publisher formatting */}
-              <div 
-                className="style-option-card"
-                onClick={() => onSettingChange('disableCss', !disableCss)}
-              >
-                <div className="style-option-info">
-                  <span className="style-option-title">Publisher formatting</span>
-                  <span className="style-option-desc">Keep book layout and typography where possible</span>
-                </div>
-                <div className={`style-option-checkbox ${!disableCss ? 'checked' : ''}`}>
-                  {!disableCss && <Check size={12} color="#fff" strokeWidth={3} />}
-                </div>
-              </div>
-
-              {/* Parse / Extension Settings button */}
-              {onOpenExtensionSettings && (
-                <button
-                  onClick={onOpenExtensionSettings}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: `1px solid rgba(245, 158, 11, 0.3)`,
-                    background: 'rgba(245, 158, 11, 0.08)',
-                    color: '#f59e0b',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    marginTop: '4px',
-                  }}
-                >
-                  ⚙️ {isEs ? 'Ajustes de parseo / extensión' : 'Parse / Extension settings'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer (Fixed) */}
-        <div className="settings-popover-footer" onClick={onOpenFullSettings}>
-          <span>All settings</span>
-          <ChevronRight size={16} />
-        </div>
+        <button type="button" className="readera-settings-footer" onClick={onOpenFullSettings}>
+          {es ? 'AJUSTES GENERALES' : 'GENERAL SETTINGS'}
+        </button>
       </div>
     </>
+  );
+}
+
+function PickerRow({ label, value, options, onChange }: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="readera-settings-row">
+      <span className="readera-settings-label">{label}</span>
+      <span className="readera-settings-picker">
+        <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <ChevronDown size={18} aria-hidden="true" />
+      </span>
+    </label>
+  );
+}
+
+function StepperRow({ label, display, onMinus, onPlus, es }: { label: string; display: string; onMinus: () => void; onPlus: () => void; es: boolean }) {
+  return (
+    <div className="readera-settings-row">
+      <span className="readera-settings-label">{label}</span>
+      <div className="readera-settings-stepper">
+        <button type="button" onClick={onMinus} aria-label={es ? `Menos ${label.toLowerCase()}` : `Less ${label.toLowerCase()}`}>
+          <MinusCircle size={26} strokeWidth={1.6} />
+        </button>
+        <span className="readera-settings-value">{display}</span>
+        <button type="button" onClick={onPlus} aria-label={es ? `Más ${label.toLowerCase()}` : `More ${label.toLowerCase()}`}>
+          <PlusCircle size={26} strokeWidth={1.6} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SwitchRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} className="readera-settings-row readera-settings-switch-row" onClick={() => onChange(!checked)}>
+      <span className="readera-settings-switch-label">{label}</span>
+      <span className={`readera-switch${checked ? ' on' : ''}`} aria-hidden="true"><span /></span>
+    </button>
   );
 }

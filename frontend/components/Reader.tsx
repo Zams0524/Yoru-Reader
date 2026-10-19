@@ -2083,6 +2083,9 @@ export default function Reader({
         readingSpeed={session.speed}
         onToggleReadingSpeed={handleToggleReadingMeasurement}
         onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenNotes={() => setSidebarMode('notes')}
+        bookAuthor={book?.author || ''}
+        sectionTitle={engineApiRef.current?.getSections()[currentProgress.currSection]?.title || ''}
         isReadingAloud={isReadAloudOpen}
         onToggleReadAloud={() => {
           if (isReadAloudOpen) {
