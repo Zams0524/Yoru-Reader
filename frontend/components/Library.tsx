@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles } from 'lucide-react';
 import { OnboardingTutorialModal } from './OnboardingTutorialModal';
+import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
@@ -292,6 +293,13 @@ const Library = React.memo(function Library({
 
   // Sidebar Navigation states
   const [activeFilter, setActiveFilter] = useState({ type: 'all', value: null });
+  const [libraryView, setLibraryView] = useState<LibraryView>(() => {
+    try { return localStorage.getItem('yoru_library_view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+  });
+  const changeLibraryView = (view: LibraryView) => {
+    setLibraryView(view);
+    try { localStorage.setItem('yoru_library_view', view); } catch { /* ignore */ }
+  };
     const [downloadedOnly, setDownloadedOnly] = useState(false);
   const [incognitoMode, setIncognitoMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2596,7 +2604,58 @@ const Library = React.memo(function Library({
     );
   };
 
+  // ReadEra-style list rows: cover, title, author, progress and last read.
+  const renderBookList = (booksList) => (
+    <div className="books-list">
+      {booksList.map((book) => {
+        const isSelected = selectedBookIds.includes(book.id);
+        const percent = book.progress?.percent ?? 0;
+        const hasImage = book.cover && !book.cover.startsWith('linear-gradient');
+        return (
+          <div
+            key={book.id}
+            className={`book-list-row ${isSelected ? 'selected' : ''} ${selectMode ? 'select-mode-active' : ''}`}
+            onClick={() => handleCardClick(book)}
+            style={{ position: 'relative', zIndex: activeMenuBookId === book.id ? 500 : 'auto' }}
+          >
+            <div className="book-list-cover">
+              {hasImage ? (
+                <img src={book.cover} alt="" loading="lazy" decoding="async" style={book.hideCover ? { filter: 'blur(8px)', opacity: 0.5 } : undefined} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', background: book.cover || 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)' }} />
+              )}
+              {selectMode && (
+                <div className="card-checkbox-container">
+                  <Check size={12} className="card-checkbox-icon" />
+                </div>
+              )}
+            </div>
+            <div className="book-list-info">
+              <div className="book-list-title" title={book.title}>{book.title}</div>
+              {(book.author || book.series) && (
+                <div className="book-list-meta">{[book.series, book.author].filter(Boolean).join(' · ')}</div>
+              )}
+              <div className="book-list-progress">
+                <div className="book-list-progress-track">
+                  <div className="book-list-progress-fill" style={{ width: `${Math.min(100, percent)}%` }} />
+                </div>
+                <span>{percent}%</span>
+              </div>
+              {book.lastRead && (
+                <div className="book-list-meta">
+                  {(lang === 'es' ? 'Leído ' : 'Read ') + new Date(book.lastRead).toLocaleDateString(lang === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </div>
+              )}
+            </div>
+            {renderBookCardMenu(book)}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   const renderBookGrid = (booksList) => {
+    if (libraryView === 'list') return renderBookList(booksList);
     return (
       <div className="books-grid">
         {booksList.map((book) => {
@@ -7463,6 +7522,14 @@ const Library = React.memo(function Library({
               </div>
             ) : (
               <>
+                <LibraryQuickBar
+                  books={books}
+                  activeFilter={activeFilter}
+                  onFilter={(filter) => setActiveFilter(filter as any)}
+                  view={libraryView}
+                  onViewChange={changeLibraryView}
+                  lang={lang}
+                />
                 {filteredBooksList.length === 0 ? (
                   <div className="library-no-results">
                     <p>{lang === 'es' ? 'No se encontraron libros para esta categoría o búsqueda.' : 'No books found for this category or search.'}</p>
