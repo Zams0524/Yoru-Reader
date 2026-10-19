@@ -486,6 +486,8 @@ export default function Reader({
   }, []);
 
   const handleOpenExtensionSettings = useCallback(() => {
+    // The quick settings sheet would otherwise stay open underneath and bleed through the modal.
+    setShowSettingsPopover(false);
     setIsExtSettingsOpen(true);
   }, []);
 

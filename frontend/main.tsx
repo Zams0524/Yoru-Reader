@@ -4,10 +4,14 @@ import { Capacitor } from '@capacitor/core'
 import './index.css'
 import './yoru-design-system.css'
 import App from './App'
+import { applyLocalWordStyles } from './utils/parserSettingsStore'
 
 if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
   document.documentElement.classList.add('platform-android')
 }
+
+// Word-state styles chosen in the Yoru Parser settings (kept locally where there is no extension).
+applyLocalWordStyles()
 
 function saveRuntimeIssue(kind: string, message: string, stack = '') {
   try {

@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  readParserSettings as readSettings,
+  writeParserSettings as writeSettings,
+  type WordEffect,
+  type WordStyleThemeConfig,
+} from '../../utils/parserSettingsStore';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface YoruParserSettingsProps {
@@ -15,25 +21,6 @@ interface YoruParserSettingsProps {
     popoverBg: string;
   };
   lang: string;
-}
-
-interface WordEffect {
-  type: 'text-colour' | 'underline' | 'background' | 'opacity' | 'shadow';
-  colour?: string;
-  style?: 'solid' | 'dotted' | 'dashed' | 'wavy';
-  thickness?: number;
-  opacity?: number;
-  value?: number;
-  hoverOnly?: boolean;
-  blur?: number;
-  offsetX?: number;
-  offsetY?: number;
-}
-
-interface WordStyleThemeConfig {
-  v: number;
-  theme: string;
-  states: Record<string, { effects: WordEffect[] }>;
 }
 
 interface SettingsValues {
@@ -337,47 +324,6 @@ const STATES_LIST: { id: string; labelEs: string; labelEn: string }[] = [
   { id: 'kifuku', labelEs: 'Kifuku (Pitch)', labelEn: 'Kifuku (Pitch)' },
 ];
 
-// ── Bridge helpers ─────────────────────────────────────────────────────
-let bridgeIdCounter = 0;
-
-function readSettings(keys: string[]): Promise<Record<string, any>> {
-  return new Promise((resolve) => {
-    const id = `yoru-read-${++bridgeIdCounter}`;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.id === id) {
-        document.removeEventListener('yoru-settings-data', handler);
-        resolve(detail.values);
-      }
-    };
-    document.addEventListener('yoru-settings-data', handler);
-    document.dispatchEvent(new CustomEvent('yoru-settings-read', { detail: { id, keys } }));
-    setTimeout(() => {
-      document.removeEventListener('yoru-settings-data', handler);
-      resolve({});
-    }, 3000);
-  });
-}
-
-function writeSettings(entries: Record<string, any>): Promise<boolean> {
-  return new Promise((resolve) => {
-    const id = `yoru-write-${++bridgeIdCounter}`;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.id === id) {
-        document.removeEventListener('yoru-settings-written', handler);
-        resolve(detail.ok);
-      }
-    };
-    document.addEventListener('yoru-settings-written', handler);
-    document.dispatchEvent(new CustomEvent('yoru-settings-write', { detail: { id, entries } }));
-    setTimeout(() => {
-      document.removeEventListener('yoru-settings-written', handler);
-      resolve(false);
-    }, 3000);
-  });
-}
-
 function parseBool(val: any, fallback: boolean): boolean {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'boolean') return val;
@@ -603,6 +549,13 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   if (!isOpen) return null;
 
   const t = (es: string, en: string) => (lang === 'es' ? es : en);
+  const effectLabel = (type: WordEffect['type']) => ({
+    'text-colour': t('Color', 'Color'),
+    underline: t('Subrayado', 'Underline'),
+    background: t('Fondo', 'Background'),
+    opacity: t('Opacidad', 'Opacity'),
+    shadow: t('Sombra', 'Shadow'),
+  }[type]);
 
   // ── Styles ─────────────────────────────────────────────────────────
   const isDark = colors.bg === '#08080a' || colors.bg === '#050507' || colors.bg.startsWith('#0');
@@ -943,7 +896,13 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 
         {/* Word States List Accordion */}
         <div style={sectionTitleStyle}>{t('Estados de Palabras', 'Word States')}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ ...descStyle, margin: '-4px 0 10px' }}>
+          {t(
+            'Toca un estado para ver y editar sus efectos. «+ Efecto» añade un color, subrayado, fondo, opacidad o sombra.',
+            'Tap a state to see and edit its effects. "+ Effect" adds a color, underline, background, opacity or shadow.',
+          )}
+        </div>
+        <div className="yoru-parser-states" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {STATES_LIST.map((state) => {
             const stateConfig = config.states[state.id] || { effects: [] };
             const isExpanded = expandedState === state.id;
@@ -951,6 +910,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
             return (
               <div
                 key={state.id}
+                className="yoru-parser-state"
                 style={{
                   background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                   border: `1px solid ${colors.border}`,
@@ -961,6 +921,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
               >
                 {/* Accordion Header */}
                 <div
+                  className="yoru-parser-state-head"
+                  role="button"
+                  aria-expanded={isExpanded}
                   onClick={() => setExpandedState(isExpanded ? null : state.id)}
                   style={{
                     display: 'flex',
@@ -971,18 +934,26 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
                     userSelect: 'none',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '0.8rem', color: colors.textMuted }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <span className="yoru-parser-state-chevron" style={{ fontSize: '0.7rem', color: colors.textMuted }}>
                       {isExpanded ? '▼' : '▶'}
                     </span>
-                    <span style={{ ...labelStyle, fontSize: '0.88rem' }}>
-                      {lang === 'es' ? state.labelEs : state.labelEn}
+                    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <span className="yoru-parser-state-label" style={{ ...labelStyle, fontSize: '0.88rem' }}>
+                        {lang === 'es' ? state.labelEs : state.labelEn}
+                      </span>
+                      <span className="yoru-parser-state-summary" style={{ ...descStyle, marginTop: 0, fontSize: '0.72rem' }}>
+                        {stateConfig.effects.length === 0
+                          ? t('Sin efectos', 'No effects')
+                          : [...new Set(stateConfig.effects.map((effect) => effectLabel(effect.type)))].join(' · ')}
+                      </span>
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="yoru-parser-state-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     {/* Live styled state label indicator */}
                     <span
+                      className="yoru-parser-state-sample"
                       style={{
                         fontSize: '0.9rem',
                         fontWeight: 600,
@@ -1003,6 +974,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
                         }
                       }}
                       onClick={(e) => e.stopPropagation()}
+                      className="yoru-parser-add-effect"
+                      aria-label={t('Añadir efecto', 'Add effect')}
                       style={{
                         padding: '4px 8px',
                         fontSize: '0.72rem',
@@ -1015,7 +988,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
                         outline: 'none',
                       }}
                     >
-                      <option value="" style={{ background: colors.popoverBg || colors.bg, color: colors.textMain }}>+ Add Effect</option>
+                      <option value="" style={{ background: colors.popoverBg || colors.bg, color: colors.textMain }}>{t('+ Efecto', '+ Effect')}</option>
                       <option value="text-colour" style={{ background: colors.popoverBg || colors.bg, color: colors.textMain }}>{t('Color de Texto', 'Text Color')}</option>
                       <option value="underline" style={{ background: colors.popoverBg || colors.bg, color: colors.textMain }}>{t('Subrayado', 'Underline')}</option>
                       <option value="background" style={{ background: colors.popoverBg || colors.bg, color: colors.textMain }}>{t('Fondo', 'Background')}</option>
@@ -1080,7 +1053,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
                                 gap: '2px',
                               }}
                             >
-                              ✕ Delete
+                              ✕ {t('Quitar', 'Delete')}
                             </button>
                           </div>
 
@@ -1395,6 +1368,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   return (
     <div
       ref={overlayRef}
+      className="yoru-parser-overlay"
       onClick={handleOverlayClick}
       style={{
         position: 'fixed',
@@ -1408,6 +1382,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
       }}
     >
       <div
+        className="yoru-parser-panel"
+        role="dialog"
+        aria-modal="true"
         style={{
           background: colors.bg,
           border: `1px solid ${colors.border}`,
@@ -1423,6 +1400,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
       >
         {/* ── Header ── */}
         <div
+          className="yoru-parser-header"
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -1435,6 +1413,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '1.1rem' }}>⚙️</span>
             <h3
+              className="yoru-parser-title"
               style={{
                 margin: 0,
                 color: colors.textMain,
@@ -1454,6 +1433,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
             )}
             <button
               onClick={onClose}
+              className="yoru-parser-close"
+              aria-label={t('Cerrar', 'Close')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -1477,6 +1458,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 
         {/* ── Tab Bar ── */}
         <div
+          className="yoru-parser-tabs"
+          role="tablist"
           style={{
             display: 'flex',
             gap: '2px',
@@ -1491,6 +1474,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                className="yoru-parser-tab"
+                role="tab"
+                aria-selected={isActive}
                 style={{
                   flex: 1,
                   display: 'flex',
@@ -1521,6 +1507,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 
         {/* ── Body ── */}
         <div
+          className="yoru-parser-body"
           style={{
             flex: 1,
             overflowY: 'auto',

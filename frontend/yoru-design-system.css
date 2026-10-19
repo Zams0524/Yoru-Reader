@@ -1227,3 +1227,104 @@ textarea:focus-visible,
     bottom: calc(80px + var(--yoru-safe-bottom, 0px)) !important;
   }
 }
+
+/* ==========================================================================
+   Yoru Parser settings modal on phones (v1.3.9)
+   A bottom sheet with every tab visible and compact word-state rows.
+   ========================================================================== */
+@media (max-width: 768px) {
+  .yoru-parser-overlay {
+    align-items: flex-end !important;
+    padding-top: calc(var(--yoru-safe-top, 0px) + 12px);
+    box-sizing: border-box;
+  }
+
+  .yoru-parser-panel {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 100% !important;
+    border-radius: 18px 18px 0 0 !important;
+    border-bottom: none !important;
+    padding-bottom: var(--yoru-safe-bottom, 0px);
+    box-sizing: border-box;
+  }
+
+  .yoru-parser-header {
+    padding: 10px 8px 10px 16px !important;
+  }
+
+  .yoru-parser-title {
+    font-size: 16px !important;
+  }
+
+  .yoru-parser-close {
+    width: 40px;
+    height: 40px;
+    font-size: 18px !important;
+  }
+
+  .yoru-parser-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px !important;
+    padding: 8px 12px !important;
+    overflow: visible !important;
+  }
+
+  .yoru-parser-tab {
+    min-height: 36px;
+    padding: 6px 4px !important;
+    font-size: 12.5px !important;
+    gap: 4px !important;
+  }
+
+  .yoru-parser-tab[aria-selected="true"] {
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+
+  .yoru-parser-body {
+    padding: 0 14px 20px !important;
+    overscroll-behavior: contain;
+  }
+
+  .yoru-parser-states {
+    gap: 6px !important;
+  }
+
+  .yoru-parser-state-head {
+    padding: 9px 10px 9px 12px !important;
+    gap: 8px;
+    min-height: 48px;
+    box-sizing: border-box;
+  }
+
+  .yoru-parser-state-label {
+    font-size: 14px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .yoru-parser-state-summary {
+    font-size: 11.5px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .yoru-parser-state-actions {
+    gap: 8px !important;
+  }
+
+  .yoru-parser-state-sample {
+    font-size: 15px !important;
+    padding: 0 4px !important;
+  }
+
+  .yoru-parser-add-effect {
+    height: 32px;
+    max-width: 92px;
+    padding: 0 6px !important;
+    font-size: 12px !important;
+  }
+}

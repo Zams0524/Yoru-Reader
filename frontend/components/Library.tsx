@@ -7539,8 +7539,8 @@ const Library = React.memo(function Library({
       {activeTab === 'notes' && renderNotesTab()}
       {activeTab === 'srs' && renderSrsTab()}
 
-      {/* Bottom Navigation Bar for Mobile */}
-      {isMobile && (
+      {/* Bottom Navigation Bar for Mobile (hidden during an SRS review, which is full screen and sits below it) */}
+      {isMobile && !isSrsReviewOpen && (
         <nav className="bottom-navigation-bar" aria-label={lang === 'es' ? 'Navegación principal' : 'Main navigation'}>
           <button 
             className={`bottom-tab-btn ${activeTab === 'library' ? 'active' : ''}`}

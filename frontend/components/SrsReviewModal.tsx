@@ -703,8 +703,6 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     <div style={{
       position: 'fixed',
       inset: 0,
-      width: '100vw',
-      height: '100vh',
       background: '#000000',
       zIndex: 1500,
       display: 'flex',
@@ -774,7 +772,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       </div>
 
       {/* Content Area */}
-      <div style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', background: '#000000', overflowY: 'auto', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ flex: 1, minHeight: 0, padding: '24px 24px calc(24px + var(--yoru-safe-bottom, 0px))', display: 'flex', flexDirection: 'column', background: '#000000', overflowY: 'auto', justifyContent: 'center', alignItems: 'center' }}>
         
         {dueCards.length === 0 && !isFinished ? (
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#71717a', maxWidth: '450px', width: '100%' }}>
