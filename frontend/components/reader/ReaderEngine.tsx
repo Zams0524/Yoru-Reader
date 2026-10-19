@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph } from '../../utils/yoruParserNative';
+import { isPhoneUI } from '../../utils/platform';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
 export interface Chapter {
@@ -764,9 +765,9 @@ function ReaderEngineComponent({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [vertical, flipPage]);
 
-  // Hardware Volume Keys Navigation (Yoru Feature)
+  // Hardware Volume Keys Navigation (phones only: on a PC the keyboard's volume keys must just change the volume)
   useEffect(() => {
-    if (readerSettings.volumeKeysNavigation === false) return;
+    if (readerSettings.volumeKeysNavigation === false || !isPhoneUI()) return;
     const handleVolumeKey = (e: KeyboardEvent) => {
       const isVolUp = e.key === 'VolumeUp' || e.key === 'AudioVolumeUp' || e.code === 'VolumeUp' || (e as any).keyCode === 175 || (e as any).keyCode === 24;
       const isVolDown = e.key === 'VolumeDown' || e.key === 'AudioVolumeDown' || e.code === 'VolumeDown' || (e as any).keyCode === 174 || (e as any).keyCode === 25;
