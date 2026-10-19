@@ -6,6 +6,8 @@ import { db } from '../utils/db';
 import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { DictionaryStep, GuideDots, SlideView, featureSlides, useDictionaryInstall, useSwipe } from './onboarding/GuideSlides';
 
 declare global {
   interface Window {
@@ -14,7 +16,14 @@ declare global {
 }
 
 const PRESET_AVATARS = [
-  { avatar: 'linear-gradient(135deg, #ff5e62 0%, #ff9966 100%)', emoji: '🦊' }
+  { avatar: 'linear-gradient(135deg, #ff5e62 0%, #ff9966 100%)', emoji: '🦊' },
+  { avatar: 'linear-gradient(135deg, #8e78ff 0%, #4f46e5 100%)', emoji: '🐱' },
+  { avatar: 'linear-gradient(135deg, #34d399 0%, #059669 100%)', emoji: '🐸' },
+  { avatar: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', emoji: '🐥' },
+  { avatar: 'linear-gradient(135deg, #f472b6 0%, #db2777 100%)', emoji: '🌸' },
+  { avatar: 'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)', emoji: '🐳' },
+  { avatar: 'linear-gradient(135deg, #a3a3a3 0%, #404040 100%)', emoji: '🐼' },
+  { avatar: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)', emoji: '🌙' },
 ];
 
 interface WelcomeScreenProps {
@@ -367,14 +376,95 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
       avatarEmoji: emoji
     };
 
+    localStorage.setItem('yoru_tutorial_seen_v1', 'true');
     onCreateProfile(newProfile);
   };
+
+  // First-run guide: welcome → 4 feature slides → dictionary → profile (the form below).
+  const slides = featureSlides(lang === 'es' ? 'es' : 'en');
+  const guideLang: 'es' | 'en' = lang === 'es' ? 'es' : 'en';
+  const [step, setStep] = useState(0);
+  const lastGuideStep = slides.length + 1; // 0 welcome, 1..4 slides, 5 dictionary, 6 profile
+  const dictionary = useDictionaryInstall(guideLang);
+  const goNext = () => setStep((value) => Math.min(lastGuideStep + 1, value + 1));
+  const goPrev = () => setStep((value) => Math.max(0, value - 1));
+  const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep && !dictionary.installing) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
+  const es = lang === 'es';
+
+  const setLanguage = (selectedLang: string) => {
+    localStorage.setItem('app_language', selectedLang);
+    onSaveSettings({ ...settings, appLanguage: selectedLang });
+  };
+
+  if (step <= lastGuideStep) {
+    return (
+      <div className="guide-screen" {...swipe}>
+        {step === 0 ? (
+          <div className="guide-welcome">
+            <div className="guide-lang" role="radiogroup" aria-label="Idioma / Language">
+              {[{ id: 'es', label: 'Español' }, { id: 'en', label: 'English' }].map((option) => (
+                <button key={option.id} type="button" role="radio" aria-checked={lang === option.id} className={lang === option.id ? 'active' : ''} onClick={() => setLanguage(option.id)}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="guide-logo" aria-hidden="true">夜</div>
+            <h1 className="guide-brand">Yoru Reader</h1>
+            <p className="guide-tagline">
+              {es ? 'Aprende japonés leyendo las novelas que te gustan.' : 'Learn Japanese by reading the novels you love.'}
+            </p>
+            <ul className="guide-points">
+              <li>{es ? 'Diccionario al tocar cualquier palabra' : 'A dictionary on every word you tap'}</li>
+              <li>{es ? 'Lectura en voz alta con voces japonesas' : 'Read aloud with Japanese voices'}</li>
+              <li>{es ? 'Repasos SRS de tu propio vocabulario' : 'SRS reviews of your own vocabulary'}</li>
+            </ul>
+            <div className="guide-actions">
+              <button type="button" className="guide-primary" onClick={goNext}>{es ? 'Empezar' : 'Get started'}</button>
+              <button type="button" className="guide-link" onClick={() => setStep(lastGuideStep + 1)}>
+                {es ? '¿Ya usabas Yoru? Restaurar una copia' : 'Used Yoru before? Restore a backup'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="guide-step">
+            <div className="guide-top">
+              <button type="button" className="guide-icon-btn" onClick={goPrev} aria-label={es ? 'Atrás' : 'Back'}><ChevronLeft size={22} /></button>
+              <GuideDots count={lastGuideStep} index={step - 1} onSelect={(i) => setStep(i + 1)} lang={guideLang} />
+              {step < lastGuideStep ? (
+                <button type="button" className="guide-skip" onClick={() => setStep(lastGuideStep)}>{es ? 'Saltar' : 'Skip'}</button>
+              ) : <span className="guide-skip-spacer" />}
+            </div>
+            {step <= slides.length ? (
+              <SlideView slide={slides[step - 1]} />
+            ) : (
+              <div className="guide-slide">
+                <h2 className="guide-title">{dictionary.hasDictionary ? (es ? 'Diccionario listo' : 'Dictionary ready') : (es ? 'Instala el diccionario' : 'Install the dictionary')}</h2>
+                <DictionaryStep lang={guideLang} state={dictionary} />
+              </div>
+            )}
+            <div className="guide-bottom">
+              <button type="button" className="guide-primary" onClick={goNext} disabled={dictionary.installing}>
+                {step < lastGuideStep
+                  ? (es ? 'Siguiente' : 'Next')
+                  : dictionary.hasDictionary ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+        {confirmModal}
+      </div>
+    );
+  }
 
   return (
     <div className="welcome-screen-container">
       <div className="welcome-card">
         {/* Header toolbar: Language Switcher & Theme Switcher */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+        <button type="button" className="guide-link welcome-back-link" onClick={() => setStep(lastGuideStep)}>
+          ← {es ? 'Volver a la guía' : 'Back to the guide'}
+        </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
           {/* Language Switcher */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Globe size={14} style={{ color: 'var(--text-muted)' }} />

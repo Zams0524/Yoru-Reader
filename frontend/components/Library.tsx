@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
-import { OnboardingTutorialModal } from './OnboardingTutorialModal';
+import TutorialGuide from './onboarding/TutorialGuide';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
@@ -8490,15 +8490,11 @@ const Library = React.memo(function Library({
       </React.Suspense>
 
       {/* Onboarding Mini-Tutorial Modal */}
-      <OnboardingTutorialModal
+      <TutorialGuide
         isOpen={showTutorialModal}
         onClose={() => setShowTutorialModal(false)}
-        onOpenDictionaries={() => {
-          setActiveTab('settings');
-          setActiveSettingsSection('sec-dicts');
-          setIsLibraryModalOpen('dict');
-        }}
-        lang={lang}
+        onImportBook={triggerFileInput}
+        lang={lang === 'es' ? 'es' : 'en'}
       />
 
       {/* Direct Dictionary Resource Library Modal */}
