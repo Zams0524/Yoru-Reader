@@ -6,7 +6,9 @@ import './yoru-design-system.css'
 import App from './App'
 import { applyLocalWordStyles } from './utils/parserSettingsStore'
 
-if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+// `?android` in the URL previews the Android look in a desktop browser (local testing).
+const previewAndroid = new URLSearchParams(window.location.search).has('android');
+if ((Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') || previewAndroid) {
   document.documentElement.classList.add('platform-android')
 }
 

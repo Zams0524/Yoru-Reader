@@ -6644,7 +6644,7 @@ const Library = React.memo(function Library({
         <header className="mobile-top-app-bar">
           {activeTab === 'settings' ? (
             <button
-              className="mobile-icon-btn"
+              className="mobile-icon-btn mobile-leading-btn"
               onClick={() => setActiveTab('library')}
               title={lang === 'es' ? 'Volver' : 'Back'}
               aria-label={lang === 'es' ? 'Volver' : 'Back'}
@@ -6653,7 +6653,7 @@ const Library = React.memo(function Library({
             </button>
           ) : (
             <button
-              className="mobile-icon-btn"
+              className="mobile-icon-btn mobile-leading-btn"
               onClick={() => {
                 // The menu lives on the library screen (ReadEra-style drawer).
                 if (activeTab !== 'library') setActiveTab('library');

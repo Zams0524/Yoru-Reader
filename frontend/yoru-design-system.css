@@ -1050,7 +1050,8 @@ textarea:focus-visible,
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   }
 
-  html.platform-android .mobile-top-app-bar > .mobile-cloud-btn {
+  html.platform-android .mobile-top-app-bar > .mobile-cloud-btn,
+  html.platform-android .mobile-top-app-bar > .mobile-leading-btn {
     justify-self: start;
     width: 42px;
     min-width: 42px;
