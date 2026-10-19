@@ -2243,6 +2243,7 @@ export default function Reader({
         }}
         lang={lang}
         accent={colors.accent}
+        rtl={readerSettings.vertical}
       />
 
       {isReadAloudOpen && (

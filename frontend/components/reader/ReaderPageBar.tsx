@@ -9,6 +9,8 @@ interface Props {
   onSeek: (charPosition: number) => void;
   lang: string;
   accent: string;
+  /** Vertical Japanese reads right to left: the book starts at the right end of the slider. */
+  rtl?: boolean;
 }
 
 const FALLBACK_CHARS_PER_PAGE = 450;
@@ -18,7 +20,7 @@ const FALLBACK_CHARS_PER_PAGE = 450;
  * Pages are estimated from how many characters fit on a page of the open section, so the count
  * follows the font size and margins.
  */
-export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent }: Props) {
+export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent, rtl = false }: Props) {
   const es = lang === 'es';
   const [dragValue, setDragValue] = useState<number | null>(null);
   const charsPerPageRef = useRef(FALLBACK_CHARS_PER_PAGE);
@@ -72,9 +74,9 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
         {es ? `${pageAt(shownChars)} de ${totalPages}` : `${pageAt(shownChars)} of ${totalPages}`}
         {draggedSection && <span className="reader-pagebar-chapter">{draggedSection.title}</span>}
       </div>
-      <div className="reader-pagebar-track">
+      <div className="reader-pagebar-track" dir={rtl ? 'rtl' : 'ltr'}>
         <div className="reader-pagebar-ticks" aria-hidden="true">
-          {ticks.map((left, index) => <span key={index} style={{ left: `${left}%` }} />)}
+          {ticks.map((left, index) => <span key={index} style={{ left: `${rtl ? 100 - left : left}%` }} />)}
         </div>
         <input
           type="range"
