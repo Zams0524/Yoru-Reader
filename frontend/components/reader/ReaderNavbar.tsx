@@ -7,6 +7,7 @@ import {
   Activity,
   Timer,
   Headphones,
+  Search,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -43,6 +44,7 @@ interface ReaderNavbarProps {
   onMouseLeave?: () => void;
   isReadingAloud?: boolean;
   onToggleReadAloud?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export default function ReaderNavbar({
@@ -62,6 +64,7 @@ export default function ReaderNavbar({
   onMouseLeave,
   isReadingAloud = false,
   onToggleReadAloud,
+  onOpenSearch,
 }: ReaderNavbarProps) {
   const btnStyle: React.CSSProperties = {
     background: 'transparent',
@@ -174,6 +177,16 @@ export default function ReaderNavbar({
             aria-label={lang === 'es' ? 'Abrir sesión de lectura' : 'Open reading session'}
           >
             <Timer size={20} />
+          </button>
+        )}
+        {onOpenSearch && (
+          <button
+            style={btnStyle}
+            onClick={onOpenSearch}
+            title={lang === 'es' ? 'Buscar en el libro' : 'Search in book'}
+            aria-label={lang === 'es' ? 'Buscar en el libro' : 'Search in book'}
+          >
+            <Search size={20} />
           </button>
         )}
         {onToggleReadAloud && (

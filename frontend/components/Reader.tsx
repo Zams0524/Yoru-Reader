@@ -15,6 +15,7 @@ import { syncJitenReview } from '../utils/jitenSync';
 // Direct reader engine imports
 import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
 import ReadAloudBar from './reader/ReadAloudBar';
+import BookSearchPanel from './reader/BookSearchPanel';
 import { useReadAloud } from './reader/useReadAloud';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
@@ -395,6 +396,8 @@ export default function Reader({
 
   const engineApiRef = useRef<ReaderEngineApi | null>(null);
   const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const showToast = useCallback((message: string, type = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -1967,6 +1970,7 @@ export default function Reader({
         isReadingSpeedPaused={session.isPaused}
         readingSpeed={session.speed}
         onToggleReadingSpeed={handleToggleReadingMeasurement}
+        onOpenSearch={() => setIsSearchOpen(true)}
         isReadingAloud={isReadAloudOpen}
         onToggleReadAloud={() => {
           if (isReadAloudOpen) {
@@ -2010,6 +2014,18 @@ export default function Reader({
             setSidebarMode('settings');
           }}
           onOpenExtensionSettings={handleOpenExtensionSettings}
+          lang={lang}
+        />
+      )}
+
+      {isSearchOpen && (
+        <BookSearchPanel
+          chapters={book.chapters || []}
+          apiRef={engineApiRef}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          onClose={() => setIsSearchOpen(false)}
+          colors={colors}
           lang={lang}
         />
       )}

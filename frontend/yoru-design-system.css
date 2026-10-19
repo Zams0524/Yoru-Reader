@@ -1416,7 +1416,7 @@ textarea:focus-visible,
   left: 50%;
   bottom: calc(18px + var(--yoru-safe-bottom, 0px));
   transform: translateX(-50%);
-  z-index: 10005;
+  z-index: 9990;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1428,7 +1428,6 @@ textarea:focus-visible,
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
   box-sizing: border-box;
-  animation: fadeIn 0.2s ease-out;
 }
 
 .read-aloud-btn {
@@ -1501,5 +1500,150 @@ textarea:focus-visible,
   /* Room for the read-aloud button in the reader's top bar. */
   .reader-speed-pill-label {
     display: none;
+  }
+}
+
+/* ==========================================================================
+   Reader side panel (search, notes) and search results (v1.3.10)
+   ========================================================================== */
+::highlight(yoru-search) {
+  background-color: rgba(255, 140, 0, 0.42);
+}
+
+.reader-side-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+}
+
+.reader-side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 360px;
+  max-width: 92vw;
+  height: 100%;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: var(--yoru-safe-top, 0px);
+  padding-bottom: var(--yoru-safe-bottom, 0px);
+  box-sizing: border-box;
+  animation: yoru-panel-in 0.22s ease-out;
+}
+
+@keyframes yoru-panel-in {
+  from { transform: translateX(24px); }
+  to { transform: none; }
+}
+
+.reader-side-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 12px 16px;
+  flex-shrink: 0;
+}
+
+.reader-side-panel-close {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.reader-side-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px 16px;
+  overscroll-behavior: contain;
+}
+
+.reader-side-panel-empty,
+.reader-side-panel-count {
+  margin: 8px 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.reader-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.reader-search-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.reader-search-field input:focus {
+  border-color: rgba(255, 218, 94, 0.45);
+}
+
+.reader-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reader-search-results button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+}
+
+.reader-search-results button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.reader-search-chapter {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.reader-search-snippet {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  font-family: var(--font-japanese), serif;
+  word-break: break-all;
+}
+
+.reader-search-snippet mark {
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+@media (max-width: 768px) {
+  .reader-side-panel {
+    width: 100%;
+    max-width: 100%;
+    border-left: none !important;
   }
 }

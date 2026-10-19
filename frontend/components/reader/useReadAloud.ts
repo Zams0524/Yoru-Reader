@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReaderEngineApi } from './ReaderEngine';
 import { prefetchSentence, speakSentence, type SpeechHandle } from '../../utils/bookTts';
+import { READER_BLOCK_SELECTOR, blockText, rangeForOffsets, setNamedHighlight } from '../../utils/readerText';
 
 /**
  * Reads the open book aloud sentence by sentence, like ReadEra: highlights the sentence being
@@ -17,31 +18,17 @@ interface Sentence {
   text: string;
 }
 
-const BLOCK_SELECTOR = 'p.chapter-content, h1.chapter-content-h1, h2.chapter-content-h2, h3.chapter-content-h3';
 const HIGHLIGHT_NAME = 'yoru-read-aloud';
 const SPEAKABLE = /[぀-ヿ㐀-鿿豈-﫿A-Za-z0-9０-９Ａ-Ｚａ-ｚ]/;
 // A sentence ends at 。！？!? (plus closing quotes/brackets) or at the end of the paragraph.
 const SENTENCE = /[^。！？!?…]*(?:[。！？!?]+|…+|$)[」』）)】〉》"’]*/g;
 
-function textNodesOf(block: Element): { node: Text; start: number }[] {
-  const nodes: { node: Text; start: number }[] = [];
-  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => (node.parentElement?.closest('rt, rp') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
-  });
-  let offset = 0;
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    nodes.push({ node, start: offset });
-    offset += node.data.length;
-  }
-  return nodes;
-}
-
 function blocksOf(content: HTMLElement): Element[] {
-  return Array.from(content.querySelectorAll(BLOCK_SELECTOR));
+  return Array.from(content.querySelectorAll(READER_BLOCK_SELECTOR));
 }
 
 function sentencesOf(block: Element, ordinal: number): Sentence[] {
-  const text = textNodesOf(block).map(({ node }) => node.data).join('');
+  const text = blockText(block);
   const sentences: Sentence[] = [];
   SENTENCE.lastIndex = 0;
   for (let match = SENTENCE.exec(text); match; match = SENTENCE.exec(text)) {
@@ -61,23 +48,7 @@ function sentencesOf(block: Element, ordinal: number): Sentence[] {
 
 function rangeFor(content: HTMLElement, sentence: Sentence): Range | null {
   const block = blocksOf(content)[sentence.ordinal];
-  if (!block) return null;
-  const nodes = textNodesOf(block);
-  const locate = (offset: number, isEnd: boolean) => {
-    for (const { node, start } of nodes) {
-      const end = start + node.data.length;
-      if (offset < end || (isEnd && offset === end)) return { node, offset: offset - start };
-    }
-    const last = nodes[nodes.length - 1];
-    return last ? { node: last.node, offset: last.node.data.length } : null;
-  };
-  const from = locate(sentence.start, false);
-  const to = locate(sentence.end, true);
-  if (!from || !to) return null;
-  const range = document.createRange();
-  range.setStart(from.node, from.offset);
-  range.setEnd(to.node, to.offset);
-  return range;
+  return block ? rangeForOffsets(block, sentence.start, sentence.end) : null;
 }
 
 function collectSentences(content: HTMLElement): Sentence[] {
@@ -96,11 +67,7 @@ function firstVisibleSentence(content: HTMLElement, sentences: Sentence[]): numb
 }
 
 function setHighlight(range: Range | null) {
-  const registry = (CSS as any)?.highlights;
-  const HighlightCtor = (window as any).Highlight;
-  if (!registry || !HighlightCtor) return;
-  if (range) registry.set(HIGHLIGHT_NAME, new HighlightCtor(range));
-  else registry.delete(HIGHLIGHT_NAME);
+  setNamedHighlight(HIGHLIGHT_NAME, range);
 }
 
 // Timers, not animation frames: frames stop while the page is hidden (screen off), timers keep going.
