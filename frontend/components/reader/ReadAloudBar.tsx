@@ -16,10 +16,12 @@ interface Props {
   onSleep: (minutes: number | null) => void;
   onSettings?: () => void;
   onClose: () => void;
+  /** Sits higher while the page bar is shown at the bottom. */
+  raised?: boolean;
 }
 
 export default function ReadAloudBar({
-  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose,
+  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false,
 }: Props) {
   const es = lang === 'es';
   const [, setNow] = useState(Date.now());
@@ -48,7 +50,7 @@ export default function ReadAloudBar({
   const playing = status === 'playing';
 
   return (
-    <div className="read-aloud-bar" role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
+    <div className={`read-aloud-bar${raised ? " is-raised" : ""}`} role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
       <button type="button" className="read-aloud-btn" onClick={() => onSkip(-1)} aria-label={es ? 'Frase anterior' : 'Previous sentence'}>
         <SkipBack size={18} />
       </button>

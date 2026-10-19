@@ -16,6 +16,7 @@ import { syncJitenReview } from '../utils/jitenSync';
 import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
 import ReadAloudBar from './reader/ReadAloudBar';
 import ReadAloudSettings from './reader/ReadAloudSettings';
+import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
 import HighlightNoteDialog from './reader/HighlightNoteDialog';
 import {
@@ -2163,6 +2164,20 @@ export default function Reader({
         />
       )}
 
+      <ReaderPageBar
+        visible={isHeaderVisible && !showSettingsPopover && !isSearchOpen}
+        currChars={currentProgress.currChars}
+        totalChars={currentProgress.totalChars}
+        apiRef={engineApiRef}
+        onSeek={(position) => {
+          skipNextReadingPositionRef.current = true;
+          setTargetCharPosition(position);
+          setTimeout(() => setTargetCharPosition(null), 100);
+        }}
+        lang={lang}
+        accent={colors.accent}
+      />
+
       {isReadAloudOpen && (
         <ReadAloudBar
           status={readAloud.status}
@@ -2177,6 +2192,7 @@ export default function Reader({
           onRate={readAloud.setRate}
           onSleep={readAloud.setSleepMinutes}
           onSettings={() => setIsVoiceSettingsOpen(true)}
+          raised={isHeaderVisible}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
         />
       )}

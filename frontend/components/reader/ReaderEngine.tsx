@@ -48,6 +48,8 @@ export interface ReaderEngineApi {
   getSections: () => Section[];
   getCurrentSection: () => number;
   isPaginated: () => boolean;
+  /** Paged mode: current page and page count of the open section. */
+  getPageInfo: () => { page: number; pages: number };
 }
 
 export interface ReaderEngineProps {
@@ -601,6 +603,14 @@ function ReaderEngineComponent({
       getSections: () => sections,
       getCurrentSection: () => currSection,
       isPaginated: () => paginated,
+      getPageInfo: () => {
+        // Pages run on X, or on Y where an engine lays vertical columns downwards (see revealRange).
+        const content = contentRef.current;
+        if (!content) return { page: 0, pages: 1 };
+        const onY = content.scrollWidth <= content.clientWidth + 2 && content.scrollHeight > content.clientHeight + 2;
+        const pages = onY ? Math.max(1, Math.ceil(content.scrollHeight / (content.clientHeight || 1))) : getMaxPages();
+        return { page: Math.min(pageIndex, pages - 1), pages };
+      },
     };
   }
 
