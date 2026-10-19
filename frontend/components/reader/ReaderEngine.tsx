@@ -438,34 +438,83 @@ function ReaderEngineComponent({
     return Math.max(1, Math.ceil(scrollW / clientW));
   }, []);
 
-  // Sync scroll position
-  const applyPagePosition = useCallback((targetPage: number) => {
+  // Page-turn slide (ReadEra-style): pages sit side by side and glide into place.
+  const slideAnimationRef = useRef<number | null>(null);
+  const stopSlide = useCallback(() => {
+    if (slideAnimationRef.current !== null) {
+      cancelAnimationFrame(slideAnimationRef.current);
+      slideAnimationRef.current = null;
+    }
+  }, []);
+  const slideTo = useCallback((content: HTMLDivElement, targetLeft: number, onDone: () => void) => {
+    stopSlide();
+    const from = content.scrollLeft;
+    const distance = targetLeft - from;
+    if (Math.abs(distance) < 1) {
+      content.scrollLeft = targetLeft;
+      onDone();
+      return;
+    }
+    const duration = Math.min(320, 160 + Math.abs(distance) * 0.25);
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      content.scrollLeft = from + distance * eased;
+      if (t < 1) {
+        slideAnimationRef.current = requestAnimationFrame(step);
+      } else {
+        slideAnimationRef.current = null;
+        content.scrollLeft = targetLeft;
+        onDone();
+      }
+    };
+    slideAnimationRef.current = requestAnimationFrame(step);
+  }, [stopSlide]);
+
+  // Sync scroll position (animate = slide to the page instead of jumping)
+  const applyPagePosition = useCallback((targetPage: number, animate = false) => {
     const content = contentRef.current;
     if (!content) return;
 
     const clientW = content.clientWidth || window.innerWidth;
+    const targetLeft = vertical ? -targetPage * clientW : targetPage * clientW;
+    const pagesOnX = content.scrollWidth > content.clientWidth + 2;
+    if (animate && pagesOnX && document.visibilityState === 'visible') {
+      slideTo(content, targetLeft, updateChars);
+      return;
+    }
+    stopSlide();
     if (vertical) {
-      content.scrollLeft = -targetPage * clientW;
+      content.scrollLeft = targetLeft;
     } else {
-      content.scrollTo({ left: targetPage * clientW, behavior: 'instant' });
+      content.scrollTo({ left: targetLeft, behavior: 'instant' });
     }
     updateChars();
-  }, [vertical, updateChars]);
+  }, [vertical, updateChars, slideTo, stopSlide]);
 
-  // Page flip function (1 = forward, -1 = backward)
-  const flipPage = useCallback((multiplier: number) => {
+  const statePageIndex = pageIndex;
+  // Page flip function (1 = forward, -1 = backward). fromLeft: where a drag started.
+  const flipPage = useCallback((multiplier: number, fromLeft?: number) => {
     const content = contentRef.current;
     if (!content) return;
 
     if (paginated) {
       const maxPages = getMaxPages();
+      // The page on screen, read from the scroll position: jumps (search, notes, the page bar)
+      // move the content without updating pageIndex. While a slide runs, pageIndex is its target.
+      const pageWidth = content.clientWidth || window.innerWidth;
+      const pagesOnX = content.scrollWidth > content.clientWidth + 2;
+      const pageIndex = slideAnimationRef.current !== null || !pagesOnX
+        ? statePageIndex
+        : Math.max(0, Math.min(maxPages - 1, Math.round(Math.abs(fromLeft ?? content.scrollLeft) / pageWidth)));
 
       if (multiplier === 1) {
         // Forward
         if (pageIndex < maxPages - 1) {
           const next = pageIndex + 1;
           setPageIndex(next);
-          applyPagePosition(next);
+          applyPagePosition(next, true);
         } else {
           // Advance to next chapter
           if (currSection < sections.length - 1) {
@@ -478,7 +527,7 @@ function ReaderEngineComponent({
         if (pageIndex > 0) {
           const prev = pageIndex - 1;
           setPageIndex(prev);
-          applyPagePosition(prev);
+          applyPagePosition(prev, true);
         } else {
           // Go to previous chapter
           if (currSection > 0) {
@@ -501,7 +550,7 @@ function ReaderEngineComponent({
       }
       updateChars();
     }
-  }, [paginated, vertical, pageIndex, currSection, sections.length, getMaxPages, applyPagePosition, updateChars]);
+  }, [paginated, vertical, statePageIndex, currSection, sections.length, getMaxPages, applyPagePosition, updateChars]);
 
   // Jump directly to section
   const goToSection = useCallback((sectionIdx: number) => {
@@ -786,13 +835,50 @@ function ReaderEngineComponent({
     let touchStartX = 0;
     let touchStartY = 0;
     let touchStartTime = 0;
+    // Paged mode drag: the page follows the finger, the next one slides in beside it.
+    let dragBaseLeft = 0;
+    let dragging = false;
+    let dragCancelled = false;
+
+    const canDragPages = () => {
+      const content = contentRef.current;
+      if (!paginated || !content) return false;
+      if (content.scrollWidth <= content.clientWidth + 2) return false; // pages are not side by side
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return false; // selecting text
+      return !document.querySelector('.dict-popup');
+    };
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         touchStartTime = Date.now();
+        dragging = false;
+        dragCancelled = false;
+        const content = contentRef.current;
+        if (content) {
+          // Catch a page that is still sliding.
+          stopSlide();
+          dragBaseLeft = content.scrollLeft;
+        }
       }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || dragCancelled) return;
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (!dragging) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dy) > Math.abs(dx) || !canDragPages()) {
+          dragCancelled = true;
+          return;
+        }
+        dragging = true;
+      }
+      const content = contentRef.current;
+      if (content) content.scrollLeft = dragBaseLeft - dx;
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
@@ -805,6 +891,22 @@ function ReaderEngineComponent({
 
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
+
+      if (dragging) {
+        dragging = false;
+        const content = contentRef.current;
+        const width = content?.clientWidth || window.innerWidth;
+        // Turn when dragged past a fifth of the page, or on a quick flick.
+        const turn = absX > width * 0.2 || (absX > 30 && deltaTime < 250);
+        if (turn) {
+          // Vertical Japanese: dragging right brings the next page; horizontal text: dragging left.
+          const forward = vertical ? deltaX > 0 : deltaX < 0;
+          flipPage(forward ? 1 : -1, dragBaseLeft);
+        } else if (content) {
+          slideTo(content, dragBaseLeft, updateChars);
+        }
+        return;
+      }
 
       // SWIPE DETECTION (Threshold: 30px distance or quick flick)
       if (absX > 30 || absY > 30) {
@@ -877,13 +979,15 @@ function ReaderEngineComponent({
     };
 
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: true });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
       container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [vertical, flipPage, onClick]);
+  }, [vertical, paginated, flipPage, onClick, slideTo, stopSlide, updateChars]);
 
   // Mouse wheel
   useEffect(() => {
@@ -920,7 +1024,8 @@ function ReaderEngineComponent({
         `${window.innerWidth - 2 * window.innerWidth * (horizontalPadding / 100) - 60}px`
       );
 
-      if (paginated) {
+      // A page-turn slide is already taking the content to this page; let it finish.
+      if (paginated && slideAnimationRef.current === null) {
         applyPagePosition(pageIndex);
       }
     };
