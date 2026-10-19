@@ -2678,3 +2678,148 @@ textarea:focus-visible,
 .reader-engine-content p {
   font-weight: inherit;
 }
+
+/* ==========================================================================
+   Library "⋮" menu on phones (ReadEra-style) (v1.3.10)
+   ========================================================================== */
+.library-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+}
+
+.library-menu {
+  position: fixed;
+  top: calc(var(--yoru-safe-top, 0px) + 58px);
+  right: 10px;
+  z-index: 10011;
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--yoru-safe-top, 0px) - 58px - var(--yoru-safe-bottom, 0px) - 16px);
+  overflow-y: auto;
+  padding: 6px 0 8px;
+  border-radius: 14px;
+  background: #1f2128;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  color: #ececf2;
+  overscroll-behavior: contain;
+}
+
+.library-menu-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd54a;
+}
+
+.library-menu-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: none;
+  color: #ececf2;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.library-menu-item {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border: none;
+  background: none;
+  color: #ececf2;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.library-menu-item svg {
+  color: #ffd54a;
+  flex-shrink: 0;
+}
+
+.library-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.library-menu-check {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-sizing: border-box;
+}
+
+.library-menu-check.on {
+  border-color: #ffd54a;
+  background: #ffd54a;
+}
+
+.library-menu-check.on svg {
+  color: #111;
+}
+
+.library-menu-segments {
+  display: flex;
+  gap: 4px;
+  margin: 4px 16px 6px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.library-menu-segments button {
+  flex: 1;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: rgba(236, 236, 242, 0.7);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.library-menu-segments button.active {
+  background: rgba(255, 213, 74, 0.18);
+  color: #fff;
+}
+
+.library-menu-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* On phones, sorting, grouping and card details are in the ⋮ menu; the panel keeps the rest. */
+@media (max-width: 768px) {
+  .display-settings-drawer .drawer-section--in-menu {
+    display: none !important;
+  }
+}

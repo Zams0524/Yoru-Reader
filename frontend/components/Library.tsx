@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useTransition } from 'reac
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import { OnboardingTutorialModal } from './OnboardingTutorialModal';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
+import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
@@ -346,6 +347,7 @@ const Library = React.memo(function Library({
     return localStorage.getItem('yoru_group_by') || 'none'; // 'none' | 'author'
   });
   const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false);
+  const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSectionPending, startSectionTransition] = useTransition();
   const [activeTab, setActiveTabState] = useState(initialTab || 'library'); // 'library' | 'statistics' | 'settings' | 'notes' | 'srs'
@@ -6677,7 +6679,14 @@ const Library = React.memo(function Library({
                 <button className="mobile-icon-btn" onClick={triggerFileInput} title={lang === 'es' ? 'Importar libro' : 'Import book'} aria-label={lang === 'es' ? 'Importar libro' : 'Import book'}>
                   <Plus size={24} />
                 </button>
-                <button className="mobile-icon-btn" onClick={() => setIsDisplaySettingsOpen(true)} title="Options">
+                <button
+                  className="mobile-icon-btn"
+                  onClick={() => setIsLibraryMenuOpen(true)}
+                  title={lang === 'es' ? 'Opciones' : 'Options'}
+                  aria-label={lang === 'es' ? 'Opciones de la biblioteca' : 'Library options'}
+                  aria-haspopup="menu"
+                  aria-expanded={isLibraryMenuOpen}
+                >
                   <MoreVertical size={20} />
                 </button>
               </>
@@ -7680,6 +7689,29 @@ const Library = React.memo(function Library({
         </nav>
       )}
 
+      {isLibraryMenuOpen && (
+        <LibraryMoreMenu
+          lang={lang}
+          sortBy={sortBy}
+          onSortBy={setSortBy}
+          sortDirection={sortDirection}
+          onSortDirection={setSortDirection}
+          groupBy={groupBy}
+          onGroupBy={setGroupBy}
+          details={[
+            { key: 'title', label: lang === 'es' ? 'Título' : 'Title', value: showCardTitle, onChange: setShowCardTitle },
+            { key: 'author', label: lang === 'es' ? 'Autor' : 'Author', value: showCardAuthor, onChange: setShowCardAuthor },
+            { key: 'series', label: lang === 'es' ? 'Serie' : 'Series', value: showCardSeries, onChange: setShowCardSeries },
+            { key: 'tags', label: lang === 'es' ? 'Colecciones' : 'Collections', value: showCardTags, onChange: setShowCardTags },
+            { key: 'progress', label: lang === 'es' ? 'Progreso' : 'Progress', value: showCardProgress, onChange: setShowCardProgress },
+            { key: 'status', label: lang === 'es' ? 'Estado' : 'Status', value: showCardStatus, onChange: setShowCardStatus },
+          ]}
+          onSelectBooks={() => { if (!selectMode) toggleSelectMode(); }}
+          onMoreOptions={() => setIsDisplaySettingsOpen(true)}
+          onClose={() => setIsLibraryMenuOpen(false)}
+        />
+      )}
+
       {/* Display Settings Drawer */}
       <aside className={`display-settings-drawer ${isDisplaySettingsOpen ? 'open' : ''}`}>
         <div className="drawer-header">
@@ -7703,7 +7735,7 @@ const Library = React.memo(function Library({
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px', borderBottom: '1px solid var(--border-light)', paddingBottom: '6px' }}>{lang === 'es' ? 'Visualización' : 'Display'}</div>
             
             {/* Details */}
-            <div className="drawer-section" style={{ marginBottom: '14px' }}>
+            <div className="drawer-section drawer-section--in-menu" style={{ marginBottom: '14px' }}>
               <div className="drawer-label-row">
                 <span className="drawer-section-label" style={{ color: 'var(--text-main)', fontSize: '0.78rem', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600, marginBottom: 0 }}>{lang === 'es' ? 'Detalles' : 'Details'}</span>
                 <span className="drawer-info-icon" title={lang === 'es' ? 'Elige qué bloques de información se muestran debajo de la portada.' : 'Choose which info blocks are shown under book card covers.'}>?</span>
@@ -7843,7 +7875,7 @@ const Library = React.memo(function Library({
             </div>
 
             {/* Group By */}
-            <div className="drawer-section" style={{ marginBottom: '14px' }}>
+            <div className="drawer-section drawer-section--in-menu" style={{ marginBottom: '14px' }}>
               <div className="drawer-label-row">
                 <span className="drawer-section-label" style={{ color: 'var(--text-main)', fontSize: '0.78rem', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600, marginBottom: 0 }}>{lang === 'es' ? 'Agrupar por' : 'Group By'}</span>
                 <span className="drawer-info-icon" title={lang === 'es' ? 'Agrupar tarjetas en filas horizontales por serie o autor.' : 'Group book cards into horizontal lanes by series or author.'}>?</span>
@@ -7867,8 +7899,8 @@ const Library = React.memo(function Library({
             </div>
           </div>
 
-          {/* SORTING GROUP */}
-          <div>
+          {/* SORTING GROUP (on phones it lives in the ⋮ menu) */}
+          <div className="drawer-section--in-menu">
             <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px', borderBottom: '1px solid var(--border-light)', paddingBottom: '6px' }}>{lang === 'es' ? 'Ordenamiento' : 'Sorting'}</div>
             
             {/* Sort By */}
