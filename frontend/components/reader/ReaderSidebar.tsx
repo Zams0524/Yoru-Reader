@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Bookmark as BookmarkIcon } from 'lucide-react';
+import { X, Bookmark as BookmarkIcon, StickyNote, Copy } from 'lucide-react';
+import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
 
 interface ReaderColors {
   textMain: string;
@@ -32,8 +33,15 @@ interface ReadingSessionState {
   speed: string | number;
 }
 
+export type ReaderSidebarMode = 'toc' | 'bookmarks' | 'notes' | 'session';
+
 interface ReaderSidebarProps {
-  mode: 'toc' | 'bookmarks' | 'session' | null;
+  mode: ReaderSidebarMode | null;
+  onModeChange?: (mode: ReaderSidebarMode) => void;
+  highlights?: BookHighlight[];
+  onGoToHighlight?: (highlight: BookHighlight) => void;
+  onEditHighlight?: (highlight: BookHighlight) => void;
+  onExportHighlights?: () => void;
   onClose: () => void;
   sections: SectionItem[];
   currSection: number;
@@ -52,6 +60,11 @@ interface ReaderSidebarProps {
  */
 export default function ReaderSidebar({
   mode,
+  onModeChange,
+  highlights = [],
+  onGoToHighlight,
+  onEditHighlight,
+  onExportHighlights,
   onClose,
   sections,
   currSection,
@@ -69,6 +82,7 @@ export default function ReaderSidebar({
   const titles = {
     toc: isEs ? 'Tabla de Contenidos' : 'Table of Contents',
     bookmarks: isEs ? 'Marcadores' : 'Bookmarks',
+    notes: isEs ? 'Subrayados y notas' : 'Highlights & notes',
     session: isEs ? 'Sesión de Lectura' : 'Reading Session',
   };
 
@@ -126,6 +140,29 @@ export default function ReaderSidebar({
           </button>
         </div>
 
+        {/* Tabs (ReadEra-style contents / bookmarks / quotes) */}
+        {mode !== 'session' && onModeChange && (
+          <div className="reader-sidebar-tabs" role="tablist" style={{ borderBottom: `1px solid ${colors.border}` }}>
+            {(['toc', 'bookmarks', 'notes'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={mode === tab}
+                onClick={() => onModeChange(tab)}
+                style={{
+                  color: mode === tab ? colors.accent : colors.textMuted,
+                  borderBottomColor: mode === tab ? colors.accent : 'transparent',
+                }}
+              >
+                {tab === 'toc' ? (isEs ? 'Capítulos' : 'Chapters')
+                  : tab === 'bookmarks' ? `${isEs ? 'Marcadores' : 'Bookmarks'}${bookmarks.length ? ` · ${bookmarks.length}` : ''}`
+                    : `${isEs ? 'Notas' : 'Notes'}${highlights.length ? ` · ${highlights.length}` : ''}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
           {mode === 'toc' && (
@@ -143,6 +180,16 @@ export default function ReaderSidebar({
               bookmarks={bookmarks}
               onGoToBookmark={onGoToBookmark}
               onClose={onClose}
+              colors={colors}
+              lang={lang}
+            />
+          )}
+          {mode === 'notes' && (
+            <NotesContent
+              highlights={highlights}
+              onGo={(item) => { onGoToHighlight?.(item); onClose(); }}
+              onEdit={onEditHighlight}
+              onExport={onExportHighlights}
               colors={colors}
               lang={lang}
             />
@@ -261,6 +308,55 @@ function BookmarksContent({ bookmarks, onGoToBookmark, onClose, colors, lang }: 
           }}>
             {bm.text || bm.content || '...'}
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Highlights & notes ---
+interface NotesContentProps {
+  highlights: BookHighlight[];
+  onGo: (item: BookHighlight) => void;
+  onEdit?: (item: BookHighlight) => void;
+  onExport?: () => void;
+  colors: ReaderColors;
+  lang: string;
+}
+
+function NotesContent({ highlights, onGo, onEdit, onExport, colors, lang }: NotesContentProps) {
+  const isEs = lang === 'es';
+  if (highlights.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 16px', color: colors.textMuted, fontSize: '0.85rem' }}>
+        <StickyNote size={32} style={{ opacity: 0.3, marginBottom: '12px' }} />
+        <p>{isEs ? 'Aún no hay subrayados' : 'No highlights yet'}</p>
+        <p style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '8px' }}>
+          {isEs ? 'Mantén pulsado el texto, elige un color o «Nota».' : 'Long-press text, then pick a colour or "Note".'}
+        </p>
+      </div>
+    );
+  }
+  const ordered = [...highlights].sort((a, b) => a.paragraphId - b.paragraphId || a.start - b.start);
+  return (
+    <div>
+      {onExport && (
+        <button type="button" className="reader-notes-export" onClick={onExport} style={{ color: colors.textMain, borderColor: colors.border }}>
+          <Copy size={14} />
+          {isEs ? 'Copiar todo como texto' : 'Copy all as text'}
+        </button>
+      )}
+      {ordered.map((item) => (
+        <div key={item.id} className="reader-note-item" style={{ borderLeftColor: HIGHLIGHT_COLORS.find((c) => c.id === item.color)?.swatch }}>
+          <button type="button" className="reader-note-text" onClick={() => onGo(item)} style={{ color: colors.textMain }}>
+            {item.text}
+          </button>
+          {item.note?.trim() && <div className="reader-note-note" style={{ color: colors.textMuted }}>{item.note}</div>}
+          {onEdit && (
+            <button type="button" className="reader-note-edit" onClick={() => onEdit(item)} style={{ color: colors.accent }}>
+              {item.note?.trim() ? (isEs ? 'Editar nota' : 'Edit note') : (isEs ? 'Añadir nota' : 'Add note')}
+            </button>
+          )}
         </div>
       ))}
     </div>

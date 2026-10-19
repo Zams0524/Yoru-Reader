@@ -16,6 +16,16 @@ import { syncJitenReview } from '../utils/jitenSync';
 import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
 import ReadAloudBar from './reader/ReadAloudBar';
 import BookSearchPanel from './reader/BookSearchPanel';
+import HighlightNoteDialog from './reader/HighlightNoteDialog';
+import {
+  HIGHLIGHT_COLORS,
+  exportHighlights,
+  highlightCssName,
+  newHighlightId,
+  type BookHighlight,
+  type HighlightColor,
+} from '../utils/highlights';
+import { blockText, offsetInBlock, rangeForOffsets, setNamedHighlight } from '../utils/readerText';
 import { useReadAloud } from './reader/useReadAloud';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
@@ -297,7 +307,7 @@ export default function Reader({
       }
     }
   }, [rawSetReaderSetting, settings, onSaveSettings]);
-  const [sidebarMode, setSidebarMode] = useState<'toc' | 'bookmarks' | 'session' | 'settings' | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<'toc' | 'bookmarks' | 'notes' | 'session' | 'settings' | null>(null);
   const [bookmarks, setBookmarks] = useState<any[]>(book.bookmarks || []);
   const [currentProgress, setCurrentProgress] = useState({
     currChars: book.progress?.currentPage || 0,
@@ -778,6 +788,103 @@ export default function Reader({
     db.saveBookBookmarks(book.id, next);
   }, [bookmarks, book.id, lang]);
 
+  // ── Highlights & notes ──
+  const [highlights, setHighlights] = useState<BookHighlight[]>(() => (book as any).highlights || []);
+  const [noteDraft, setNoteDraft] = useState<{ highlight: BookHighlight; isNew: boolean } | null>(null);
+
+  const saveHighlights = useCallback((next: BookHighlight[]) => {
+    setHighlights(next);
+    void db.saveBookHighlights(book.id, next);
+  }, [book.id]);
+
+  /** Adds a highlight, replacing any that overlap it in the same paragraph. */
+  const withHighlight = useCallback((list: BookHighlight[], item: BookHighlight) => [
+    ...list.filter((h) => h.id === item.id || !(h.paragraphId === item.paragraphId && h.start < item.end && item.start < h.end)).filter((h) => h.id !== item.id),
+    item,
+  ], []);
+
+  const highlightFromSelection = useCallback((color: HighlightColor): BookHighlight | null => {
+    if (!selection?.offsets || !selection.visibleText) return null;
+    return {
+      id: newHighlightId(),
+      paragraphId: selection.paragraphId,
+      start: selection.offsets.start,
+      end: selection.offsets.end,
+      text: selection.visibleText,
+      color,
+      createdAt: new Date().toISOString(),
+    };
+  }, [selection]);
+
+  const handleHighlightSelection = useCallback((color: HighlightColor) => {
+    const item = highlightFromSelection(color);
+    if (!item) return;
+    saveHighlights(withHighlight(highlights, item));
+    window.getSelection()?.removeAllRanges();
+    showToast(lang === 'es' ? 'Subrayado guardado' : 'Highlight saved', 'success');
+  }, [highlightFromSelection, saveHighlights, withHighlight, highlights, lang, showToast]);
+
+  const handleNoteSelection = useCallback(() => {
+    const item = highlightFromSelection('yellow');
+    if (!item) return;
+    window.getSelection()?.removeAllRanges();
+    setNoteDraft({ highlight: item, isNew: true });
+  }, [highlightFromSelection]);
+
+  // Draw saved highlights on whatever paragraphs are rendered; redraw when the page content changes.
+  useEffect(() => {
+    const content = engineApiRef.current?.getContent();
+    if (!content) return;
+    const paint = () => {
+      const byColor = new Map<HighlightColor, Range[]>(HIGHLIGHT_COLORS.map((c) => [c.id, []]));
+      for (const item of highlights) {
+        const block = content.querySelector(`p.chapter-content[index="${item.paragraphId}"]`);
+        const range = block ? rangeForOffsets(block, item.start, item.end) : null;
+        if (range) byColor.get(item.color)?.push(range);
+      }
+      byColor.forEach((ranges, color) => setNamedHighlight(highlightCssName(color), ranges));
+    };
+    paint();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(paint, 60);
+    });
+    observer.observe(content, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [highlights]);
+
+  useEffect(() => () => {
+    HIGHLIGHT_COLORS.forEach((c) => setNamedHighlight(highlightCssName(c.id), null));
+  }, []);
+
+  /** Opens the section holding a paragraph and turns to it (and to a range inside it, when given). */
+  const goToParagraphAnywhere = useCallback((paragraphId: number, offsets?: { start: number; end: number }) => {
+    const api = engineApiRef.current;
+    if (!api) return;
+    const sectionIndex = api.getSections().findIndex((s) => paragraphId >= s.startParagraphId && paragraphId <= s.lastIndex);
+    skipNextReadingPositionRef.current = true;
+    api.goToParagraph(sectionIndex >= 0 ? sectionIndex : api.getCurrentSection(), paragraphId);
+    if (offsets) {
+      window.setTimeout(() => {
+        const block = api.getContent()?.querySelector(`p.chapter-content[index="${paragraphId}"]`);
+        const range = block ? rangeForOffsets(block, offsets.start, offsets.end) : null;
+        if (range) api.revealRange(range);
+      }, 150);
+    }
+  }, []);
+
+  const handleExportHighlights = useCallback(() => {
+    const text = exportHighlights(book.title || '', highlights, lang);
+    void navigator.clipboard.writeText(text).then(
+      () => showToast(lang === 'es' ? 'Subrayados copiados' : 'Highlights copied', 'success'),
+      () => showToast(lang === 'es' ? 'No se pudo copiar' : 'Could not copy', 'error'),
+    );
+  }, [book.title, highlights, lang, showToast]);
+
   const handleBookmarkSelection = useCallback(() => {
     if (!selection) return;
     handleToggleBookmark(selection.paragraphId, selection.text);
@@ -798,10 +905,7 @@ export default function Reader({
         return;
       }
 
-      if (text.length <= 12) {
-        setSelection(null);
-        return;
-      }
+
 
       const anchorP = selectionObj.anchorNode?.parentElement?.closest('[index]');
       const focusP = selectionObj.focusNode?.parentElement?.closest('[index]');
@@ -813,12 +917,18 @@ export default function Reader({
       const paragraphId = parseInt(anchorP.getAttribute('index') || '0', 10);
       const range = selectionObj.getRangeAt(0);
       const rect = range.getBoundingClientRect();
+      // Offsets in the paragraph's visible text (no furigana) so the highlight can be drawn again later.
+      const startOffset = offsetInBlock(anchorP, range.startContainer, range.startOffset);
+      const endOffset = offsetInBlock(anchorP, range.endContainer, range.endOffset);
+      const offsets = startOffset >= 0 && endOffset > startOffset ? { start: startOffset, end: endOffset } : null;
 
       setSelection({
         visible: true,
         rect: { x: rect.left + rect.width / 2, y: rect.top },
         paragraphId,
-        text
+        text,
+        offsets,
+        visibleText: offsets && anchorP.matches('p.chapter-content') ? blockText(anchorP).slice(offsets.start, offsets.end) : null,
       });
     };
 
@@ -2018,6 +2128,24 @@ export default function Reader({
         />
       )}
 
+      {noteDraft && (
+        <HighlightNoteDialog
+          highlight={noteDraft.highlight}
+          isNew={noteDraft.isNew}
+          lang={lang}
+          colors={colors}
+          onCancel={() => setNoteDraft(null)}
+          onDelete={() => {
+            if (!noteDraft.isNew) saveHighlights(highlights.filter((h) => h.id !== noteDraft.highlight.id));
+            setNoteDraft(null);
+          }}
+          onSave={({ note, color }) => {
+            saveHighlights(withHighlight(highlights, { ...noteDraft.highlight, note: note.trim() || undefined, color }));
+            setNoteDraft(null);
+          }}
+        />
+      )}
+
       {isSearchOpen && (
         <BookSearchPanel
           chapters={book.chapters || []}
@@ -2379,6 +2507,8 @@ export default function Reader({
           selectedText={selection.text}
           onCopy={handleCopyText}
           onBookmark={handleBookmarkSelection}
+          onHighlight={selection.offsets ? handleHighlightSelection : undefined}
+          onNote={selection.offsets ? handleNoteSelection : undefined}
           colors={colors}
           lang={lang}
         />
@@ -2485,11 +2615,12 @@ export default function Reader({
             requestAnimationFrame(() => setNavTargetSection(null));
           }}
           bookmarks={bookmarks}
-          onGoToBookmark={(bm: any) => {
-            skipNextReadingPositionRef.current = true;
-            setNavTargetParagraphId(bm.paragraphId);
-            requestAnimationFrame(() => setNavTargetParagraphId(null));
-          }}
+          onGoToBookmark={(bm: any) => goToParagraphAnywhere(bm.paragraphId)}
+          onModeChange={setSidebarMode}
+          highlights={highlights}
+          onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
+          onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
+          onExportHighlights={handleExportHighlights}
           readingSession={session}
           onToggleSession={handleToggleSession}
           colors={colors}

@@ -1647,3 +1647,165 @@ textarea:focus-visible,
     border-left: none !important;
   }
 }
+
+/* ==========================================================================
+   Highlights & notes (v1.3.10)
+   ========================================================================== */
+::highlight(yoru-hl-yellow) { background-color: rgba(250, 204, 21, 0.34); }
+::highlight(yoru-hl-green) { background-color: rgba(74, 222, 128, 0.3); }
+::highlight(yoru-hl-blue) { background-color: rgba(96, 165, 250, 0.32); }
+::highlight(yoru-hl-pink) { background-color: rgba(244, 114, 182, 0.32); }
+
+.reader-sidebar-tabs {
+  display: flex;
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+
+.reader-sidebar-tabs button {
+  flex: 1;
+  padding: 11px 6px 9px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reader-notes-export {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reader-note-item {
+  margin-bottom: 8px;
+  padding: 8px 10px 8px 12px;
+  border-left: 3px solid;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.reader-note-text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: var(--font-japanese), serif;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.reader-note-note {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.reader-note-edit {
+  margin-top: 4px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.highlight-note-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+}
+
+.highlight-note-dialog {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
+.highlight-note-dialog blockquote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid;
+  font-family: var(--font-japanese), serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.highlight-note-dialog textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.highlight-note-colors {
+  display: flex;
+  gap: 10px;
+}
+
+.highlight-note-colors button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+
+.highlight-note-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .highlight-note-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .highlight-note-dialog {
+    max-width: none;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: calc(16px + var(--yoru-safe-bottom, 0px));
+  }
+}

@@ -1,3 +1,4 @@
+import type { BookHighlight } from './highlights';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
 export interface Book {
@@ -17,6 +18,7 @@ export interface Book {
   createdAt: string;
   lastRead?: string;
   bookmarks?: any[];
+  highlights?: BookHighlight[];
   isDeleted?: boolean;
   vocabularyCoverage?: number;
   vocabStats?: Record<string, any>;
@@ -556,6 +558,13 @@ export const db = {
       }
       return book;
     });
+    await this.saveBooks(updatedBooks);
+    return updatedBooks;
+  },
+
+  async saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
+    const books = await this.getBooks();
+    const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
     await this.saveBooks(updatedBooks);
     return updatedBooks;
   },
