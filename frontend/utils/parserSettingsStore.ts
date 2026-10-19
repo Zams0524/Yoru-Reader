@@ -31,6 +31,35 @@ export interface WordStyleThemeConfig {
   states: Record<string, { effects: WordEffect[] }>;
 }
 
+/** The "Default" styling theme; also what the native reader shows until the user saves another. */
+export const DEFAULT_WORD_STYLE_CONFIG: WordStyleThemeConfig = {
+  v: 1,
+  theme: 'default',
+  states: {
+    new: { effects: [{ type: 'text-colour', colour: '#a566ef' }] },
+    young: { effects: [{ type: 'underline', colour: '#d08700', style: 'solid', thickness: 2 }] },
+    mature: { effects: [] },
+    mastered: { effects: [] },
+    due: { effects: [{ type: 'text-colour', colour: '#ff4500' }] },
+    blacklisted: { effects: [{ type: 'opacity', value: 0.5, hoverOnly: false }] },
+    suspended: { effects: [{ type: 'opacity', value: 0.5, hoverOnly: false }] },
+    redundant: { effects: [{ type: 'background', colour: '#4b9fff', opacity: 0.14 }] },
+    frequent: { effects: [{ type: 'underline', colour: '#4b8d7f', style: 'dotted', thickness: 2 }] },
+    'i-plus-one': {
+      effects: [
+        { type: 'shadow', colour: '#359eff', blur: 6, offsetX: 0, offsetY: 2 },
+        { type: 'shadow', colour: '#359eff', blur: 12, offsetX: 0, offsetY: 4 },
+      ],
+    },
+    unparsed: { effects: [] },
+    heiban: { effects: [] },
+    atamadaka: { effects: [] },
+    nakadaka: { effects: [] },
+    odaka: { effects: [] },
+    kifuku: { effects: [] },
+  }
+};
+
 /** True when the reader extension is not available and settings must be kept locally. */
 export function usesLocalParserSettings(): boolean {
   // Only the Electron shell loads the extension; Android and a plain browser never have it.
@@ -210,15 +239,14 @@ export function applyLocalWordStyles(): void {
   if (!usesLocalParserSettings() || typeof document === 'undefined') return;
   const raw = readLocal().wordStyleConfig;
   let el = document.getElementById(STYLE_ELEMENT_ID) as HTMLStyleElement | null;
-  if (!raw) {
-    el?.remove();
-    return;
-  }
-  let config: WordStyleThemeConfig;
-  try {
-    config = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch {
-    return;
+  // Nothing saved yet: use the Default theme, so the reader matches what the settings show.
+  let config: WordStyleThemeConfig = DEFAULT_WORD_STYLE_CONFIG;
+  if (raw) {
+    try {
+      config = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {
+      return;
+    }
   }
   if (!el) {
     el = document.createElement('style');

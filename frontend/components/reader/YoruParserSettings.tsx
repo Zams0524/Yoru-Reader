@@ -4,6 +4,7 @@ import {
   writeParserSettings as writeSettings,
   type WordEffect,
   type WordStyleThemeConfig,
+  DEFAULT_WORD_STYLE_CONFIG,
   usesLocalParserSettings,
 } from '../../utils/parserSettingsStore';
 import {
@@ -13,6 +14,7 @@ import {
   onJitenChange,
   testJitenApiKey,
 } from '../../utils/jitenSync';
+import WordStyleCheck from './WordStyleCheck';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface YoruParserSettingsProps {
@@ -83,33 +85,7 @@ interface SettingsValues {
 const PRESET_THEMES: Record<string, { label: string; config: WordStyleThemeConfig }> = {
   default: {
     label: 'Default',
-    config: {
-      v: 1,
-      theme: 'default',
-      states: {
-        new: { effects: [{ type: 'text-colour', colour: '#a566ef' }] },
-        young: { effects: [{ type: 'underline', colour: '#d08700', style: 'solid', thickness: 2 }] },
-        mature: { effects: [] },
-        mastered: { effects: [] },
-        due: { effects: [{ type: 'text-colour', colour: '#ff4500' }] },
-        blacklisted: { effects: [{ type: 'opacity', value: 0.5, hoverOnly: false }] },
-        suspended: { effects: [{ type: 'opacity', value: 0.5, hoverOnly: false }] },
-        redundant: { effects: [{ type: 'background', colour: '#4b9fff', opacity: 0.14 }] },
-        frequent: { effects: [{ type: 'underline', colour: '#4b8d7f', style: 'dotted', thickness: 2 }] },
-        'i-plus-one': {
-          effects: [
-            { type: 'shadow', colour: '#359eff', blur: 6, offsetX: 0, offsetY: 2 },
-            { type: 'shadow', colour: '#359eff', blur: 12, offsetX: 0, offsetY: 4 },
-          ],
-        },
-        unparsed: { effects: [] },
-        heiban: { effects: [] },
-        atamadaka: { effects: [] },
-        nakadaka: { effects: [] },
-        odaka: { effects: [] },
-        kifuku: { effects: [] },
-      }
-    }
+    config: DEFAULT_WORD_STYLE_CONFIG,
   },
   toyBox: {
     label: 'Toy Box',
@@ -411,9 +387,12 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   colors,
   lang,
 }) => {
+  // `settings` is the draft being edited; `savedSettings` is what storage holds.
   const [settings, setSettings] = useState<SettingsValues>({ ...DEFAULTS });
+  const [savedSettings, setSavedSettings] = useState<SettingsValues>({ ...DEFAULTS });
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('general');
   const [expandedState, setExpandedState] = useState<string | null>(null);
   const [previewVertical, setPreviewVertical] = useState(false);
@@ -434,7 +413,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         } catch (_) {}
       }
 
-      setSettings({
+      const loadedSettings: SettingsValues = {
         themeBgColour: (safeVals.themeBgColour as string) || DEFAULTS.themeBgColour,
         themeAccentColour: (safeVals.themeAccentColour as string) || DEFAULTS.themeAccentColour,
         skipFurigana: parseBool(safeVals.skipFurigana, DEFAULTS.skipFurigana),
@@ -471,26 +450,84 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         fsrsMaxInterval: parseNum(safeVals.fsrsMaxInterval, DEFAULTS.fsrsMaxInterval),
         fsrsEnableFuzz: parseBool(safeVals.fsrsEnableFuzz, DEFAULTS.fsrsEnableFuzz),
         wordStyleConfig: loadedConfig,
-      });
+      };
+      setSettings(loadedSettings);
+      setSavedSettings(loadedSettings);
+      setSaveStatus(null);
       setLoaded(true);
     });
   }, [isOpen]);
 
   const updateSetting = useCallback(
-    async <K extends keyof SettingsValues>(key: K, value: SettingsValues[K]) => {
+    async <K extends keyof SettingsValues>(key: K, value: SettingsValues[K], immediate = false) => {
       setSettings((prev) => ({ ...prev, [key]: value }));
-      setSaving(true);
+      setSaveStatus(null);
+      if (!immediate) return;
       await writeSettings({ [key]: value });
-      setSaving(false);
+      setSavedSettings((prev) => ({ ...prev, [key]: value }));
     },
     [],
   );
 
+  // Only keys the user changed are written: keybinds are loaded as display text and must not be saved back.
+  const changedKeys = SETTING_KEYS.filter((key) => JSON.stringify(settings[key]) !== JSON.stringify(savedSettings[key]));
+  const hasUnsavedChanges = changedKeys.length > 0;
+
+  const saveAll = useCallback(async () => {
+    if (changedKeys.length === 0) return;
+    const entries: Record<string, any> = {};
+    changedKeys.forEach((key) => { entries[key] = settings[key]; });
+    setSaving(true);
+    const written = await writeSettings(entries);
+    // Read back from storage to prove the values really persisted.
+    const stored = await readSettings(changedKeys);
+    setSaving(false);
+    const mismatched = changedKeys.filter((key) => {
+      let value = stored?.[key];
+      if (typeof value === 'string' && typeof settings[key] !== 'string') {
+        try { value = JSON.parse(value); } catch { /* compare as is */ }
+      }
+      return JSON.stringify(value) !== JSON.stringify(settings[key]);
+    });
+    const isEs = lang === 'es';
+    if (written && mismatched.length === 0) {
+      setSavedSettings(settings);
+      setSaveStatus({
+        ok: true,
+        text: isEs
+          ? `✓ Guardado y comprobado (${changedKeys.length} ${changedKeys.length === 1 ? 'ajuste' : 'ajustes'}).`
+          : `✓ Saved and verified (${changedKeys.length} ${changedKeys.length === 1 ? 'setting' : 'settings'}).`,
+      });
+    } else {
+      setSaveStatus({
+        ok: false,
+        text: isEs
+          ? `✗ No se pudo guardar: ${(mismatched.length ? mismatched : changedKeys).join(', ')}`
+          : `✗ Could not save: ${(mismatched.length ? mismatched : changedKeys).join(', ')}`,
+      });
+    }
+  }, [changedKeys, settings, lang]);
+
+  const discardChanges = useCallback(() => {
+    setSettings(savedSettings);
+    setSaveStatus(null);
+  }, [savedSettings]);
+
+  const requestClose = useCallback(() => {
+    if (hasUnsavedChanges) {
+      const message = lang === 'es'
+        ? 'Tienes cambios sin guardar. ¿Cerrar y descartarlos?'
+        : 'You have unsaved changes. Close and discard them?';
+      if (!window.confirm(message)) return;
+    }
+    onClose();
+  }, [hasUnsavedChanges, lang, onClose]);
+
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent) => {
-      if (e.target === overlayRef.current) onClose();
+      if (e.target === overlayRef.current) requestClose();
     },
-    [onClose],
+    [requestClose],
   );
 
   const handlePresetSelect = useCallback(async (presetKey: string) => {
@@ -499,9 +536,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     if (preset) {
       const newConfig = structuredClone(preset.config);
       setSettings((prev) => ({ ...prev, wordStyleConfig: newConfig }));
-      setSaving(true);
-      await writeSettings({ wordStyleConfig: newConfig });
-      setSaving(false);
+      setSaveStatus(null);
     }
   }, []);
 
@@ -533,9 +568,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     config.states[stateKey].effects.push(newEffect);
     config.theme = 'custom';
     setSettings((prev) => ({ ...prev, wordStyleConfig: config }));
-    setSaving(true);
-    await writeSettings({ wordStyleConfig: config });
-    setSaving(false);
+    setSaveStatus(null);
   }, [settings.wordStyleConfig]);
 
   const handleUpdateEffect = useCallback(async (stateKey: string, effectIndex: number, updatedFields: Partial<WordEffect>) => {
@@ -545,9 +578,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
       Object.assign(effect, updatedFields);
       config.theme = 'custom';
       setSettings((prev) => ({ ...prev, wordStyleConfig: config }));
-      setSaving(true);
-      await writeSettings({ wordStyleConfig: config });
-      setSaving(false);
+      setSaveStatus(null);
     }
   }, [settings.wordStyleConfig]);
 
@@ -556,9 +587,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     config.states[stateKey]?.effects.splice(effectIndex, 1);
     config.theme = 'custom';
     setSettings((prev) => ({ ...prev, wordStyleConfig: config }));
-    setSaving(true);
-    await writeSettings({ wordStyleConfig: config });
-    setSaving(false);
+    setSaveStatus(null);
   }, [settings.wordStyleConfig]);
 
   if (!isOpen) return null;
@@ -615,7 +644,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
       <JitenAccountCard
         apiKey={settings.jitenApiKey}
         useParser={settings.jitenUseParser}
-        onSaveKey={(v) => updateSetting('jitenApiKey', v)}
+        onSaveKey={(v) => updateSetting('jitenApiKey', v, true)}
         onToggleParser={(v) => updateSetting('jitenUseParser', v)}
         t={t}
         colors={colors}
@@ -922,6 +951,17 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
             )}
           </div>
         </div>
+
+        {/* Real check against the reader's markup and the saved styles */}
+        <div style={sectionTitleStyle}>{t('Probar en el lector', 'Test in the reader')}</div>
+        <WordStyleCheck
+          savedConfig={savedSettings.wordStyleConfig}
+          hasUnsavedChanges={hasUnsavedChanges}
+          t={t}
+          colors={colors}
+          cardStyle={cardStyle}
+          descStyle={descStyle}
+        />
 
         {/* Word States List Accordion */}
         <div style={sectionTitleStyle}>{t('Estados de Palabras', 'Word States')}</div>
@@ -1455,13 +1495,8 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
             </h3>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {saving && (
-              <span style={{ color: colors.accent, fontSize: '0.72rem', fontFamily: 'var(--font-ui)' }}>
-                {t('Guardando…', 'Saving…')}
-              </span>
-            )}
             <button
-              onClick={onClose}
+              onClick={requestClose}
               className="yoru-parser-close"
               aria-label={t('Cerrar', 'Close')}
               style={{
@@ -1550,6 +1585,75 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
           ) : (
             TAB_RENDERERS[activeTab]()
           )}
+        </div>
+
+        {/* ── Footer: save ── */}
+        <div
+          className="yoru-parser-footer"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            padding: '10px 16px',
+            borderTop: `1px solid ${colors.border}`,
+            background: colors.popoverBg,
+          }}
+        >
+          <span
+            role="status"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: '0.78rem',
+              fontFamily: 'var(--font-ui), sans-serif',
+              color: saveStatus ? (saveStatus.ok ? '#4ade80' : '#f87171') : hasUnsavedChanges ? '#fbbf24' : colors.textMuted,
+            }}
+          >
+            {saveStatus
+              ? saveStatus.text
+              : hasUnsavedChanges
+                ? t(`Cambios sin guardar (${changedKeys.length})`, `Unsaved changes (${changedKeys.length})`)
+                : t('Todo guardado', 'All saved')}
+          </span>
+          {hasUnsavedChanges && (
+            <button
+              type="button"
+              onClick={discardChanges}
+              disabled={saving}
+              style={{
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: `1px solid ${colors.border}`,
+                background: 'transparent',
+                color: colors.textMain,
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('Descartar', 'Discard')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void saveAll()}
+            disabled={!hasUnsavedChanges || saving}
+            style={{
+              padding: '9px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: hasUnsavedChanges ? colors.accent : 'rgba(128,128,128,0.25)',
+              color: hasUnsavedChanges ? '#111' : colors.textMuted,
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: hasUnsavedChanges && !saving ? 'pointer' : 'default',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {saving ? t('Guardando…', 'Saving…') : t('Guardar configuración', 'Save settings')}
+          </button>
         </div>
       </div>
     </div>
