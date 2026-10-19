@@ -1,12 +1,6 @@
 <!doctype html>
-<html>
+<html class="dark-mode">
 <head>
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const theme = params.get('theme') || 'dark';
-    document.documentElement.className = theme + '-mode';
-    document.documentElement.setAttribute('data-theme', theme);
-  </script>
   <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
   <meta http-equiv="Content-language" content="en" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
@@ -140,6 +134,14 @@
 
       <div id="export" class="section" style="display: none">
         <h6>Import / Export</h6>
+
+        <div class="checkbox" data-show="jitenApiKey">
+          <input type="checkbox" id="exportApiKey" internal />
+          <label for="exportApiKey">Also export API key</label>
+        </div>
+        <p id="exportApiKeyWarning" style="display: none; color: #e74c3c;">
+          Warning: Do not share the exported file if this is ticked.
+        </p>
 
         <div class="form-box-parent">
           <div class="form-box">

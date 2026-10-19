@@ -2,6 +2,8 @@ This directory contains a modified build of Jiten Reader 1.3.2
 (https://github.com/Sirush/JitenReader), itself a fork of Kagu-chan's
 Anki JPDB Reader (https://github.com/Kagu-chan/anki-jpdb.reader), both MIT licensed.
 Yoru Reader adapts it for its desktop app (branding and local parsing).
+Source of this build: https://github.com/Zams0524/JitenReader/tree/yoru
+(rebuilt by build/build-reader-ext.mjs from the ref pinned in build/reader-ext.json).
 
 MIT License
 

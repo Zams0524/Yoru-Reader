@@ -18,6 +18,7 @@ Once approved:
 ## Build and signing process
 
 - Every Windows release is built by [GitHub Actions](../.github/workflows/build-all-releases.yml) from the public source in this repository. Binaries built on a developer machine are never signed.
+- The bundled reader extension is built in the same workflow from its public source, the [`yoru` branch of Zams0524/JitenReader](https://github.com/Zams0524/JitenReader/tree/yoru), at the tag pinned in [`build/reader-ext.json`](../build/reader-ext.json).
 - Each signing request is approved manually by an approver (see below) before the signed file is published.
 - The signing key is held by SignPath in a hardware security module; the project never has access to it.
 - Signed binaries are published only on the [GitHub Releases page](https://github.com/Zams0524/Yoru-Reader/releases).

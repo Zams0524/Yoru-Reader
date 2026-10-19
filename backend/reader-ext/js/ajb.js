@@ -91,6 +91,7 @@ const DEFAULT_CONFIGURATION = Object.freeze({
     themeAccentColour: '#D8B9FA',
     //#endregion
     //#region JPDB Integration
+    // Yoru Reader: parse through the desktop app's local server (see apps/yoru/local-parse.ts)
     jitenApiKey: 'local',
     jitenApiEndpoint: 'http://127.0.0.1:23280',
     //#endregion
@@ -1461,85 +1462,6 @@ class ParseCommand extends _lib_background_command__WEBPACK_IMPORTED_MODULE_0__.
         super(...arguments);
         this.key = 'parse';
     }
-    send(afterSend) {
-        const sequenceData = this.arguments[0] || [];
-        const paragraphs = sequenceData.map(s => s[1]);
-        
-        fetch('http://127.0.0.1:23280/api/parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: paragraphs })
-        })
-        .then(res => res.json())
-        .then(data => {
-            const CARD_STATE_MAP = {
-                0: 'new',
-                1: 'young',
-                2: 'mature',
-                3: 'blacklisted',
-                4: 'due',
-                5: 'mastered',
-                6: 'redundant',
-                7: 'suspended',
-            };
-            const vocabulary = data.vocabulary || [];
-            const tokens = data.tokens || [];
-            const cards = vocabulary.map(vocab => {
-                const { wordId, readingIndex, spelling, reading, frequencyRank, partsOfSpeech, meaningsChunks, meaningsPartOfSpeech, knownState, pitchAccents, studyDeckIds } = vocab;
-                const cardState = (knownState || []).map(state => CARD_STATE_MAP[state]).filter(s => s !== undefined);
-                if (cardState.length === 0) cardState.push('mature');
-                return {
-                    wordId,
-                    readingIndex: readingIndex || 0,
-                    spelling,
-                    reading,
-                    frequencyRank: frequencyRank || 999999,
-                    partsOfSpeech: Array.isArray(partsOfSpeech) ? partsOfSpeech : [partsOfSpeech],
-                    meanings: (meaningsChunks || [[]]).map((glosses, i) => ({
-                        glosses,
-                        partsOfSpeech: (meaningsPartOfSpeech && meaningsPartOfSpeech[i]) || []
-                    })),
-                    cardState,
-                    pitchAccents: pitchAccents || [],
-                    wordWithReading: null,
-                    deckIds: studyDeckIds || []
-                };
-            });
-            const vocabMap = new Map();
-            const cardMap = new Map();
-            for (const v of vocabulary) {
-                vocabMap.set(String(v.wordId) + ':' + String(v.readingIndex || 0), v);
-            }
-            for (const c of cards) {
-                cardMap.set(String(c.wordId) + ':' + String(c.readingIndex || 0), c);
-            }
-            const parsedTokens = tokens.map(group => {
-                return group.map(token => {
-                    const key = String(token.wordId) + ':' + String(token.readingIndex || 0);
-                    const card = cardMap.get(key);
-                    return {
-                        ...token,
-                        card: card || null,
-                        pitchClass: '',
-                        rubies: []
-                    };
-                });
-            });
-            sequenceData.forEach(([seqId], i) => {
-                const result = parsedTokens[i] || [];
-                try {
-                    _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.sequenceManager.handleBackgroundMessage(seqId, (request) => request.resolve(result));
-                } catch (e) {
-                    console.error('[ParseCommand] Error resolving sequence:', seqId, e);
-                }
-            });
-            if (typeof afterSend === 'function') afterSend();
-        })
-        .catch(err => {
-            console.error('[ParseCommand Direct] Fallback to background message:', err);
-            super.send(afterSend);
-        });
-    }
 }
 
 
@@ -1568,11 +1490,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(4);
 /* harmony import */ var _batches_batch_controller__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(91);
-/* harmony import */ var _sequence_sequence_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(99);
-/* harmony import */ var _event_collection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(101);
-/* harmony import */ var _host_evaluator__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(102);
-/* harmony import */ var _sentence_manager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(106);
-/* harmony import */ var _word_event_delegator__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(107);
+/* harmony import */ var _sequence_sequence_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(100);
+/* harmony import */ var _event_collection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(102);
+/* harmony import */ var _host_evaluator__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(103);
+/* harmony import */ var _sentence_manager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(107);
+/* harmony import */ var _word_event_delegator__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(108);
 
 
 
@@ -1734,8 +1656,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(75);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
 /* harmony import */ var _sequence_canceled__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(92);
-/* harmony import */ var _apply_tokens__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(93);
-/* harmony import */ var _get_paragraphs__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(96);
+/* harmony import */ var _yoru_local_parse__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(93);
+/* harmony import */ var _apply_tokens__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(94);
+/* harmony import */ var _get_paragraphs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(97);
+
 
 
 
@@ -1750,7 +1674,7 @@ class BatchController {
         nodes.forEach((node) => this.registerNode(node, options));
     }
     registerNode(node, options = {}) {
-        const { filter, onEmpty, getParagraphsFn = _get_paragraphs__WEBPACK_IMPORTED_MODULE_5__.getParagraphs, applyFn = _apply_tokens__WEBPACK_IMPORTED_MODULE_4__.applyTokens, collapseWhitespace, onComplete, } = options;
+        const { filter, onEmpty, getParagraphsFn = _get_paragraphs__WEBPACK_IMPORTED_MODULE_6__.getParagraphs, applyFn = _apply_tokens__WEBPACK_IMPORTED_MODULE_5__.applyTokens, collapseWhitespace, onComplete, } = options;
         if (this._pendingBatches.has(node)) {
             return;
         }
@@ -1772,7 +1696,11 @@ class BatchController {
         const batches = Array.from(this._pendingBatches.values());
         const sequences = batches.flatMap((b) => b);
         const sequenceData = sequences.map((s) => [s.sequenceId, s.data.map((f) => f.node.data).join('')]);
-        new _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__.ParseCommand(sequenceData).send(afterSend);
+        (0,_yoru_local_parse__WEBPACK_IMPORTED_MODULE_4__.parseWithYoru)(sequenceData, afterSend).catch((error) => {
+            // eslint-disable-next-line no-console
+            console.error('[Yoru] Local parser unavailable, falling back to the background worker:', error);
+            new _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__.ParseCommand(sequenceData).send(afterSend);
+        });
         this._pendingBatches.clear();
     }
     prepareNode(node, paragraphs, applyFn, onComplete) {
@@ -1827,10 +1755,87 @@ class Canceled extends Error {
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   YORU_LOCAL_API: () => (/* binding */ YORU_LOCAL_API),
+/* harmony export */   parseWithYoru: () => (/* binding */ parseWithYoru)
+/* harmony export */ });
+/* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(4);
+/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(90);
+
+
+/** Local parsing server started by the Yoru Reader desktop app (Electron main process). */
+const YORU_LOCAL_API = 'http://127.0.0.1:23280';
+const CARD_STATE_MAP = {
+    0: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.NEW,
+    1: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.YOUNG,
+    2: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MATURE,
+    3: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.BLACKLISTED,
+    4: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.DUE,
+    5: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MASTERED,
+    6: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.REDUNDANT,
+    7: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.SUSPENDED,
+};
+const cardKey = (wordId, readingIndex) => `${wordId}:${readingIndex ?? 0}`;
+const toCard = (vocab) => {
+    const cardState = (vocab.knownState ?? [])
+        .map((state) => CARD_STATE_MAP[state])
+        .filter((state) => state !== undefined);
+    return {
+        wordId: vocab.wordId,
+        readingIndex: vocab.readingIndex ?? 0,
+        spelling: vocab.spelling,
+        reading: vocab.reading,
+        frequencyRank: vocab.frequencyRank ?? 999999,
+        partsOfSpeech: Array.isArray(vocab.partsOfSpeech) ? vocab.partsOfSpeech : [vocab.partsOfSpeech],
+        meanings: (vocab.meaningsChunks ?? [[]]).map((glosses, i) => ({
+            glosses,
+            partsOfSpeech: vocab.meaningsPartOfSpeech?.[i] ?? [],
+        })),
+        cardState: cardState.length ? cardState : [_shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MATURE],
+        pitchAccents: vocab.pitchAccents ?? [],
+        wordWithReading: null,
+        deckIds: vocab.studyDeckIds ?? [],
+    };
+};
+/**
+ * Parses the given sequences with the Yoru Reader desktop app's local server instead of the
+ * Jiten API, and resolves them directly in the content script. Rejects when the server is not
+ * reachable (e.g. in a normal browser), so the caller can fall back to the background worker.
+ */
+const parseWithYoru = async (sequenceData, afterSend) => {
+    const response = await fetch(`${YORU_LOCAL_API}/api/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sequenceData.map(([, text]) => text) }),
+    });
+    const data = (await response.json());
+    const cards = new Map();
+    for (const vocab of data.vocabulary ?? []) {
+        cards.set(cardKey(vocab.wordId, vocab.readingIndex), toCard(vocab));
+    }
+    const parsedTokens = (data.tokens ?? []).map((group) => group.map((token) => ({
+        ...token,
+        card: cards.get(cardKey(token.wordId, token.readingIndex)) ?? null,
+        pitchClass: '',
+        rubies: [],
+    })));
+    sequenceData.forEach(([sequenceId], i) => {
+        _integration_registry__WEBPACK_IMPORTED_MODULE_1__.Registry.sequenceManager.resolveSequence(sequenceId, parsedTokens[i] ?? []);
+    });
+    afterSend?.();
+};
+
+
+/***/ }),
+/* 94 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   applyTokens: () => (/* binding */ applyTokens)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(94);
+/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(95);
 
 
 let statsUpdateTimeout;
@@ -1848,7 +1853,7 @@ const applyTokens = (fragments, tokens) => {
 
 
 /***/ }),
-/* 94 */
+/* 95 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -1858,7 +1863,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(90);
-/* harmony import */ var _base_text_highlighter__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(95);
+/* harmony import */ var _base_text_highlighter__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(96);
 
 
 
@@ -2571,7 +2576,7 @@ TextHighlighter.CHUNK_SIZE = 40;
 
 
 /***/ }),
-/* 95 */
+/* 96 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2588,7 +2593,7 @@ class BaseTextHighlighter {
 
 
 /***/ }),
-/* 96 */
+/* 97 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2596,7 +2601,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   getParagraphs: () => (/* binding */ getParagraphs)
 /* harmony export */ });
-/* harmony import */ var _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(97);
+/* harmony import */ var _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(98);
 
 const getParagraphs = (node, filter, collapseWhitespace) => {
     return new _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__.ParagraphReader(node, filter, collapseWhitespace).read();
@@ -2604,7 +2609,7 @@ const getParagraphs = (node, filter, collapseWhitespace) => {
 
 
 /***/ }),
-/* 97 */
+/* 98 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2612,7 +2617,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ParagraphReader: () => (/* binding */ ParagraphReader)
 /* harmony export */ });
-/* harmony import */ var _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(98);
+/* harmony import */ var _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(99);
 
 class ParagraphReader extends _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__.BaseParagraphReader {
     constructor() {
@@ -2818,7 +2823,7 @@ ParagraphReader._skipTags = new Set([
 
 
 /***/ }),
-/* 98 */
+/* 99 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2836,7 +2841,7 @@ class BaseParagraphReader {
 
 
 /***/ }),
-/* 99 */
+/* 100 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2845,7 +2850,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   SequenceManager: () => (/* binding */ SequenceManager)
 /* harmony export */ });
 /* harmony import */ var _shared_messages_background_abort_request_command__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(72);
-/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(100);
+/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(101);
 /* harmony import */ var _canceled__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(92);
 
 
@@ -2886,6 +2891,10 @@ class SequenceManager {
             data,
         };
     }
+    /** Resolves a sequence with data obtained outside the background worker (Yoru local parser). */
+    resolveSequence(sequenceId, data) {
+        this.handleBackgroundMessage(sequenceId, (request) => request.resolve(data));
+    }
     handleBackgroundMessage(sequenceId, fn) {
         const request = this._requests.get(sequenceId);
         if (!request) {
@@ -2898,7 +2907,7 @@ class SequenceManager {
 
 
 /***/ }),
-/* 100 */
+/* 101 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2937,7 +2946,7 @@ const receiveBackgroundMessage = (event, handler) => {
 
 
 /***/ }),
-/* 101 */
+/* 102 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2971,7 +2980,7 @@ class EventCollection {
 
 
 /***/ }),
-/* 102 */
+/* 103 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -2979,7 +2988,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   HostEvaluator: () => (/* binding */ HostEvaluator)
 /* harmony export */ });
-/* harmony import */ var _shared_host_meta_get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(103);
+/* harmony import */ var _shared_host_meta_get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(104);
 
 class HostEvaluator {
     get metaKey() {
@@ -3046,7 +3055,7 @@ class HostEvaluator {
 
 
 /***/ }),
-/* 103 */
+/* 104 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3057,8 +3066,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _dom_display_toast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
-/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(104);
-/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(105);
+/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(105);
+/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(106);
 
 
 
@@ -3134,7 +3143,7 @@ function filterHostMeta(enabledHosts, filter, multiple) {
 
 
 /***/ }),
-/* 104 */
+/* 105 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3164,6 +3173,7 @@ const matchUrl = (matchPattern, host) => {
     if (patternSchema !== '*' && patternSchema !== hostSchema) {
         return false;
     }
+    // file:// URLs (Yoru Reader) can have no path part
     const patternPathSafe = patternPath || '*';
     const hostPathSafe = hostPath || '';
     const hostRegex = new RegExp(`^${patternHost.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
@@ -3179,7 +3189,7 @@ const matchUrl = (matchPattern, host) => {
 
 
 /***/ }),
-/* 105 */
+/* 106 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3210,11 +3220,12 @@ const DEFAULT_HOSTS = [
         id: 'ttsu-parser',
         name: 'Ttsu Parser',
         description: 'Parses the ebook reader Ttsu',
+        // Yoru Reader renders its reader with ttsu's markup, on file:// and localhost
         host: '<all_urls>',
         auto: true,
         optOut: true,
         allFrames: false,
-        custom: 'TtsuParser',
+        custom: 'YoruParser',
         parseVisibleObserver: true,
         addedObserver: {
             notifyFor: 'div.book-content',
@@ -3228,7 +3239,7 @@ const DEFAULT_HOSTS = [
         auto: true,
         optOut: true,
         allFrames: false,
-        custom: 'TtsuParser',
+        custom: 'YoruParser',
     },
     {
         id: 'asbplayer-parser',
@@ -3316,16 +3327,16 @@ const DEFAULT_HOSTS = [
         custom: 'AozoraParser',
     },
     {
-        id: 'yoru-manga',
-        name: 'Yoru parser (manga)',
-        description: 'Parses locally hosted Yoru mangas.',
+        id: 'manatan-manga',
+        name: 'Manatan parser (manga)',
+        description: 'Parses locally hosted Manatan mangas.',
         host: ['*://localhost:4568/manga/*'],
         auto: true,
         optOut: true,
         allFrames: true,
         parseVisibleObserver: true,
         collapseWhitespace: true,
-        custom: 'YoruMangaParser',
+        custom: 'ManatanMangaParser',
         css: [
             '.gemini-ocr-text-box[data-jiten-parsed] {',
             '  color: transparent !important;',
@@ -3336,7 +3347,7 @@ const DEFAULT_HOSTS = [
             '.gemini-ocr-text-box[data-jiten-parsed]:hover {',
             '  opacity: 1 !important;',
             '}',
-            '.jiten-yoru-overlay {',
+            '.jiten-manatan-overlay {',
             '  position: absolute;',
             '  inset: 0;',
             '  pointer-events: none;',
@@ -3344,10 +3355,10 @@ const DEFAULT_HOSTS = [
             '  color: var(--ocr-text-color, #333);',
             '  -webkit-text-fill-color: initial;',
             '}',
-            '.jiten-yoru-overlay .jiten-word { margin-inline: 0; }',
-            '.jiten-yoru-overlay .jiten-word[wordId] { pointer-events: auto; }',
-            '.jiten-yoru-pass-through .jiten-yoru-overlay .jiten-word[wordId] { pointer-events: none; }',
-            '.jiten-yoru-overlay .jiten-word::before {',
+            '.jiten-manatan-overlay .jiten-word { margin-inline: 0; }',
+            '.jiten-manatan-overlay .jiten-word[wordId] { pointer-events: auto; }',
+            '.jiten-manatan-pass-through .jiten-manatan-overlay .jiten-word[wordId] { pointer-events: none; }',
+            '.jiten-manatan-overlay .jiten-word::before {',
             '  content: attr(data-text);',
             '  text-shadow: inherit;',
             '}',
@@ -3357,9 +3368,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-ln',
-        name: 'Yoru parser (LNs)',
-        description: 'Parses locally hosted Yoru light novels.',
+        id: 'manatan-ln',
+        name: 'Manatan parser (LNs)',
+        description: 'Parses locally hosted Manatan light novels.',
         host: ['*://localhost:4568/ln/*'],
         auto: true,
         optOut: true,
@@ -3371,9 +3382,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-anime',
-        name: 'Yoru parser (anime)',
-        description: 'Parses locally hosted Yoru anime.',
+        id: 'manatan-anime',
+        name: 'Manatan parser (anime)',
+        description: 'Parses locally hosted Manatan anime.',
         host: ['*://localhost:4568/anime/*'],
         auto: true,
         optOut: true,
@@ -3384,7 +3395,6 @@ const DEFAULT_HOSTS = [
             checkNested: 'div',
         },
     },
-
     {
         id: 'luna-translator-parser',
         name: 'Luna Translator Parser',
@@ -3563,7 +3573,7 @@ const DEFAULT_HOSTS = [
 
 
 /***/ }),
-/* 106 */
+/* 107 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3759,7 +3769,7 @@ class SentenceManager {
 
 
 /***/ }),
-/* 107 */
+/* 108 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3770,7 +3780,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
 /* harmony import */ var _registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(108);
+/* harmony import */ var _word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(109);
 
 
 
@@ -3919,7 +3929,7 @@ WordEventDelegator._instance = null;
 
 
 /***/ }),
-/* 108 */
+/* 109 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3987,7 +3997,7 @@ const getWordSurfaceForm = (element) => getAdjacentWordElements(element).map(get
 
 
 /***/ }),
-/* 109 */
+/* 110 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -3997,15 +4007,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
-/* harmony import */ var _actions_grading_actions__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(112);
-/* harmony import */ var _actions_grading_controller__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(114);
-/* harmony import */ var _actions_mining_actions__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(117);
-/* harmony import */ var _actions_mining_controller__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(118);
-/* harmony import */ var _actions_rotation_actions__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(119);
-/* harmony import */ var _actions_rotation_controller__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(120);
-/* harmony import */ var _popup__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(121);
+/* harmony import */ var _actions_grading_actions__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(113);
+/* harmony import */ var _actions_grading_controller__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(115);
+/* harmony import */ var _actions_mining_actions__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(118);
+/* harmony import */ var _actions_mining_controller__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(119);
+/* harmony import */ var _actions_rotation_actions__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(120);
+/* harmony import */ var _actions_rotation_controller__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(121);
+/* harmony import */ var _popup__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(122);
 
 
 
@@ -4139,7 +4149,7 @@ class PopupManager {
 
 
 /***/ }),
-/* 110 */
+/* 111 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4149,7 +4159,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _no_focus_trigger__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
+/* harmony import */ var _no_focus_trigger__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(112);
 /* harmony import */ var _registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
 
 
@@ -4286,7 +4296,7 @@ class KeybindManager {
 
 
 /***/ }),
-/* 111 */
+/* 112 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4370,7 +4380,7 @@ NoFocusTrigger._instance = null;
 
 
 /***/ }),
-/* 112 */
+/* 113 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4378,10 +4388,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   GradingActions: () => (/* binding */ GradingActions)
 /* harmony export */ });
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(113);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(110);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(114);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(108);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(109);
 
 
 
@@ -4435,7 +4445,7 @@ class GradingActions {
 
 
 /***/ }),
-/* 113 */
+/* 114 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4472,7 +4482,7 @@ const formatSentenceWithMarkers = (sentence, surfaceForm) => {
 
 
 /***/ }),
-/* 114 */
+/* 115 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4485,8 +4495,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_messages_background_add_to_study_deck_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(36);
 /* harmony import */ var _shared_messages_background_grade_card_command__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(54);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(90);
-/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(115);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(116);
+/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(117);
 
 
 
@@ -4555,7 +4565,7 @@ class GradingController extends _base_controller__WEBPACK_IMPORTED_MODULE_6__.Ba
 
 
 /***/ }),
-/* 115 */
+/* 116 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4616,7 +4626,7 @@ class ReviewCooldown {
 
 
 /***/ }),
-/* 116 */
+/* 117 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4651,7 +4661,7 @@ BaseController._suspendUpdateWordStates = false;
 
 
 /***/ }),
-/* 117 */
+/* 118 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4659,12 +4669,12 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   MiningActions: () => (/* binding */ MiningActions)
 /* harmony export */ });
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(113);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(114);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(59);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(90);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(108);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(109);
 
 
 
@@ -4793,7 +4803,7 @@ MiningActions.STATE_MAP = {
 
 
 /***/ }),
-/* 118 */
+/* 119 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4805,7 +4815,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_add_to_study_deck_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(36);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(59);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(117);
 
 
 
@@ -4843,7 +4853,7 @@ class MiningController extends _base_controller__WEBPACK_IMPORTED_MODULE_4__.Bas
 
 
 /***/ }),
-/* 119 */
+/* 120 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4853,7 +4863,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
 
 
@@ -4898,7 +4908,7 @@ class RotationActions {
 
 
 /***/ }),
-/* 120 */
+/* 121 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4909,7 +4919,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(59);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(117);
 
 
 
@@ -4987,7 +4997,7 @@ class RotationController extends _base_controller__WEBPACK_IMPORTED_MODULE_3__.B
 
 
 /***/ }),
-/* 121 */
+/* 122 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4999,25 +5009,25 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(11);
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(22);
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(20);
-/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(122);
-/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(124);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(21);
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(113);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(114);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_fetch_study_decks_command__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(49);
 /* harmony import */ var _shared_messages_background_forget_card_command__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(51);
 /* harmony import */ var _shared_messages_background_update_card_state_command__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(61);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(33);
-/* harmony import */ var _shared_pitch_accent_utils__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(124);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(125);
-/* harmony import */ var _shared_tts_play_tts__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(126);
-/* harmony import */ var _integration_flash_words__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(127);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(110);
+/* harmony import */ var _shared_pitch_accent_utils__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(125);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(126);
+/* harmony import */ var _shared_tts_play_tts__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(127);
+/* harmony import */ var _integration_flash_words__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(128);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(90);
-/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(115);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(108);
-/* harmony import */ var _confirm_dialog__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(128);
-/* harmony import */ var _part_of_speech__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(129);
+/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(116);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(109);
+/* harmony import */ var _confirm_dialog__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(129);
+/* harmony import */ var _part_of_speech__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(130);
 
 
 
@@ -6170,7 +6180,7 @@ Popup.MIN_HEIGHT = 200;
 
 
 /***/ }),
-/* 122 */
+/* 123 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6186,7 +6196,7 @@ function findElements(p0, p1, _) {
 
 
 /***/ }),
-/* 123 */
+/* 124 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6208,7 +6218,7 @@ function withElement(p0, p1, p2) {
 
 
 /***/ }),
-/* 124 */
+/* 125 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6285,7 +6295,7 @@ const getPitchDiagramData = (reading, pitchNum) => {
 
 
 /***/ }),
-/* 125 */
+/* 126 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6303,7 +6313,7 @@ const getThemeCssVars = async () => {
 
 
 /***/ }),
-/* 126 */
+/* 127 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6337,7 +6347,7 @@ async function playTts(wordId, readingIndex, voice) {
 
 
 /***/ }),
-/* 127 */
+/* 128 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6397,7 +6407,7 @@ function clearPendingHighlight() {
 
 
 /***/ }),
-/* 128 */
+/* 129 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6495,7 +6505,7 @@ class ConfirmDialog {
 
 
 /***/ }),
-/* 129 */
+/* 130 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6788,7 +6798,7 @@ const PARTS_OF_SPEECH = {
 
 
 /***/ }),
-/* 130 */
+/* 131 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6800,8 +6810,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(21);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(125);
-/* harmony import */ var _shared_word_style_generate_css__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(131);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(126);
+/* harmony import */ var _shared_word_style_generate_css__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(132);
 
 
 
@@ -6842,7 +6852,7 @@ const ensureWordStyles = async () => {
 
 
 /***/ }),
-/* 131 */
+/* 132 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6992,9 +7002,9 @@ function generateInlineStyles(effects) {
 
 
 /***/ }),
-/* 132 */,
 /* 133 */,
-/* 134 */
+/* 134 */,
+/* 135 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7007,7 +7017,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   loadPersistedFonts: () => (/* binding */ loadPersistedFonts),
 /* harmony export */   supportsFontEnumeration: () => (/* binding */ supportsFontEnumeration)
 /* harmony export */ });
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
 /* harmony import */ var _shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
 /* harmony import */ var _shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(12);
 
@@ -7147,7 +7157,7 @@ const enumerateAllFonts = async () => {
 
 
 /***/ }),
-/* 135 */
+/* 136 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7191,10 +7201,25 @@ const drainBufferedDebugMessages = () => {
 
 
 /***/ }),
-/* 136 */,
 /* 137 */,
 /* 138 */,
-/* 139 */
+/* 139 */,
+/* 140 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   isYoruReaderPage: () => (/* binding */ isYoruReaderPage),
+/* harmony export */   isYoruReaderUrl: () => (/* binding */ isYoruReaderUrl)
+/* harmony export */ });
+/** Whether a URL belongs to the Yoru Reader desktop app (file:// pages or its local server). */
+const isYoruReaderUrl = (url) => url.startsWith('file://') || url.includes('localhost') || url.includes('127.0.0.1');
+const isYoruReaderPage = () => isYoruReaderUrl(window.location.href);
+
+
+/***/ }),
+/* 141 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7203,10 +7228,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   getFeatures: () => (/* binding */ getFeatures)
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
-/* harmony import */ var _shared_features_features__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(140);
-/* harmony import */ var _shared_match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(104);
-/* harmony import */ var _crunchyroll_com_feature__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(141);
-/* harmony import */ var _reader_mode_feature__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(142);
+/* harmony import */ var _shared_features_features__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(142);
+/* harmony import */ var _shared_match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(105);
+/* harmony import */ var _crunchyroll_com_feature__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(143);
+/* harmony import */ var _reader_mode_feature__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(144);
 
 
 
@@ -7241,7 +7266,7 @@ async function getFeatures() {
 
 
 /***/ }),
-/* 140 */
+/* 142 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7270,7 +7295,7 @@ const FEATURES = [CRUNCHYROLL, READER_MODE];
 
 
 /***/ }),
-/* 141 */
+/* 143 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7297,7 +7322,7 @@ class CrunchyrollFeature {
 
 
 /***/ }),
-/* 142 */
+/* 144 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7305,10 +7330,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ReaderModeFeature: () => (/* binding */ ReaderModeFeature)
 /* harmony export */ });
-/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(100);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(110);
+/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(101);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _reader_mode_reader_view__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(143);
+/* harmony import */ var _reader_mode_reader_view__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(145);
 
 
 
@@ -7346,7 +7371,7 @@ class ReaderModeFeature {
 
 
 /***/ }),
-/* 143 */
+/* 145 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -7354,18 +7379,18 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ReaderView: () => (/* binding */ ReaderView)
 /* harmony export */ });
-/* harmony import */ var _mozilla_readability__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(144);
+/* harmony import */ var _mozilla_readability__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(146);
 /* harmony import */ var _mozilla_readability__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_mozilla_readability__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(1);
 /* harmony import */ var _shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(11);
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(136);
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(22);
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(20);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(21);
 /* harmony import */ var _shared_reader_mode_themes__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(5);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(90);
-/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(130);
-/* harmony import */ var _get_japanese_fonts__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(134);
+/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(131);
+/* harmony import */ var _get_japanese_fonts__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(135);
 
 
 
@@ -7873,12 +7898,12 @@ class ReaderView {
 
 
 /***/ }),
-/* 144 */
+/* 146 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 /* eslint-env node */
-var Readability = __webpack_require__(145);
-var isProbablyReaderable = __webpack_require__(146);
+var Readability = __webpack_require__(147);
+var isProbablyReaderable = __webpack_require__(148);
 
 module.exports = {
   Readability,
@@ -7887,7 +7912,7 @@ module.exports = {
 
 
 /***/ }),
-/* 145 */
+/* 147 */
 /***/ ((module) => {
 
 /*
@@ -10679,7 +10704,7 @@ if (true) {
 
 
 /***/ }),
-/* 146 */
+/* 148 */
 /***/ ((module) => {
 
 /*
@@ -10807,7 +10832,7 @@ if (true) {
 
 
 /***/ }),
-/* 147 */
+/* 149 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -10817,15 +10842,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
-/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(148);
+/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(150);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_batch_review_command__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(43);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(33);
-/* harmony import */ var _flash_words__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(127);
-/* harmony import */ var _keybind_manager__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(110);
+/* harmony import */ var _flash_words__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(128);
+/* harmony import */ var _keybind_manager__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(111);
 /* harmony import */ var _registry__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(90);
-/* harmony import */ var _review_cooldown__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(115);
-/* harmony import */ var _transient_message__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(149);
+/* harmony import */ var _review_cooldown__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(116);
+/* harmony import */ var _transient_message__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(151);
 
 
 
@@ -11044,7 +11069,7 @@ class MassReviewAction {
 
 
 /***/ }),
-/* 148 */
+/* 150 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11059,7 +11084,7 @@ const getParsingPaused = async () => {
 
 
 /***/ }),
-/* 149 */
+/* 151 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11219,7 +11244,7 @@ function showConfirmDialog(text, confirmLabel = 'Review', cancelLabel = 'Cancel'
 
 
 /***/ }),
-/* 150 */
+/* 152 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11227,17 +11252,19 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   AutomaticParser: () => (/* binding */ AutomaticParser)
 /* harmony export */ });
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(135);
-/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(148);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
+/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(150);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(33);
-/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
-/* harmony import */ var _base_parser__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(151);
+/* harmony import */ var _shared_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(140);
+/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(90);
+/* harmony import */ var _base_parser__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(153);
 
 
 
 
 
-class AutomaticParser extends _base_parser__WEBPACK_IMPORTED_MODULE_4__.BaseParser {
+
+class AutomaticParser extends _base_parser__WEBPACK_IMPORTED_MODULE_5__.BaseParser {
     constructor(meta) {
         super(meta);
         this._disposers.push((0,_shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_2__.onBroadcastMessage)('parsingPaused', (paused) => {
@@ -11345,15 +11372,16 @@ class AutomaticParser extends _base_parser__WEBPACK_IMPORTED_MODULE_4__.BasePars
         if (!this._visibleObserver) {
             return this.parseNodes(nodes, this.filter);
         }
-        const isYoru = window.location.href.startsWith('file://') || window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1');
-        if (isYoru) {
-            this.visibleObserverOnEnter(nodes);
+        // Yoru Reader (file:// / local server): parse right away; the IntersectionObserver can miss
+        // nodes React mounts before the observer has a layout to report.
+        if ((0,_shared_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_3__.isYoruReaderPage)()) {
+            this.visibleObserverOnEnter(nodes, this._visibleObserver, this.filter);
         }
         nodes.forEach((node) => this._visibleObserver?.observe(node));
     }
     removedObserverCallback(nodes) {
         nodes.forEach((node) => {
-            _integration_registry__WEBPACK_IMPORTED_MODULE_3__.Registry.sentenceManager.dismissContainer(node);
+            _integration_registry__WEBPACK_IMPORTED_MODULE_4__.Registry.sentenceManager.dismissContainer(node);
         });
         if (!this._visibleObserver) {
             return;
@@ -11384,7 +11412,7 @@ class AutomaticParser extends _base_parser__WEBPACK_IMPORTED_MODULE_4__.BasePars
 
 
 /***/ }),
-/* 151 */
+/* 153 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11392,10 +11420,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   BaseParser: () => (/* binding */ BaseParser)
 /* harmony export */ });
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(21);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(130);
+/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(131);
 
 
 
@@ -11692,7 +11720,7 @@ class BaseParser {
 
 
 /***/ }),
-/* 152 */
+/* 154 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11700,17 +11728,19 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   getCustomParser: () => (/* binding */ getCustomParser)
 /* harmony export */ });
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(135);
-/* harmony import */ var _custom_parsers_aozora_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(153);
-/* harmony import */ var _custom_parsers_bunpro_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(154);
-/* harmony import */ var _custom_parsers_ex_static_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(155);
-/* harmony import */ var _custom_parsers_yoru_manga_parser__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(156);
-/* harmony import */ var _custom_parsers_mokuro_legacy_parser__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(159);
-/* harmony import */ var _custom_parsers_mokuro_parser__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(161);
-/* harmony import */ var _custom_parsers_readwok_parser__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(162);
-/* harmony import */ var _custom_parsers_satori_reader_parser__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(163);
-/* harmony import */ var _custom_parsers_ttsu_parser__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(167);
-/* harmony import */ var _custom_parsers_yatsu_parser__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(170);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
+/* harmony import */ var _custom_parsers_aozora_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(155);
+/* harmony import */ var _custom_parsers_bunpro_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(156);
+/* harmony import */ var _custom_parsers_ex_static_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(157);
+/* harmony import */ var _custom_parsers_manatan_manga_parser__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(158);
+/* harmony import */ var _custom_parsers_mokuro_legacy_parser__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(161);
+/* harmony import */ var _custom_parsers_mokuro_parser__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(163);
+/* harmony import */ var _custom_parsers_readwok_parser__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(164);
+/* harmony import */ var _custom_parsers_satori_reader_parser__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(165);
+/* harmony import */ var _custom_parsers_ttsu_parser__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(169);
+/* harmony import */ var _custom_parsers_yatsu_parser__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(172);
+/* harmony import */ var _custom_parsers_yoru_parser__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(173);
+
 
 
 
@@ -11726,12 +11756,13 @@ const getCustomParser = (name, meta) => {
     const parsers = {
         AozoraParser: _custom_parsers_aozora_parser__WEBPACK_IMPORTED_MODULE_1__.AozoraParser,
         BunproParser: _custom_parsers_bunpro_parser__WEBPACK_IMPORTED_MODULE_2__.BunproParser,
-        YoruMangaParser: _custom_parsers_yoru_manga_parser__WEBPACK_IMPORTED_MODULE_4__.YoruMangaParser,
+        ManatanMangaParser: _custom_parsers_manatan_manga_parser__WEBPACK_IMPORTED_MODULE_4__.ManatanMangaParser,
         MokuroParser: _custom_parsers_mokuro_parser__WEBPACK_IMPORTED_MODULE_6__.MokuroParser,
         MokuroLegacyParser: _custom_parsers_mokuro_legacy_parser__WEBPACK_IMPORTED_MODULE_5__.MokuroLegacyParser,
         ReadwokParser: _custom_parsers_readwok_parser__WEBPACK_IMPORTED_MODULE_7__.ReadwokParser,
         TtsuParser: _custom_parsers_ttsu_parser__WEBPACK_IMPORTED_MODULE_9__.TtsuParser,
-        TtsuParser: _custom_parsers_yatsu_parser__WEBPACK_IMPORTED_MODULE_10__.TtsuParser,
+        YatsuParser: _custom_parsers_yatsu_parser__WEBPACK_IMPORTED_MODULE_10__.YatsuParser,
+        YoruParser: _custom_parsers_yoru_parser__WEBPACK_IMPORTED_MODULE_11__.YoruParser,
         ExStaticParser: _custom_parsers_ex_static_parser__WEBPACK_IMPORTED_MODULE_3__.ExStaticParser,
         SatoriReaderParser: _custom_parsers_satori_reader_parser__WEBPACK_IMPORTED_MODULE_8__.SatoriReaderParser,
     };
@@ -11742,7 +11773,7 @@ const getCustomParser = (name, meta) => {
 
 
 /***/ }),
-/* 153 */
+/* 155 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11751,7 +11782,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   AozoraParser: () => (/* binding */ AozoraParser)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(150);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(152);
 
 
 class AozoraParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_1__.AutomaticParser {
@@ -11798,7 +11829,7 @@ class AozoraParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_1__.Automa
 
 
 /***/ }),
-/* 154 */
+/* 156 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11806,7 +11837,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   BunproParser: () => (/* binding */ BunproParser)
 /* harmony export */ });
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(150);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(152);
 
 class BunproParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.AutomaticParser {
     addedObserverCallback(nodes) {
@@ -11821,7 +11852,7 @@ class BunproParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.Automa
 
 
 /***/ }),
-/* 155 */
+/* 157 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -11829,7 +11860,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ExStaticParser: () => (/* binding */ ExStaticParser)
 /* harmony export */ });
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(150);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(152);
 
 class ExStaticParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.AutomaticParser {
     /**
@@ -11895,27 +11926,27 @@ class ExStaticParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.Auto
 
 
 /***/ }),
-/* 156 */
+/* 158 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   YoruMangaParser: () => (/* binding */ YoruMangaParser)
+/* harmony export */   ManatanMangaParser: () => (/* binding */ ManatanMangaParser)
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_extension_get_url__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(17);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(150);
-/* harmony import */ var _yoru_manga_get_yoru_manga_paragraphs__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(157);
-/* harmony import */ var _yoru_manga_yoru_manga_apply_tokens__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(158);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(152);
+/* harmony import */ var _manatan_manga_get_manatan_manga_paragraphs__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(159);
+/* harmony import */ var _manatan_manga_manatan_manga_apply_tokens__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(160);
 
 
 
 
 
 
-class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.AutomaticParser {
+class ManatanMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.AutomaticParser {
     constructor() {
         super(...arguments);
         this._textObservers = new Map();
@@ -11947,7 +11978,7 @@ class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.Aut
         if (this._visibilityHandler) {
             document.removeEventListener('visibilitychange', this._visibilityHandler);
         }
-        document.body.classList.remove(YoruMangaParser.YOMITAN_PASS_THROUGH_CLASS);
+        document.body.classList.remove(ManatanMangaParser.YOMITAN_PASS_THROUGH_CLASS);
         this._pressedCodes.clear();
         this._keyboardPassThrough = false;
         this._middleClickPassThrough = false;
@@ -11994,14 +12025,14 @@ class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.Aut
         }
     }
     installMainWorldCaretPatch() {
-        const existing = document.getElementById(YoruMangaParser.MAIN_WORLD_SCRIPT_ID);
+        const existing = document.getElementById(ManatanMangaParser.MAIN_WORLD_SCRIPT_ID);
         if (existing) {
             this.sendMainWorldPatchControl('install');
             return;
         }
         const script = document.createElement('script');
-        script.id = YoruMangaParser.MAIN_WORLD_SCRIPT_ID;
-        script.src = (0,_shared_extension_get_url__WEBPACK_IMPORTED_MODULE_1__.getURL)('assets/yoru-main-world-caret-patch.js');
+        script.id = ManatanMangaParser.MAIN_WORLD_SCRIPT_ID;
+        script.src = (0,_shared_extension_get_url__WEBPACK_IMPORTED_MODULE_1__.getURL)('assets/manatan-main-world-caret-patch.js');
         script.onload = () => {
             script.remove();
             this.sendMainWorldPatchControl('install');
@@ -12097,22 +12128,22 @@ class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.Aut
         }
     }
     mapCodeToState(code) {
-        return YoruMangaParser.MODIFIER_CODE_MAP[code] ?? code;
+        return ManatanMangaParser.MODIFIER_CODE_MAP[code] ?? code;
     }
     syncPassThroughClass() {
         const passThrough = this._keyboardPassThrough || this._middleClickPassThrough;
-        document.body.classList.toggle(YoruMangaParser.YOMITAN_PASS_THROUGH_CLASS, passThrough);
+        document.body.classList.toggle(ManatanMangaParser.YOMITAN_PASS_THROUGH_CLASS, passThrough);
     }
     sendMainWorldPatchControl(action) {
-        window.dispatchEvent(new CustomEvent(YoruMangaParser.MAIN_WORLD_CONTROL_EVENT, {
+        window.dispatchEvent(new CustomEvent(ManatanMangaParser.MAIN_WORLD_CONTROL_EVENT, {
             detail: { action },
         }));
     }
     registerBox(box) {
         _integration_registry__WEBPACK_IMPORTED_MODULE_2__.Registry.batchController.registerNode(box, {
-            getParagraphsFn: _yoru_manga_get_yoru_manga_paragraphs__WEBPACK_IMPORTED_MODULE_4__.getYoruMangaParagraphs,
+            getParagraphsFn: _manatan_manga_get_manatan_manga_paragraphs__WEBPACK_IMPORTED_MODULE_4__.getManatanMangaParagraphs,
             applyFn: (paragraph, tokens) => {
-                (0,_yoru_manga_yoru_manga_apply_tokens__WEBPACK_IMPORTED_MODULE_5__.yoruMangaApplyTokens)(paragraph, tokens);
+                (0,_manatan_manga_manatan_manga_apply_tokens__WEBPACK_IMPORTED_MODULE_5__.manatanMangaApplyTokens)(paragraph, tokens);
             },
         });
     }
@@ -12127,7 +12158,7 @@ class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.Aut
                 }
                 const nodes = [...m.addedNodes, ...m.removedNodes];
                 return (nodes.length > 0 &&
-                    nodes.every((n) => n instanceof HTMLElement && n.classList.contains('jiten-yoru-overlay')));
+                    nodes.every((n) => n instanceof HTMLElement && n.classList.contains('jiten-manatan-overlay')));
             });
             if (isOverlayChange) {
                 return;
@@ -12149,17 +12180,17 @@ class YoruMangaParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.Aut
         this._textObservers.set(box, observer);
     }
     reparseTextBox(box) {
-        box.querySelector('.jiten-yoru-overlay')?.remove();
+        box.querySelector('.jiten-manatan-overlay')?.remove();
         box.removeAttribute('data-jiten-parsed');
         _integration_registry__WEBPACK_IMPORTED_MODULE_2__.Registry.batchController.dismissNode(box);
         this.registerBox(box);
         _integration_registry__WEBPACK_IMPORTED_MODULE_2__.Registry.batchController.parseBatches();
     }
 }
-YoruMangaParser.MAIN_WORLD_CONTROL_EVENT = 'jiten:yoru-caret-patch-control';
-YoruMangaParser.MAIN_WORLD_SCRIPT_ID = 'jiten-yoru-main-world-caret-patch';
-YoruMangaParser.YOMITAN_PASS_THROUGH_CLASS = 'jiten-yoru-pass-through';
-YoruMangaParser.MODIFIER_CODE_MAP = {
+ManatanMangaParser.MAIN_WORLD_CONTROL_EVENT = 'jiten:manatan-caret-patch-control';
+ManatanMangaParser.MAIN_WORLD_SCRIPT_ID = 'jiten-manatan-main-world-caret-patch';
+ManatanMangaParser.YOMITAN_PASS_THROUGH_CLASS = 'jiten-manatan-pass-through';
+ManatanMangaParser.MODIFIER_CODE_MAP = {
     ShiftLeft: 'Shift',
     ShiftRight: 'Shift',
     ControlLeft: 'Control',
@@ -12172,15 +12203,15 @@ YoruMangaParser.MODIFIER_CODE_MAP = {
 
 
 /***/ }),
-/* 157 */
+/* 159 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   getYoruMangaParagraphs: () => (/* binding */ getYoruMangaParagraphs)
+/* harmony export */   getManatanMangaParagraphs: () => (/* binding */ getManatanMangaParagraphs)
 /* harmony export */ });
-const getYoruMangaParagraphs = (node) => {
+const getManatanMangaParagraphs = (node) => {
     const el = node;
     const boxes = el.classList?.contains('gemini-ocr-text-box')
         ? [el]
@@ -12207,18 +12238,18 @@ const getYoruMangaParagraphs = (node) => {
 
 
 /***/ }),
-/* 158 */
+/* 160 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   yoruMangaApplyTokens: () => (/* binding */ yoruMangaApplyTokens)
+/* harmony export */   manatanMangaApplyTokens: () => (/* binding */ manatanMangaApplyTokens)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
 
 let statsUpdateTimeout;
-const yoruMangaApplyTokens = (fragments, tokens) => {
+const manatanMangaApplyTokens = (fragments, tokens) => {
     if (!fragments.length) {
         return;
     }
@@ -12228,10 +12259,10 @@ const yoruMangaApplyTokens = (fragments, tokens) => {
     if (!box) {
         return;
     }
-    box.querySelector('.jiten-yoru-overlay')?.remove();
+    box.querySelector('.jiten-manatan-overlay')?.remove();
     box.setAttribute('data-jiten-parsed', '');
     const overlay = document.createElement('div');
-    overlay.className = 'jiten-yoru-overlay';
+    overlay.className = 'jiten-manatan-overlay';
     const fullText = textNode.data;
     let cursor = fragment.start;
     const sortedTokens = [...tokens].sort((a, b) => a.start - b.start);
@@ -12300,7 +12331,7 @@ const appendUnparsedSpan = (parent, text) => {
 
 
 /***/ }),
-/* 159 */
+/* 161 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12309,8 +12340,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   MokuroLegacyParser: () => (/* binding */ MokuroLegacyParser)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(150);
-/* harmony import */ var _mokuro_get_mokuro_paragraphs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(160);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(152);
+/* harmony import */ var _mokuro_get_mokuro_paragraphs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(162);
 
 
 
@@ -12329,7 +12360,7 @@ class MokuroLegacyParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_1__.
 
 
 /***/ }),
-/* 160 */
+/* 162 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12375,7 +12406,7 @@ const getMokuroParagraphs = (page) => {
 
 
 /***/ }),
-/* 161 */
+/* 163 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12384,8 +12415,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   MokuroParser: () => (/* binding */ MokuroParser)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(150);
-/* harmony import */ var _mokuro_get_mokuro_paragraphs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(160);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(152);
+/* harmony import */ var _mokuro_get_mokuro_paragraphs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(162);
 
 
 
@@ -12519,7 +12550,7 @@ class MokuroParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_1__.Automa
 
 
 /***/ }),
-/* 162 */
+/* 164 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12527,7 +12558,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ReadwokParser: () => (/* binding */ ReadwokParser)
 /* harmony export */ });
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(150);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(152);
 
 class ReadwokParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.AutomaticParser {
     /**
@@ -12552,7 +12583,7 @@ class ReadwokParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_0__.Autom
 
 
 /***/ }),
-/* 163 */
+/* 165 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12563,9 +12594,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(150);
-/* harmony import */ var _satori_desktop__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(164);
-/* harmony import */ var _satori_mobile__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(166);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(152);
+/* harmony import */ var _satori_desktop__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(166);
+/* harmony import */ var _satori_mobile__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(168);
 
 
 
@@ -12600,7 +12631,7 @@ class SatoriReaderParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_3__.
 
 
 /***/ }),
-/* 164 */
+/* 166 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12610,7 +12641,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
 /* harmony import */ var _shared_dom_find_element__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(25);
-/* harmony import */ var _shared_dom_with_elements__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(165);
+/* harmony import */ var _shared_dom_with_elements__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(167);
 
 
 
@@ -12688,7 +12719,7 @@ class SatoriDesktop {
 
 
 /***/ }),
-/* 165 */
+/* 167 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12696,7 +12727,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   withElements: () => (/* binding */ withElements)
 /* harmony export */ });
-/* harmony import */ var _find_elements__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(122);
+/* harmony import */ var _find_elements__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(123);
 
 function withElements(p0, p1, p2) {
     const e = p2
@@ -12708,7 +12739,7 @@ function withElements(p0, p1, p2) {
 
 
 /***/ }),
-/* 166 */
+/* 168 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12718,8 +12749,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
 /* harmony import */ var _shared_dom_find_element__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(25);
-/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(122);
-/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(124);
 
 
 
@@ -12814,7 +12845,7 @@ class SatoriMobile {
 
 
 /***/ }),
-/* 167 */
+/* 169 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12823,9 +12854,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   TtsuParser: () => (/* binding */ TtsuParser)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _paragraph_reader_ttsu_paragraph_reader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(168);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(150);
-/* harmony import */ var _ttsu_text_highlighter__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(169);
+/* harmony import */ var _paragraph_reader_ttsu_paragraph_reader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(170);
+/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(152);
+/* harmony import */ var _ttsu_text_highlighter__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(171);
 
 
 
@@ -12951,7 +12982,7 @@ TtsuParser.MIN_FURIGANA_LINE_HEIGHT = 1.65;
 
 
 /***/ }),
-/* 168 */
+/* 170 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12959,7 +12990,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   TtsuParagraphReader: () => (/* binding */ TtsuParagraphReader)
 /* harmony export */ });
-/* harmony import */ var _paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(97);
+/* harmony import */ var _paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(98);
 
 class TtsuParagraphReader extends _paragraph_reader__WEBPACK_IMPORTED_MODULE_0__.ParagraphReader {
     pushText(fragments, offset, text, hasRuby, rubyElement) {
@@ -12971,7 +13002,7 @@ class TtsuParagraphReader extends _paragraph_reader__WEBPACK_IMPORTED_MODULE_0__
 
 
 /***/ }),
-/* 169 */
+/* 171 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -12979,7 +13010,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   TtsuTextHighlighter: () => (/* binding */ TtsuTextHighlighter)
 /* harmony export */ });
-/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(94);
+/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(95);
 
 const RT_SCALE = 0.6;
 const WIDEN_HEADROOM = 0.1;
@@ -13019,58 +13050,24 @@ class TtsuTextHighlighter extends _text_highlighter_text_highlighter__WEBPACK_IM
 
 
 /***/ }),
-/* 170 */
+/* 172 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   TtsuParser: () => (/* binding */ TtsuParser)
+/* harmony export */   YatsuParser: () => (/* binding */ YatsuParser)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _ttsu_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(167);
-/* harmony import */ var _automatic_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(150);
-/* harmony import */ var _paragraph_reader_ttsu_paragraph_reader__WEBPACK_IMPORTED_MODULE_1B__ = __webpack_require__(168);
-/* harmony import */ var _ttsu_text_highlighter__WEBPACK_IMPORTED_MODULE_1C__ = __webpack_require__(169);
+/* harmony import */ var _ttsu_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(169);
 
-/**
- * TtsuParser — Native parser built from scratch for Yoru Reader.
- *
- * Unlike YatsuParser (which extends TtsuParser and relies on Jiten's
- * IntersectionObserver / addedObserver pipeline), TtsuParser extends
- * AutomaticParser directly and takes full control of the parsing lifecycle:
- *
- *  1. Overrides `startParsing()` to skip ALL observer setup (no parseVisibleObserver,
- *     no addedObserver, no IntersectionObserver).
- *  2. Directly polls for `.book-content-container` in the DOM.
- *  3. Once found, immediately parses it via `parseNode()`.
- *  4. Installs a lightweight MutationObserver on the container's `id` attribute
- *     to re-parse on chapter/page changes (React updates the id to
- *     `reader-content-sec-{sectionIndex}`).
- *  5. Installs a body-level MutationObserver to detect when the reader opens
- *     or closes (`.book-content-container` added/removed from DOM).
- *
- * This eliminates every race condition between React's mount cycle and Jiten's
- * observer chain that caused the "sigue igual" bug.
- */
-class TtsuParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_2__.AutomaticParser {
-    constructor() {
-        super(...arguments);
-        this._hasReservedFuriganaSpace = false;
-    }
-    destroy() {
-        this._pageObserver?.disconnect();
-        this._chapterObserver?.disconnect();
-        super.destroy();
-    }
-    setupVisibleObserver() {
-        this._visibleObserver = this.getParseVisibleObserver();
-    }
+
+class YatsuParser extends _ttsu_parser__WEBPACK_IMPORTED_MODULE_1__.TtsuParser {
     visibleObserverOnEnter(elements) {
         const [element] = elements;
-        const container = element.querySelector('.book-content-container') || element;
+        const container = element.querySelector('.book-content-container');
+        const chapters = element.querySelectorAll('[id^="ttu"], [id^="section-"]');
         if (container) {
-            this._pageObserver?.disconnect();
             this._pageObserver = new MutationObserver(() => {
                 _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.sentenceManager.reset();
                 this.parseNode(container);
@@ -13079,74 +13076,66 @@ class TtsuParser extends _automatic_parser__WEBPACK_IMPORTED_MODULE_2__.Automati
                 attributes: true,
                 attributeFilter: ['id'],
             });
-            _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.sentenceManager.reset();
             this.parseNode(container);
             return;
         }
-        const chapters = element.querySelectorAll('[id^="ttu');
-        this.setupChapterObservers(chapters);
-    }
-    visibleObserverOnExit() {
-        this._pageObserver?.disconnect();
-        this._chapterObserver?.disconnect();
-    }
-    parseNodes(nodes, filter) {
-        if (this._destroyed) {
+        if (chapters.length) {
+            this.setupChapterObservers(chapters);
             return;
         }
-        this.installAppStyles();
-        this.reserveFuriganaSpace();
-        const { batchController } = _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry;
-        batchController.registerNodes(nodes, {
-            filter,
-            collapseWhitespace: this._meta.collapseWhitespace,
-            getParagraphsFn: (node, f, c) => {
-                return new _paragraph_reader_ttsu_paragraph_reader__WEBPACK_IMPORTED_MODULE_1B__.TtsuParagraphReader(node, f, c).read();
-            },
-            applyFn: (fragments, tokens) => {
-                new _ttsu_text_highlighter__WEBPACK_IMPORTED_MODULE_1C__.TtsuTextHighlighter(fragments, tokens).apply();
-                _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.statusBar?.recalculateStats();
-            },
-            onComplete: () => {
-                try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-            },
-        });
-        batchController.parseBatches();
-    }
-    setupChapterObservers(chapters) {
-        this._chapterObserver = new IntersectionObserver((entries) => {
-            for (const entry of entries) {
-                if (entry.isIntersecting) {
-                    this.parseNode(entry.target);
-                    continue;
-                }
-                _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.batchController.dismissNode(entry.target);
+        this._pageObserver = new MutationObserver(() => {
+            if (element.querySelector('.book-content-container')) {
+                this._pageObserver?.disconnect();
+                this.visibleObserverOnEnter(elements);
             }
         });
-        for (const chapter of chapters) {
-            this._chapterObserver.observe(chapter);
-        }
-    }
-    reserveFuriganaSpace() {
-        if (this._hasReservedFuriganaSpace) {
-            return;
-        }
-        this._hasReservedFuriganaSpace = true;
-        this.addHeadStyle(`
-            .book-content--writing-vertical-rl .book-content-container > *:not(.ttu-book-html-wrapper) > *:has(ruby):has(rt),
-            .book-content--writing-vertical-rl .book-content-container > div.ttu-book-html-wrapper > div.ttu-book-body-wrapper > * > *:has(ruby):has(rt) {
-                padding-right: 10px !important;
-            }
-            .book-content--writing-horizontal-rl .book-content-container > *:not(.ttu-book-html-wrapper) > *:has(ruby):has(rt),
-            .book-content--writing-horizontal-rl .book-content-container > div.ttu-book-html-wrapper > div.ttu-book-body-wrapper > * > *:has(ruby):has(rt) {
-                padding-top: 10px !important;
-            }
-        `);
+        this._pageObserver.observe(element, { childList: true, subtree: true });
     }
 }
 
+
 /***/ }),
-/* 171 */
+/* 173 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   YoruParser: () => (/* binding */ YoruParser)
+/* harmony export */ });
+/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
+/* harmony import */ var _ttsu_parser__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(169);
+
+
+/**
+ * Parser for the Yoru Reader desktop app, whose reader uses ttsu's markup
+ * (`.book-content-container`, re-keyed by React on every chapter/page change).
+ *
+ * Differences from TtsuParser: falls back to the observed element itself when the container is
+ * not nested inside it, replaces the previous page observer instead of stacking observers, and
+ * parses the container immediately instead of waiting for the first id change.
+ */
+class YoruParser extends _ttsu_parser__WEBPACK_IMPORTED_MODULE_1__.TtsuParser {
+    visibleObserverOnEnter(elements) {
+        const [element] = elements;
+        const container = element.querySelector('.book-content-container') ?? element;
+        this._pageObserver?.disconnect();
+        this._pageObserver = new MutationObserver(() => {
+            _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.sentenceManager.reset();
+            this.parseNode(container);
+        });
+        this._pageObserver.observe(container, {
+            attributes: true,
+            attributeFilter: ['id'],
+        });
+        _integration_registry__WEBPACK_IMPORTED_MODULE_0__.Registry.sentenceManager.reset();
+        this.parseNode(container);
+    }
+}
+
+
+/***/ }),
+/* 174 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13156,7 +13145,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(20);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(90);
-/* harmony import */ var _trigger_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(172);
+/* harmony import */ var _trigger_parser__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(175);
 
 
 
@@ -13177,7 +13166,7 @@ class NoParser extends _trigger_parser__WEBPACK_IMPORTED_MODULE_2__.TriggerParse
 
 
 /***/ }),
-/* 172 */
+/* 175 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13186,16 +13175,16 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   TriggerParser: () => (/* binding */ TriggerParser)
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(136);
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(22);
-/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(148);
+/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(150);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(21);
-/* harmony import */ var _shared_host_meta_is_disabled__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(173);
+/* harmony import */ var _shared_host_meta_is_disabled__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(176);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(33);
-/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(100);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(110);
+/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(101);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(90);
-/* harmony import */ var _base_parser__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(151);
+/* harmony import */ var _base_parser__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(153);
 
 
 
@@ -13270,7 +13259,7 @@ class TriggerParser extends _base_parser__WEBPACK_IMPORTED_MODULE_10__.BaseParse
 
 
 /***/ }),
-/* 173 */
+/* 176 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13278,19 +13267,21 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   isDisabled: () => (/* binding */ isDisabled)
 /* harmony export */ });
-/* harmony import */ var _get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(103);
+/* harmony import */ var _yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(140);
+/* harmony import */ var _get_host_meta__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(104);
+
 
 const isDisabled = async (host) => {
-    const enabledHosts = await (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_0__.resolveMatchingHosts)(host);
-    const meta = (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_0__.filterHostMeta)(enabledHosts, ({ host }) => host !== '<all_urls>');
+    const enabledHosts = await (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_1__.resolveMatchingHosts)(host);
+    const meta = (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_1__.filterHostMeta)(enabledHosts, ({ host }) => host !== '<all_urls>');
     if (!meta) {
         return false;
     }
     if (meta.disabled) {
         return true;
     }
-    // Allow manual parsing for Yoru Reader (localhost / file://) as fallback
-    if (host.startsWith('file://') || host.includes('localhost') || host.includes('127.0.0.1')) {
+    // Allow manual parsing in Yoru Reader (file:// / local server) as a fallback
+    if ((0,_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_0__.isYoruReaderUrl)(host)) {
         return false;
     }
     return meta.auto;
@@ -13298,7 +13289,7 @@ const isDisabled = async (host) => {
 
 
 /***/ }),
-/* 174 */
+/* 177 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13313,10 +13304,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_extension_get_url__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(17);
 /* harmony import */ var _shared_messages_background_open_settings_command__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(64);
 /* harmony import */ var _shared_messages_background_update_badge_command__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(66);
-/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(175);
+/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(178);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(33);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(125);
-/* harmony import */ var _stats_calculator__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(176);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(126);
+/* harmony import */ var _stats_calculator__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(179);
 
 
 
@@ -13682,7 +13673,7 @@ class StatusBar {
 
 
 /***/ }),
-/* 175 */
+/* 178 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13701,7 +13692,7 @@ class ConfigurationUpdatedCommand extends _lib_broadcast_command__WEBPACK_IMPORT
 
 
 /***/ }),
-/* 176 */
+/* 179 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -13797,6 +13788,93 @@ function getComprehensionColour(percentage) {
 }
 
 
+/***/ }),
+/* 180 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   YORU_PARSER_META: () => (/* binding */ YORU_PARSER_META)
+/* harmony export */ });
+const YORU_PARSER_META = {
+    id: 'yoru-parser',
+    name: 'Yoru Parser',
+    description: 'Native parser for Yoru Reader',
+    host: '<all_urls>',
+    auto: true,
+    optOut: true,
+    allFrames: false,
+    custom: 'YoruParser',
+};
+
+
+/***/ }),
+/* 181 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   installYoruSettingsBridge: () => (/* binding */ installYoruSettingsBridge)
+/* harmony export */ });
+/* harmony import */ var _shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(7);
+/* harmony import */ var _shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(8);
+/* harmony import */ var _shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(2);
+/* harmony import */ var _shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(12);
+/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(178);
+
+
+
+
+
+/**
+ * Lets the Yoru Reader page (main world) read and write this extension's settings for the active
+ * profile, since the content script and the page live in separate JavaScript worlds in Electron.
+ *
+ *   page → content script: 'yoru-settings-read'  { id, keys }     → 'yoru-settings-data'    { id, values }
+ *   page → content script: 'yoru-settings-write' { id, entries }  → 'yoru-settings-written' { id, ok }
+ */
+const installYoruSettingsBridge = () => {
+    document.addEventListener('yoru-settings-read', (event) => {
+        const { id, keys } = event.detail;
+        void (async () => {
+            const profileId = await (0,_shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__.getActiveProfileId)();
+            const values = {};
+            for (const key of keys) {
+                try {
+                    values[key] = (await (0,_shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_2__.readStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key))) ?? null;
+                }
+                catch {
+                    values[key] = null;
+                }
+            }
+            document.dispatchEvent(new CustomEvent('yoru-settings-data', { detail: { id, values } }));
+        })();
+    });
+    document.addEventListener('yoru-settings-write', (event) => {
+        const { id, entries } = event.detail;
+        void (async () => {
+            try {
+                const profileId = await (0,_shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__.getActiveProfileId)();
+                for (const [key, value] of Object.entries(entries)) {
+                    await (0,_shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_3__.writeStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key), typeof value === 'object'
+                        ? JSON.stringify(value)
+                        : String(value));
+                }
+                new _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_4__.ConfigurationUpdatedCommand().send();
+                document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id, ok: true } }));
+            }
+            catch (error) {
+                // eslint-disable-next-line no-console
+                console.error('[YoruSettingsBridge] Write failed:', error);
+                document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id, ok: false } }));
+            }
+        })();
+    });
+};
+
+
 /***/ })
 /******/ 	]);
 /************************************************************************/
@@ -13876,24 +13954,30 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(11);
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(136);
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(20);
 /* harmony import */ var _shared_messages_background_fetch_study_decks_command__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(49);
 /* harmony import */ var _shared_messages_background_lookup_text_command__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(70);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(33);
-/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(100);
-/* harmony import */ var _features_get_features__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(139);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(110);
-/* harmony import */ var _integration_mass_review_action__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(147);
-/* harmony import */ var _integration_no_focus_trigger__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(111);
-/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(90);
-/* harmony import */ var _parser_automatic_parser__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(150);
-/* harmony import */ var _parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(152);
-/* harmony import */ var _parser_no_parser__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(171);
-/* harmony import */ var _parser_trigger_parser__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(172);
-/* harmony import */ var _popup_popup_manager__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(109);
-/* harmony import */ var _status_bar_status_bar__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(174);
-/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(130);
+/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(101);
+/* harmony import */ var _shared_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(140);
+/* harmony import */ var _features_get_features__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(141);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(111);
+/* harmony import */ var _integration_mass_review_action__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(149);
+/* harmony import */ var _integration_no_focus_trigger__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(112);
+/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(90);
+/* harmony import */ var _parser_automatic_parser__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(152);
+/* harmony import */ var _parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(154);
+/* harmony import */ var _parser_no_parser__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(174);
+/* harmony import */ var _parser_trigger_parser__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(175);
+/* harmony import */ var _popup_popup_manager__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(110);
+/* harmony import */ var _status_bar_status_bar__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(177);
+/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(131);
+/* harmony import */ var _yoru_parser_meta__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(180);
+/* harmony import */ var _yoru_settings_bridge__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(181);
+
+
+
 
 
 
@@ -13916,36 +14000,36 @@ __webpack_require__.r(__webpack_exports__);
 
 class AJB {
     constructor() {
-        this._lookupKeyManager = new _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_9__.KeybindManager(['lookupSelectionKey']);
-        this._statusBarKeyManager = new _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_9__.KeybindManager(['toggleStatusBarKey']);
-        this._massReviewAction = new _integration_mass_review_action__WEBPACK_IMPORTED_MODULE_10__.MassReviewAction();
+        this._lookupKeyManager = new _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_10__.KeybindManager(['lookupSelectionKey']);
+        this._statusBarKeyManager = new _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_10__.KeybindManager(['toggleStatusBarKey']);
+        this._massReviewAction = new _integration_mass_review_action__WEBPACK_IMPORTED_MODULE_11__.MassReviewAction();
         this._lastUrl = location.href;
         this._lastMetaKey = '';
         this._navigationGeneration = 0;
         (0,_shared_debug__WEBPACK_IMPORTED_MODULE_2__.debug)('Initialize AJB', { mainFrame: window === window.top });
         this._lookupKeyManager.activate();
-        _integration_no_focus_trigger__WEBPACK_IMPORTED_MODULE_11__.NoFocusTrigger.get().install();
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.wordEventDelegator.initialise();
+        _integration_no_focus_trigger__WEBPACK_IMPORTED_MODULE_12__.NoFocusTrigger.get().install();
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.wordEventDelegator.initialise();
         (0,_shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_7__.receiveBackgroundMessage)('toast', _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_3__.displayToast);
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.events.on('lookupSelectionKey', () => {
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.events.on('lookupSelectionKey', () => {
             this.withHiddenRT(() => {
                 this.lookupText(window.getSelection()?.toString());
             });
         });
         this.installParsers();
         this.watchNavigation();
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.popupManager = new _popup_popup_manager__WEBPACK_IMPORTED_MODULE_17__.PopupManager();
-        if (_integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.isMainFrame) {
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.statusBar = new _status_bar_status_bar__WEBPACK_IMPORTED_MODULE_18__.StatusBar();
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.popupManager = new _popup_popup_manager__WEBPACK_IMPORTED_MODULE_18__.PopupManager();
+        if (_integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.isMainFrame) {
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.statusBar = new _status_bar_status_bar__WEBPACK_IMPORTED_MODULE_19__.StatusBar();
             this._statusBarKeyManager.activate();
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.events.on('toggleStatusBarKey', () => {
-                _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.statusBar?.toggle();
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.events.on('toggleStatusBarKey', () => {
+                _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.statusBar?.toggle();
             });
             void this.installReviewButton();
         }
         (0,_shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_6__.onBroadcastMessage)('cardStateUpdated', (wordId, readingIndex, state, deckIds) => {
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.updateCard(wordId, readingIndex, state, deckIds);
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.statusBar?.recalculateStats();
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.updateCard(wordId, readingIndex, state, deckIds);
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.statusBar?.recalculateStats();
         });
         (0,_shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_6__.onBroadcastMessage)('configurationUpdated', async () => {
             const skipFurigana = await (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.getConfiguration)('skipFurigana');
@@ -13959,24 +14043,24 @@ class AJB {
             const iPlusOneMaxFrequencyCount = await (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.getConfiguration)('iPlusOneMaxFrequencyCount');
             const newStates = await (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.getConfiguration)('newStates');
             const markWordsInDeck = await (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.getConfiguration)('markWordsInDeck');
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.skipFurigana = skipFurigana;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.generatePitch = generatePitch;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.markIPlus1 = markIPlus1;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.markAll = markAllTypes;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.markFrequency = markTopX ? markTopXCount : false;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.minSentenceLength = minSentenceLength;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.iPlusOneMaxFrequency = iPlusOneMaxFrequency
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.skipFurigana = skipFurigana;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.generatePitch = generatePitch;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.markIPlus1 = markIPlus1;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.markAll = markAllTypes;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.markFrequency = markTopX ? markTopXCount : false;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.minSentenceLength = minSentenceLength;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.iPlusOneMaxFrequency = iPlusOneMaxFrequency
                 ? iPlusOneMaxFrequencyCount
                 : false;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.newStates = newStates;
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.textHighlighterOptions.markWordsInDeck = markWordsInDeck;
-            await (0,_text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_19__.applyWordStyles)();
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.refreshDeckMembership();
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.newStates = newStates;
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.textHighlighterOptions.markWordsInDeck = markWordsInDeck;
+            await (0,_text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_20__.applyWordStyles)();
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.refreshDeckMembership();
         }, true);
         (0,_shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_6__.onBroadcastMessage)('profileSwitched', (_profileId) => {
             (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.invalidateProfileCache)();
             (0,_shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_1__.invalidateSetConfigurationCache)();
-            void (0,_text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_19__.applyWordStyles)();
+            void (0,_text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_20__.applyWordStyles)();
             if (this.willHighlight()) {
                 void this.loadStudyDecks();
             }
@@ -13986,13 +14070,13 @@ class AJB {
     // True once at least one parser that actually highlights (auto or trigger) is installed for this
     // page. NoParser is a placeholder for unparseable pages and does not highlight.
     willHighlight() {
-        return _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.parsers.some((parser) => !(parser instanceof _parser_no_parser__WEBPACK_IMPORTED_MODULE_15__.NoParser));
+        return _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.parsers.some((parser) => !(parser instanceof _parser_no_parser__WEBPACK_IMPORTED_MODULE_16__.NoParser));
     }
     async loadStudyDecks() {
         try {
             const decks = await new _shared_messages_background_fetch_study_decks_command__WEBPACK_IMPORTED_MODULE_4__.FetchStudyDecksCommand().call();
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.setStudyDecks(decks);
-            _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.refreshDeckMembership();
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.setStudyDecks(decks);
+            _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.refreshDeckMembership();
         }
         catch {
             // Not signed in / API unavailable — deck membership marking simply stays inert.
@@ -14017,24 +14101,10 @@ class AJB {
         }
     }
     installParsers() {
-        const { hostEvaluator, parsers } = _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry;
-        try {
-            const yoruMeta = {
-                id: 'yoru-parser',
-                name: 'Yoru Parser',
-                description: 'Native parser for Yoru Reader',
-                host: '<all_urls>',
-                auto: true,
-                optOut: true,
-                allFrames: false,
-                custom: 'TtsuParser',
-            };
-            const yoruParser = (0,_parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_14__.getCustomParser)('TtsuParser', yoruMeta);
-            parsers.push(yoruParser);
-            yoruParser.startParsing();
-            console.log('[Yoru Extension] TtsuParser directly started!');
-        } catch (e) {
-            console.error('[Yoru Extension] Error directly starting TtsuParser:', e);
+        const { hostEvaluator, parsers } = _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry;
+        // Yoru Reader: start the native reader parser right away instead of waiting for host evaluation
+        if ((0,_shared_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_8__.isYoruReaderPage)()) {
+            parsers.push((0,_parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_15__.getCustomParser)('YoruParser', _yoru_parser_meta__WEBPACK_IMPORTED_MODULE_21__.YORU_PARSER_META));
         }
         const isPredefined = (meta) => 'id' in meta;
         const generation = this._navigationGeneration;
@@ -14044,21 +14114,22 @@ class AJB {
             }
             this._lastMetaKey = hostEvaluator.metaKey;
             if (!canBeTriggered) {
-                parsers.push(new _parser_no_parser__WEBPACK_IMPORTED_MODULE_15__.NoParser(hostEvaluator.rejectionReason));
+                parsers.push(new _parser_no_parser__WEBPACK_IMPORTED_MODULE_16__.NoParser(hostEvaluator.rejectionReason));
             }
-            const hasAutoParser = relevantMeta.some(meta => meta.auto);
+            // A page with an automatic parser does not also need the manual trigger parser
+            const hasAutoParser = relevantMeta.some((meta) => meta.auto);
             for (const meta of relevantMeta) {
                 if (!meta.auto) {
                     if (!meta.disabled && !hasAutoParser) {
-                        parsers.push(new _parser_trigger_parser__WEBPACK_IMPORTED_MODULE_16__.TriggerParser(meta));
+                        parsers.push(new _parser_trigger_parser__WEBPACK_IMPORTED_MODULE_17__.TriggerParser(meta));
                     }
                     continue;
                 }
                 if (isPredefined(meta) && meta.custom) {
-                    parsers.push((0,_parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_14__.getCustomParser)(meta.custom, meta));
+                    parsers.push((0,_parser_get_custom_parser__WEBPACK_IMPORTED_MODULE_15__.getCustomParser)(meta.custom, meta));
                     continue;
                 }
-                parsers.push(new _parser_automatic_parser__WEBPACK_IMPORTED_MODULE_13__.AutomaticParser(meta));
+                parsers.push(new _parser_automatic_parser__WEBPACK_IMPORTED_MODULE_14__.AutomaticParser(meta));
             }
             if (this.willHighlight()) {
                 void this.loadStudyDecks();
@@ -14066,7 +14137,7 @@ class AJB {
         });
     }
     async installFeatures() {
-        const features = await (0,_features_get_features__WEBPACK_IMPORTED_MODULE_8__.getFeatures)();
+        const features = await (0,_features_get_features__WEBPACK_IMPORTED_MODULE_9__.getFeatures)();
         for (const feature of features) {
             feature.apply();
         }
@@ -14077,7 +14148,7 @@ class AJB {
         if (!showButton || disableReviews) {
             return;
         }
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.statusBar?.addButton({
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.statusBar?.addButton({
             id: 'ajb-review-btn',
             icon: '✅',
             tooltip: 'Review on-screen words as good',
@@ -14099,7 +14170,7 @@ class AJB {
         });
     }
     handleNavigationChange() {
-        const { hostEvaluator } = _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry;
+        const { hostEvaluator } = _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry;
         const generation = ++this._navigationGeneration;
         hostEvaluator.updateUrl(location.href);
         void hostEvaluator.load().then(() => {
@@ -14116,106 +14187,22 @@ class AJB {
         });
     }
     destroyParsers() {
-        const { batchController, parsers, sentenceManager } = _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry;
+        const { batchController, parsers, sentenceManager } = _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry;
         batchController.abortAll();
         parsers.forEach((parser) => parser.destroy());
         parsers.length = 0;
         sentenceManager.reset();
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.clearCards();
-        _integration_registry__WEBPACK_IMPORTED_MODULE_12__.Registry.statusBar?.recalculateStats();
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.clearCards();
+        _integration_registry__WEBPACK_IMPORTED_MODULE_13__.Registry.statusBar?.recalculateStats();
     }
 }
-
-/**
- * ── Yoru Settings Bridge ───────────────────────────────────────────────
- * Allows the main-world React app to read/write Jiten's chrome.storage.local
- * configuration via CustomEvent messages, since the content script and the
- * main page live in separate JavaScript worlds in Electron.
- *
- * Protocol:
- *   React → content-script:  'yoru-settings-read'   { detail: { id, keys: string[] } }
- *   content-script → React:  'yoru-settings-data'    { detail: { id, values: Record<string, any> } }
- *   React → content-script:  'yoru-settings-write'   { detail: { id, entries: Record<string, any> } }
- *   content-script → React:  'yoru-settings-written'  { detail: { id, ok: boolean } }
- * ────────────────────────────────────────────────────────────────────────
- */
-(function installYoruSettingsBridge() {
-    const PROFILE_PREFIX = 'profile:';
-    const PROFILES_STATE_KEY = '__profiles__';
-    const DEFAULT_PROFILE_ID = 'default';
-
-    async function getProfileId() {
-        try {
-            const state = await chrome.storage.local.get(PROFILES_STATE_KEY);
-            const parsed = state?.[PROFILES_STATE_KEY];
-            if (parsed) {
-                const obj = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
-                return obj.activeProfileId || DEFAULT_PROFILE_ID;
-            }
-        } catch (_) { /* ignore */ }
-        return DEFAULT_PROFILE_ID;
-    }
-
-    function profileKey(profileId, key) {
-        return `${PROFILE_PREFIX}${profileId}:${key}`;
-    }
-
-    // ── READ ──
-    document.addEventListener('yoru-settings-read', async (e) => {
-        const { id, keys } = e.detail;
-        const pid = await getProfileId();
-        const values = {};
-        for (const key of keys) {
-            const pk = profileKey(pid, key);
-            try {
-                const result = await chrome.storage.local.get(pk);
-                values[key] = result?.[pk] ?? null;
-            } catch (_) {
-                values[key] = null;
-            }
-        }
-        document.dispatchEvent(new CustomEvent('yoru-settings-data', { detail: { id, values } }));
-    });
-
-    // ── WRITE ──
-    document.addEventListener('yoru-settings-write', async (e) => {
-        const { id, entries } = e.detail;
-        const pid = await getProfileId();
-        try {
-            const toSet = {};
-            for (const [key, value] of Object.entries(entries)) {
-                const pk = profileKey(pid, key);
-                toSet[pk] = typeof value === 'object' || Array.isArray(value)
-                    ? JSON.stringify(value)
-                    : String(value);
-            }
-            await chrome.storage.local.set(toSet);
-            try {
-                const cmd = new (__webpack_require__(175).ConfigurationUpdatedCommand)();
-                cmd.send();
-            } catch (e) {
-                console.warn('[YoruSettingsBridge] Broadcast failed:', e);
-            }
-            document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id, ok: true } }));
-        } catch (err) {
-            console.error('[YoruSettingsBridge] Write failed:', err);
-            document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id, ok: false } }));
-        }
-    });
-})();
-
-if (typeof window !== 'undefined') {
-  try {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        try { window.__ajbInstance = new AJB(); } catch (e) { console.error('AJB init error:', e); }
-      });
-    } else {
-      window.__ajbInstance = new AJB();
-    }
-  } catch (e) {
-    console.error('AJB top-level init error:', e);
-  }
+(0,_yoru_settings_bridge__WEBPACK_IMPORTED_MODULE_22__.installYoruSettingsBridge)();
+// Yoru Reader injects the content script before its React app has rendered the document
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => new AJB(), { once: true });
+}
+else {
+    new AJB();
 }
 
 })();

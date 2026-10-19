@@ -89,6 +89,7 @@ const DEFAULT_CONFIGURATION = Object.freeze({
     themeAccentColour: '#D8B9FA',
     //#endregion
     //#region JPDB Integration
+    // Yoru Reader: parse through the desktop app's local server (see apps/yoru/local-parse.ts)
     jitenApiKey: 'local',
     jitenApiEndpoint: 'http://127.0.0.1:23280',
     //#endregion
@@ -1061,6 +1062,11 @@ class ForegroundCommand extends _command__WEBPACK_IMPORTED_MODULE_2__.Command {
         void this.call(tabId, afterCall).catch(() => undefined);
     }
     call(tabId, afterCall) {
+        // Yoru Reader: requests from its own pages have no sender tab, so deliver to every tab instead.
+        if (tabId === undefined) {
+            this.sendToAllTabs();
+            return Promise.resolve(undefined);
+        }
         const promise = new Promise((resolve, reject) => {
             _extension_tabs__WEBPACK_IMPORTED_MODULE_1__.tabs.sendMessage(tabId, {
                 event: this.key,
@@ -1081,6 +1087,21 @@ class ForegroundCommand extends _command__WEBPACK_IMPORTED_MODULE_2__.Command {
                 return r;
             })
             : promise;
+    }
+    sendToAllTabs() {
+        chrome.tabs.query({}, (tabList) => {
+            for (const tab of tabList ?? []) {
+                if (tab.id === undefined) {
+                    continue;
+                }
+                _extension_tabs__WEBPACK_IMPORTED_MODULE_1__.tabs.sendMessage(tab.id, {
+                    event: this.key,
+                    command: this.constructor.name,
+                    isBroadcast: false,
+                    args: this.arguments,
+                }, () => (0,_extension_get_last_error__WEBPACK_IMPORTED_MODULE_0__.getLastError)());
+            }
+        });
     }
 }
 
@@ -1329,7 +1350,8 @@ const on = (event, listener) => {
 /* 100 */,
 /* 101 */,
 /* 102 */,
-/* 103 */
+/* 103 */,
+/* 104 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1339,8 +1361,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _dom_display_toast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
-/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(104);
-/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(105);
+/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(105);
+/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(106);
 
 
 
@@ -1416,7 +1438,7 @@ function filterHostMeta(enabledHosts, filter, multiple) {
 
 
 /***/ }),
-/* 104 */
+/* 105 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1445,12 +1467,15 @@ const matchUrl = (matchPattern, host) => {
     if (patternSchema !== '*' && patternSchema !== hostSchema) {
         return false;
     }
+    // file:// URLs (Yoru Reader) can have no path part
+    const patternPathSafe = patternPath || '*';
+    const hostPathSafe = hostPath || '';
     const hostRegex = new RegExp(`^${patternHost.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
-    const pathRegex = new RegExp(`^${patternPath.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
+    const pathRegex = new RegExp(`^${patternPathSafe.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
     if (!hostHost.match(hostRegex)) {
         return false;
     }
-    if (!hostPath.match(pathRegex)) {
+    if (!hostPathSafe.match(pathRegex)) {
         return false;
     }
     return true;
@@ -1458,7 +1483,7 @@ const matchUrl = (matchPattern, host) => {
 
 
 /***/ }),
-/* 105 */
+/* 106 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1488,15 +1513,26 @@ const DEFAULT_HOSTS = [
         id: 'ttsu-parser',
         name: 'Ttsu Parser',
         description: 'Parses the ebook reader Ttsu',
-        host: '*://reader.ttsu.app/*',
+        // Yoru Reader renders its reader with ttsu's markup, on file:// and localhost
+        host: '<all_urls>',
         auto: true,
         optOut: true,
         allFrames: false,
-        custom: 'TtsuParser',
+        custom: 'YoruParser',
         parseVisibleObserver: true,
         addedObserver: {
             notifyFor: 'div.book-content',
         },
+    },
+    {
+        id: 'yoru-parser',
+        name: 'Yoru Parser',
+        description: 'Native parser for Yoru Reader',
+        host: '<all_urls>',
+        auto: true,
+        optOut: true,
+        allFrames: false,
+        custom: 'YoruParser',
     },
     {
         id: 'asbplayer-parser',
@@ -1584,16 +1620,16 @@ const DEFAULT_HOSTS = [
         custom: 'AozoraParser',
     },
     {
-        id: 'yoru-manga',
-        name: 'Yoru parser (manga)',
-        description: 'Parses locally hosted Yoru mangas.',
+        id: 'manatan-manga',
+        name: 'Manatan parser (manga)',
+        description: 'Parses locally hosted Manatan mangas.',
         host: ['*://localhost:4568/manga/*'],
         auto: true,
         optOut: true,
         allFrames: true,
         parseVisibleObserver: true,
         collapseWhitespace: true,
-        custom: 'YoruMangaParser',
+        custom: 'ManatanMangaParser',
         css: [
             '.gemini-ocr-text-box[data-jiten-parsed] {',
             '  color: transparent !important;',
@@ -1604,7 +1640,7 @@ const DEFAULT_HOSTS = [
             '.gemini-ocr-text-box[data-jiten-parsed]:hover {',
             '  opacity: 1 !important;',
             '}',
-            '.jiten-yoru-overlay {',
+            '.jiten-manatan-overlay {',
             '  position: absolute;',
             '  inset: 0;',
             '  pointer-events: none;',
@@ -1612,10 +1648,10 @@ const DEFAULT_HOSTS = [
             '  color: var(--ocr-text-color, #333);',
             '  -webkit-text-fill-color: initial;',
             '}',
-            '.jiten-yoru-overlay .jiten-word { margin-inline: 0; }',
-            '.jiten-yoru-overlay .jiten-word[wordId] { pointer-events: auto; }',
-            '.jiten-yoru-pass-through .jiten-yoru-overlay .jiten-word[wordId] { pointer-events: none; }',
-            '.jiten-yoru-overlay .jiten-word::before {',
+            '.jiten-manatan-overlay .jiten-word { margin-inline: 0; }',
+            '.jiten-manatan-overlay .jiten-word[wordId] { pointer-events: auto; }',
+            '.jiten-manatan-pass-through .jiten-manatan-overlay .jiten-word[wordId] { pointer-events: none; }',
+            '.jiten-manatan-overlay .jiten-word::before {',
             '  content: attr(data-text);',
             '  text-shadow: inherit;',
             '}',
@@ -1625,9 +1661,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-ln',
-        name: 'Yoru parser (LNs)',
-        description: 'Parses locally hosted Yoru light novels.',
+        id: 'manatan-ln',
+        name: 'Manatan parser (LNs)',
+        description: 'Parses locally hosted Manatan light novels.',
         host: ['*://localhost:4568/ln/*'],
         auto: true,
         optOut: true,
@@ -1639,9 +1675,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-anime',
-        name: 'Yoru parser (anime)',
-        description: 'Parses locally hosted Yoru anime.',
+        id: 'manatan-anime',
+        name: 'Manatan parser (anime)',
+        description: 'Parses locally hosted Manatan anime.',
         host: ['*://localhost:4568/anime/*'],
         auto: true,
         optOut: true,
@@ -1649,23 +1685,6 @@ const DEFAULT_HOSTS = [
         parseVisibleObserver: true,
         addedObserver: {
             notifyFor: 'p',
-            checkNested: 'div',
-        },
-    },
-    {
-        id: 'yatsu-parser',
-        name: 'Yatsu Parser',
-        description: 'Parses the ebook reader Yatsu',
-        host: '*://app.yatsu.moe/b*',
-        auto: true,
-        optOut: true,
-        allFrames: false,
-        custom: 'YatsuParser',
-        parserClass: 'ttsu-parser',
-        parseVisibleObserver: true,
-        filter: '.book-content-page-measure, [aria-hidden="true"], [data-yatsu-current-position-marker], [data-yatsu-bookmark-marker]',
-        addedObserver: {
-            notifyFor: 'div.book-content:not(.book-content-page-measure)',
             checkNested: 'div',
         },
     },
@@ -1847,7 +1866,6 @@ const DEFAULT_HOSTS = [
 
 
 /***/ }),
-/* 106 */,
 /* 107 */,
 /* 108 */,
 /* 109 */,
@@ -1866,7 +1884,8 @@ const DEFAULT_HOSTS = [
 /* 122 */,
 /* 123 */,
 /* 124 */,
-/* 125 */
+/* 125 */,
+/* 126 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1883,7 +1902,6 @@ const getThemeCssVars = async () => {
 
 
 /***/ }),
-/* 126 */,
 /* 127 */,
 /* 128 */,
 /* 129 */,
@@ -1897,7 +1915,20 @@ const getThemeCssVars = async () => {
 /* 137 */,
 /* 138 */,
 /* 139 */,
-/* 140 */,
+/* 140 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   isYoruReaderPage: () => (/* binding */ isYoruReaderPage),
+/* harmony export */   isYoruReaderUrl: () => (/* binding */ isYoruReaderUrl)
+/* harmony export */ });
+/** Whether a URL belongs to the Yoru Reader desktop app (file:// pages or its local server). */
+const isYoruReaderUrl = (url) => url.startsWith('file://') || url.includes('localhost') || url.includes('127.0.0.1');
+const isYoruReaderPage = () => isYoruReaderUrl(window.location.href);
+
+
+/***/ }),
 /* 141 */,
 /* 142 */,
 /* 143 */,
@@ -1905,7 +1936,9 @@ const getThemeCssVars = async () => {
 /* 145 */,
 /* 146 */,
 /* 147 */,
-/* 148 */
+/* 148 */,
+/* 149 */,
+/* 150 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1919,8 +1952,6 @@ const getParsingPaused = async () => {
 
 
 /***/ }),
-/* 149 */,
-/* 150 */,
 /* 151 */,
 /* 152 */,
 /* 153 */,
@@ -1943,31 +1974,40 @@ const getParsingPaused = async () => {
 /* 170 */,
 /* 171 */,
 /* 172 */,
-/* 173 */
+/* 173 */,
+/* 174 */,
+/* 175 */,
+/* 176 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   isDisabled: () => (/* binding */ isDisabled)
 /* harmony export */ });
-/* harmony import */ var _get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(103);
+/* harmony import */ var _yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(140);
+/* harmony import */ var _get_host_meta__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(104);
+
 
 const isDisabled = async (host) => {
-    const enabledHosts = await (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_0__.resolveMatchingHosts)(host);
-    const meta = (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_0__.filterHostMeta)(enabledHosts, ({ host }) => host !== '<all_urls>');
+    const enabledHosts = await (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_1__.resolveMatchingHosts)(host);
+    const meta = (0,_get_host_meta__WEBPACK_IMPORTED_MODULE_1__.filterHostMeta)(enabledHosts, ({ host }) => host !== '<all_urls>');
     if (!meta) {
         return false;
     }
     if (meta.disabled) {
         return true;
     }
+    // Allow manual parsing in Yoru Reader (file:// / local server) as a fallback
+    if ((0,_yoru_is_yoru_reader_page__WEBPACK_IMPORTED_MODULE_0__.isYoruReaderUrl)(host)) {
+        return false;
+    }
     return meta.auto;
 };
 
 
 /***/ }),
-/* 174 */,
-/* 175 */
+/* 177 */,
+/* 178 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1985,9 +2025,11 @@ class ConfigurationUpdatedCommand extends _lib_broadcast_command__WEBPACK_IMPORT
 
 
 /***/ }),
-/* 176 */,
-/* 177 */,
-/* 178 */
+/* 179 */,
+/* 180 */,
+/* 181 */,
+/* 182 */,
+/* 183 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2000,7 +2042,7 @@ const setParsingPaused = async (paused) => {
 
 
 /***/ }),
-/* 179 */
+/* 184 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2019,7 +2061,7 @@ class ParsingPausedCommand extends _lib_broadcast_command__WEBPACK_IMPORTED_MODU
 
 
 /***/ }),
-/* 180 */
+/* 185 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2042,7 +2084,7 @@ const resolveThemeSync = (themeKey, savedThemes) => {
 
 
 /***/ }),
-/* 181 */
+/* 186 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2105,14 +2147,14 @@ const deleteSavedTheme = async (id) => {
 
 
 /***/ }),
-/* 182 */
+/* 187 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   HTMLProfileSelectorElement: () => (/* binding */ HTMLProfileSelectorElement)
 /* harmony export */ });
-/* harmony import */ var _shared_configuration_profile_operations__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(183);
+/* harmony import */ var _shared_configuration_profile_operations__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(188);
 /* harmony import */ var _shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(8);
 
 
@@ -2177,7 +2219,7 @@ class HTMLProfileSelectorElement extends HTMLElement {
 
 
 /***/ }),
-/* 183 */
+/* 188 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2188,7 +2230,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   renameProfile: () => (/* binding */ renameProfile),
 /* harmony export */   switchProfile: () => (/* binding */ switchProfile)
 /* harmony export */ });
-/* harmony import */ var _messages_broadcast_profile_switched_command__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(184);
+/* harmony import */ var _messages_broadcast_profile_switched_command__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(189);
 /* harmony import */ var _default_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
 /* harmony import */ var _get_configuration__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(1);
 /* harmony import */ var _profile_constants__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(7);
@@ -2324,7 +2366,7 @@ const deleteProfileData = async (profileId) => {
 
 
 /***/ }),
-/* 184 */
+/* 189 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2407,22 +2449,22 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(11);
 /* harmony import */ var _shared_dom_append_element__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(23);
 /* harmony import */ var _shared_dom_on_loaded__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(87);
-/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(148);
+/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(150);
 /* harmony import */ var _shared_extension_get_tabs__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(46);
 /* harmony import */ var _shared_extension_open_options_page__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(15);
 /* harmony import */ var _shared_extension_open_view__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(16);
-/* harmony import */ var _shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(178);
-/* harmony import */ var _shared_host_meta_is_disabled__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(173);
-/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(175);
-/* harmony import */ var _shared_messages_broadcast_parsing_paused_command__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(179);
+/* harmony import */ var _shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(183);
+/* harmony import */ var _shared_host_meta_is_disabled__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(176);
+/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(178);
+/* harmony import */ var _shared_messages_broadcast_parsing_paused_command__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(184);
 /* harmony import */ var _shared_messages_foreground_open_reader_mode_command__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(26);
 /* harmony import */ var _shared_messages_foreground_parse_page_command__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(31);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(33);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(125);
-/* harmony import */ var _shared_word_style_resolve_theme__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(180);
-/* harmony import */ var _shared_word_style_saved_themes_state__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(181);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(126);
+/* harmony import */ var _shared_word_style_resolve_theme__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(185);
+/* harmony import */ var _shared_word_style_saved_themes_state__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(186);
 /* harmony import */ var _shared_word_style_themes__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(6);
-/* harmony import */ var _elements_html_profile_selector_element__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(182);
+/* harmony import */ var _elements_html_profile_selector_element__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(187);
 
 
 

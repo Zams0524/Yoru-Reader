@@ -89,6 +89,7 @@ const DEFAULT_CONFIGURATION = Object.freeze({
     themeAccentColour: '#D8B9FA',
     //#endregion
     //#region JPDB Integration
+    // Yoru Reader: parse through the desktop app's local server (see apps/yoru/local-parse.ts)
     jitenApiKey: 'local',
     jitenApiEndpoint: 'http://127.0.0.1:23280',
     //#endregion
@@ -1356,9 +1357,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _popup_popup_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(109);
-/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(130);
-/* harmony import */ var _faithful_highlight__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(132);
+/* harmony import */ var _popup_popup_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(110);
+/* harmony import */ var _text_highlighter_apply_word_styles__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(131);
+/* harmony import */ var _faithful_highlight__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(133);
 
 
 
@@ -1422,11 +1423,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(4);
 /* harmony import */ var _batches_batch_controller__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(91);
-/* harmony import */ var _sequence_sequence_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(99);
-/* harmony import */ var _event_collection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(101);
-/* harmony import */ var _host_evaluator__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(102);
-/* harmony import */ var _sentence_manager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(106);
-/* harmony import */ var _word_event_delegator__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(107);
+/* harmony import */ var _sequence_sequence_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(100);
+/* harmony import */ var _event_collection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(102);
+/* harmony import */ var _host_evaluator__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(103);
+/* harmony import */ var _sentence_manager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(107);
+/* harmony import */ var _word_event_delegator__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(108);
 
 
 
@@ -1587,8 +1588,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(75);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
 /* harmony import */ var _sequence_canceled__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(92);
-/* harmony import */ var _apply_tokens__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(93);
-/* harmony import */ var _get_paragraphs__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(96);
+/* harmony import */ var _yoru_local_parse__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(93);
+/* harmony import */ var _apply_tokens__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(94);
+/* harmony import */ var _get_paragraphs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(97);
+
 
 
 
@@ -1603,7 +1606,7 @@ class BatchController {
         nodes.forEach((node) => this.registerNode(node, options));
     }
     registerNode(node, options = {}) {
-        const { filter, onEmpty, getParagraphsFn = _get_paragraphs__WEBPACK_IMPORTED_MODULE_5__.getParagraphs, applyFn = _apply_tokens__WEBPACK_IMPORTED_MODULE_4__.applyTokens, collapseWhitespace, onComplete, } = options;
+        const { filter, onEmpty, getParagraphsFn = _get_paragraphs__WEBPACK_IMPORTED_MODULE_6__.getParagraphs, applyFn = _apply_tokens__WEBPACK_IMPORTED_MODULE_5__.applyTokens, collapseWhitespace, onComplete, } = options;
         if (this._pendingBatches.has(node)) {
             return;
         }
@@ -1625,7 +1628,11 @@ class BatchController {
         const batches = Array.from(this._pendingBatches.values());
         const sequences = batches.flatMap((b) => b);
         const sequenceData = sequences.map((s) => [s.sequenceId, s.data.map((f) => f.node.data).join('')]);
-        new _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__.ParseCommand(sequenceData).send(afterSend);
+        (0,_yoru_local_parse__WEBPACK_IMPORTED_MODULE_4__.parseWithYoru)(sequenceData, afterSend).catch((error) => {
+            // eslint-disable-next-line no-console
+            console.error('[Yoru] Local parser unavailable, falling back to the background worker:', error);
+            new _shared_messages_background_parse_command__WEBPACK_IMPORTED_MODULE_1__.ParseCommand(sequenceData).send(afterSend);
+        });
         this._pendingBatches.clear();
     }
     prepareNode(node, paragraphs, applyFn, onComplete) {
@@ -1678,10 +1685,86 @@ class Canceled extends Error {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   YORU_LOCAL_API: () => (/* binding */ YORU_LOCAL_API),
+/* harmony export */   parseWithYoru: () => (/* binding */ parseWithYoru)
+/* harmony export */ });
+/* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(4);
+/* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(90);
+
+
+/** Local parsing server started by the Yoru Reader desktop app (Electron main process). */
+const YORU_LOCAL_API = 'http://127.0.0.1:23280';
+const CARD_STATE_MAP = {
+    0: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.NEW,
+    1: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.YOUNG,
+    2: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MATURE,
+    3: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.BLACKLISTED,
+    4: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.DUE,
+    5: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MASTERED,
+    6: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.REDUNDANT,
+    7: _shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.SUSPENDED,
+};
+const cardKey = (wordId, readingIndex) => `${wordId}:${readingIndex ?? 0}`;
+const toCard = (vocab) => {
+    const cardState = (vocab.knownState ?? [])
+        .map((state) => CARD_STATE_MAP[state])
+        .filter((state) => state !== undefined);
+    return {
+        wordId: vocab.wordId,
+        readingIndex: vocab.readingIndex ?? 0,
+        spelling: vocab.spelling,
+        reading: vocab.reading,
+        frequencyRank: vocab.frequencyRank ?? 999999,
+        partsOfSpeech: Array.isArray(vocab.partsOfSpeech) ? vocab.partsOfSpeech : [vocab.partsOfSpeech],
+        meanings: (vocab.meaningsChunks ?? [[]]).map((glosses, i) => ({
+            glosses,
+            partsOfSpeech: vocab.meaningsPartOfSpeech?.[i] ?? [],
+        })),
+        cardState: cardState.length ? cardState : [_shared_jiten_types__WEBPACK_IMPORTED_MODULE_0__.JitenCardState.MATURE],
+        pitchAccents: vocab.pitchAccents ?? [],
+        wordWithReading: null,
+        deckIds: vocab.studyDeckIds ?? [],
+    };
+};
+/**
+ * Parses the given sequences with the Yoru Reader desktop app's local server instead of the
+ * Jiten API, and resolves them directly in the content script. Rejects when the server is not
+ * reachable (e.g. in a normal browser), so the caller can fall back to the background worker.
+ */
+const parseWithYoru = async (sequenceData, afterSend) => {
+    const response = await fetch(`${YORU_LOCAL_API}/api/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sequenceData.map(([, text]) => text) }),
+    });
+    const data = (await response.json());
+    const cards = new Map();
+    for (const vocab of data.vocabulary ?? []) {
+        cards.set(cardKey(vocab.wordId, vocab.readingIndex), toCard(vocab));
+    }
+    const parsedTokens = (data.tokens ?? []).map((group) => group.map((token) => ({
+        ...token,
+        card: cards.get(cardKey(token.wordId, token.readingIndex)) ?? null,
+        pitchClass: '',
+        rubies: [],
+    })));
+    sequenceData.forEach(([sequenceId], i) => {
+        _integration_registry__WEBPACK_IMPORTED_MODULE_1__.Registry.sequenceManager.resolveSequence(sequenceId, parsedTokens[i] ?? []);
+    });
+    afterSend?.();
+};
+
+
+/***/ }),
+/* 94 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   applyTokens: () => (/* binding */ applyTokens)
 /* harmony export */ });
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(90);
-/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(94);
+/* harmony import */ var _text_highlighter_text_highlighter__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(95);
 
 
 let statsUpdateTimeout;
@@ -1699,7 +1782,7 @@ const applyTokens = (fragments, tokens) => {
 
 
 /***/ }),
-/* 94 */
+/* 95 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1708,7 +1791,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(90);
-/* harmony import */ var _base_text_highlighter__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(95);
+/* harmony import */ var _base_text_highlighter__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(96);
 
 
 
@@ -2421,7 +2504,7 @@ TextHighlighter.CHUNK_SIZE = 40;
 
 
 /***/ }),
-/* 95 */
+/* 96 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2437,14 +2520,14 @@ class BaseTextHighlighter {
 
 
 /***/ }),
-/* 96 */
+/* 97 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   getParagraphs: () => (/* binding */ getParagraphs)
 /* harmony export */ });
-/* harmony import */ var _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(97);
+/* harmony import */ var _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(98);
 
 const getParagraphs = (node, filter, collapseWhitespace) => {
     return new _paragraph_reader_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__.ParagraphReader(node, filter, collapseWhitespace).read();
@@ -2452,14 +2535,14 @@ const getParagraphs = (node, filter, collapseWhitespace) => {
 
 
 /***/ }),
-/* 97 */
+/* 98 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ParagraphReader: () => (/* binding */ ParagraphReader)
 /* harmony export */ });
-/* harmony import */ var _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(98);
+/* harmony import */ var _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(99);
 
 class ParagraphReader extends _base_paragraph_reader__WEBPACK_IMPORTED_MODULE_0__.BaseParagraphReader {
     constructor() {
@@ -2665,7 +2748,7 @@ ParagraphReader._skipTags = new Set([
 
 
 /***/ }),
-/* 98 */
+/* 99 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2682,7 +2765,7 @@ class BaseParagraphReader {
 
 
 /***/ }),
-/* 99 */
+/* 100 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2690,7 +2773,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   SequenceManager: () => (/* binding */ SequenceManager)
 /* harmony export */ });
 /* harmony import */ var _shared_messages_background_abort_request_command__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(72);
-/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(100);
+/* harmony import */ var _shared_messages_receiving_receive_background_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(101);
 /* harmony import */ var _canceled__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(92);
 
 
@@ -2731,6 +2814,10 @@ class SequenceManager {
             data,
         };
     }
+    /** Resolves a sequence with data obtained outside the background worker (Yoru local parser). */
+    resolveSequence(sequenceId, data) {
+        this.handleBackgroundMessage(sequenceId, (request) => request.resolve(data));
+    }
     handleBackgroundMessage(sequenceId, fn) {
         const request = this._requests.get(sequenceId);
         if (!request) {
@@ -2743,7 +2830,7 @@ class SequenceManager {
 
 
 /***/ }),
-/* 100 */
+/* 101 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2781,7 +2868,7 @@ const receiveBackgroundMessage = (event, handler) => {
 
 
 /***/ }),
-/* 101 */
+/* 102 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2814,14 +2901,14 @@ class EventCollection {
 
 
 /***/ }),
-/* 102 */
+/* 103 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   HostEvaluator: () => (/* binding */ HostEvaluator)
 /* harmony export */ });
-/* harmony import */ var _shared_host_meta_get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(103);
+/* harmony import */ var _shared_host_meta_get_host_meta__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(104);
 
 class HostEvaluator {
     get metaKey() {
@@ -2888,7 +2975,7 @@ class HostEvaluator {
 
 
 /***/ }),
-/* 103 */
+/* 104 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2898,8 +2985,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _dom_display_toast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
-/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(104);
-/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(105);
+/* harmony import */ var _match_url__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(105);
+/* harmony import */ var _default_hosts__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(106);
 
 
 
@@ -2975,7 +3062,7 @@ function filterHostMeta(enabledHosts, filter, multiple) {
 
 
 /***/ }),
-/* 104 */
+/* 105 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3004,12 +3091,15 @@ const matchUrl = (matchPattern, host) => {
     if (patternSchema !== '*' && patternSchema !== hostSchema) {
         return false;
     }
+    // file:// URLs (Yoru Reader) can have no path part
+    const patternPathSafe = patternPath || '*';
+    const hostPathSafe = hostPath || '';
     const hostRegex = new RegExp(`^${patternHost.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
-    const pathRegex = new RegExp(`^${patternPath.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
+    const pathRegex = new RegExp(`^${patternPathSafe.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
     if (!hostHost.match(hostRegex)) {
         return false;
     }
-    if (!hostPath.match(pathRegex)) {
+    if (!hostPathSafe.match(pathRegex)) {
         return false;
     }
     return true;
@@ -3017,7 +3107,7 @@ const matchUrl = (matchPattern, host) => {
 
 
 /***/ }),
-/* 105 */
+/* 106 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3047,15 +3137,26 @@ const DEFAULT_HOSTS = [
         id: 'ttsu-parser',
         name: 'Ttsu Parser',
         description: 'Parses the ebook reader Ttsu',
-        host: '*://reader.ttsu.app/*',
+        // Yoru Reader renders its reader with ttsu's markup, on file:// and localhost
+        host: '<all_urls>',
         auto: true,
         optOut: true,
         allFrames: false,
-        custom: 'TtsuParser',
+        custom: 'YoruParser',
         parseVisibleObserver: true,
         addedObserver: {
             notifyFor: 'div.book-content',
         },
+    },
+    {
+        id: 'yoru-parser',
+        name: 'Yoru Parser',
+        description: 'Native parser for Yoru Reader',
+        host: '<all_urls>',
+        auto: true,
+        optOut: true,
+        allFrames: false,
+        custom: 'YoruParser',
     },
     {
         id: 'asbplayer-parser',
@@ -3143,16 +3244,16 @@ const DEFAULT_HOSTS = [
         custom: 'AozoraParser',
     },
     {
-        id: 'yoru-manga',
-        name: 'Yoru parser (manga)',
-        description: 'Parses locally hosted Yoru mangas.',
+        id: 'manatan-manga',
+        name: 'Manatan parser (manga)',
+        description: 'Parses locally hosted Manatan mangas.',
         host: ['*://localhost:4568/manga/*'],
         auto: true,
         optOut: true,
         allFrames: true,
         parseVisibleObserver: true,
         collapseWhitespace: true,
-        custom: 'YoruMangaParser',
+        custom: 'ManatanMangaParser',
         css: [
             '.gemini-ocr-text-box[data-jiten-parsed] {',
             '  color: transparent !important;',
@@ -3163,7 +3264,7 @@ const DEFAULT_HOSTS = [
             '.gemini-ocr-text-box[data-jiten-parsed]:hover {',
             '  opacity: 1 !important;',
             '}',
-            '.jiten-yoru-overlay {',
+            '.jiten-manatan-overlay {',
             '  position: absolute;',
             '  inset: 0;',
             '  pointer-events: none;',
@@ -3171,10 +3272,10 @@ const DEFAULT_HOSTS = [
             '  color: var(--ocr-text-color, #333);',
             '  -webkit-text-fill-color: initial;',
             '}',
-            '.jiten-yoru-overlay .jiten-word { margin-inline: 0; }',
-            '.jiten-yoru-overlay .jiten-word[wordId] { pointer-events: auto; }',
-            '.jiten-yoru-pass-through .jiten-yoru-overlay .jiten-word[wordId] { pointer-events: none; }',
-            '.jiten-yoru-overlay .jiten-word::before {',
+            '.jiten-manatan-overlay .jiten-word { margin-inline: 0; }',
+            '.jiten-manatan-overlay .jiten-word[wordId] { pointer-events: auto; }',
+            '.jiten-manatan-pass-through .jiten-manatan-overlay .jiten-word[wordId] { pointer-events: none; }',
+            '.jiten-manatan-overlay .jiten-word::before {',
             '  content: attr(data-text);',
             '  text-shadow: inherit;',
             '}',
@@ -3184,9 +3285,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-ln',
-        name: 'Yoru parser (LNs)',
-        description: 'Parses locally hosted Yoru light novels.',
+        id: 'manatan-ln',
+        name: 'Manatan parser (LNs)',
+        description: 'Parses locally hosted Manatan light novels.',
         host: ['*://localhost:4568/ln/*'],
         auto: true,
         optOut: true,
@@ -3198,9 +3299,9 @@ const DEFAULT_HOSTS = [
         },
     },
     {
-        id: 'yoru-anime',
-        name: 'Yoru parser (anime)',
-        description: 'Parses locally hosted Yoru anime.',
+        id: 'manatan-anime',
+        name: 'Manatan parser (anime)',
+        description: 'Parses locally hosted Manatan anime.',
         host: ['*://localhost:4568/anime/*'],
         auto: true,
         optOut: true,
@@ -3208,23 +3309,6 @@ const DEFAULT_HOSTS = [
         parseVisibleObserver: true,
         addedObserver: {
             notifyFor: 'p',
-            checkNested: 'div',
-        },
-    },
-    {
-        id: 'yatsu-parser',
-        name: 'Yatsu Parser',
-        description: 'Parses the ebook reader Yatsu',
-        host: '*://app.yatsu.moe/b*',
-        auto: true,
-        optOut: true,
-        allFrames: false,
-        custom: 'YatsuParser',
-        parserClass: 'ttsu-parser',
-        parseVisibleObserver: true,
-        filter: '.book-content-page-measure, [aria-hidden="true"], [data-yatsu-current-position-marker], [data-yatsu-bookmark-marker]',
-        addedObserver: {
-            notifyFor: 'div.book-content:not(.book-content-page-measure)',
             checkNested: 'div',
         },
     },
@@ -3406,7 +3490,7 @@ const DEFAULT_HOSTS = [
 
 
 /***/ }),
-/* 106 */
+/* 107 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3601,7 +3685,7 @@ class SentenceManager {
 
 
 /***/ }),
-/* 107 */
+/* 108 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3611,7 +3695,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
 /* harmony import */ var _registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(108);
+/* harmony import */ var _word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(109);
 
 
 
@@ -3760,7 +3844,7 @@ WordEventDelegator._instance = null;
 
 
 /***/ }),
-/* 108 */
+/* 109 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3827,7 +3911,7 @@ const getWordSurfaceForm = (element) => getAdjacentWordElements(element).map(get
 
 
 /***/ }),
-/* 109 */
+/* 110 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3836,15 +3920,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
-/* harmony import */ var _actions_grading_actions__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(112);
-/* harmony import */ var _actions_grading_controller__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(114);
-/* harmony import */ var _actions_mining_actions__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(117);
-/* harmony import */ var _actions_mining_controller__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(118);
-/* harmony import */ var _actions_rotation_actions__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(119);
-/* harmony import */ var _actions_rotation_controller__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(120);
-/* harmony import */ var _popup__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(121);
+/* harmony import */ var _actions_grading_actions__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(113);
+/* harmony import */ var _actions_grading_controller__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(115);
+/* harmony import */ var _actions_mining_actions__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(118);
+/* harmony import */ var _actions_mining_controller__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(119);
+/* harmony import */ var _actions_rotation_actions__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(120);
+/* harmony import */ var _actions_rotation_controller__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(121);
+/* harmony import */ var _popup__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(122);
 
 
 
@@ -3978,7 +4062,7 @@ class PopupManager {
 
 
 /***/ }),
-/* 110 */
+/* 111 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3987,7 +4071,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _no_focus_trigger__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
+/* harmony import */ var _no_focus_trigger__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(112);
 /* harmony import */ var _registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
 
 
@@ -4124,7 +4208,7 @@ class KeybindManager {
 
 
 /***/ }),
-/* 111 */
+/* 112 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4207,17 +4291,17 @@ NoFocusTrigger._instance = null;
 
 
 /***/ }),
-/* 112 */
+/* 113 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   GradingActions: () => (/* binding */ GradingActions)
 /* harmony export */ });
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(113);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(110);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(114);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(90);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(108);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(109);
 
 
 
@@ -4271,7 +4355,7 @@ class GradingActions {
 
 
 /***/ }),
-/* 113 */
+/* 114 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4307,7 +4391,7 @@ const formatSentenceWithMarkers = (sentence, surfaceForm) => {
 
 
 /***/ }),
-/* 114 */
+/* 115 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4319,8 +4403,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_messages_background_add_to_study_deck_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(36);
 /* harmony import */ var _shared_messages_background_grade_card_command__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(54);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(90);
-/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(115);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(116);
+/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(117);
 
 
 
@@ -4389,7 +4473,7 @@ class GradingController extends _base_controller__WEBPACK_IMPORTED_MODULE_6__.Ba
 
 
 /***/ }),
-/* 115 */
+/* 116 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4449,7 +4533,7 @@ class ReviewCooldown {
 
 
 /***/ }),
-/* 116 */
+/* 117 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4483,19 +4567,19 @@ BaseController._suspendUpdateWordStates = false;
 
 
 /***/ }),
-/* 117 */
+/* 118 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   MiningActions: () => (/* binding */ MiningActions)
 /* harmony export */ });
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(113);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(114);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(59);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(90);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(108);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(109);
 
 
 
@@ -4624,7 +4708,7 @@ MiningActions.STATE_MAP = {
 
 
 /***/ }),
-/* 118 */
+/* 119 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4635,7 +4719,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_add_to_study_deck_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(36);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(59);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(117);
 
 
 
@@ -4673,7 +4757,7 @@ class MiningController extends _base_controller__WEBPACK_IMPORTED_MODULE_4__.Bas
 
 
 /***/ }),
-/* 119 */
+/* 120 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4682,7 +4766,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(110);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(90);
 
 
@@ -4727,7 +4811,7 @@ class RotationActions {
 
 
 /***/ }),
-/* 120 */
+/* 121 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4737,7 +4821,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_run_deck_action_command__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(59);
-/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(116);
+/* harmony import */ var _base_controller__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(117);
 
 
 
@@ -4815,7 +4899,7 @@ class RotationController extends _base_controller__WEBPACK_IMPORTED_MODULE_3__.B
 
 
 /***/ }),
-/* 121 */
+/* 122 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -4826,25 +4910,25 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_configuration_set_configuration__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(11);
 /* harmony import */ var _shared_dom_create_element__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(22);
 /* harmony import */ var _shared_dom_display_toast__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(20);
-/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(122);
-/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_find_elements__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(123);
+/* harmony import */ var _shared_dom_with_element__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(124);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(21);
-/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(113);
+/* harmony import */ var _shared_format_sentence__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(114);
 /* harmony import */ var _shared_jiten_types__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(4);
 /* harmony import */ var _shared_messages_background_fetch_study_decks_command__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(49);
 /* harmony import */ var _shared_messages_background_forget_card_command__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(51);
 /* harmony import */ var _shared_messages_background_update_card_state_command__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(61);
 /* harmony import */ var _shared_messages_receiving_on_broadcast_message__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(33);
-/* harmony import */ var _shared_pitch_accent_utils__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(124);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(125);
-/* harmony import */ var _shared_tts_play_tts__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(126);
-/* harmony import */ var _integration_flash_words__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(127);
-/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(110);
+/* harmony import */ var _shared_pitch_accent_utils__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(125);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(126);
+/* harmony import */ var _shared_tts_play_tts__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(127);
+/* harmony import */ var _integration_flash_words__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(128);
+/* harmony import */ var _integration_keybind_manager__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(111);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(90);
-/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(115);
-/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(108);
-/* harmony import */ var _confirm_dialog__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(128);
-/* harmony import */ var _part_of_speech__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(129);
+/* harmony import */ var _integration_review_cooldown__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(116);
+/* harmony import */ var _integration_word_surface_form__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(109);
+/* harmony import */ var _confirm_dialog__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(129);
+/* harmony import */ var _part_of_speech__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(130);
 
 
 
@@ -5997,7 +6081,7 @@ Popup.MIN_HEIGHT = 200;
 
 
 /***/ }),
-/* 122 */
+/* 123 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6012,7 +6096,7 @@ function findElements(p0, p1, _) {
 
 
 /***/ }),
-/* 123 */
+/* 124 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6033,7 +6117,7 @@ function withElement(p0, p1, p2) {
 
 
 /***/ }),
-/* 124 */
+/* 125 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6109,7 +6193,7 @@ const getPitchDiagramData = (reading, pitchNum) => {
 
 
 /***/ }),
-/* 125 */
+/* 126 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6126,7 +6210,7 @@ const getThemeCssVars = async () => {
 
 
 /***/ }),
-/* 126 */
+/* 127 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6159,7 +6243,7 @@ async function playTts(wordId, readingIndex, voice) {
 
 
 /***/ }),
-/* 127 */
+/* 128 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6218,7 +6302,7 @@ function clearPendingHighlight() {
 
 
 /***/ }),
-/* 128 */
+/* 129 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6315,7 +6399,7 @@ class ConfirmDialog {
 
 
 /***/ }),
-/* 129 */
+/* 130 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6607,7 +6691,7 @@ const PARTS_OF_SPEECH = {
 
 
 /***/ }),
-/* 130 */
+/* 131 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6618,8 +6702,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var _shared_extension_get_style_url__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(21);
-/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(125);
-/* harmony import */ var _shared_word_style_generate_css__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(131);
+/* harmony import */ var _shared_theme_get_theme_css_vars__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(126);
+/* harmony import */ var _shared_word_style_generate_css__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(132);
 
 
 
@@ -6660,7 +6744,7 @@ const ensureWordStyles = async () => {
 
 
 /***/ }),
-/* 131 */
+/* 132 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6809,7 +6893,7 @@ function generateInlineStyles(effects) {
 
 
 /***/ }),
-/* 132 */
+/* 133 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6851,7 +6935,7 @@ const generateFaithfulHighlightCss = (config) => {
 
 
 /***/ }),
-/* 133 */
+/* 134 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -6865,9 +6949,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_messages_background_fetch_pdf_command__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(85);
 /* harmony import */ var _shared_reader_mode_themes__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(5);
 /* harmony import */ var _integration_registry__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(90);
-/* harmony import */ var _reader_mode_get_japanese_fonts__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(134);
-/* harmony import */ var _pdfjs__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(136);
-/* harmony import */ var _reconstruct__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(137);
+/* harmony import */ var _reader_mode_get_japanese_fonts__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(135);
+/* harmony import */ var _pdfjs__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(137);
+/* harmony import */ var _reconstruct__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(138);
 
 
 
@@ -7460,7 +7544,7 @@ class PdfReader {
 
 
 /***/ }),
-/* 134 */
+/* 135 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -7472,7 +7556,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   loadPersistedFonts: () => (/* binding */ loadPersistedFonts),
 /* harmony export */   supportsFontEnumeration: () => (/* binding */ supportsFontEnumeration)
 /* harmony export */ });
-/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(135);
+/* harmony import */ var _shared_debug__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
 /* harmony import */ var _shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
 /* harmony import */ var _shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(12);
 
@@ -7612,7 +7696,7 @@ const enumerateAllFonts = async () => {
 
 
 /***/ }),
-/* 135 */
+/* 136 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -7655,7 +7739,7 @@ const drainBufferedDebugMessages = () => {
 
 
 /***/ }),
-/* 136 */
+/* 137 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -7684,14 +7768,14 @@ const isTextItem = (item) => 'str' in item;
 
 
 /***/ }),
-/* 137 */
+/* 138 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   reconstructParagraphs: () => (/* binding */ reconstructParagraphs)
 /* harmony export */ });
-/* harmony import */ var _pdfjs__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(136);
+/* harmony import */ var _pdfjs__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(137);
 
 // Reconstruct readable paragraphs from a page's text-content items. pdfjs returns text in small runs
 // carrying a transform matrix (e=transform[4], f=transform[5]) but no notion of sentences. Japanese
@@ -7790,7 +7874,7 @@ var __webpack_exports__ = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_dom_on_loaded__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(87);
 /* harmony import */ var _pdf_reader_bootstrap_pipeline__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(89);
-/* harmony import */ var _pdf_reader_pdf_reader__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(133);
+/* harmony import */ var _pdf_reader_pdf_reader__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(134);
 
 
 

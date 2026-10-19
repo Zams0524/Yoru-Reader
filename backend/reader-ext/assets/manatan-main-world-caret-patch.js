@@ -1,7 +1,7 @@
 (function () {
-  var GLOBAL_KEY = '__jitenYoruCaretPatch';
-  var CONTROL_EVENT = 'jiten:yoru-caret-patch-control';
-  var OVERLAY_SELECTOR = '.jiten-yoru-overlay';
+  var GLOBAL_KEY = '__jitenManatanCaretPatch';
+  var CONTROL_EVENT = 'jiten:manatan-caret-patch-control';
+  var OVERLAY_SELECTOR = '.jiten-manatan-overlay';
 
   var existing = window[GLOBAL_KEY];
   if (existing && typeof existing.install === 'function') {

@@ -153,6 +153,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build reader extension from source
+        run: node build/build-reader-ext.mjs
+
       - name: Prepare installer assets
         run: node build/prepare-nsis.js
 
@@ -203,6 +206,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build reader extension from source
+        run: node build/build-reader-ext.mjs
+
       - name: Build frontend
         run: npm run build
 
@@ -247,6 +253,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Build reader extension from source
+        run: node build/build-reader-ext.mjs
 
       - name: Build frontend
         run: npm run build

@@ -89,6 +89,7 @@ const DEFAULT_CONFIGURATION = Object.freeze({
     themeAccentColour: '#D8B9FA',
     //#endregion
     //#region JPDB Integration
+    // Yoru Reader: parse through the desktop app's local server (see apps/yoru/local-parse.ts)
     jitenApiKey: 'local',
     jitenApiEndpoint: 'http://127.0.0.1:23280',
     //#endregion
@@ -1259,25 +1260,12 @@ class ForegroundCommand extends _command__WEBPACK_IMPORTED_MODULE_2__.Command {
         void this.call(tabId, afterCall).catch(() => undefined);
     }
     call(tabId, afterCall) {
+        // Yoru Reader: requests from its own pages have no sender tab, so deliver to every tab instead.
+        if (tabId === undefined) {
+            this.sendToAllTabs();
+            return Promise.resolve(undefined);
+        }
         const promise = new Promise((resolve, reject) => {
-            if (tabId === undefined || tabId === null) {
-                try {
-                    chrome.tabs.query({}, (tabsList) => {
-                        if (tabsList && tabsList.length > 0) {
-                            tabsList.forEach(t => {
-                                if (t.id !== undefined) {
-                                    chrome.tabs.sendMessage(t.id, {
-                                        event: this.key,
-                                        command: this.constructor.name,
-                                        isBroadcast: false,
-                                        args: this.arguments,
-                                    }, () => {});
-                                }
-                            });
-                        }
-                    });
-                } catch (e) {}
-            }
             _extension_tabs__WEBPACK_IMPORTED_MODULE_1__.tabs.sendMessage(tabId, {
                 event: this.key,
                 command: this.constructor.name,
@@ -1297,6 +1285,21 @@ class ForegroundCommand extends _command__WEBPACK_IMPORTED_MODULE_2__.Command {
                 return r;
             })
             : promise;
+    }
+    sendToAllTabs() {
+        chrome.tabs.query({}, (tabList) => {
+            for (const tab of tabList ?? []) {
+                if (tab.id === undefined) {
+                    continue;
+                }
+                _extension_tabs__WEBPACK_IMPORTED_MODULE_1__.tabs.sendMessage(tab.id, {
+                    event: this.key,
+                    command: this.constructor.name,
+                    isBroadcast: false,
+                    args: this.arguments,
+                }, () => (0,_extension_get_last_error__WEBPACK_IMPORTED_MODULE_0__.getLastError)());
+            }
+        });
     }
 }
 
@@ -2340,7 +2343,7 @@ class AbortRequestCommandHandler extends _lib_background_command_handler__WEBPAC
     }
     async handle(sender, sequence) {
         this._parseController.abortSequence(sequence);
-        await new _shared_messages_foreground_sequence_aborted_command__WEBPACK_IMPORTED_MODULE_1__.SequenceAbortedCommand(sequence).call(sender?.tab?.id);
+        await new _shared_messages_foreground_sequence_aborted_command__WEBPACK_IMPORTED_MODULE_1__.SequenceAbortedCommand(sequence).call(sender.tab?.id);
     }
 }
 
@@ -2412,12 +2415,12 @@ class ParseCommandHandler extends _lib_background_command_handler__WEBPACK_IMPOR
     async handle(sender, data) {
         const jitenApiKey = await (0,_shared_configuration_get_configuration__WEBPACK_IMPORTED_MODULE_0__.getConfiguration)('jitenApiKey');
         if (!jitenApiKey?.length) {
-            await this._failToast.call(sender?.tab?.id);
+            await this._failToast.call(sender.tab?.id);
             await (0,_shared_extension_open_options_page__WEBPACK_IMPORTED_MODULE_1__.openOptionsPage)();
             return;
         }
         if (await (0,_shared_jiten_request_by_url__WEBPACK_IMPORTED_MODULE_2__.isApiTokenRejected)()) {
-            await this._rejectedToast.call(sender?.tab?.id);
+            await this._rejectedToast.call(sender.tab?.id);
             return;
         }
         this._parseController.parseSequences(sender, data);
@@ -2506,10 +2509,10 @@ class ParseController {
             .finally(() => this._pendingParagraphs.delete(sequenceId));
     }
     succeedSequence(sequenceId, tokens, sender) {
-        new _shared_messages_foreground_sequence_success_command__WEBPACK_IMPORTED_MODULE_1__.SequenceSuccessCommand(sequenceId, tokens).send(sender?.tab?.id);
+        new _shared_messages_foreground_sequence_success_command__WEBPACK_IMPORTED_MODULE_1__.SequenceSuccessCommand(sequenceId, tokens).send(sender.tab?.id);
     }
     failSequence(sequenceId, error, sender) {
-        new _shared_messages_foreground_sequence_error_command__WEBPACK_IMPORTED_MODULE_0__.SequenceErrorCommand(sequenceId, error.message).send(sender?.tab?.id);
+        new _shared_messages_foreground_sequence_error_command__WEBPACK_IMPORTED_MODULE_0__.SequenceErrorCommand(sequenceId, error.message).send(sender.tab?.id);
     }
     getParagraphBatches() {
         const batches = [];
@@ -2685,14 +2688,11 @@ class Parser {
                 const key = this.buildLookupKey(token.wordId, token.readingIndex);
                 const vocabEntry = vocabMap.get(key);
                 const card = cardMap.get(key);
+                // The Yoru local parser can return tokens without a matching vocabulary entry
                 if (!card) {
-                    return {
-                        ...token,
-                        pitchClass: '',
-                        rubies: [],
-                    };
+                    return { ...token, pitchClass: '', rubies: [] };
                 }
-                const isParticle = card.partsOfSpeech && card.partsOfSpeech.includes('prt');
+                const isParticle = card.partsOfSpeech?.includes('prt');
                 const pitchClass = isParticle ? '' : (0,_pitch_accent_utils__WEBPACK_IMPORTED_MODULE_1__.getPitchClass)(card.pitchAccents, card.reading);
                 lastPitchClass = pitchClass || lastPitchClass;
                 const rubies = vocabEntry?.reading
