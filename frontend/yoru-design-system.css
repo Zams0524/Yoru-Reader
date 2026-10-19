@@ -1403,3 +1403,103 @@ textarea:focus-visible,
     right: 6px !important;
   }
 }
+
+/* ==========================================================================
+   Read aloud (v1.3.10): sentence highlight and the floating control bar
+   ========================================================================== */
+::highlight(yoru-read-aloud) {
+  background-color: rgba(255, 213, 74, 0.28);
+}
+
+.read-aloud-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + var(--yoru-safe-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 10005;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: linear-gradient(0deg, rgba(12, 14, 19, 0.97), rgba(20, 23, 30, 0.95));
+  border: 1px solid rgba(255, 218, 94, 0.16);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  box-sizing: border-box;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.read-aloud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #e0e0ea;
+  cursor: pointer;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.read-aloud-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.read-aloud-play {
+  width: 44px;
+  height: 44px;
+  background: var(--read-aloud-accent, #ffd54a);
+  color: #111;
+}
+
+.read-aloud-play:hover {
+  background: var(--read-aloud-accent, #ffd54a);
+  filter: brightness(1.08);
+}
+
+.read-aloud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e0e0ea;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.read-aloud-chip.is-on {
+  border-color: color-mix(in srgb, var(--read-aloud-accent, #ffd54a) 60%, transparent);
+  color: var(--read-aloud-accent, #ffd54a);
+}
+
+.read-aloud-progress {
+  padding: 0 6px;
+  font-size: 11.5px;
+  color: rgba(224, 224, 234, 0.55);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .read-aloud-progress {
+    display: none;
+  }
+
+  /* Room for the read-aloud button in the reader's top bar. */
+  .reader-speed-pill-label {
+    display: none;
+  }
+}

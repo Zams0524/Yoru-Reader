@@ -13,7 +13,9 @@ import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
-import ReaderEngine from './reader/ReaderEngine';
+import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
+import ReadAloudBar from './reader/ReadAloudBar';
+import { useReadAloud } from './reader/useReadAloud';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
 import ReaderSettings from './reader/ReaderSettings';
@@ -391,6 +393,9 @@ export default function Reader({
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const toastTimerRef = useRef<any>(null);
 
+  const engineApiRef = useRef<ReaderEngineApi | null>(null);
+  const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
+
   const showToast = useCallback((message: string, type = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ show: true, message, type });
@@ -398,6 +403,19 @@ export default function Reader({
       setToast(prev => ({ ...prev, show: false }));
     }, 3500);
   }, []);
+
+  const readAloud = useReadAloud({
+    apiRef: engineApiRef,
+    voice: settings.audioVoiceOption,
+    onError: (code) => {
+      const missingVoice = /JAPANESE_VOICE_MISSING|TTS_UNAVAILABLE/.test(code);
+      showToast(missingVoice
+        ? (lang === 'es'
+          ? 'No hay voz japonesa. Instálala en Ajustes de Android → Texto a voz.'
+          : 'No Japanese voice. Install one in Android Settings → Text-to-speech.')
+        : (lang === 'es' ? 'No se pudo leer en voz alta.' : 'Could not read aloud.'), 'error');
+    },
+  });
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -1949,6 +1967,16 @@ export default function Reader({
         isReadingSpeedPaused={session.isPaused}
         readingSpeed={session.speed}
         onToggleReadingSpeed={handleToggleReadingMeasurement}
+        isReadingAloud={isReadAloudOpen}
+        onToggleReadAloud={() => {
+          if (isReadAloudOpen) {
+            readAloud.stop();
+            setIsReadAloudOpen(false);
+          } else {
+            setIsReadAloudOpen(true);
+            readAloud.start();
+          }
+        }}
         onToggleSettings={() => setShowSettingsPopover(prev => !prev)}
         onToggleFullscreen={toggleFullscreen}
         isFullscreen={!!document.fullscreenElement}
@@ -1986,7 +2014,25 @@ export default function Reader({
         />
       )}
 
+      {isReadAloudOpen && (
+        <ReadAloudBar
+          status={readAloud.status}
+          rate={readAloud.rate}
+          position={readAloud.position}
+          sleepEndsAt={readAloud.sleepEndsAt}
+          lang={lang}
+          accent={colors.accent}
+          onPlay={() => (readAloud.status === 'idle' ? readAloud.start() : readAloud.resume())}
+          onPause={readAloud.pause}
+          onSkip={readAloud.skip}
+          onRate={readAloud.setRate}
+          onSleep={readAloud.setSleepMinutes}
+          onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
+        />
+      )}
+
       <ReaderEngine
+        apiRef={engineApiRef}
         book={book}
         readerSettings={readerSettings}
         targetSection={navTargetSection}

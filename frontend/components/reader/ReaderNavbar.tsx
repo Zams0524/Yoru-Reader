@@ -6,6 +6,7 @@ import {
   Image,
   Activity,
   Timer,
+  Headphones,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -40,6 +41,8 @@ interface ReaderNavbarProps {
   onOpenGallery?: () => void;
   onOpenJumpModal?: () => void;
   onMouseLeave?: () => void;
+  isReadingAloud?: boolean;
+  onToggleReadAloud?: () => void;
 }
 
 export default function ReaderNavbar({
@@ -57,6 +60,8 @@ export default function ReaderNavbar({
   readingSpeed = 0,
   onToggleReadingSpeed,
   onMouseLeave,
+  isReadingAloud = false,
+  onToggleReadAloud,
 }: ReaderNavbarProps) {
   const btnStyle: React.CSSProperties = {
     background: 'transparent',
@@ -154,7 +159,7 @@ export default function ReaderNavbar({
             }}
           >
             <Activity size={18} />
-            <span>
+            <span className="reader-speed-pill-label">
               {!isReadingSpeedActive
                 ? (lang === 'es' ? 'Medir velocidad' : 'Measure speed')
                 : `${isReadingSpeedPaused ? (lang === 'es' ? 'Pausada' : 'Paused') : ''}${isReadingSpeedPaused ? ' · ' : ''}${readingSpeed.toLocaleString()} ${lang === 'es' ? 'car/h' : 'ch/h'}`}
@@ -169,6 +174,17 @@ export default function ReaderNavbar({
             aria-label={lang === 'es' ? 'Abrir sesión de lectura' : 'Open reading session'}
           >
             <Timer size={20} />
+          </button>
+        )}
+        {onToggleReadAloud && (
+          <button
+            style={{ ...btnStyle, color: isReadingAloud ? colors.accent : btnStyle.color, background: isReadingAloud ? `${colors.accent}18` : 'transparent' }}
+            onClick={onToggleReadAloud}
+            title={lang === 'es' ? 'Leer en voz alta' : 'Read aloud'}
+            aria-label={lang === 'es' ? 'Leer en voz alta' : 'Read aloud'}
+            aria-pressed={isReadingAloud}
+          >
+            <Headphones size={20} />
           </button>
         )}
         {onOpenGallery && (

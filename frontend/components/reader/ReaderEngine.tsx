@@ -36,7 +36,22 @@ export interface CharsUpdatePayload {
   currSection: number;
 }
 
+/** Imperative access for features that drive the page (read aloud, search). */
+export interface ReaderEngineApi {
+  getContent: () => HTMLDivElement | null;
+  /** Turns/scrolls the page so the range is on screen. */
+  revealRange: (range: Range) => void;
+  /** Paged mode: moves to the next section. Returns false at the end of the book or in continuous mode. */
+  goToNextSection: () => boolean;
+  /** Opens a section and shows the paragraph with that index attribute. */
+  goToParagraph: (sectionIndex: number, paragraphId: number) => void;
+  getSections: () => Section[];
+  getCurrentSection: () => number;
+  isPaginated: () => boolean;
+}
+
 export interface ReaderEngineProps {
+  apiRef?: React.MutableRefObject<ReaderEngineApi | null>;
   book: Book;
   readerSettings: ReaderSettingsState;
   onCharsUpdate?: (payload: CharsUpdatePayload) => void;
@@ -154,6 +169,7 @@ function renderSectionContent(
  * Directly parses and colors Japanese words natively with 0ms latency.
  */
 function ReaderEngineComponent({
+  apiRef,
   book,
   readerSettings,
   onCharsUpdate,
@@ -497,6 +513,96 @@ function ReaderEngineComponent({
       goToSection(targetSection);
     }
   }, [targetSection, goToSection]);
+
+  const revealRange = useCallback((range: Range) => {
+    const content = contentRef.current;
+    if (!content) return;
+    const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return;
+    const box = content.getBoundingClientRect();
+    const visible = rect.left >= box.left - 1 && rect.right <= box.right + 1 && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1;
+    if (visible) return;
+
+    // Some engines lay vertical-rl columns out downwards: then the pages scroll on the Y axis.
+    const pagesOnYAxis = paginated
+      && content.scrollWidth <= content.clientWidth + 2
+      && content.scrollHeight > content.clientHeight + 2;
+    if (pagesOnYAxis) {
+      const pageHeight = content.clientHeight || window.innerHeight;
+      const page = Math.max(0, Math.floor((rect.top - box.top + content.scrollTop + 1) / pageHeight));
+      content.scrollTop = page * pageHeight;
+      setPageIndex(page);
+      updateChars();
+    } else if (paginated) {
+      const pageWidth = content.clientWidth || window.innerWidth;
+      // Distance from the start of the section (left edge, or right edge for vertical text).
+      const offset = vertical
+        ? box.right - rect.right - content.scrollLeft
+        : rect.left - box.left + content.scrollLeft;
+      const page = Math.max(0, Math.min(getMaxPages() - 1, Math.floor((offset + 1) / pageWidth)));
+      setPageIndex(page);
+      applyPagePosition(page);
+    } else {
+      // Bring the range to the middle of the scroller (works for both writing modes).
+      content.scrollBy({
+        left: (rect.left + rect.right) / 2 - (box.left + box.right) / 2,
+        top: (rect.top + rect.bottom) / 2 - (box.top + box.bottom) / 2,
+      });
+      updateChars();
+    }
+  }, [paginated, vertical, getMaxPages, applyPagePosition, updateChars]);
+
+  const pendingParagraphRef = useRef<number | null>(null);
+  const goToParagraph = useCallback((sectionIndex: number, paragraphId: number) => {
+    const show = () => {
+      const element = contentRef.current?.querySelector(`[index="${paragraphId}"]`);
+      if (!element) return false;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      revealRange(range);
+      return true;
+    };
+    if (paginated && sectionIndex !== currSection) {
+      pendingParagraphRef.current = paragraphId;
+      setCurrSection(sectionIndex);
+      setPageIndex(0);
+    } else {
+      show();
+    }
+  }, [paginated, currSection, revealRange]);
+
+  // After a section change requested by goToParagraph, show the paragraph once it is rendered.
+  useEffect(() => {
+    const paragraphId = pendingParagraphRef.current;
+    if (paragraphId === null) return;
+    // After the section-change reset (which scrolls to the start) has run.
+    const timer = window.setTimeout(() => {
+      pendingParagraphRef.current = null;
+      const element = contentRef.current?.querySelector(`[index="${paragraphId}"]`);
+      if (!element) return;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      revealRange(range);
+    }, 60);
+    return () => window.clearTimeout(timer);
+  });
+
+  if (apiRef) {
+    apiRef.current = {
+      getContent: () => contentRef.current,
+      revealRange,
+      goToNextSection: () => {
+        if (!paginated || currSection >= sections.length - 1) return false;
+        setCurrSection(currSection + 1);
+        setPageIndex(0);
+        return true;
+      },
+      goToParagraph,
+      getSections: () => sections,
+      getCurrentSection: () => currSection,
+      isPaginated: () => paginated,
+    };
+  }
 
   useEffect(() => {
     if (typeof targetParagraphId === 'number') {
