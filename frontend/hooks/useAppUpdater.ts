@@ -170,14 +170,25 @@ export function useAppUpdater() {
     if (!ota) return;
     patch({ status: 'downloading', error: null, progress: { percent: 0 } });
     const handle = await WebUpdater.addListener('downloadProgress', p => patch({ progress: p }));
+    const options = {
+      url: ota.url,
+      sha256: ota.sha256,
+      size: ota.size,
+      version: ota.webVersion,
+      nativeVersionCode: ota.nativeVersionCode
+    };
     try {
-      await WebUpdater.download({
-        url: ota.url,
-        sha256: ota.sha256,
-        size: ota.size,
-        version: ota.webVersion,
-        nativeVersionCode: ota.nativeVersionCode
-      });
+      // If the page reloaded (e.g. after restoring a backup) while the native download kept
+      // going, wait for it: asking again resolves at once once that download is staged.
+      for (;;) {
+        try {
+          await WebUpdater.download(options);
+          break;
+        } catch (err: any) {
+          if (!/Ya se está descargando/.test(err?.message || '')) throw err;
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     } finally {
       handle.remove();
     }

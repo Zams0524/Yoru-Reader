@@ -123,6 +123,10 @@ const Library = React.memo(function Library({
   const updating = updaterState.status === 'downloading' || updaterState.status === 'installing';
   const updateProgress = updaterState.progress?.percent ?? 0;
   const updateAvailable = Boolean(updaterState.kind) && ['available', 'ready', 'error'].includes(updaterState.status);
+  // A UI-only update on Android downloads silently; its notice appears once it is ready.
+  const updateBannerVisible = showUpdateBanner && Boolean(updaterState.kind) && (
+    updaterMode !== 'android' || updaterState.kind !== 'ota' || ['ready', 'installing'].includes(updaterState.status)
+  );
   const currentAppVersion = updaterState.current.appVersion;
   const latestAppVersion = updaterState.latest?.appVersion;
   const [bindingKeyAction, setBindingKeyAction] = useState(null);
@@ -185,6 +189,20 @@ const Library = React.memo(function Library({
     if (updaterState.status === 'available' || updaterState.status === 'ready') setShowUpdateBanner(true);
   }, [updaterState.status]);
 
+  // Short notice wherever the user is, once per update: when an APK is available, or when a
+  // UI update has finished downloading in the background.
+  const notifiedUpdateRef = useRef('');
+  useEffect(() => {
+    const { status, kind, latest } = updaterState;
+    const notify = kind === 'ota' && updaterMode === 'android' ? status === 'ready' : status === 'available';
+    const key = `${kind}:${kind === 'ota' ? latest?.hotVersion : latest?.appVersion}`;
+    if (!notify || notifiedUpdateRef.current === key) return;
+    notifiedUpdateRef.current = key;
+    showToast(kind === 'ota' && updaterMode === 'android'
+      ? (lang === 'es' ? 'Actualización lista: se aplicará al reabrir la app.' : 'Update ready: it applies when you reopen the app.')
+      : (lang === 'es' ? 'Hay una nueva versión de Yoru Reader.' : 'A new Yoru Reader version is available.'), 'info');
+  }, [updaterState.status, updaterState.kind]);
+
   useEffect(() => {
     updateDiscordLibrary(settings);
   }, [settings]);
@@ -197,6 +215,7 @@ const Library = React.memo(function Library({
         showToast(lang === 'es' ? 'No se pudo buscar actualizaciones. Verifica tu conexión a internet.' : 'Could not check for updates. Check your internet connection.', 'error');
       } else if (state.status === 'available' || state.status === 'ready') {
         setShowUpdateBanner(true);
+        notifiedUpdateRef.current = `${state.kind}:${state.kind === 'ota' ? state.latest?.hotVersion : state.latest?.appVersion}`;
         showToast(lang === 'es' ? 'Nueva actualización encontrada.' : 'New update found.', 'info');
       } else if (state.status === 'up-to-date') {
         showToast(lang === 'es' ? 'Ya tienes la última versión.' : 'You are up to date.', 'success');
@@ -7448,111 +7467,72 @@ const Library = React.memo(function Library({
             </aside>
 
           <main className="library-main-content">
-            {showUpdateBanner && (
-              <div style={{
-                background: 'rgba(37, 99, 235, 0.08)',
-                border: '1px solid rgba(37, 99, 235, 0.3)',
-                borderRadius: '12px',
-                padding: '14px 18px',
-                marginBottom: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-                animation: 'fadeIn 0.3s ease-out'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <RefreshCw size={20} className="animate-spin" style={{ color: '#3b82f6', animationDuration: '4s', flexShrink: 0 }} />
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      {updaterState.kind === 'ota'
-                        ? (lang === 'es' ? '¡Actualización rápida de Yoru disponible!' : 'Yoru quick update available!')
-                        : (lang === 'es' ? '¡Nueva versión de Yoru Reader disponible!' : 'New Yoru Reader version available!')}
-                    </h4>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                      {updaterMode === 'android' && updaterState.kind === 'ota' && updaterState.status === 'ready'
-                        ? (lang === 'es'
-                            ? `La interfaz v${updaterState.latest?.hotVersion} está lista. Se aplicará la próxima vez que abras la app.`
-                            : `Interface v${updaterState.latest?.hotVersion} is ready. It applies the next time you open the app.`)
-                        : lang === 'es'
-                          ? `La versión v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} se descarga e instala desde aquí, sin salir de la app.`
-                          : `Version v${updaterState.kind === 'ota' ? updaterState.latest?.hotVersion : latestAppVersion} downloads and installs from here, without leaving the app.`}
-                    </p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+            {updateBannerVisible && (() => {
+              const isOta = updaterState.kind === 'ota';
+              const version = isOta ? updaterState.latest?.hotVersion : latestAppVersion;
+              const status = updaterState.status;
+              const title = status === 'downloading'
+                ? (lang === 'es' ? 'Descargando actualización' : 'Downloading update')
+                : status === 'ready'
+                  ? (lang === 'es' ? 'Actualización lista' : 'Update ready')
+                  : isOta
+                    ? (lang === 'es' ? 'Actualización rápida disponible' : 'Quick update available')
+                    : (lang === 'es' ? 'Nueva versión disponible' : 'New version available');
+              const detail = status === 'downloading'
+                ? `v${version} · ${Math.max(0, updateProgress)}%`
+                : status === 'ready' && isOta && updaterMode === 'android'
+                  ? (lang === 'es' ? `v${version} · se aplica al reabrir la app` : `v${version} · applies when you reopen the app`)
+                  : isOta
+                    ? (lang === 'es' ? `Interfaz v${version}` : `Interface v${version}`)
+                    : `Yoru Reader v${version}`;
+              const actionLabel = status === 'downloading'
+                ? null
+                : status === 'installing'
+                  ? (lang === 'es' ? 'Instalando…' : 'Installing…')
+                  : status === 'ready'
+                    ? (isOta
+                        ? (updaterMode === 'android' ? (lang === 'es' ? 'Reiniciar' : 'Restart') : (lang === 'es' ? 'Aplicar' : 'Apply'))
+                        : (lang === 'es' ? 'Instalar' : 'Install'))
+                    : (lang === 'es' ? 'Actualizar' : 'Update');
+              return (
+                <div className={`update-toast${status === 'ready' ? ' update-toast--ready' : ''}`} role="status">
                   <button
                     type="button"
-                    onClick={handleUpdateNow}
-                    disabled={updating}
-                    style={{
-                      background: '#10b981',
-                      border: 'none',
-                      color: '#fff',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: updating ? 'not-allowed' : 'pointer',
-                      transition: 'background 0.2s',
-                      whiteSpace: 'nowrap',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    {updaterState.status === 'downloading' ? (
-                      <span>{lang === 'es' ? `Descargando (${Math.max(0, updateProgress)}%)...` : `Downloading (${Math.max(0, updateProgress)}%)...`}</span>
-                    ) : updaterState.status === 'installing' ? (
-                      <span>{lang === 'es' ? 'Instalando...' : 'Installing...'}</span>
-                    ) : updaterState.status === 'ready' ? (
-                      <span>{updaterState.kind === 'ota' ? (updaterMode === 'android' ? (lang === 'es' ? 'Reiniciar para actualizar' : 'Restart to update') : (lang === 'es' ? 'Aplicar ahora' : 'Apply now')) : updaterMode === 'android' ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install')}</span>
-                    ) : (
-                      <span>{lang === 'es' ? '⚡ Actualizar ahora' : '⚡ Update now'}</span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
+                    className="update-toast-body"
                     onClick={() => {
                       setActiveTab('settings');
                       setActiveSettingsSection('sec-updates');
                     }}
-                    style={{
-                      background: 'rgba(37, 99, 235, 0.2)',
-                      border: '1px solid #2563eb',
-                      color: '#3b82f6',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'background 0.2s',
-                      whiteSpace: 'nowrap'
-                    }}
+                    title={lang === 'es' ? 'Ver detalles' : 'View details'}
                   >
-                    {lang === 'es' ? 'Ver detalles' : 'View details'}
+                    <span className="update-toast-icon">
+                      {status === 'ready' ? <Sparkles size={18} /> : <RefreshCw size={18} className={status === 'downloading' ? 'animate-spin' : undefined} />}
+                    </span>
+                    <span className="update-toast-text">
+                      <span className="update-toast-title">{title}</span>
+                      <span className="update-toast-detail">{detail}</span>
+                    </span>
                   </button>
+                  {actionLabel && (
+                    <button type="button" className="update-toast-action" onClick={handleUpdateNow} disabled={updating}>
+                      {actionLabel}
+                    </button>
+                  )}
                   <button
                     type="button"
+                    className="update-toast-close"
                     onClick={() => setShowUpdateBanner(false)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
                     title={lang === 'es' ? 'Cerrar' : 'Close'}
+                    aria-label={lang === 'es' ? 'Cerrar' : 'Close'}
                   >
                     <X size={16} />
                   </button>
+                  {status === 'downloading' && (
+                    <span className="update-toast-progress" style={{ width: `${Math.max(0, updateProgress)}%` }} />
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {books.length === 0 ? (
               <div className="library-empty-hero">
                 {/* Left: decorative book cover stack */}
