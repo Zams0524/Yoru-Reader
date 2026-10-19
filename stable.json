@@ -1,13 +1,35 @@
 {
-  "appVersion": "1.2.8.6",
-  "backendVersion": "1.2.8.6",
-  "hotUpdateVersion": "1.2.8.6",
+  "appVersion": "1.2.8.7",
+  "backendVersion": "1.2.8.7",
+  "hotUpdateVersion": "1.2.8.7",
   "hotUpdateUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
   "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "windowsUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "macArmUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-arm64.dmg",
   "macUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x64.dmg",
   "linuxUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x86_64.flatpak",
-  "description": "Yoru Reader Desktop v1.2.8.6 (Windows, Mac & Linux)",
-  "nativeCommit": "74bdae119c7ac6371750d7ecf8f8160ed64d019f"
+  "description": "Yoru Reader Desktop v1.2.8.7 (Windows, Mac & Linux)",
+  "nativeCommit": "0d8a82aebb52ac026c5152be34186b32ede945bd",
+  "assetHashes": {
+    "dist.zip": {
+      "sha256": "7567533611776db29dc40d9c47b1a6f0db9ef41c322227d27eaeedcc96194f81",
+      "size": 35316803
+    },
+    "Yoru-Reader.Setup.exe": {
+      "sha256": "0581116d27f848f0b480d1c59839ba15a748c63008a789ee8e951cbdd0714409",
+      "size": 175369372
+    },
+    "Yoru-Reader-arm64.dmg": {
+      "sha256": "b3a58680b6c41a9e8b2ad17b26508fbcb44fbf33d65d32022aa1e07362d8e5ee",
+      "size": 201842769
+    },
+    "Yoru-Reader-x64.dmg": {
+      "sha256": "89f2def9c7950dafc4dc71ff0239369d55b1c7678e593911d95031d5523fc73f",
+      "size": 203738897
+    },
+    "Yoru-Reader-x86_64.flatpak": {
+      "sha256": "9b4437ad69862e0567752d5da144a9bf83363c20bf0abd4c646326292d176d5e",
+      "size": 153936080
+    }
+  }
 }
