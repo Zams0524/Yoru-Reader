@@ -16,6 +16,7 @@ Lee también: `docs/.agentrules`, `docs/PROJECT_GUIDELINES.md`, `docs/YORU_READE
 - `frontend/components/ProgressDashboard.tsx`: estadísticas.
 - `frontend/utils/googleDriveService.ts` y `android/app/src/main/java/com/yorureader/app/GoogleDriveAuthPlugin.java`: sincronización con Google Drive.
 - `mobile/scripts/build-android.js`, `mobile/scripts/verify-android-apk.js`: compilación y verificación del APK.
+- Lector nativo de Android (1.4.0, 19 oct): motor OpenReadEra EraEPUB (GPL-2.0) como `jniLibs/arm64-v8a/liberaepub.so`, `NativeReaderPlugin.java` + `NativeReaderView.java` + `EraEngine.java`, `frontend/components/reader/NativeReaderHost.tsx`, `frontend/utils/nativeReader.ts`. Interruptor «Motor nativo» en los ajustes del libro (`reader:nativeEngine`). Todo en `docs/NATIVE_READER.md` (fases pendientes, cómo compilar el motor). Por el motor, la licencia de Yoru pasó de MIT a GPL-2.0-or-later.
 
 ## Compilar el APK
 Doble clic en `COMPILAR-APK.bat` (ejecuta `build-apk.ps1`): Vite build → `cap sync android` → Gradle con el JDK/SDK en `%LOCALAPPDATA%\Temp\yoru-android-apk-build` y `GRADLE_USER_HOME=.android-build-tmp\gradle-home-132` → verificación → copia a `mobile\releases\Yoru-Reader-<versión>-debug.apk`.

@@ -7,13 +7,20 @@ android {
         applicationId "com.yorureader.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 142
-        versionName "1.3.12"
+        versionCode 143
+        versionName "1.4.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // The native reader engine (liberaepub.so, OpenReadEra EraEPUB) is an executable, not a library:
+    // it must be extracted to nativeLibraryDir, where Android allows running it (NativeReaderPlugin).
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
     buildTypes {

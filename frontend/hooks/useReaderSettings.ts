@@ -39,6 +39,8 @@ export interface ReaderSettingsState {
   fontWeight: number;
   textAlign: 'original' | 'justify' | 'left' | 'center' | 'right';
   hyphenation: boolean;
+  /** Android: draw the book with the native engine (NativeReaderPlugin) instead of the WebView. */
+  nativeEngine: boolean;
 }
 
 const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
@@ -66,6 +68,7 @@ const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
   fontWeight: 'reader:fontWeight',
   textAlign: 'reader:textAlign',
   hyphenation: 'reader:hyphenation',
+  nativeEngine: 'reader:nativeEngine',
 };
 
 function getNumber(key: string, fallback: number): number {
@@ -119,6 +122,7 @@ function loadSettings(): ReaderSettingsState {
     fontWeight: getNumber(LS_KEYS.fontWeight, 400),
     textAlign: getString(LS_KEYS.textAlign, 'original') as ReaderSettingsState['textAlign'],
     hyphenation: getBool(LS_KEYS.hyphenation, false),
+    nativeEngine: getBool(LS_KEYS.nativeEngine, true),
   };
 }
 

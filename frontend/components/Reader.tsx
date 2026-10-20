@@ -14,6 +14,8 @@ import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
 import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
+import NativeReaderHost from './reader/NativeReaderHost';
+import { isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
@@ -2163,6 +2165,33 @@ export default function Reader({
     setIsHeaderVisible(prev => !prev);
   }, [triggerWordLookup]);
 
+  // Android: the native engine (NativeReaderHost) draws the book unless it is turned off in the
+  // reader settings or failed for this book; then the WebView engine takes over.
+  const nativeAvailable = useMemo(() => isNativeReaderAvailable(), []);
+  const [nativeFailed, setNativeFailed] = useState(false);
+  const useNativeEngine = nativeAvailable && readerSettings.nativeEngine !== false && !nativeFailed;
+  const handleNativeTap = useCallback(() => setIsHeaderVisible(prev => !prev), []);
+  const handleNativeError = useCallback((message: string) => {
+    console.warn('Native reader failed, using the WebView reader:', message);
+    setNativeFailed(true);
+    showToast(lang === 'es' ? 'El lector nativo falló; se usa el lector web.' : 'The native reader failed; using the web reader.', 'error');
+  }, [lang, showToast]);
+  // Switching engines mid-book: the new one starts where the other one was.
+  const currentProgressRef = useRef(currentProgress);
+  currentProgressRef.current = currentProgress;
+  const initialEngineRef = useRef(useNativeEngine);
+  const engineSwitchedRef = useRef(false);
+  const engineBook = useMemo(() => {
+    if (useNativeEngine !== initialEngineRef.current) engineSwitchedRef.current = true;
+    if (!engineSwitchedRef.current) return book;
+    const position = currentProgressRef.current;
+    return {
+      ...book,
+      _savedSection: position.currSection,
+      progress: { ...(book.progress || {}), currentChapter: position.currSection, currentPage: position.lastIndex },
+    };
+  }, [book, useNativeEngine]);
+
   return (
     <div 
       ref={containerRef}
@@ -2182,6 +2211,7 @@ export default function Reader({
       {/* Top hover trigger zone to show navbar */}
       {!isHeaderVisible && (
         <div 
+          data-native-ignore
           onMouseEnter={() => setIsHeaderVisible(true)}
           style={{
             position: 'fixed',
@@ -2335,19 +2365,36 @@ export default function Reader({
         />
       )}
 
-      <ReaderEngine
-        apiRef={engineApiRef}
-        book={book}
-        readerSettings={readerSettings}
-        targetSection={navTargetSection}
-        targetParagraphId={navTargetParagraphId}
-        targetCharPosition={targetCharPosition}
-        onCharsUpdate={handleCharsUpdate}
-        onClick={handleEngineClick}
-        onPageTurn={handlePageTurn}
-        wordStatuses={wordStatuses}
-        colors={colors}
-      />
+      {useNativeEngine ? (
+        <NativeReaderHost
+          apiRef={engineApiRef}
+          book={engineBook}
+          readerSettings={readerSettings}
+          colors={colors}
+          rootRef={containerRef}
+          targetSection={navTargetSection}
+          targetParagraphId={navTargetParagraphId}
+          targetCharPosition={targetCharPosition}
+          onCharsUpdate={handleCharsUpdate}
+          onTap={handleNativeTap}
+          onPageTurn={handlePageTurn}
+          onError={handleNativeError}
+        />
+      ) : (
+        <ReaderEngine
+          apiRef={engineApiRef}
+          book={engineBook}
+          readerSettings={readerSettings}
+          targetSection={navTargetSection}
+          targetParagraphId={navTargetParagraphId}
+          targetCharPosition={targetCharPosition}
+          onCharsUpdate={handleCharsUpdate}
+          onClick={handleEngineClick}
+          onPageTurn={handlePageTurn}
+          wordStatuses={wordStatuses}
+          colors={colors}
+        />
+      )}
 
       {/* Jump to Position Modal */}
       {isJumpModalOpen && (

@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, MinusCircle, PlusCircle } from 'lucide-react';
 import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
+import { isNativeReaderAvailable } from '../../utils/nativeReader';
 
 interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
@@ -28,6 +29,7 @@ export default function ReaderSettingsPopover({
   const textAlign = settings.textAlign || 'original';
   const hyphenation = !!settings.hyphenation;
   const es = lang === 'es';
+  const nativeAvailable = isNativeReaderAvailable();
 
   const clampSet = (key: 'fontSize' | 'lineHeight' | 'verticalPadding' | 'horizontalPadding', value: number, min: number, max: number) => {
     onSettingChange(key, Math.round(Math.max(min, Math.min(max, value)) * 100) / 100);
@@ -176,6 +178,13 @@ export default function ReaderSettingsPopover({
             checked={!disableCss}
             onChange={(value) => onSettingChange('disableCss', !value)}
           />
+          {nativeAvailable && (
+            <SwitchRow
+              label={es ? 'Motor nativo (beta, sin diccionario aún)' : 'Native engine (beta, no dictionary yet)'}
+              checked={settings.nativeEngine !== false}
+              onChange={(value) => onSettingChange('nativeEngine', value)}
+            />
+          )}
           {onOpenExtensionSettings && (
             <button type="button" className="readera-settings-row readera-settings-link" onClick={onOpenExtensionSettings}>
               {es ? 'Ajustes de parseo / extensión' : 'Parse / extension settings'}

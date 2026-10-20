@@ -88,6 +88,11 @@ export async function verifyAndroidApk(apkPath) {
     throw new Error(`APK incompleto: faltan clases de arranque: ${missing.join(', ')}. `
       + 'Revisa las exclusiones de dependencias de Android antes de distribuirlo.');
   }
+  // The native reader runs the engine from nativeLibraryDir: it must be in the APK, stored uncompressed
+  // or extracted (useLegacyPackaging in android/app/build.gradle).
+  if (!apk.file("lib/arm64-v8a/liberaepub.so")) {
+    throw new Error("APK incompleto: falta lib/arm64-v8a/liberaepub.so (motor del lector nativo).");
+  }
   return { dexFiles: dexFiles.length, classCount: definitions.size, requiredClasses: REQUIRED_CLASSES.length };
 }
 

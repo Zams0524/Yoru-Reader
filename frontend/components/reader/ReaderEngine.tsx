@@ -174,6 +174,99 @@ function renderSectionContent(
 }
 
 /**
+ * Splits the book into sections of about 3000 characters (chapter boundaries kept) and numbers
+ * its paragraphs the way renderSectionContent does (the `index` attribute of each block).
+ */
+export function computeSections(book: Book): Section[] {
+  if (!book || !book.chapters || book.chapters.length === 0) return [];
+  let paragraphId = 0;
+  let charAccum = 0;
+  const resultSections: Section[] = [];
+
+  book.chapters.forEach((chapter, chapterIdx) => {
+    const chapterContent = chapter.content || '';
+    const lines = chapterContent.split(/\r?\n/);
+    let lineOffset = 0;
+    let sectionStartOffset = 0;
+    let sectionStartParagraphId = paragraphId;
+    let sectionCharCount = 0;
+    let startChars = charAccum;
+    let subSectionIdx = 0;
+    let sectionHasContent = false;
+
+    lines.forEach((line, lineIdx) => {
+      const lineEndOffset = lineOffset + line.length;
+      const separatorLength = lineIdx < lines.length - 1
+        ? (chapterContent.charCodeAt(lineEndOffset) === 13 ? 2 : 1)
+        : 0;
+      const nextLineOffset = lineEndOffset + separatorLength;
+      sectionHasContent = true;
+
+      if (!line.trim()) {
+        paragraphId++;
+      } else if (line.startsWith('{img:') && line.endsWith('}')) {
+        paragraphId++;
+      } else {
+        const isHeading = (
+          (line.startsWith('{h1:') || line.startsWith('{h2:') || line.startsWith('{h3:')) && line.endsWith('}')
+        );
+        if (!isHeading) {
+          const plainText = line
+            .replace(/\{img:[^{}]*\}/gi, '')
+            .replace(/\{[^|{}]+\|[^{}]*\}/g, (match) => match.split('|')[0].substring(1))
+            .replace(/[｀`]/g, '、')
+            .replace(/[゜°]/g, '。');
+          const jpCount = countJapaneseChars(plainText);
+          charAccum += jpCount;
+          sectionCharCount += jpCount;
+          paragraphId++;
+        }
+      }
+
+      if (sectionCharCount >= 3000) {
+        resultSections.push({
+          id: `chapter-${chapterIdx}-${subSectionIdx}`,
+          title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+          chapterIndex: chapterIdx,
+          startOffset: sectionStartOffset,
+          endOffset: lineEndOffset,
+          startParagraphId: sectionStartParagraphId,
+          lastIndex: paragraphId - 1,
+          startChars,
+          charCount: charAccum - startChars,
+          isFromToc: chapter.isFromToc,
+        });
+        sectionStartOffset = nextLineOffset;
+        sectionStartParagraphId = paragraphId;
+        sectionCharCount = 0;
+        startChars = charAccum;
+        subSectionIdx++;
+        sectionHasContent = false;
+      }
+
+      lineOffset = nextLineOffset;
+    });
+
+    if (sectionHasContent || resultSections.length === 0) {
+      resultSections.push({
+        id: `chapter-${chapterIdx}-${subSectionIdx}`,
+        title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+        chapterIndex: chapterIdx,
+        startOffset: sectionStartOffset,
+        endOffset: chapterContent.length,
+        startParagraphId: sectionStartParagraphId,
+        lastIndex: paragraphId - 1,
+        startChars,
+        charCount: charAccum - startChars,
+        isFromToc: chapter.isFromToc,
+      });
+    }
+  });
+
+  return resultSections;
+}
+
+/**
  * Authentic Native Yoru Reader Engine & High-Speed Parser
  * Directly parses and colors Japanese words natively with 0ms latency.
  */
@@ -238,94 +331,7 @@ function ReaderEngineComponent({
 
   // Keep only section offsets here. Tokenizing every chapter at once creates a
   // large HTML copy of the whole book and can exhaust Android WebView memory.
-  const sections = useMemo<Section[]>(() => {
-    if (!book || !book.chapters || book.chapters.length === 0) return [];
-    let paragraphId = 0;
-    let charAccum = 0;
-    const resultSections: Section[] = [];
-
-    book.chapters.forEach((chapter, chapterIdx) => {
-      const chapterContent = chapter.content || '';
-      const lines = chapterContent.split(/\r?\n/);
-      let lineOffset = 0;
-      let sectionStartOffset = 0;
-      let sectionStartParagraphId = paragraphId;
-      let sectionCharCount = 0;
-      let startChars = charAccum;
-      let subSectionIdx = 0;
-      let sectionHasContent = false;
-
-      lines.forEach((line, lineIdx) => {
-        const lineEndOffset = lineOffset + line.length;
-        const separatorLength = lineIdx < lines.length - 1
-          ? (chapterContent.charCodeAt(lineEndOffset) === 13 ? 2 : 1)
-          : 0;
-        const nextLineOffset = lineEndOffset + separatorLength;
-        sectionHasContent = true;
-
-        if (!line.trim()) {
-          paragraphId++;
-        } else if (line.startsWith('{img:') && line.endsWith('}')) {
-          paragraphId++;
-        } else {
-          const isHeading = (
-            (line.startsWith('{h1:') || line.startsWith('{h2:') || line.startsWith('{h3:')) && line.endsWith('}')
-          );
-          if (!isHeading) {
-            const plainText = line
-              .replace(/\{img:[^{}]*\}/gi, '')
-              .replace(/\{[^|{}]+\|[^{}]*\}/g, (match) => match.split('|')[0].substring(1))
-              .replace(/[｀`]/g, '、')
-              .replace(/[゜°]/g, '。');
-            const jpCount = countJapaneseChars(plainText);
-            charAccum += jpCount;
-            sectionCharCount += jpCount;
-            paragraphId++;
-          }
-        }
-
-        if (sectionCharCount >= 3000) {
-          resultSections.push({
-            id: `chapter-${chapterIdx}-${subSectionIdx}`,
-            title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
-            chapterIndex: chapterIdx,
-            startOffset: sectionStartOffset,
-            endOffset: lineEndOffset,
-            startParagraphId: sectionStartParagraphId,
-            lastIndex: paragraphId - 1,
-            startChars,
-            charCount: charAccum - startChars,
-            isFromToc: chapter.isFromToc,
-          });
-          sectionStartOffset = nextLineOffset;
-          sectionStartParagraphId = paragraphId;
-          sectionCharCount = 0;
-          startChars = charAccum;
-          subSectionIdx++;
-          sectionHasContent = false;
-        }
-
-        lineOffset = nextLineOffset;
-      });
-
-      if (sectionHasContent || resultSections.length === 0) {
-        resultSections.push({
-          id: `chapter-${chapterIdx}-${subSectionIdx}`,
-          title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
-          chapterIndex: chapterIdx,
-          startOffset: sectionStartOffset,
-          endOffset: chapterContent.length,
-          startParagraphId: sectionStartParagraphId,
-          lastIndex: paragraphId - 1,
-          startChars,
-          charCount: charAccum - startChars,
-          isFromToc: chapter.isFromToc,
-        });
-      }
-    });
-
-    return resultSections;
-  }, [book]);
+  const sections = useMemo<Section[]>(() => computeSections(book), [book]);
 
   useEffect(() => {
     if (sections.length > 0 && currSection >= sections.length) {
