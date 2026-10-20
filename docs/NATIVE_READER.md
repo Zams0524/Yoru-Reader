@@ -14,10 +14,16 @@ Desde la 1.4.0 (versionCode 143), Android dibuja los libros con un motor nativo 
 
 ## Pendiente (fases 2-4)
 
-1. ~~Tocar una palabra → diccionario~~ (hecho en la fase 2). Falta: selección larga / varias palabras.
-2. Colores de estado de palabra y furigana en palabras nuevas: exportar el HTML ya tokenizado por Yoru (clases por estado → CSS) y volver a exportar cuando cambien los estados.
-3. Lectura en voz alta, marcadores/subrayados con desplazamiento dentro del párrafo, búsqueda (`SEARCH_*`), índice con títulos reales (`OUTLINE`), brillo, teclas de volumen, grosor de letra, fuentes de la app (KleeOne, Shippori Mincho).
-4. Detalles vistos en la prueba: huecos raros al justificar y la raya ―― horizontal en vertical.
+Funciones del lector web y su estado en el nativo (20 oct):
+
+- Funcionan igual (son paneles del WebView sobre la página): barra superior y menú ⋮, ajustes del libro, índice, búsqueda (salta al párrafo), marcadores e índice de subrayados (salto), galería de imágenes, ir a posición, barra de páginas, medidor de velocidad y sesión de lectura, estadísticas de caracteres.
+- Hechas para el nativo: diccionario al tocar una palabra con resaltado; imágenes (cada ilustración en su página, logos dentro del texto); lectura en voz alta (lee desde la página en pantalla y la página sigue al párrafo que se lee; el resaltado de la frase no se ve en la página nativa); teclas de volumen; brillo (velo negro sobre la página); mostrar/ocultar furigana (exportación aparte del libro, clave `…n`).
+- Faltan:
+  1. Selección de texto (pulsación larga): subrayar, notas, crear marcadores, copiar, Anki desde una selección. Los subrayados guardados tampoco se pintan en la página nativa.
+  2. Colores de estado de palabra y furigana en palabras nuevas: exportar el HTML ya tokenizado por Yoru (clases por estado → CSS) y volver a exportar cuando cambien los estados.
+  3. Resaltar en la página la frase que se lee en voz alta (cajas de letras como el resaltado de palabra).
+  4. Grosor de letra y fuentes de la app (KleeOne, Shippori Mincho); modo «kindle» de zonas de toque; desplazamiento continuo (el nativo solo pagina).
+  5. Detalles del motor: huecos raros al justificar y la raya ―― horizontal en vertical.
 
 ## Compilar el motor
 

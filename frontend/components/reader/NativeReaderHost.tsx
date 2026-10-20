@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReaderSettingsState } from '../../hooks/useReaderSettings';
+import { isPhoneUI } from '../../utils/platform';
 import { initTokenizer } from '../../utils/japanese';
 import { computeSections, prepareLineWords, renderLineWords, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
 import {
@@ -39,6 +40,8 @@ interface Props {
   targetCharPosition?: number | null;
   /** The engine could not open the book or stopped: the reader goes back to the WebView engine. */
   onError?: (message: string) => void;
+  /** Read aloud is not running: its next start reads from the page on screen. */
+  readAloudIdle?: boolean;
 }
 
 function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']): NativeReaderSettings {
@@ -53,6 +56,7 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']):
     fontFamily: settings.fontFamily,
     textAlign: settings.textAlign || 'original',
     invertTaps: !!settings.invertTapZones,
+    brightness: typeof settings.readerBrightness === 'number' ? settings.readerBrightness : 100,
   };
 }
 
@@ -74,6 +78,17 @@ function collectHoles(root: HTMLElement, placeholder: HTMLElement | null): numbe
       return;
     }
     rects.push([r.left, r.top, r.right, r.bottom].map((v) => Math.round(v * 10) / 10));
+    // Menus and popovers can stick out of the bar they belong to: add what lies outside it.
+    for (const inner of Array.from(element.querySelectorAll('*'))) {
+      const c = inner.getBoundingClientRect();
+      if (c.width <= 0 || c.height <= 0) continue;
+      if (c.left >= r.left - 1 && c.top >= r.top - 1 && c.right <= r.right + 1 && c.bottom <= r.bottom + 1) continue;
+      const innerStyle = getComputedStyle(inner);
+      // Only positioned layers (dropdowns): clipped overflow of normal content is not on screen.
+      if (innerStyle.position !== 'absolute' && innerStyle.position !== 'fixed') continue;
+      if (innerStyle.visibility === 'hidden' || innerStyle.display === 'none' || Number(innerStyle.opacity) === 0) continue;
+      rects.push([c.left, c.top, c.right, c.bottom].map((v) => Math.round(v * 10) / 10));
+    }
   };
   Array.from(root.children).forEach(visit);
   // Portals (toasts, dialogs) rendered next to the app root.
@@ -103,10 +118,12 @@ export default function NativeReaderHost({
   targetParagraphId,
   targetCharPosition,
   onError,
+  readAloudIdle = true,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
   const sections = useMemo(() => computeSections(book), [book]);
-  const exported = useMemo(() => exportBookForNativeReader(book), [book]);
+  const showFurigana = readerSettings.showFurigana !== false;
+  const exported = useMemo(() => exportBookForNativeReader(book, { showFurigana }), [book, showFurigana]);
   const [ready, setReady] = useState(false);
   const positionRef = useRef<NativePosition | null>(null);
   const sectionRef = useRef(0);
@@ -217,11 +234,13 @@ export default function NativeReaderHost({
         if (cancelled) return;
         const paragraph = Number(book.progress?.currentPage) || 0;
         const saved = loadNativePosition(String(book.id));
+        // Reopened here (furigana switched): the page on screen. Otherwise the exact saved page,
+        // if the book was not read further in the WebView reader since.
+        const live = positionRef.current?.xpath;
         const position = await NativeReader.open({
           key: exported.key,
           settings: settingsRef.current,
-          // The exact page only if the book was not read further in the WebView reader since.
-          ...(saved && saved.paragraph === paragraph ? { xpath: saved.xpath } : { ordinal: blockOfParagraph(exported, paragraph) }),
+          ...(live ? { xpath: live } : saved && saved.paragraph === paragraph ? { xpath: saved.xpath } : { ordinal: blockOfParagraph(exported, paragraph) }),
         });
         if (cancelled) return;
         appliedSettingsRef.current = JSON.stringify(settingsRef.current);
@@ -322,13 +341,79 @@ export default function NativeReaderHost({
     goToParagraphRef.current(lo);
   }, [ready, targetCharPosition, exported]);
 
-  // The parts of the reader API that make sense without a DOM page (page bar, keys, bookmarks).
+  // Hardware volume keys turn pages (as in the WebView reader; phones only).
+  useEffect(() => {
+    if (!ready || readerSettings.volumeKeysNavigation === false || !isPhoneUI()) return;
+    const onKey = (e: KeyboardEvent) => {
+      const up = e.key === 'VolumeUp' || e.key === 'AudioVolumeUp' || e.code === 'VolumeUp' || (e as any).keyCode === 175 || (e as any).keyCode === 24;
+      const down = e.key === 'VolumeDown' || e.key === 'AudioVolumeDown' || e.code === 'VolumeDown' || (e as any).keyCode === 174 || (e as any).keyCode === 25;
+      if (!up && !down) return;
+      e.preventDefault();
+      const forward = readerSettings.invertVolumeKeys ? up : down;
+      void NativeReader.turnPage({ direction: forward ? 1 : -1 }).catch(() => {});
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [ready, readerSettings.volumeKeysNavigation, readerSettings.invertVolumeKeys]);
+
+  // Read aloud works on DOM blocks: an off-screen copy of the open section, from the paragraph on
+  // screen to the end of the section, with the WebView reader's block names. The page follows
+  // the paragraph being read.
+  const readAloudRef = useRef({ section: -1, lastParagraph: -1 });
+  const readAloudIdleRef = useRef(readAloudIdle);
+  readAloudIdleRef.current = readAloudIdle;
+  const readAloudContentRef = useRef<HTMLDivElement>(null);
+  const buildReadAloud = (sectionIndex: number, fromParagraph: number) => {
+    const container = readAloudContentRef.current;
+    const section = sections[sectionIndex];
+    if (!container || !section) return null;
+    const html: string[] = [];
+    exported.blockParagraph.forEach((paragraph, ordinal) => {
+      if (paragraph < Math.max(fromParagraph, section.startParagraphId) || paragraph > section.lastIndex) return;
+      const line = exported.blockLines[ordinal] || '';
+      const heading = /^\{(h[123]):/.exec(line);
+      if (heading && line.endsWith('}')) html.push(`<${heading[1]} class="chapter-content-${heading[1]}">${exported.blocks[ordinal]}</${heading[1]}>`);
+      else if (line.trim() && !line.startsWith('{img:')) html.push(`<p class="chapter-content" index="${paragraph}">${exported.blocks[ordinal]}</p>`);
+    });
+    container.innerHTML = html.join('');
+    readAloudRef.current.section = sectionIndex;
+    readAloudRef.current.lastParagraph = -1;
+    return container;
+  };
+  const readAloudApi = {
+    getContent: (): HTMLDivElement | null => {
+      const container = readAloudContentRef.current;
+      // A new start reads from the page on screen; while reading, the same copy is kept.
+      if (container && (readAloudIdleRef.current || readAloudRef.current.section < 0)) {
+        const position = positionRef.current;
+        const paragraph = position && position.ordinal >= 0 ? exported.blockParagraph[position.ordinal] ?? 0 : 0;
+        return buildReadAloud(sectionRef.current, paragraph);
+      }
+      return container;
+    },
+    goToNextSection: () => {
+      const next = readAloudRef.current.section + 1;
+      if (next >= sections.length) return false;
+      return !!buildReadAloud(next, sections[next].startParagraphId);
+    },
+    revealRange: (range: Range) => {
+      const block = range.startContainer.parentElement?.closest('[index]');
+      const paragraph = Number(block?.getAttribute('index'));
+      if (!Number.isFinite(paragraph) || paragraph === readAloudRef.current.lastParagraph) return;
+      readAloudRef.current.lastParagraph = paragraph;
+      goToParagraphRef.current(paragraph);
+    },
+  };
+  const readAloudApiRef = useRef(readAloudApi);
+  readAloudApiRef.current = readAloudApi;
+
+  // The parts of the reader API that make sense without a DOM page (page bar, keys, bookmarks, read aloud).
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
-      getContent: () => null,
-      revealRange: () => {},
-      goToNextSection: () => false,
+      getContent: () => readAloudApiRef.current.getContent(),
+      revealRange: (range) => readAloudApiRef.current.revealRange(range),
+      goToNextSection: () => readAloudApiRef.current.goToNextSection(),
       goToParagraph: (_section, paragraph) => goToParagraphRef.current(paragraph),
       getSections: () => sections,
       getCurrentSection: () => sectionRef.current,
@@ -338,8 +423,8 @@ export default function NativeReaderHost({
         const position = positionRef.current;
         const section = sections[sectionRef.current];
         if (!position || !section?.charCount || !exported.totalChars) return { page: 0, pages: 1 };
-        const pages = Math.max(1, Math.round(position.pages * (section.charCount / exported.totalChars)));
-        return { page: 0, pages };
+        // Not rounded: the page bar divides by it to get characters per page (whole-book average).
+        return { page: 0, pages: Math.max(0.01, position.pages * (section.charCount / exported.totalChars)) };
       },
       turnPage: (direction) => { void NativeReader.turnPage({ direction }).catch(() => {}); },
     };
@@ -352,6 +437,8 @@ export default function NativeReaderHost({
       className="native-reader-page"
       style={{ flex: 1, width: '100%', height: '100%', background: colors.bg, position: 'relative', overflow: 'hidden' }}
     >
+      {/* Off-screen copy of the section being read aloud. */}
+      <div ref={readAloudContentRef} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 600, visibility: 'hidden' }} />
       {/* Off-screen copy of the tapped paragraph: the dictionary reads the word from its spans. */}
       <div ref={lookupRef} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 600, visibility: 'hidden' }} />
     </div>

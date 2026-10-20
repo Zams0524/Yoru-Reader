@@ -2390,6 +2390,7 @@ export default function Reader({
           wordStatuses={wordStatuses}
           onPageTurn={handlePageTurn}
           onError={handleNativeError}
+          readAloudIdle={readAloud.status === 'idle'}
         />
       ) : (
         <ReaderEngine

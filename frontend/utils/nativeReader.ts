@@ -19,6 +19,8 @@ export interface NativeReaderSettings {
   fontFamily: string;
   textAlign: string;
   invertTaps: boolean;
+  /** 0-100: below 100 the page is dimmed (the reader's brightness setting). */
+  brightness: number;
 }
 
 /** A tap on a letter: its engine xpath, block and box on screen (CSS px). */
@@ -72,8 +74,10 @@ export function isNativeReaderAvailable(): boolean {
  * Bumped when the exported book changes, so books are exported again (and saved engine xpaths,
  * which depend on the document's structure, are dropped when POSITION_FORMAT changes too).
  * v2: XHTML packed as an EPUB, for images. v3: picture blocks on pages of their own.
+ * v4: the plugin swaps those pictures for a page-tall placeholder (pictures.idx). v5: small images
+ * (logos) stay in the text (class "si").
  */
-const EXPORT_VERSION = 3;
+const EXPORT_VERSION = 5;
 /** Bumped when engine xpaths of earlier exports no longer point to the same place. */
 const POSITION_FORMAT = 2;
 const CHUNK_CHARS = 512 * 1024;
@@ -132,7 +136,8 @@ function lineChars(line: string): number {
  * computeSections / renderSectionContent exactly, so positions stay interchangeable with the
  * WebView reader. Ruby from the book ({base|reading} and Aozora 《》) becomes <ruby>.
  */
-export function exportBookForNativeReader(book: Book): NativeBookExport {
+export function exportBookForNativeReader(book: Book, options: { showFurigana?: boolean } = {}): NativeBookExport {
+  const showFurigana = options.showFurigana !== false;
   const images: { name: string; data: string }[] = [];
   const imageNames = new Map<string, string>();
   const imageSrc = (src: string): string | null => {
@@ -207,14 +212,17 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
     + 'p.h3{font-size:1.15em;font-weight:bold;margin:0.6em 0}'
     // A picture gets a page of its own; the plugin draws it there centred and fitted to the screen.
     + 'p.i{text-align:center;page-break-before:always;page-break-after:always}'
+    + 'p.si{text-align:center}'
     + 'img{max-width:100%;max-height:100%}'
+    // "Show furigana" off: the book's readings are hidden (a separate export, see the key).
+    + (showFurigana ? '' : 'rt,rp{display:none}')
     + '</style></head><body>\n'
     + blocks.join('\n')
     + '\n</body></html>\n';
 
   const id = String(book.id || 'book').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'book';
   return {
-    key: `${id}-${hashBook(book)}-v${EXPORT_VERSION}`,
+    key: `${id}-${hashBook(book)}-v${EXPORT_VERSION}${showFurigana ? '' : 'n'}`,
     html,
     images,
     blocks: blockHtml,

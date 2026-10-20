@@ -117,6 +117,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int textColor, backgroundColor;
         String fontFamily, textAlign;
         boolean invertTaps;
+        int brightness;               // 0-100, below 100 the page is dimmed
         int width, height;           // view size in px
         Insets insets = Insets.NONE;  // system bars and cutout, px
         float density;
@@ -133,6 +134,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.fontFamily = s.optString("fontFamily", base != null ? base.fontFamily : "");
             c.textAlign = s.optString("textAlign", base != null ? base.textAlign : "original");
             c.invertTaps = s.optBoolean("invertTaps", base != null && base.invertTaps);
+            c.brightness = Math.max(0, Math.min(100, s.optInt("brightness", base != null ? base.brightness : 100)));
             return c;
         }
     }
@@ -230,17 +232,44 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     }
 
     /** book.epub = the XHTML and img/ in a minimal EPUB; the loose files are removed. */
+    /**
+     * book.epub = the XHTML and its images in a minimal EPUB; pictures.idx lists the blocks that
+     * are only a picture. In the EPUB those pictures are replaced by a placeholder taller than any
+     * page: the engine then gives each one a page of its own (it does not always honour
+     * page-break-* between two images), and drawPicturePage draws the real picture there. img/ stays.
+     */
     private static void packEpub(File dir, File xhtml) throws IOException {
         File images = new File(dir, "img");
-        File[] imageFiles = images.listFiles(File::isFile);
-        if (imageFiles == null) imageFiles = new File[0];
-        Arrays.sort(imageFiles);
+        StringBuilder book = new StringBuilder();
+        java.util.Set<String> used = new java.util.TreeSet<>();
+        try (BufferedReader lines = new BufferedReader(new FileReader(xhtml)); FileWriter index = new FileWriter(new File(dir, PICTURES_FILE))) {
+            int ordinal = 0;
+            String line;
+            while ((line = lines.readLine()) != null) {
+                if (line.startsWith("<p")) {
+                    Matcher picture = PICTURE_BLOCK.matcher(line);
+                    if (picture.matches() && isSmallImage(new File(images, picture.group(1)))) {
+                        // A logo or ornament stays in the text, as ReadEra shows it (no page of its own).
+                        line = line.replaceFirst("\\bi\\b", "si");
+                    } else if (picture.matches()) {
+                        index.write(ordinal + "\t" + picture.group(1) + "\n");
+                        line = line.replace("img/" + picture.group(1), "img/" + PAGE_PLACEHOLDER);
+                    }
+                    ordinal++;
+                }
+                Matcher image = IMAGE_REF.matcher(line);
+                while (image.find()) used.add(image.group(1));
+                book.append(line).append('\n');
+            }
+        }
+        used.remove(PAGE_PLACEHOLDER);
         StringBuilder manifest = new StringBuilder("<item id=\"book\" href=\"book.xhtml\" media-type=\"application/xhtml+xml\"/>");
-        for (int i = 0; i < imageFiles.length; i++) {
-            String name = imageFiles[i].getName();
+        manifest.append("<item id=\"page\" href=\"img/").append(PAGE_PLACEHOLDER).append("\" media-type=\"image/png\"/>");
+        int n = 0;
+        for (String name : used) {
             String ext = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
             String type = ext.equals("jpg") ? "image/jpeg" : ext.equals("svg") ? "image/svg+xml" : "image/" + ext;
-            manifest.append("<item id=\"img").append(i).append("\" href=\"img/").append(name).append("\" media-type=\"").append(type).append("\"/>");
+            manifest.append("<item id=\"img").append(n++).append("\" href=\"img/").append(name).append("\" media-type=\"").append(type).append("\"/>");
         }
         String opf = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
             + "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"id\">"
@@ -255,37 +284,42 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             putStored(zip, "mimetype", "application/epub+zip".getBytes(StandardCharsets.US_ASCII));
             putDeflated(zip, "META-INF/container.xml", container.getBytes(StandardCharsets.UTF_8));
             putDeflated(zip, "content.opf", opf.getBytes(StandardCharsets.UTF_8));
-            zip.putNextEntry(new ZipEntry("book.xhtml"));
-            copy(xhtml, zip);
-            zip.closeEntry();
-            // Images are already compressed: store them.
-            for (File image : imageFiles) {
+            putDeflated(zip, "book.xhtml", book.toString().getBytes(StandardCharsets.UTF_8));
+            putStored(zip, "img/" + PAGE_PLACEHOLDER, pagePlaceholder());
+            // Images inside the text; already compressed: store them.
+            for (String name : used) {
+                File image = new File(images, name);
+                if (!image.isFile()) continue;
                 java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream((int) image.length());
                 copy(image, bytes);
-                putStored(zip, "img/" + image.getName(), bytes.toByteArray());
+                putStored(zip, "img/" + name, bytes.toByteArray());
             }
         }
         if (!partial.renameTo(new File(dir, BOOK_FILE))) throw new IOException("rename");
-        indexPictures(xhtml, new File(dir, PICTURES_FILE));
         xhtml.delete();
-        // img/ stays: picture pages are drawn from these files (drawPicturePage).
+    }
+
+    private static final String PAGE_PLACEHOLDER = "_yoru_page.png";
+
+    /** Under 400 px on both sides: a logo or ornament rather than an illustration. */
+    private static boolean isSmallImage(File image) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(image.getAbsolutePath(), bounds);
+        return bounds.outWidth > 0 && bounds.outWidth < 400 && bounds.outHeight < 400;
+    }
+    private static final Pattern IMAGE_REF = Pattern.compile("src=\"img/([A-Za-z0-9._-]+)\"");
+
+    /** A transparent PNG much taller than a page: the engine scales it to fill one page. */
+    private static byte[] pagePlaceholder() {
+        Bitmap bitmap = Bitmap.createBitmap(4, 6000, Bitmap.Config.ARGB_8888);
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, png);
+        bitmap.recycle();
+        return png.toByteArray();
     }
 
     private static final Pattern PICTURE_BLOCK = Pattern.compile("^<p class=\"(?:[^\"]* )?i(?: [^\"]*)?\"><img src=\"img/([A-Za-z0-9._-]+)\"/></p>$");
-
-    /** "ordinal<TAB>file" for every block that is only a picture (one block per line in the export). */
-    private static void indexPictures(File xhtml, File index) throws IOException {
-        try (BufferedReader lines = new BufferedReader(new FileReader(xhtml)); FileWriter out = new FileWriter(index)) {
-            int ordinal = 0;
-            String line;
-            while ((line = lines.readLine()) != null) {
-                if (!line.startsWith("<p")) continue;
-                Matcher m = PICTURE_BLOCK.matcher(line);
-                if (m.matches()) out.write(ordinal + "\t" + m.group(1) + "\n");
-                ordinal++;
-            }
-        }
-    }
 
     private static Map<Integer, File> loadPictures(File dir) {
         Map<Integer, File> pictures = new HashMap<>();
@@ -381,7 +415,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             final int gen = ++generation;
             ensureView();
             Config base = Config.from(settings, null);
-            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps);
+            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.brightness);
             view.setPages(null, null, null);
             view.setHoles(new ArrayList<>());
             view.setVisibility(View.VISIBLE);
@@ -928,7 +962,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             return;
         }
         Config next = withScreen(Config.from(settings, config));
-        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps);
+        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps, next.brightness);
         final int gen = generation, page = current;
         engineHandler.post(() -> {
             if (gen != generation) return;

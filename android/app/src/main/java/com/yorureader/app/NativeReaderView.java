@@ -56,6 +56,7 @@ final class NativeReaderView extends View {
     /** The looked-up word on the current page (moves with it while sliding). */
     private final List<RectF> highlight = new ArrayList<>();
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dimPaint = new Paint();
 
     NativeReaderView(Context context, Listener listener) {
         super(context);
@@ -71,8 +72,10 @@ final class NativeReaderView extends View {
         invalidate();
     }
 
-    void setLook(int background, boolean vertical, boolean invertTaps) {
+    void setLook(int background, boolean vertical, boolean invertTaps, int brightness) {
         this.background = background;
+        // The reader's brightness setting: a black veil over the page (not over Yoru's bars).
+        dimPaint.setColor(Color.argb(Math.round((100 - brightness) * 2.55f), 0, 0, 0));
         this.vertical = vertical;
         this.invertTaps = invertTaps;
         invalidate();
@@ -138,6 +141,7 @@ final class NativeReaderView extends View {
                 canvas.drawRect(w + offset, 0, w + offset + 4, getHeight(), shadowPaint);
             }
         }
+        if (Color.alpha(dimPaint.getColor()) > 0) canvas.drawRect(0, 0, getWidth(), getHeight(), dimPaint);
         canvas.restore();
     }
 
