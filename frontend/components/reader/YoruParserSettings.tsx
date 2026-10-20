@@ -664,6 +664,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 
   const renderGeneral = () => phone ? jitenSection : (
     <>
+      {jitenSection}
 
       {/* Appearance */}
       <div style={sectionTitleStyle}>{t('Apariencia del Parser', 'Parser Appearance')}</div>
@@ -854,8 +855,13 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     const config = settings.wordStyleConfig;
     return (
       <>
-        <div style={sectionTitleStyle}>{t('Furigana', 'Furigana')}</div>
-        {furiganaNewWordsToggle}
+        {/* The native reader renders this; on desktop the reader extension draws the text itself. */}
+        {usesLocalParserSettings() && (
+          <>
+            <div style={sectionTitleStyle}>{t('Furigana', 'Furigana')}</div>
+            {furiganaNewWordsToggle}
+          </>
+        )}
 
         {/* Preset Theme Selector */}
         <div style={sectionTitleStyle}>{t('Estilo de Palabras', 'Word Styling')}</div>
@@ -1715,16 +1721,9 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
   useEffect(() => setDraft(apiKey), [apiKey]);
   useEffect(() => onJitenChange(() => setTick((n) => n + 1)), []);
 
-  if (!usesLocalParserSettings()) {
-    return (
-      <div style={cardStyle}>
-        <div style={labelStyle}>{t('Gestionado por la extensión', 'Handled by the extension')}</div>
-        <div style={descStyle}>
-          {t('En escritorio, la extensión de lectura se conecta a Jiten con su propia configuración.', 'On desktop the reader extension connects to Jiten with its own settings.')}
-        </div>
-      </div>
-    );
-  }
+  // Desktop: the key is the reader extension's own "jitenApiKey" (saved through the settings bridge);
+  // the extension parses and syncs, so the local parser toggle and sync queue do not apply.
+  const desktop = !usesLocalParserSettings();
 
   const saveAndTest = async () => {
     const key = draft.trim();
@@ -1737,18 +1736,20 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
     const result = await testJitenApiKey(key);
     setTesting(false);
     setTestResult(result);
-    if (result === 'ok') void flushJitenQueue();
+    if (result === 'ok' && !desktop) void flushJitenQueue();
   };
 
   const state = getJitenConnectionState();
   const pending = getPendingJitenSyncCount();
-  const shownResult = testResult ?? (apiKey ? (state === 'rejected' ? 'rejected' : state === 'offline' ? 'offline' : null) : null);
+  const shownResult = testResult ?? (apiKey && !desktop ? (state === 'rejected' ? 'rejected' : state === 'offline' ? 'offline' : null) : null);
   const statusText = shownResult === 'ok'
     ? t('Conectado a tu cuenta de Jiten.', 'Connected to your Jiten account.')
     : shownResult === 'rejected'
       ? t('Jiten rechazó la clave. Revísala.', 'Jiten rejected the key. Check it.')
       : shownResult === 'offline'
-        ? t('No se pudo contactar con Jiten. Se reintentará.', 'Could not reach Jiten. It will retry.')
+        ? (desktop
+          ? t('Clave guardada en la extensión. No se pudo comprobar con Jiten desde aquí.', 'Key saved in the extension. It could not be checked with Jiten from here.')
+          : t('No se pudo contactar con Jiten. Se reintentará.', 'Could not reach Jiten. It will retry.'))
         : '';
   const statusColor = shownResult === 'ok' ? '#4ade80' : shownResult === 'rejected' ? '#f87171' : colors.textMuted;
 
@@ -1781,10 +1782,15 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
       <div style={cardStyle}>
         <div style={labelStyle}>{t('Clave API de Jiten', 'Jiten API key')}</div>
         <div style={descStyle}>
-          {t(
-            'Cópiala en jiten.moe → Ajustes → API. Con ella, Yoru usa el parser de Jiten, colorea las palabras con tus estados de Jiten y envía a Jiten tus repasos y palabras marcadas.',
-            "Copy it from jiten.moe → Settings → API. With it, Yoru uses Jiten's parser, colours words with your Jiten states and sends your reviews and marked words to Jiten.",
-          )}
+          {desktop
+            ? t(
+              'Cópiala en jiten.moe → Ajustes → API. La extensión de lectura la usa para separar las palabras con Jiten, colorearlas con tus estados y enviar tus repasos.',
+              'Copy it from jiten.moe → Settings → API. The reader extension uses it to split words with Jiten, colour them with your states and send your reviews.',
+            )
+            : t(
+              'Cópiala en jiten.moe → Ajustes → API. Con ella, Yoru usa el parser de Jiten, colorea las palabras con tus estados de Jiten y envía a Jiten tus repasos y palabras marcadas.',
+              "Copy it from jiten.moe → Settings → API. With it, Yoru uses Jiten's parser, colours words with your Jiten states and sends your reviews and marked words to Jiten.",
+            )}
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
           <input
@@ -1819,13 +1825,13 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
           )}
         </div>
         {statusText && <div style={{ ...descStyle, color: statusColor, marginTop: '8px' }}>{statusText}</div>}
-        {apiKey && pending > 0 && (
+        {!desktop && apiKey && pending > 0 && (
           <div style={{ ...descStyle, marginTop: '4px' }}>
             {t(`${pending} cambios esperando para enviarse a Jiten.`, `${pending} changes waiting to be sent to Jiten.`)}
           </div>
         )}
       </div>
-      {apiKey && (
+      {!desktop && apiKey && (
         <div style={cardStyle}>
           <ToggleRow
             label={t('Usar el parser de Jiten', "Use Jiten's parser")}
