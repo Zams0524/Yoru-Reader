@@ -57,6 +57,10 @@ interface NativeReaderPlugin {
   turnPage(options: { direction: 1 | -1 }): Promise<void>;
   setHoles(options: { rects: number[][] }): Promise<void>;
   setPopupOpen(options: { open: boolean }): Promise<void>;
+  /** Highlights a read-aloud sentence. relativeBlock: block index from top of current page. */
+  highlightRange(options: { relativeBlock: number; charOffset: number; charLength: number; color: number }): Promise<void>;
+  /** Clears any word or sentence highlight on the page. */
+  clearHighlight(): Promise<void>;
   close(): Promise<void>;
   addListener(event: 'pageChanged', listener: (position: NativePosition) => void): Promise<PluginListenerHandle>;
   addListener(event: 'tap', listener: (point: { x: number; y: number; closePopup?: boolean }) => void): Promise<PluginListenerHandle>;

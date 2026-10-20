@@ -250,6 +250,10 @@ export default function NativeReaderHost({
   const highlightColor = useMemo(() => ((0x5a << 24) | cssColorToInt(colors.accent || '#ffe000', 0xffe000)) >>> 0, [colors.accent]);
   const highlightColorRef = useRef(highlightColor);
   highlightColorRef.current = highlightColor;
+  // Accent at 25 % opacity for read-aloud sentence highlight (lighter than the word lookup).
+  const ttsHighlightColor = useMemo(() => ((0x40 << 24) | cssColorToInt(colors.accent || '#ffe000', 0xffe000)) >>> 0, [colors.accent]);
+  const ttsHighlightColorRef = useRef(ttsHighlightColor);
+  ttsHighlightColorRef.current = ttsHighlightColor;
   // The local parser (Kuromoji) loads once; until then words would be split by script only.
   const [tokenizerReady] = useState(() => initTokenizer().catch(() => undefined));
   const findWordRef = useRef(findWord);
@@ -424,6 +428,11 @@ export default function NativeReaderHost({
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [ready, readerSettings.volumeKeysNavigation, readerSettings.invertVolumeKeys]);
 
+  // Clear the TTS sentence highlight when read-aloud stops.
+  useEffect(() => {
+    if (readAloudIdle && ready) void NativeReader.clearHighlight().catch(() => {});
+  }, [readAloudIdle, ready]);
+
   // Read aloud works on DOM blocks: an off-screen copy of the open section, from the paragraph on
   // screen to the end of the section, with the WebView reader's block names. The page follows
   // the paragraph being read.
@@ -441,7 +450,7 @@ export default function NativeReaderHost({
       const line = exported.blockLines[ordinal] || '';
       const heading = /^\{(h[123]):/.exec(line);
       if (heading && line.endsWith('}')) html.push(`<${heading[1]} class="chapter-content-${heading[1]}">${exported.blocks[ordinal]}</${heading[1]}>`);
-      else if (line.trim() && !line.startsWith('{img:')) html.push(`<p class="chapter-content" index="${paragraph}">${exported.blocks[ordinal]}</p>`);
+      else if (line.trim() && !line.startsWith('{img:')) html.push(`<p class="chapter-content" index="${paragraph}" data-ordinal="${ordinal}">${exported.blocks[ordinal]}</p>`);
     });
     container.innerHTML = html.join('');
     readAloudRef.current.section = sectionIndex;
@@ -465,11 +474,46 @@ export default function NativeReaderHost({
       return !!buildReadAloud(next, sections[next].startParagraphId);
     },
     revealRange: (range: Range) => {
-      const block = range.startContainer.parentElement?.closest('[index]');
+      const block = range.startContainer.parentElement?.closest('[index]') as HTMLElement | null;
       const paragraph = Number(block?.getAttribute('index'));
-      if (!Number.isFinite(paragraph) || paragraph === readAloudRef.current.lastParagraph) return;
-      readAloudRef.current.lastParagraph = paragraph;
-      goToParagraphRef.current(paragraph);
+      if (!Number.isFinite(paragraph)) return;
+      if (paragraph !== readAloudRef.current.lastParagraph) {
+        readAloudRef.current.lastParagraph = paragraph;
+        goToParagraphRef.current(paragraph);
+      }
+      // Highlight the sentence on the native page.
+      const ordinal = Number(block?.dataset.ordinal);
+      if (!block || isNaN(ordinal)) return;
+      const pageStartOrdinal = positionRef.current?.ordinal ?? 0;
+      const relativeBlock = ordinal - pageStartOrdinal;
+      if (relativeBlock < 0) return;
+      let charOffset = 0;
+      let charLength = 0;
+      let beforeStart = true;
+      for (const textNode of baseTextNodes(block)) {
+        if (beforeStart) {
+          if (textNode === range.startContainer) {
+            beforeStart = false;
+            charOffset += range.startOffset;
+            charLength += (textNode === range.endContainer)
+              ? range.endOffset - range.startOffset
+              : textNode.length - range.startOffset;
+            if (textNode === range.endContainer) break;
+          } else {
+            charOffset += textNode.length;
+          }
+        } else {
+          if (textNode === range.endContainer) { charLength += range.endOffset; break; }
+          charLength += textNode.length;
+        }
+      }
+      if (charLength <= 0) return;
+      void NativeReader.highlightRange({
+        relativeBlock,
+        charOffset,
+        charLength,
+        color: ttsHighlightColorRef.current,
+      }).catch(() => {});
     },
   };
   const readAloudApiRef = useRef(readAloudApi);

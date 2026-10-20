@@ -975,6 +975,80 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         return letterArea(letters, i) < textArea * 0.45f;
     }
 
+    /**
+     * Highlights a sentence for read-aloud: relativeBlock is the block's index relative to the
+     * first block on the current page (0 = first block visible), charOffset and charLength count
+     * base-text characters (furigana excluded). color is ARGB.
+     */
+    @PluginMethod
+    public void highlightRange(PluginCall call) {
+        int relativeBlock = call.getInt("relativeBlock", -1);
+        int charOffset = Math.max(0, call.getInt("charOffset", 0));
+        int charLength = call.getInt("charLength", 0);
+        long color = call.getLong("color", 0x40FFE000L);
+        main.post(() -> {
+            PageLetters letters = this.letters;
+            if (view == null || letters == null || letters.page != current || relativeBlock < 0 || charLength <= 0) {
+                call.resolve();
+                return;
+            }
+            // Reference area for furigana detection: first non-empty letter.
+            float refArea = 0;
+            for (int i = 0; i < letters.texts.length; i++) {
+                if (!letters.texts[i].trim().isEmpty()) { refArea = letterArea(letters, i); break; }
+            }
+            // Skip relativeBlock paragraph separators to reach the target block.
+            int blockCount = 0;
+            int i = 0;
+            while (i < letters.texts.length && blockCount < relativeBlock) {
+                if ("\n".equals(letters.texts[i])) blockCount++;
+                i++;
+            }
+            if (blockCount < relativeBlock) { call.resolve(); return; }
+            // Find the letter at charOffset (counting only base-text characters).
+            int startIndex = -1, baseCount = 0;
+            for (int j = i; j < letters.texts.length; j++) {
+                if ("\n".equals(letters.texts[j])) break;
+                if (isFurigana(letters, j, refArea)) continue;
+                if (baseCount == charOffset) { startIndex = j; break; }
+                baseCount++;
+            }
+            if (startIndex < 0) { call.resolve(); return; }
+            // Collect charLength base-text characters (furigana included in the highlight).
+            List<Integer> picked = new ArrayList<>();
+            int remaining = charLength;
+            for (int j = startIndex; j < letters.texts.length && remaining > 0; j++) {
+                if ("\n".equals(letters.texts[j])) break;
+                picked.add(j);
+                if (!isFurigana(letters, j, refArea)) remaining--;
+            }
+            // Build highlight boxes (one per line, same as highlight()).
+            List<RectF> boxes = new ArrayList<>();
+            float pad = 1.5f * getContext().getResources().getDisplayMetrics().density;
+            RectF line = null;
+            for (int idx : picked) {
+                RectF r = new RectF(letters.boxes[idx*4]-pad, letters.boxes[idx*4+1]-pad,
+                                    letters.boxes[idx*4+2]+pad, letters.boxes[idx*4+3]+pad);
+                boolean sameLine = line != null && (config != null && config.vertical
+                    ? Math.min(line.right, r.right) - Math.max(line.left, r.left) > r.width() / 2
+                    : Math.min(line.bottom, r.bottom) - Math.max(line.top, r.top) > r.height() / 2);
+                if (sameLine) line.union(r);
+                else { line = r; boxes.add(line); }
+            }
+            view.setHighlight(boxes, (int) color);
+            call.resolve();
+        });
+    }
+
+    /** Clears any word or sentence highlight on the page. */
+    @PluginMethod
+    public void clearHighlight(PluginCall call) {
+        main.post(() -> {
+            if (view != null) view.setHighlight(new ArrayList<>(), 0);
+            call.resolve();
+        });
+    }
+
     /** New reader settings (any subset): the layout is redone and the current position kept. */
     @PluginMethod
     public void setSettings(PluginCall call) {
