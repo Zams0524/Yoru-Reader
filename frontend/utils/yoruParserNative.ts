@@ -1,4 +1,5 @@
 import { getTokenizerInstance, initTokenizer, katakanaToHiragana } from './japanese';
+import { getLocalParserSetting } from './parserSettingsStore';
 
 export function getStatusClass(status?: string): string {
   if (status === 'known' || status === 'mature' || status === 'mastered') return 'jiten-word mature';
@@ -23,6 +24,73 @@ function escapeHtmlText(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char] as string));
+}
+
+// ── Furigana on new words ("Only add furigana to new words", as in the Jiten extension) ──
+
+const KANJI_CLASS = '\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff々〆ヵヶ';
+const KANJI_CHAR = new RegExp(`[${KANJI_CLASS}]`);
+const KANJI_OR_KANA_RUNS = new RegExp(`[${KANJI_CLASS}]+|[^${KANJI_CLASS}]+`, 'g');
+
+let furiganaOnNewWords = readFuriganaSetting();
+function readFuriganaSetting(): boolean {
+  const value = getLocalParserSetting('furiganaNewWords');
+  return value === true || value === 'true';
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('yoru-parser-settings-changed', () => { furiganaOnNewWords = readFuriganaSetting(); });
+}
+
+export function isFuriganaOnNewWords(): boolean {
+  return furiganaOnNewWords;
+}
+
+const rubyHtml = (base: string, reading: string) =>
+  `<ruby>${escapeHtmlText(base)}<rt class="jiten-furi">${escapeHtmlText(reading)}</rt></ruby>`;
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Furigana from the kana reading of `surface` itself (Kuromoji): kanji get ruby, okurigana stays plain. */
+export function furiganaFromReading(surface: string, reading: string): string | null {
+  if (!reading || !KANJI_CHAR.test(surface)) return null;
+  const parts = surface.match(KANJI_OR_KANA_RUNS) || [];
+  const pattern = parts.map((part) => (KANJI_CHAR.test(part[0]) ? '(.+?)' : escapeRegex(katakanaToHiragana(part)))).join('');
+  const match = katakanaToHiragana(reading).match(new RegExp(`^${pattern}$`));
+  if (!match) return null;
+  let group = 1;
+  return parts.map((part) => (KANJI_CHAR.test(part[0]) ? rubyHtml(part, match[group++]) : escapeHtmlText(part))).join('');
+}
+
+/** Kanji run → kana pairs from Jiten's annotated reading, e.g. "食[た]べる" → [["食", "た"]]. */
+export function furiganaPairsFromAnnotated(annotated: string): [string, string][] {
+  const pairs: [string, string][] = [];
+  for (const match of (annotated || '').matchAll(/([^[\]]+?)\[([^\]]+)\]/g)) {
+    const run = match[1].match(new RegExp(`[${KANJI_CLASS}]+$`));
+    if (run) pairs.push([run[0], match[2]]);
+  }
+  return pairs;
+}
+
+/** Furigana for a surface (which may be conjugated) from the dictionary form's kanji readings. */
+function furiganaFromPairs(surface: string, pairs: [string, string][]): string | null {
+  if (!pairs.length || !KANJI_CHAR.test(surface)) return null;
+  const parts = surface.match(KANJI_OR_KANA_RUNS) || [];
+  let html = '';
+  for (const part of parts) {
+    if (!KANJI_CHAR.test(part[0])) {
+      html += escapeHtmlText(part);
+      continue;
+    }
+    // A run may span several annotated pieces (日本[にほん]語[ご]); consume them in order.
+    let rest = part;
+    while (rest) {
+      const pair = pairs.find(([base]) => rest.startsWith(base));
+      if (!pair) return null;
+      html += rubyHtml(pair[0], pair[1]);
+      rest = rest.slice(pair[0].length);
+    }
+  }
+  return html;
 }
 
 // Status changes should only repaint spans; they should not make Kuromoji parse every
@@ -164,7 +232,8 @@ export function tokenizeJapaneseText(
           const status = wordStatuses[basicForm] || wordStatuses[surface] || 'new';
           const cls = getStatusClass(status);
 
-          resultHtml += `<span class="${cls}" data-word="${escapeAttribute(basicForm)}" data-reading="${escapeAttribute(reading)}" data-pos="${escapeAttribute(pos)}">${escapeText(surface)}</span>`;
+          const inner = (furiganaOnNewWords && cls === 'jiten-word new' && furiganaFromReading(surface, token.reading || '')) || escapeText(surface);
+          resultHtml += `<span class="${cls}" data-word="${escapeAttribute(basicForm)}" data-reading="${escapeAttribute(reading)}" data-pos="${escapeAttribute(pos)}">${inner}</span>`;
         }
         continue;
       } catch (e) {
@@ -245,6 +314,7 @@ export interface JitenRenderWord {
   spelling: string;
   reading: string;
   states: string[];
+  furigana?: [string, string][];
 }
 
 interface ParagraphUnit {
@@ -300,13 +370,23 @@ export function renderJitenParagraph(
   let html = '';
   let tokenIndex = 0;
   let openEnd = -1;
+  // While a new word is open: its plain text, so it can get furigana when it is closed.
+  let furiganaWord: JitenRenderWord | undefined;
+  let wordStart = 0;
+  let wordText = '';
+  const closeWord = () => {
+    if (furiganaWord) {
+      const ruby = furiganaFromPairs(wordText, furiganaWord.furigana || []);
+      if (ruby) html = html.slice(0, wordStart) + ruby;
+    }
+    html += '</span>';
+    openEnd = -1;
+    furiganaWord = undefined;
+  };
 
   for (const unit of units) {
     const isText = unit.end > unit.start;
-    if (openEnd >= 0 && isText && unit.start >= openEnd) {
-      html += '</span>';
-      openEnd = -1;
-    }
+    if (openEnd >= 0 && isText && unit.start >= openEnd) closeWord();
     if (openEnd < 0 && isText) {
       while (tokenIndex < tokens.length && tokens[tokenIndex].end <= unit.start) tokenIndex++;
       const token = tokens[tokenIndex];
@@ -320,12 +400,20 @@ export function renderJitenParagraph(
           + '>';
         openEnd = token.end;
         tokenIndex++;
+        furiganaWord = furiganaOnNewWords && (word?.states?.includes('new') ?? true) && word?.furigana?.length ? word : undefined;
+        wordStart = html.length;
+        wordText = '';
       }
     }
     // A ruby base is never split: a word that ends inside it takes the whole base.
     if (openEnd >= 0 && unit.end > openEnd) openEnd = unit.end;
+    // Furigana already in the book wins: only plain single characters are rewritten.
+    if (furiganaWord) {
+      if (unit.end - unit.start === 1 && !/[&<]/.test(unit.html)) wordText += unit.html;
+      else furiganaWord = undefined;
+    }
     html += unit.html;
   }
-  if (openEnd >= 0) html += '</span>';
+  if (openEnd >= 0) closeWord();
   return html;
 }

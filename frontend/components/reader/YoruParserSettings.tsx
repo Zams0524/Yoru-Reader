@@ -40,6 +40,7 @@ interface SettingsValues {
   themeAccentColour: string;
   // Furigana & Analysis
   skipFurigana: boolean;
+  furiganaNewWords: boolean;
   generatePitch: boolean;
   // Popup
   showPopupOnHover: boolean;
@@ -239,6 +240,7 @@ const DEFAULTS: SettingsValues = {
   themeBgColour: '#181818',
   themeAccentColour: '#D8B9FA',
   skipFurigana: false,
+  furiganaNewWords: false,
   generatePitch: true,
   showPopupOnHover: false,
   hidePopupAutomatically: true,
@@ -422,6 +424,7 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         themeBgColour: (safeVals.themeBgColour as string) || DEFAULTS.themeBgColour,
         themeAccentColour: (safeVals.themeAccentColour as string) || DEFAULTS.themeAccentColour,
         skipFurigana: parseBool(safeVals.skipFurigana, DEFAULTS.skipFurigana),
+        furiganaNewWords: parseBool(safeVals.furiganaNewWords, DEFAULTS.furiganaNewWords),
         generatePitch: parseBool(safeVals.generatePitch, DEFAULTS.generatePitch),
         showPopupOnHover: parseBool(safeVals.showPopupOnHover, DEFAULTS.showPopupOnHover),
         hidePopupAutomatically: parseBool(safeVals.hidePopupAutomatically, DEFAULTS.hidePopupAutomatically),
@@ -834,10 +837,26 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     </>
   );
 
+  const furiganaNewWordsToggle = (
+    <div style={cardStyle}>
+      <ToggleRow
+        label={t('Furigana solo en palabras nuevas', 'Only add furigana to new words')}
+        desc={t('Pone la lectura sobre los kanji de las palabras que aún no conoces (estado «nueva»). La furigana que ya trae el libro se mantiene.',
+          'Shows readings above the kanji of words you do not know yet (state "new"). Furigana already in the book stays.')}
+        value={settings.furiganaNewWords}
+        onChange={(v) => updateSetting('furiganaNewWords', v)}
+        colors={colors} labelStyle={labelStyle} descStyle={descStyle}
+      />
+    </div>
+  );
+
   const renderStyling = () => {
     const config = settings.wordStyleConfig;
     return (
       <>
+        <div style={sectionTitleStyle}>{t('Furigana', 'Furigana')}</div>
+        {furiganaNewWordsToggle}
+
         {/* Preset Theme Selector */}
         <div style={sectionTitleStyle}>{t('Estilo de Palabras', 'Word Styling')}</div>
         <div style={cardStyle}>

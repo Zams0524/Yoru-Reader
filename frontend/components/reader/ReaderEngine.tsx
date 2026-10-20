@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
-import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph } from '../../utils/yoruParserNative';
+import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isPhoneUI } from '../../utils/platform';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
@@ -1165,8 +1165,13 @@ function ReaderEngineComponent({
 
   // Jiten parser (when the user saved a Jiten API key and there is no reader extension).
   const [jitenEnabled, setJitenEnabled] = useState(() => isJitenParserEnabled());
+  // Rendered into the HTML by the tokenizers, so a change re-renders the section.
+  const [furiganaNew, setFuriganaNew] = useState(() => isFuriganaOnNewWords());
   useEffect(() => {
-    const refresh = () => setJitenEnabled(isJitenParserEnabled());
+    const refresh = () => {
+      setJitenEnabled(isJitenParserEnabled());
+      setFuriganaNew(isFuriganaOnNewWords());
+    };
     window.addEventListener('yoru-parser-settings-changed', refresh);
     const unsubscribe = onJitenChange(refresh);
     return () => {
@@ -1196,7 +1201,7 @@ function ReaderEngineComponent({
       return currentSection ? renderSection(currentSection) : '';
     }
     return sections.map(renderSection).join('');
-  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled]);
+  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled, furiganaNew]);
 
   // Ask Jiten for the paragraphs on screen, then swap them in place (same text, so the page does not move).
   useEffect(() => {

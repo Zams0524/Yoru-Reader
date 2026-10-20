@@ -1,4 +1,5 @@
 import { getLocalParserSetting, usesLocalParserSettings } from './parserSettingsStore';
+import { furiganaPairsFromAnnotated } from './yoruParserNative';
 
 /**
  * jiten.moe integration for the native reader (Android, or any shell without the reader extension):
@@ -36,6 +37,7 @@ export interface JitenWordInfo {
   spelling: string;
   reading: string; // kana
   states: string[];
+  furigana?: [string, string][]; // kanji run → kana, for furigana on new words
 }
 
 class JitenAuthError extends Error {}
@@ -190,6 +192,7 @@ export async function parseWithJiten(texts: string[]): Promise<string[]> {
           spelling: vocab.spelling || '',
           reading: kanaFromAnnotated(vocab.reading || ''),
           states: states.length ? states : ['new'],
+          furigana: furiganaPairsFromAnnotated(vocab.reading || ''),
         };
         words.set(key, info);
         rememberWordKey(info.spelling, info.reading, key);

@@ -63,7 +63,9 @@
   pointer-events: none;
   font-size: 0.58em;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.75) !important;
+  /* The text's own colour (readable on the white and paper themes too), a little softer. */
+  color: inherit !important;
+  opacity: 0.75;
 }
 
 :root {
