@@ -2,7 +2,6 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, MinusCircle, PlusCircle } from 'lucide-react';
 import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { isNativeReaderAvailable } from '../../utils/nativeReader';
-import { isPhoneUI } from '../../utils/platform';
 
 interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
@@ -31,7 +30,6 @@ export default function ReaderSettingsPopover({
   const hyphenation = !!settings.hyphenation;
   const es = lang === 'es';
   const nativeAvailable = isNativeReaderAvailable();
-  const isPhone = isPhoneUI();
 
   const clampSet = (key: 'fontSize' | 'lineHeight' | 'verticalPadding' | 'horizontalPadding', value: number, min: number, max: number) => {
     onSettingChange(key, Math.round(Math.max(min, Math.min(max, value)) * 100) / 100);
@@ -136,18 +134,6 @@ export default function ReaderSettingsPopover({
             es={es}
           />
           <PickerRow
-            label={es ? 'Ancho máximo' : 'Max width'}
-            value={settings.readerMaxWidth || 'none'}
-            options={[
-              { value: 'none', label: es ? 'Sin límite' : 'None' },
-              { value: '480px', label: '480px' },
-              { value: '600px', label: '600px' },
-              { value: '720px', label: '720px' },
-              { value: '900px', label: '900px' },
-            ]}
-            onChange={(value) => onSettingChange('readerMaxWidth', value)}
-          />
-          <PickerRow
             label={es ? 'Alineación del texto' : 'Text align'}
             value={textAlign}
             display={`${{
@@ -182,20 +168,6 @@ export default function ReaderSettingsPopover({
             ]}
             onChange={(value) => setDirection(value as 'auto' | 'vertical' | 'horizontal')}
           />
-          <PickerRow
-            label={es ? 'Zonas de toque' : 'Tap zones'}
-            value={settings.tapZoneMode || 'edge'}
-            options={[
-              { value: 'edge', label: es ? 'Bordes (tercios)' : 'Edges (thirds)' },
-              { value: 'kindle', label: 'Kindle (20 / 80)' },
-            ]}
-            onChange={(value) => onSettingChange('tapZoneMode', value as ReaderSettingsState['tapZoneMode'])}
-          />
-          <SwitchRow
-            label={es ? 'Invertir zonas de toque' : 'Invert tap zones'}
-            checked={!!settings.invertTapZones}
-            onChange={(value) => onSettingChange('invertTapZones', value)}
-          />
           <SwitchRow
             label={es ? 'Barra de progreso' : 'Progress line'}
             checked={!!showProgressLine}
@@ -206,57 +178,6 @@ export default function ReaderSettingsPopover({
             checked={!disableCss}
             onChange={(value) => onSettingChange('disableCss', !value)}
           />
-          <SwitchRow
-            label={es ? 'Desplazamiento automático' : 'Auto-scroll'}
-            checked={!!settings.autoScrollEnabled}
-            onChange={(value) => onSettingChange('autoScrollEnabled', value)}
-          />
-          {!!settings.autoScrollEnabled && (
-            <div className="readera-settings-row">
-              <span className="readera-settings-label">{es ? 'Velocidad de desplazamiento' : 'Scroll speed'}</span>
-              <input
-                type="range"
-                className="readera-settings-slider"
-                min={0.2}
-                max={3}
-                step={0.1}
-                value={settings.autoScrollSpeed || 1.0}
-                onChange={(e) => onSettingChange('autoScrollSpeed', Number(e.target.value))}
-                aria-label={es ? 'Velocidad de desplazamiento' : 'Scroll speed'}
-                style={{ '--fill': `${(((settings.autoScrollSpeed || 1.0) - 0.2) / 2.8) * 100}%` } as React.CSSProperties}
-              />
-            </div>
-          )}
-          {isPhone && (
-            <div className="readera-settings-row">
-              <span className="readera-settings-label">{es ? 'Brillo del lector' : 'Reader brightness'}</span>
-              <input
-                type="range"
-                className="readera-settings-slider"
-                min={20}
-                max={100}
-                step={5}
-                value={settings.readerBrightness ?? 100}
-                onChange={(e) => onSettingChange('readerBrightness', Number(e.target.value))}
-                aria-label={es ? 'Brillo del lector' : 'Reader brightness'}
-                style={{ '--fill': `${((settings.readerBrightness ?? 100) - 20) / 80 * 100}%` } as React.CSSProperties}
-              />
-            </div>
-          )}
-          {isPhone && (
-            <SwitchRow
-              label={es ? 'Teclas de volumen' : 'Volume key navigation'}
-              checked={settings.volumeKeysNavigation !== false}
-              onChange={(value) => onSettingChange('volumeKeysNavigation', value)}
-            />
-          )}
-          {isPhone && settings.volumeKeysNavigation !== false && (
-            <SwitchRow
-              label={es ? 'Invertir teclas de volumen' : 'Invert volume keys'}
-              checked={!!settings.invertVolumeKeys}
-              onChange={(value) => onSettingChange('invertVolumeKeys', value)}
-            />
-          )}
           {nativeAvailable && (
             <SwitchRow
               label={es ? 'Motor nativo (beta)' : 'Native engine (beta)'}
