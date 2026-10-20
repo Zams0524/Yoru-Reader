@@ -31,7 +31,11 @@ final class NativeReaderView extends View {
         /** direction: 1 = next page, -1 = previous page. */
         boolean canTurn(int direction);
         void onTurned(int direction);
-        void onCenterTap(float x, float y);
+        /**
+         * A tap (not a drag). edgeDirection: the page the tap zone turns to (1 next, -1 previous),
+         * or 0 in the middle of the page; the listener decides (a word under the finger wins).
+         */
+        void onTap(float x, float y, int edgeDirection);
     }
 
     private final Listener listener;
@@ -161,9 +165,8 @@ final class NativeReaderView extends View {
                     float x = e.getX();
                     // Vertical text: the left edge goes forward (the book advances to the left).
                     int leftEdge = (vertical ? 1 : -1) * (invertTaps ? -1 : 1);
-                    if (x < getWidth() / 3f) turn(leftEdge);
-                    else if (x > getWidth() * 2 / 3f) turn(-leftEdge);
-                    else listener.onCenterTap(x, e.getY());
+                    int edge = x < getWidth() / 3f ? leftEdge : x > getWidth() * 2 / 3f ? -leftEdge : 0;
+                    listener.onTap(x, e.getY(), edge);
                 }
                 return true;
             }

@@ -68,6 +68,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private int viewWidth, viewHeight;
     private int pageCount = 0, current = 0;
     private Runnable pendingOpen;
+    /** The web UI shows the dictionary popup: a tap on the page only closes it. */
+    private boolean popupOpen = false;
     /** Bumped on every open and close: work queued for an older book is dropped. */
     private volatile int generation = 0;
 
@@ -78,6 +80,20 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private int enginePages = 0;
     private String bodyPrefix = null;
     private static List<String[]> japaneseFonts;  // [path, face], found once per process
+    /** Letters of the page on screen (written on the engine thread, read on the main thread). */
+    private volatile PageLetters letters;
+
+    /** Letter boxes of one page in view px (left, top, right, bottom), in the engine's hitbox order. */
+    private static final class PageLetters {
+        final int page;
+        final float[] boxes;
+        final String[] texts;
+        PageLetters(int page, float[] boxes, String[] texts) {
+            this.page = page;
+            this.boxes = boxes;
+            this.texts = texts;
+        }
+    }
 
     /** Reader settings sent by the web UI, already in CSS px / percent / RGB. */
     private static final class Config {
@@ -244,6 +260,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             view.setVisibility(View.VISIBLE);
             pageCount = 0;
             current = 0;
+            popupOpen = false;
+            letters = null;
             pendingOpen = () -> {
                 Config c = withScreen(base);
                 engineHandler.post(() -> openOnEngine(gen, call, binary, book, c, xpath, ordinal));
@@ -313,6 +331,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             else if (ordinal > 0 && bodyPrefix != null) page = pageByXPath(bodyPrefix + "/p[" + (ordinal + 1) + "]", 0);
             final int startPage = clampPage(page);
             renderAround(gen, startPage);
+            loadLetters(gen, startPage);
             String startXPath = pageXPath(startPage);
             Log.i(TAG, "opened " + enginePages + " pages in " + (SystemClock.elapsedRealtime() - t0) + " ms, prefix " + bodyPrefix + ", start " + startXPath);
             final int pages = enginePages;
@@ -514,6 +533,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private void showPage(int gen, int page) {
         renderAround(gen, page);
         try {
+            loadLetters(gen, page);
             String xpath = pageXPath(page);
             if (gen != generation) return;
             notifyListeners("pageChanged", positionResult(page, enginePages, xpath));
@@ -545,13 +565,118 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineHandler.post(() -> showPage(gen, page));
     }
 
+    /**
+     * Letter boxes of a page (CMD_REQ_PAGE_TEXT: four floats in 0..1 screen coordinates, already
+     * rotated in vertical mode, then the letter; "\n" marks a paragraph end).
+     */
+    private void loadLetters(int gen, int page) throws IOException {
+        Config c = config;
+        if (c == null) return;
+        List<EraEngine.Item> req = new ArrayList<>();
+        req.add(new EraEngine.Item(page));
+        EraEngine.Response r = engine.request(EraEngine.CMD_REQ_PAGE_TEXT, req);
+        if (r.result != 0 || gen != generation) return;
+        int count = r.items.size() / 5;
+        float[] boxes = new float[count * 4];
+        String[] texts = new String[count];
+        for (int i = 0; i < count; i++) {
+            int at = i * 5;
+            float l = r.floatAt(at), t = r.floatAt(at + 1), rr = r.floatAt(at + 2), b = r.floatAt(at + 3);
+            boxes[i * 4] = Math.min(l, rr) * c.width;
+            boxes[i * 4 + 1] = Math.min(t, b) * c.height;
+            boxes[i * 4 + 2] = Math.max(l, rr) * c.width;
+            boxes[i * 4 + 3] = Math.max(t, b) * c.height;
+            texts[i] = r.stringAt(at + 4);
+        }
+        letters = new PageLetters(page, boxes, texts);
+    }
+
+    /** Index of the letter under the point on the page on screen, or -1. */
+    private int letterAt(float x, float y) {
+        PageLetters page = letters;
+        if (page == null || page.page != current) return -1;
+        float slop = 4 * getContext().getResources().getDisplayMetrics().density;
+        int best = -1;
+        float bestArea = 0;
+        for (int i = 0; i < page.texts.length; i++) {
+            String text = page.texts[i];
+            // trim() also skips the "\n" paragraph-end markers.
+            if (text.trim().isEmpty()) continue;
+            float l = page.boxes[i * 4] - slop, t = page.boxes[i * 4 + 1] - slop;
+            float r = page.boxes[i * 4 + 2] + slop, b = page.boxes[i * 4 + 3] + slop;
+            if (x < l || x > r || y < t || y > b) continue;
+            // Furigana boxes overlap the base text: the larger letter wins.
+            float area = (r - l) * (b - t);
+            if (area > bestArea) {
+                best = i;
+                bestArea = area;
+            }
+        }
+        return best;
+    }
+
     @Override
-    public void onCenterTap(float x, float y) {
+    public void onTap(float x, float y, int edgeDirection) {
         float density = getContext().getResources().getDisplayMetrics().density;
+        if (popupOpen) {
+            JSObject event = new JSObject();
+            event.put("x", x / density);
+            event.put("y", y / density);
+            event.put("closePopup", true);
+            notifyListeners("tap", event);
+            return;
+        }
+        int letter = letterAt(x, y);
+        if (letter >= 0) {
+            lookUpLetter(letter);
+            return;
+        }
+        if (edgeDirection != 0) {
+            view.turn(edgeDirection);
+            return;
+        }
         JSObject event = new JSObject();
         event.put("x", x / density);
         event.put("y", y / density);
         notifyListeners("tap", event);
+    }
+
+    /** Word tap: the xpath of the letter goes to the web UI, which finds the word and opens the dictionary. */
+    private void lookUpLetter(int index) {
+        PageLetters page = letters;
+        float density = getContext().getResources().getDisplayMetrics().density;
+        final int gen = generation;
+        engineHandler.post(() -> {
+            if (gen != generation) return;
+            try {
+                List<EraEngine.Item> req = new ArrayList<>();
+                req.add(EraEngine.Item.str(page.page + ":" + index));
+                EraEngine.Response r = engine.request(EraEngine.CMD_REQ_XPATH_BY_RECT_ID, req);
+                String xpath = r.result == 0 ? r.stringAt(0) : "";
+                if (xpath.isEmpty() || xpath.equals("-") || gen != generation) return;
+                JSObject event = new JSObject();
+                event.put("xpath", xpath);
+                event.put("ordinal", ordinalOf(xpath));
+                event.put("letter", page.texts[index]);
+                event.put("left", page.boxes[index * 4] / density);
+                event.put("top", page.boxes[index * 4 + 1] / density);
+                event.put("right", page.boxes[index * 4 + 2] / density);
+                event.put("bottom", page.boxes[index * 4 + 3] / density);
+                notifyListeners("word", event);
+            } catch (IOException e) {
+                engineFailed(gen, e);
+            }
+        });
+    }
+
+    /** While the dictionary popup is open, a tap on the page closes it instead of acting. */
+    @PluginMethod
+    public void setPopupOpen(PluginCall call) {
+        boolean open = Boolean.TRUE.equals(call.getBoolean("open", false));
+        main.post(() -> {
+            popupOpen = open;
+            call.resolve();
+        });
     }
 
     /** New reader settings (any subset): the layout is redone and the current position kept. */
@@ -666,6 +791,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         main.post(() -> {
             generation++;
             pendingOpen = null;
+            popupOpen = false;
+            letters = null;
             pageCount = 0;
             current = 0;
             if (view != null) {

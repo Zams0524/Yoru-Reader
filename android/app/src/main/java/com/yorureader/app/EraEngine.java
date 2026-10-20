@@ -37,12 +37,15 @@ final class EraEngine {
     static final int CMD_REQ_OPEN = 2;
     static final int CMD_REQ_QUIT = 4;
     static final int CMD_REQ_PAGE_RENDER = 10;
+    static final int CMD_REQ_PAGE_TEXT = 14;
     static final int CMD_REQ_SET_FONT_CONFIG = 18;
     static final int CMD_REQ_SET_CONFIG = 20;
     static final int CMD_REQ_CRE_PAGE_BY_XPATH = 24;
     static final int CMD_REQ_CRE_PAGE_XPATH = 26;
+    static final int CMD_REQ_XPATH_BY_RECT_ID = 46;
     static final int CMD_REQ_FONT_NAMES = 70;
     static final int TYPE_FIX_INT = 3;
+    static final int TYPE_FIX_FLOAT = 4;
     static final int TYPE_ARRAY = 5;
     // orebridge/include/openreadera.h
     static final int DOC_FORMAT_HTML = 13;
@@ -91,6 +94,9 @@ final class EraEngine {
         final List<Item> items = new ArrayList<>();
         int intAt(int index, int fallback) {
             return index < items.size() && items.get(index).type == TYPE_FIX_INT ? items.get(index).value : fallback;
+        }
+        float floatAt(int index) {
+            return index < items.size() ? Float.intBitsToFloat(items.get(index).value) : 0f;
         }
         String stringAt(int index) {
             return index < items.size() ? items.get(index).asString() : "";

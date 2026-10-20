@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReaderSettingsState } from '../../hooks/useReaderSettings';
-import { computeSections, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
+import { initTokenizer } from '../../utils/japanese';
+import { computeSections, prepareLineWords, renderLineWords, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
 import {
   NativeReader,
+  baseTextNodes,
   blockOfParagraph,
   cssColorToInt,
   ensureNativeBook,
@@ -11,6 +13,8 @@ import {
   saveNativePosition,
   type NativePosition,
   type NativeReaderSettings,
+  type NativeWordHit,
+  xpathToTextOffset,
 } from '../../utils/nativeReader';
 
 interface Props {
@@ -21,8 +25,13 @@ interface Props {
   /** The reader's root element: what is shown inside it (bars, panels) is cut out of the native page. */
   rootRef: React.RefObject<HTMLElement>;
   onCharsUpdate?: (payload: CharsUpdatePayload) => void;
-  /** Tap in the middle of the page (shows or hides the bars). */
-  onTap?: () => void;
+  /** Tap in the middle of the page (shows or hides the bars), or anywhere while the popup is open. */
+  onTap?: (closePopup: boolean) => void;
+  /** A word was tapped: its span (rendered off screen like the WebView reader's) and box on screen. */
+  onWordTap?: (wordSpan: HTMLElement, rect: DOMRect) => void;
+  /** The dictionary popup is open: taps on the page close it. */
+  popupOpen?: boolean;
+  wordStatuses?: Record<string, string>;
   onPageTurn?: () => void;
   /** Chapter index (table of contents). */
   targetSection?: number | null;
@@ -86,6 +95,9 @@ export default function NativeReaderHost({
   rootRef,
   onCharsUpdate,
   onTap,
+  onWordTap,
+  popupOpen = false,
+  wordStatuses = {},
   onPageTurn,
   targetSection,
   targetParagraphId,
@@ -98,8 +110,11 @@ export default function NativeReaderHost({
   const [ready, setReady] = useState(false);
   const positionRef = useRef<NativePosition | null>(null);
   const sectionRef = useRef(0);
-  const callbacks = useRef({ onCharsUpdate, onTap, onPageTurn, onError });
-  callbacks.current = { onCharsUpdate, onTap, onPageTurn, onError };
+  const lookupRef = useRef<HTMLDivElement>(null);
+  const callbacks = useRef({ onCharsUpdate, onTap, onWordTap, onPageTurn, onError });
+  callbacks.current = { onCharsUpdate, onTap, onWordTap, onPageTurn, onError };
+  const wordStatusesRef = useRef(wordStatuses);
+  wordStatusesRef.current = wordStatuses;
 
   const settings = nativeSettings(readerSettings, colors);
   const settingsJson = JSON.stringify(settings);
@@ -123,6 +138,42 @@ export default function NativeReaderHost({
   };
   const reportRef = useRef(report);
   reportRef.current = report;
+
+  // Tapped letter -> the word span around it, in the paragraph rendered as the WebView reader does.
+  const findWord = async (hit: NativeWordHit) => {
+    const line = exported.blockLines[hit.ordinal];
+    const blockHtml = exported.blocks[hit.ordinal];
+    if (line === undefined || blockHtml === undefined) return;
+    await Promise.all([tokenizerReady, prepareLineWords(line)]);
+    const container = lookupRef.current;
+    if (!container) return;
+    let offset = xpathToTextOffset(blockHtml, hit.xpath);
+    container.innerHTML = `<p class="chapter-content">${renderLineWords(line, wordStatusesRef.current)}</p>`;
+    const texts = baseTextNodes(container);
+    const plain = texts.map((t) => t.data).join('');
+    // The engine's offset can be off by a few characters (whitespace): trust the tapped letter.
+    if (hit.letter && plain[offset] !== hit.letter) {
+      let best = -1;
+      for (let i = plain.indexOf(hit.letter); i >= 0; i = plain.indexOf(hit.letter, i + 1)) {
+        if (best < 0 || Math.abs(i - offset) < Math.abs(best - offset)) best = i;
+      }
+      if (best >= 0) offset = best;
+    }
+    if (offset < 0) return;
+    let total = 0;
+    for (const text of texts) {
+      if (offset < total + text.length) {
+        const span = text.parentElement?.closest('[data-word], [wordId], .jiten-word') as HTMLElement | null;
+        if (span) callbacks.current.onWordTap?.(span, new DOMRect(hit.left, hit.top, hit.right - hit.left, hit.bottom - hit.top));
+        return;
+      }
+      total += text.length;
+    }
+  };
+  // The local parser (Kuromoji) loads once; until then words would be split by script only.
+  const [tokenizerReady] = useState(() => initTokenizer().catch(() => undefined));
+  const findWordRef = useRef(findWord);
+  findWordRef.current = findWord;
   const appliedSettingsRef = useRef('');
 
   // Open the book (export it first if this version is not on the device yet), close on leaving.
@@ -133,7 +184,8 @@ export default function NativeReaderHost({
         reportRef.current(position);
         callbacks.current.onPageTurn?.();
       }),
-      NativeReader.addListener('tap', () => callbacks.current.onTap?.()),
+      NativeReader.addListener('tap', ({ closePopup }) => callbacks.current.onTap?.(!!closePopup)),
+      NativeReader.addListener('word', (hit) => { void findWordRef.current(hit); }),
       NativeReader.addListener('error', ({ message }) => callbacks.current.onError?.(message)),
     ];
     (async () => {
@@ -163,6 +215,10 @@ export default function NativeReaderHost({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exported]);
+
+  useEffect(() => {
+    if (ready) void NativeReader.setPopupOpen({ open: popupOpen }).catch(() => {});
+  }, [ready, popupOpen]);
 
   // Settings changes (font size, margins, theme, direction): relayout, keeping the position.
   useEffect(() => {
@@ -271,7 +327,10 @@ export default function NativeReaderHost({
     <div
       ref={placeholderRef}
       className="native-reader-page"
-      style={{ flex: 1, width: '100%', height: '100%', background: colors.bg }}
-    />
+      style={{ flex: 1, width: '100%', height: '100%', background: colors.bg, position: 'relative', overflow: 'hidden' }}
+    >
+      {/* Off-screen copy of the tapped paragraph: the dictionary reads the word from its spans. */}
+      <div ref={lookupRef} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 600, visibility: 'hidden' }} />
+    </div>
   );
 }

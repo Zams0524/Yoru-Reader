@@ -617,7 +617,8 @@ export default function Reader({
     }
   }, []);
 
-  const triggerWordLookup = useCallback(async (wordSpan: HTMLElement) => {
+  // rectOverride: where the word is on screen when the span is not (native reader).
+  const triggerWordLookup = useCallback(async (wordSpan: HTMLElement, rectOverride?: DOMRect) => {
     const wordId = wordSpan.getAttribute('data-word') || wordSpan.getAttribute('wordId') || wordSpan.innerText;
     if (!wordId) return;
     
@@ -633,7 +634,7 @@ export default function Reader({
       return;
     }
     
-    const rect = wordSpan.getBoundingClientRect();
+    const rect = rectOverride || wordSpan.getBoundingClientRect();
     const requestId = ++dictionaryLookupRequestRef.current;
     const x = Math.max(10, Math.min(window.innerWidth - 390, rect.left));
     const top = rect.top;
@@ -2170,7 +2171,13 @@ export default function Reader({
   const nativeAvailable = useMemo(() => isNativeReaderAvailable(), []);
   const [nativeFailed, setNativeFailed] = useState(false);
   const useNativeEngine = nativeAvailable && readerSettings.nativeEngine !== false && !nativeFailed;
-  const handleNativeTap = useCallback(() => setIsHeaderVisible(prev => !prev), []);
+  const handleNativeTap = useCallback((closePopup: boolean) => {
+    if (closePopup) setSelectedWord(null);
+    else setIsHeaderVisible(prev => !prev);
+  }, []);
+  const handleNativeWordTap = useCallback((wordSpan: HTMLElement, rect: DOMRect) => {
+    void triggerWordLookup(wordSpan, rect);
+  }, [triggerWordLookup]);
   const handleNativeError = useCallback((message: string) => {
     console.warn('Native reader failed, using the WebView reader:', message);
     setNativeFailed(true);
@@ -2377,6 +2384,9 @@ export default function Reader({
           targetCharPosition={targetCharPosition}
           onCharsUpdate={handleCharsUpdate}
           onTap={handleNativeTap}
+          onWordTap={handleNativeWordTap}
+          popupOpen={Boolean(selectedWord)}
+          wordStatuses={wordStatuses}
           onPageTurn={handlePageTurn}
           onError={handleNativeError}
         />

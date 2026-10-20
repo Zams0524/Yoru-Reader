@@ -21,6 +21,17 @@ export interface NativeReaderSettings {
   invertTaps: boolean;
 }
 
+/** A tap on a letter: its engine xpath, block and box on screen (CSS px). */
+export interface NativeWordHit {
+  xpath: string;
+  ordinal: number;
+  letter: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export interface NativePosition {
   page: number;
   pages: number;
@@ -38,9 +49,11 @@ interface NativeReaderPlugin {
   goTo(options: { ordinal?: number; page?: number }): Promise<void>;
   turnPage(options: { direction: 1 | -1 }): Promise<void>;
   setHoles(options: { rects: number[][] }): Promise<void>;
+  setPopupOpen(options: { open: boolean }): Promise<void>;
   close(): Promise<void>;
   addListener(event: 'pageChanged', listener: (position: NativePosition) => void): Promise<PluginListenerHandle>;
-  addListener(event: 'tap', listener: (point: { x: number; y: number }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'tap', listener: (point: { x: number; y: number; closePopup?: boolean }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'word', listener: (hit: NativeWordHit) => void): Promise<PluginListenerHandle>;
   addListener(event: 'error', listener: (error: { message: string }) => void): Promise<PluginListenerHandle>;
 }
 
@@ -59,6 +72,9 @@ export interface NativeBookExport {
   key: string;
   html: string;
   images: { name: string; data: string }[];
+  /** HTML inside each block's <p>, and the chapter line it comes from. */
+  blocks: string[];
+  blockLines: string[];
   /** Yoru paragraph index of each block (headings get the paragraph that follows them). */
   blockParagraph: number[];
   /** Characters before each paragraph (the `characumm` attribute of the WebView reader). */
@@ -123,6 +139,8 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
   };
 
   const blocks: string[] = [];
+  const blockHtml: string[] = [];
+  const blockLines: string[] = [];
   const blockParagraph: number[] = [];
   const paragraphChars: number[] = [];
   let paragraphId = 0;
@@ -149,6 +167,8 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
         inner = sanitizeJapaneseText(escapeHtml(line)).replace(/\{img:([^{}]+)\}/gi, (_m, src) => imgTag(src));
       }
       blocks.push(`<p${classes.length ? ` class="${classes.join(' ')}"` : ''}>${inner}</p>`);
+      blockHtml.push(inner);
+      blockLines.push(line);
       // Headings have no paragraph index of their own (renderSectionContent).
       blockParagraph.push(paragraphId);
       if (!isHeading) {
@@ -180,6 +200,8 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
     key: `${id}-${hashBook(book)}-v${EXPORT_VERSION}`,
     html,
     images,
+    blocks: blockHtml,
+    blockLines,
     blockParagraph,
     paragraphChars,
     totalChars: charAccum,
@@ -222,6 +244,62 @@ export function blockOfParagraph(exported: NativeBookExport, paragraph: number):
     }
   }
   return Math.max(0, found);
+}
+
+const isFurigana = (node: Node) => !!(node.parentElement && node.parentElement.closest('rt, rp'));
+
+/** Text nodes of an element in reading order, without furigana (<rt>/<rp>). */
+export function baseTextNodes(root: Node): Text[] {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!isFurigana(node)) nodes.push(node as Text);
+  }
+  return nodes;
+}
+
+/**
+ * Character offset, in the block's text without furigana, of an engine xpath inside the block
+ * ("/html/body/p[7]/ruby[2]/text().0", "/html/body/p[7]/text()[3].12"). A point inside furigana
+ * counts as the start of its ruby base. Returns -1 if the path does not match the block.
+ */
+export function xpathToTextOffset(blockHtml: string, xpath: string): number {
+  const match = /\/body\/p(?:\[\d+\])?((?:\/[^/]+)*)$/.exec(xpath);
+  if (!match) return -1;
+  let tail = match[1] || '';
+  let offset = 0;
+  const offsetMatch = /\.(\d+)$/.exec(tail);
+  if (offsetMatch) {
+    offset = Number(offsetMatch[1]);
+    tail = tail.slice(0, -offsetMatch[0].length);
+  }
+  const block = document.createElement('p');
+  block.innerHTML = blockHtml;
+  let node: Node = block;
+  for (const step of tail.split('/').filter(Boolean)) {
+    const stepMatch = /^(text\(\)|[A-Za-z][A-Za-z0-9]*)(?:\[(\d+)\])?$/.exec(step);
+    if (!stepMatch) return -1;
+    const wantText = stepMatch[1] === 'text()';
+    const candidates = Array.from(node.childNodes).filter((child) => wantText
+      ? child.nodeType === Node.TEXT_NODE
+      : child.nodeType === Node.ELEMENT_NODE && (child as Element).tagName.toLowerCase() === stepMatch[1].toLowerCase());
+    const next = candidates[(Number(stepMatch[2]) || 1) - 1];
+    if (!next) return -1;
+    node = next;
+  }
+  if (node.nodeType !== Node.TEXT_NODE) offset = 0;
+  // Furigana: go to the start of the ruby it belongs to.
+  if (isFurigana(node)) {
+    node = node.parentElement!.closest('ruby') || node;
+    offset = 0;
+  }
+  let total = 0;
+  for (const text of baseTextNodes(block)) {
+    if (text === node) return total + Math.min(offset, text.length);
+    if (node.nodeType === Node.ELEMENT_NODE && node.contains(text)) return total;
+    total += text.length;
+  }
+  return -1;
 }
 
 /** CSS colour (hex, rgb()) as 0xRRGGBB. */

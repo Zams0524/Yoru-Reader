@@ -174,6 +174,33 @@ function renderSectionContent(
 }
 
 /**
+ * One text line of a chapter as the WebView reader renders its words (Jiten's parse when it is on
+ * and cached, the local parser otherwise), without the paragraph element. The native reader uses
+ * it to find the tapped word.
+ */
+export function renderLineWords(line: string, wordStatuses: Record<string, string>): string {
+  const heading = /^\{h[123]:/.test(line) && line.endsWith('}');
+  if (heading) return tokenizeJapaneseText(processRuby(line.substring(4, line.length - 1)), wordStatuses);
+  const processed = sanitizeJapaneseText(line).replace(/\{img:[^{}]*\}/gi, '');
+  const jitenText = isJitenParserEnabled() ? jitenPlainText(processed) : '';
+  const jitenTokens = jitenText ? getCachedJitenTokens(jitenText) : undefined;
+  return jitenTokens
+    ? renderJitenParagraph(processed, jitenTokens, getJitenWord)
+    : tokenizeJapaneseText(processed, wordStatuses);
+}
+
+/** With the Jiten parser on, waits (up to a few seconds) for its parse of the line, as the WebView reader shows it. */
+export async function prepareLineWords(line: string): Promise<void> {
+  if (!isJitenParserEnabled() || (/^\{h[123]:/.test(line) && line.endsWith('}'))) return;
+  const jitenText = jitenPlainText(sanitizeJapaneseText(line).replace(/\{img:[^{}]*\}/gi, ''));
+  if (!jitenText.trim() || getCachedJitenTokens(jitenText)) return;
+  await Promise.race([
+    parseWithJiten([jitenText]).catch(() => []),
+    new Promise((resolve) => window.setTimeout(resolve, 3000)),
+  ]);
+}
+
+/**
  * Splits the book into sections of about 3000 characters (chapter boundaries kept) and numbers
  * its paragraphs the way renderSectionContent does (the `index` attribute of each block).
  */

@@ -180,7 +180,7 @@ export default function ReaderSettingsPopover({
           />
           {nativeAvailable && (
             <SwitchRow
-              label={es ? 'Motor nativo (beta, sin diccionario aún)' : 'Native engine (beta, no dictionary yet)'}
+              label={es ? 'Motor nativo (beta)' : 'Native engine (beta)'}
               checked={settings.nativeEngine !== false}
               onChange={(value) => onSettingChange('nativeEngine', value)}
             />
