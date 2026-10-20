@@ -12,6 +12,15 @@ type AnkiCardInfo = {
   modelName?: string;
   interval?: number;
   reps?: number;
+  lapses?: number;
+  /** Anki's ease factor * 1000 (e.g. 2500 = 250%). */
+  factor?: number;
+  /** Anki card type: 0 New, 1 Learning, 2 Review, 3 Relearning. */
+  type?: number;
+  /** New: queue position. Learning/Relearning: next-review time, epoch seconds. Review: days since the collection was created. */
+  due?: number;
+  /** Last-modified time, epoch seconds (used as an approximate last-review time). */
+  mod?: number;
   fields?: Record<string, AnkiFieldValue>;
 };
 
@@ -355,7 +364,7 @@ export default function VocabularyModal({
       if (!infoData.result?.length) throw new Error(lang === 'es' ? 'Anki no devolvió los datos de las tarjetas.' : 'Anki returned no card details.');
 
       setProgressMsg(lang === 'es' ? 'Procesando y extrayendo vocabulario...' : 'Processing and extracting vocabulary...');
-      const wordsMap: Record<string, { interval: number; reps: number; deck: string }> = {};
+      const wordsMap: Record<string, { interval: number; reps: number; lapses: number; factor: number; type: number; due?: number; mod?: number; deck: string }> = {};
       const allFieldNames = Array.from(new Set(infoData.result.flatMap(card => Object.keys(card.fields || {}))));
       const recommendedWordField = preferredAnkiField(allFieldNames, ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression']);
       const hasDedicatedVocabularyField = allFieldNames.some(name => /vocabulary|word|kanji/i.test(name));
@@ -387,6 +396,11 @@ export default function VocabularyModal({
           wordsMap[word] = {
             interval,
             reps: card.reps || 0,
+            lapses: card.lapses || 0,
+            factor: card.factor || 2500,
+            type: card.type ?? (interval > 0 ? 2 : 0),
+            due: card.due,
+            mod: card.mod,
             deck: card.deckName || cardDeck
           };
         }
@@ -507,24 +521,44 @@ export default function VocabularyModal({
         const updated = { ...current };
         
         words.forEach(w => {
-          updated[w] = 'known';
-          
+          // 'known' would hide the word from the reader and exclude it from SRS review
+          // (see SrsReviewModal/Reader): imported Anki cards still need both, regardless
+          // of how mature they are in Anki.
+          updated[w] = 'learning';
+
           const details = wordsMap[w];
           if (details) {
-            let state = 0;
-            if (details.interval > 0) {
-              state = 2; // Review
+            // Anki card type maps 1:1 to FSRS state: 0 New, 1 Learning, 2 Review, 3 Relearning.
+            const state = [0, 1, 2, 3].includes(details.type) ? details.type : (details.interval > 0 ? 2 : 0);
+
+            let dueDate: Date | null = null;
+            if ((state === 1 || state === 3) && details.due) {
+              // Learning/Relearning: AnkiConnect's `due` is the next-review time, in epoch seconds.
+              dueDate = new Date(details.due * 1000);
+            } else if (state === 2) {
+              // Review: AnkiConnect's raw `due` for review cards is days since the collection was
+              // created, which can't be resolved to a calendar date without the collection's
+              // creation time. Approximate instead from the last review (`mod`, epoch seconds)
+              // plus the interval, rather than always treating the card as due from today.
+              const lastReviewMs = details.mod ? details.mod * 1000 : Date.now();
+              dueDate = new Date(lastReviewMs + 1000 * 60 * 60 * 24 * Math.max(0, details.interval || 0));
             }
-            
-            const cardData = {
-              state: state,
-              reps: details.reps || 1,
+
+            const cardData: Record<string, any> = {
+              state,
+              reps: details.reps || 0,
+              lapses: details.lapses || 0,
+              interval: details.interval || 0,
               scheduled_days: details.interval || 0,
-              dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * (details.interval || 1)).toISOString(),
+              ease: Math.max(1.3, Math.min(5, (details.factor || 2500) / 1000)),
               source: details.deck,
               word: w
             };
-            
+            if (dueDate) {
+              cardData.dueDate = dueDate.toISOString();
+              if (details.mod) cardData.lastReview = new Date(details.mod * 1000).toISOString();
+            }
+
             db.saveSrsCard(w, cardData);
           }
         });

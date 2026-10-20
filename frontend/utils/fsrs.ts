@@ -33,6 +33,28 @@ export const getPreviousSrsState = (card: any): State => {
   return isNewSrsCard(card) ? State.New : State.Review;
 };
 
+/** Anki's "Next day starts at" rollover hour, used for Review-state due dates. */
+const ROLLOVER_HOUR = 4;
+
+/** The calendar day a date belongs to for scheduling purposes, with the day starting at ROLLOVER_HOUR local time. */
+function studyDayKey(date: Date): string {
+  const shifted = new Date(date.getTime());
+  if (shifted.getHours() < ROLLOVER_HOUR) shifted.setDate(shifted.getDate() - 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Whether a card's due date has arrived. Review-state cards (interval >= 1 day) are due by
+ * calendar day, like Anki, with the day starting at 4 AM local time: a card due today is ready
+ * from 4 AM, not only at its exact minute. Learning/Relearning/New cards compare the exact
+ * timestamp, since their steps are minutes/hours, not days.
+ */
+export const isCardDue = (dueDate: Date | null, now: Date, state: State | undefined): boolean => {
+  if (!dueDate) return true;
+  if (state === State.Review) return studyDayKey(dueDate) <= studyDayKey(now);
+  return dueDate.getTime() <= now.getTime();
+};
+
 export interface FSRSCard extends LibraryCard {
   // `ts-fsrs` stores this scheduling step on the card; older saved cards do not.
   learning_steps: number;

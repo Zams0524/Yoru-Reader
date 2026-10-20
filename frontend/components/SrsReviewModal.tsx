@@ -3,7 +3,7 @@ import { X, Volume2, Eye, Clock, LogOut, Menu, Undo2, Ban, Star, Settings, Chevr
 import { db } from '../utils/db';
 import { lookupWord } from '../utils/dictionary';
 import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
-import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard } from '../utils/fsrs';
+import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard, isCardDue } from '../utils/fsrs';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
@@ -217,15 +217,17 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     [currentReviewWord, currentReviewCardKey, fsrs],
   );
 
-  // Learning/relearning steps re-enter the queue only when their scheduled time arrives.
+  // Learning/relearning steps from before this session re-enter the queue once they're due, or
+  // immediately once nothing else is queued and they fall within Anki's 20-minute Learn Ahead
+  // Limit, instead of showing "zero reviews due" while a card is a few minutes from ready.
   useEffect(() => {
     if (!isOpen || pendingCards.length === 0) return;
-    const nextDueAt = Math.min(...pendingCards.map(card => new Date(card.dueAt).getTime()).filter(Number.isFinite));
-    if (!Number.isFinite(nextDueAt)) return;
-    const timer = setTimeout(() => {
-      const now = Date.now();
-      const ready = pendingCards.filter(card => new Date(card.dueAt).getTime() <= now);
-      if (ready.length === 0) return;
+    const LEARN_AHEAD_MS = 20 * 60 * 1000;
+    const now = Date.now();
+    const threshold = dueCards.length === 0 ? now + LEARN_AHEAD_MS : now;
+
+    const ready = pendingCards.filter(card => new Date(card.dueAt).getTime() <= threshold);
+    if (ready.length > 0) {
       const readyWords = new Set(ready.map(card => card.word));
       setPendingCards(current => current.filter(card => !readyWords.has(card.word)));
       const returningWords = ready.map(card => card.word).filter(word => !dueCards.includes(word));
@@ -233,7 +235,18 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       setSessionCount(count => count + returningWords.length);
       setIsFinished(false);
       setShowAnswer(false);
-    }, Math.max(0, nextDueAt - Date.now()));
+      return;
+    }
+
+    // Re-check once the next card becomes due (or, with an empty queue, enters the Ahead window).
+    const nextAt = Math.min(...pendingCards.map(card => {
+      const dueAt = new Date(card.dueAt).getTime();
+      return dueCards.length === 0 ? dueAt - LEARN_AHEAD_MS : dueAt;
+    }).filter(Number.isFinite));
+    if (!Number.isFinite(nextAt)) return;
+    const timer = setTimeout(() => {
+      setPendingCards(current => [...current]); // force a re-run of this effect with the current time
+    }, Math.max(0, nextAt - Date.now()));
     return () => clearTimeout(timer);
   }, [isOpen, pendingCards, dueCards]);
 
@@ -387,7 +400,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     let due = learningWords.filter(word => {
       const card = srsData[word];
       const dueDate = getCardDue(card);
-      return !dueDate || dueDate <= now;
+      return isCardDue(dueDate, now, card?.state);
     });
     const nextDay = now.getTime() + 24 * 60 * 60 * 1000;
     const pendingLearning = learningWords.flatMap(word => {
@@ -698,9 +711,10 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     const isLearningStep = [State.Learning, State.Relearning].includes(updatedCard.state)
       && new Date(updatedCard.due).getTime() > Date.now();
     if (isLearningStep) {
-      const dueAt = updatedCard.due instanceof Date ? updatedCard.due.toISOString() : new Date(updatedCard.due).toISOString();
-      setDueCards(prev => prev.slice(1));
-      setPendingCards(prev => [...prev.filter(card => card.word !== word), { word, dueAt }]);
+      // Like Anki: a card still in a learning/relearning step stays in the active session
+      // queue (moved to the end) instead of being pulled out to wait for its real due time.
+      // It only leaves dueCards for good once it graduates (Good/Easy on the last step).
+      setDueCards(prev => [...prev.slice(1), word]);
       setCurrentIndex(prev => prev + 1);
       setSessionCount(prev => prev + 1);
       setShowAnswer(false);
