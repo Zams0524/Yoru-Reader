@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, MinusCircle, PlusCircle } from 'lucide-react';
 import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { isNativeReaderAvailable } from '../../utils/nativeReader';
+import { isPhoneUI } from '../../utils/platform';
 
 interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
@@ -30,6 +31,7 @@ export default function ReaderSettingsPopover({
   const hyphenation = !!settings.hyphenation;
   const es = lang === 'es';
   const nativeAvailable = isNativeReaderAvailable();
+  const isPhone = isPhoneUI();
 
   const clampSet = (key: 'fontSize' | 'lineHeight' | 'verticalPadding' | 'horizontalPadding', value: number, min: number, max: number) => {
     onSettingChange(key, Math.round(Math.max(min, Math.min(max, value)) * 100) / 100);
@@ -192,6 +194,36 @@ export default function ReaderSettingsPopover({
             checked={!disableCss}
             onChange={(value) => onSettingChange('disableCss', !value)}
           />
+          {isPhone && (
+            <div className="readera-settings-row">
+              <span className="readera-settings-label">{es ? 'Brillo del lector' : 'Reader brightness'}</span>
+              <input
+                type="range"
+                className="readera-settings-slider"
+                min={20}
+                max={100}
+                step={5}
+                value={settings.readerBrightness ?? 100}
+                onChange={(e) => onSettingChange('readerBrightness', Number(e.target.value))}
+                aria-label={es ? 'Brillo del lector' : 'Reader brightness'}
+                style={{ '--fill': `${((settings.readerBrightness ?? 100) - 20) / 80 * 100}%` } as React.CSSProperties}
+              />
+            </div>
+          )}
+          {isPhone && (
+            <SwitchRow
+              label={es ? 'Teclas de volumen' : 'Volume key navigation'}
+              checked={settings.volumeKeysNavigation !== false}
+              onChange={(value) => onSettingChange('volumeKeysNavigation', value)}
+            />
+          )}
+          {isPhone && settings.volumeKeysNavigation !== false && (
+            <SwitchRow
+              label={es ? 'Invertir teclas de volumen' : 'Invert volume keys'}
+              checked={!!settings.invertVolumeKeys}
+              onChange={(value) => onSettingChange('invertVolumeKeys', value)}
+            />
+          )}
           {nativeAvailable && (
             <SwitchRow
               label={es ? 'Motor nativo (beta)' : 'Native engine (beta)'}
