@@ -26,6 +26,9 @@ export interface NativeWordHit {
   xpath: string;
   ordinal: number;
   letter: string;
+  /** Letter index on its page, for highlight(). */
+  index: number;
+  page: number;
   left: number;
   top: number;
   right: number;
@@ -42,6 +45,7 @@ export interface NativePosition {
 
 interface NativeReaderPlugin {
   hasBook(options: { key: string }): Promise<{ exists: boolean }>;
+  highlight(options: { page: number; index: number; before: number; after: number; color: number }): Promise<void>;
   writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean }): Promise<void>;
   writeBookImage(options: { key: string; name: string; data: string }): Promise<void>;
   open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number }): Promise<NativePosition>;
@@ -64,8 +68,11 @@ export function isNativeReaderAvailable(): boolean {
   return Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('NativeReader');
 }
 
-/** Bumped when the exported HTML changes, so books are exported again. */
-const EXPORT_VERSION = 1;
+/**
+ * Bumped when the exported book changes, so books are exported again (and saved engine xpaths,
+ * which depend on the document's structure, are dropped). v2: XHTML packed as an EPUB, for images.
+ */
+const EXPORT_VERSION = 2;
 const CHUNK_CHARS = 512 * 1024;
 
 export interface NativeBookExport {
@@ -82,8 +89,12 @@ export interface NativeBookExport {
   totalChars: number;
 }
 
+// eslint-disable-next-line no-control-regex
+const XML_INVALID = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
+
+/** Text for XHTML: markup characters escaped, characters XML does not allow removed. */
 function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text.replace(XML_INVALID, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function hashBook(book: Book): string {
@@ -181,7 +192,9 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
   paragraphChars[paragraphId] = charAccum;
 
   const title = escapeHtml(book.title || '');
-  const html = '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/>'
+  // XHTML: the plugin packs it as an EPUB (the engine loads images only from a container).
+  const html = '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+    + '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/>'
     + `<title>${title}</title><style>`
     + 'body{margin:0;padding:0}'
     + 'p{margin:0;text-indent:0}'
@@ -316,7 +329,7 @@ export function cssColorToInt(color: string, fallback: number): number {
 }
 
 /** The exact page of a book (xpath) is kept per device; the shared progress only has the paragraph. */
-const POSITION_KEY = 'native-reader:position:';
+const POSITION_KEY = `native-reader:position:v${EXPORT_VERSION}:`;
 
 export function loadNativePosition(bookId: string): { xpath: string; paragraph: number } | null {
   try {

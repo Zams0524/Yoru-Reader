@@ -21,7 +21,7 @@ interface Props {
   apiRef?: React.MutableRefObject<ReaderEngineApi | null>;
   book: Book;
   readerSettings: ReaderSettingsState;
-  colors: { bg: string; textMain: string };
+  colors: { bg: string; textMain: string; accent?: string };
   /** The reader's root element: what is shown inside it (bars, panels) is cut out of the native page. */
   rootRef: React.RefObject<HTMLElement>;
   onCharsUpdate?: (payload: CharsUpdatePayload) => void;
@@ -164,12 +164,35 @@ export default function NativeReaderHost({
     for (const text of texts) {
       if (offset < total + text.length) {
         const span = text.parentElement?.closest('[data-word], [wordId], .jiten-word') as HTMLElement | null;
-        if (span) callbacks.current.onWordTap?.(span, new DOMRect(hit.left, hit.top, hit.right - hit.left, hit.bottom - hit.top));
+        if (!span) return;
+        // Letters of the word before and after the tapped one, for the highlight on the page.
+        let start = -1;
+        let end = -1;
+        let at = 0;
+        for (const t of texts) {
+          if (span.contains(t)) {
+            if (start < 0) start = at;
+            end = at + t.length;
+          }
+          at += t.length;
+        }
+        void NativeReader.highlight({
+          page: hit.page,
+          index: hit.index,
+          before: Math.max(0, offset - start),
+          after: Math.max(0, end - offset - 1),
+          color: highlightColorRef.current,
+        }).catch(() => {});
+        callbacks.current.onWordTap?.(span, new DOMRect(hit.left, hit.top, hit.right - hit.left, hit.bottom - hit.top));
         return;
       }
       total += text.length;
     }
   };
+  // Accent at about 35 % opacity (ARGB), behind the looked-up word.
+  const highlightColor = useMemo(() => ((0x5a << 24) | cssColorToInt(colors.accent || '#ffe000', 0xffe000)) >>> 0, [colors.accent]);
+  const highlightColorRef = useRef(highlightColor);
+  highlightColorRef.current = highlightColor;
   // The local parser (Kuromoji) loads once; until then words would be split by script only.
   const [tokenizerReady] = useState(() => initTokenizer().catch(() => undefined));
   const findWordRef = useRef(findWord);

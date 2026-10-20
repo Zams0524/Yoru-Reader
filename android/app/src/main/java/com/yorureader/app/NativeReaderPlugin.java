@@ -2,6 +2,7 @@ package com.yorureader.app;
 
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -26,6 +27,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONArray;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
@@ -40,6 +42,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.CRC32;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Native book reader for Android: the OpenReadEra EraEPUB engine (GPL-2.0, see EraEngine) renders
@@ -56,6 +61,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private static final String TAG = "YoruNativeReader";
     private static final String ENGINE_BINARY = "liberaepub.so";
     private static final int KEEP_BOOKS = 4;
+    private static final String BOOK_FILE = "book.epub";
     private static final Pattern BLOCK_IN_XPATH = Pattern.compile("/body/p(?:\\[(\\d+)\\])?(?=/|$)");
     private static final Pattern SAFE_NAME = Pattern.compile("[A-Za-z0-9._-]{1,120}");
 
@@ -153,11 +159,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     public void hasBook(PluginCall call) {
         String key = call.getString("key", "");
         JSObject result = new JSObject();
-        result.put("exists", SAFE_NAME.matcher(key).matches() && new File(bookDir(key), "book.html").isFile());
+        result.put("exists", SAFE_NAME.matcher(key).matches() && new File(bookDir(key), BOOK_FILE).isFile());
         call.resolve(result);
     }
 
-    /** Appends a piece of the exported HTML; the book is complete (and openable) after the last one. */
+    /**
+     * Appends a piece of the exported XHTML; after the last one the book is packed as an EPUB (the
+     * engine only opens image files for documents in a container, not for a plain HTML file).
+     */
     @PluginMethod
     public void writeBookChunk(PluginCall call) {
         String key = call.getString("key", "");
@@ -169,7 +178,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             return;
         }
         File dir = bookDir(key);
-        File partial = new File(dir, "book.html.part");
+        File partial = new File(dir, "book.xhtml.part");
         try {
             if (first) {
                 deleteRecursively(dir);
@@ -179,7 +188,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 writer.write(data);
             }
             if (last) {
-                if (!partial.renameTo(new File(dir, "book.html"))) throw new IOException("rename");
+                packEpub(dir, partial);
                 pruneOldBooks(key);
             }
             call.resolve();
@@ -211,6 +220,74 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         }
     }
 
+    /** book.epub = the XHTML and img/ in a minimal EPUB; the loose files are removed. */
+    private static void packEpub(File dir, File xhtml) throws IOException {
+        File images = new File(dir, "img");
+        File[] imageFiles = images.listFiles(File::isFile);
+        if (imageFiles == null) imageFiles = new File[0];
+        Arrays.sort(imageFiles);
+        StringBuilder manifest = new StringBuilder("<item id=\"book\" href=\"book.xhtml\" media-type=\"application/xhtml+xml\"/>");
+        for (int i = 0; i < imageFiles.length; i++) {
+            String name = imageFiles[i].getName();
+            String ext = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+            String type = ext.equals("jpg") ? "image/jpeg" : ext.equals("svg") ? "image/svg+xml" : "image/" + ext;
+            manifest.append("<item id=\"img").append(i).append("\" href=\"img/").append(name).append("\" media-type=\"").append(type).append("\"/>");
+        }
+        String opf = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+            + "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"id\">"
+            + "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>Yoru</dc:title><dc:language>ja</dc:language>"
+            + "<dc:identifier id=\"id\">" + dir.getName() + "</dc:identifier></metadata>"
+            + "<manifest>" + manifest + "</manifest><spine><itemref idref=\"book\"/></spine></package>";
+        String container = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+            + "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+            + "<rootfiles><rootfile full-path=\"content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>";
+        File partial = new File(dir, BOOK_FILE + ".part");
+        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(partial))) {
+            putStored(zip, "mimetype", "application/epub+zip".getBytes(StandardCharsets.US_ASCII));
+            putDeflated(zip, "META-INF/container.xml", container.getBytes(StandardCharsets.UTF_8));
+            putDeflated(zip, "content.opf", opf.getBytes(StandardCharsets.UTF_8));
+            zip.putNextEntry(new ZipEntry("book.xhtml"));
+            copy(xhtml, zip);
+            zip.closeEntry();
+            // Images are already compressed: store them.
+            for (File image : imageFiles) {
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream((int) image.length());
+                copy(image, bytes);
+                putStored(zip, "img/" + image.getName(), bytes.toByteArray());
+            }
+        }
+        if (!partial.renameTo(new File(dir, BOOK_FILE))) throw new IOException("rename");
+        xhtml.delete();
+        deleteRecursively(images);
+    }
+
+    private static void putStored(ZipOutputStream zip, String name, byte[] data) throws IOException {
+        ZipEntry entry = new ZipEntry(name);
+        entry.setMethod(ZipEntry.STORED);
+        entry.setSize(data.length);
+        entry.setCompressedSize(data.length);
+        CRC32 crc = new CRC32();
+        crc.update(data);
+        entry.setCrc(crc.getValue());
+        zip.putNextEntry(entry);
+        zip.write(data);
+        zip.closeEntry();
+    }
+
+    private static void putDeflated(ZipOutputStream zip, String name, byte[] data) throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(data);
+        zip.closeEntry();
+    }
+
+    private static void copy(File from, java.io.OutputStream to) throws IOException {
+        try (FileInputStream in = new FileInputStream(from)) {
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) to.write(buffer, 0, n);
+        }
+    }
+
     private void pruneOldBooks(String keep) {
         File[] dirs = booksDir().listFiles(File::isDirectory);
         if (dirs == null || dirs.length <= KEEP_BOOKS) return;
@@ -236,7 +313,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     @PluginMethod
     public void open(PluginCall call) {
         String key = call.getString("key", "");
-        File book = new File(bookDir(key), "book.html");
+        File book = new File(bookDir(key), BOOK_FILE);
         if (!SAFE_NAME.matcher(key).matches() || !book.isFile()) {
             call.reject("NO_BOOK");
             return;
@@ -314,7 +391,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, false));
             List<EraEngine.Item> open = new ArrayList<>();
             open.add(EraEngine.Item.str(""));            // no socket: open by path
-            open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_HTML));
+            open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
             open.add(EraEngine.Item.str(book.getAbsolutePath()));
             open.add(new EraEngine.Item(0));             // not an archive
             EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
@@ -560,6 +637,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     @Override
     public void onTurned(int direction) {
         current = Math.max(0, Math.min(pageCount - 1, current + direction));
+        view.setHighlight(new ArrayList<>(), 0);
         publish();
         final int gen = generation, page = current;
         engineHandler.post(() -> showPage(gen, page));
@@ -658,6 +736,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 event.put("xpath", xpath);
                 event.put("ordinal", ordinalOf(xpath));
                 event.put("letter", page.texts[index]);
+                event.put("index", index);
+                event.put("page", page.page);
                 event.put("left", page.boxes[index * 4] / density);
                 event.put("top", page.boxes[index * 4 + 1] / density);
                 event.put("right", page.boxes[index * 4 + 2] / density);
@@ -669,14 +749,77 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         });
     }
 
-    /** While the dictionary popup is open, a tap on the page closes it instead of acting. */
+    /** While the dictionary popup is open, a tap on the page closes it instead of acting. Closing it clears the highlight. */
     @PluginMethod
     public void setPopupOpen(PluginCall call) {
         boolean open = Boolean.TRUE.equals(call.getBoolean("open", false));
         main.post(() -> {
             popupOpen = open;
+            if (!open && view != null) view.setHighlight(new ArrayList<>(), 0);
             call.resolve();
         });
+    }
+
+    /**
+     * Highlights the looked-up word: the tapped letter (index from the "word" event) with
+     * `before` letters before it and `after` after it, skipping furigana and paragraph ends.
+     * color is ARGB.
+     */
+    @PluginMethod
+    public void highlight(PluginCall call) {
+        int page = call.getInt("page", -1);
+        int index = call.getInt("index", -1);
+        int before = Math.max(0, call.getInt("before", 0));
+        int after = Math.max(0, call.getInt("after", 0));
+        long color = call.getLong("color", 0x55FFE000L);
+        main.post(() -> {
+            PageLetters letters = this.letters;
+            if (view == null || letters == null || letters.page != page || page != current || index < 0 || index >= letters.texts.length) {
+                call.resolve();
+                return;
+            }
+            float size = letterArea(letters, index);
+            List<Integer> picked = new ArrayList<>();
+            picked.add(index);
+            for (int i = index - 1, n = 0; i >= 0 && n < before; i--) {
+                if (isFurigana(letters, i, size)) continue;
+                if (letters.texts[i].trim().isEmpty()) break;
+                picked.add(0, i);
+                n++;
+            }
+            for (int i = index + 1, n = 0; i < letters.texts.length && n < after; i++) {
+                if (isFurigana(letters, i, size)) continue;
+                if (letters.texts[i].trim().isEmpty()) break;
+                picked.add(i);
+                n++;
+            }
+            // One box per line: letters on the same line (column in vertical text) are merged.
+            List<RectF> boxes = new ArrayList<>();
+            float pad = 1.5f * getContext().getResources().getDisplayMetrics().density;
+            RectF line = null;
+            for (int i : picked) {
+                RectF r = new RectF(letters.boxes[i * 4] - pad, letters.boxes[i * 4 + 1] - pad, letters.boxes[i * 4 + 2] + pad, letters.boxes[i * 4 + 3] + pad);
+                boolean sameLine = line != null && (config != null && config.vertical
+                    ? Math.min(line.right, r.right) - Math.max(line.left, r.left) > r.width() / 2
+                    : Math.min(line.bottom, r.bottom) - Math.max(line.top, r.top) > r.height() / 2);
+                if (sameLine) line.union(r);
+                else {
+                    line = r;
+                    boxes.add(line);
+                }
+            }
+            view.setHighlight(boxes, (int) color);
+            call.resolve();
+        });
+    }
+
+    private static float letterArea(PageLetters letters, int i) {
+        return (letters.boxes[i * 4 + 2] - letters.boxes[i * 4]) * (letters.boxes[i * 4 + 3] - letters.boxes[i * 4 + 1]);
+    }
+
+    /** Furigana letters are much smaller than the text around them. */
+    private static boolean isFurigana(PageLetters letters, int i, float textArea) {
+        return letterArea(letters, i) < textArea * 0.45f;
     }
 
     /** New reader settings (any subset): the layout is redone and the current position kept. */

@@ -9,6 +9,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
 import android.view.MotionEvent;
@@ -52,6 +53,9 @@ final class NativeReaderView extends View {
     private boolean vertical = true;
     private boolean invertTaps = false;
     private final List<Rect> holes = new ArrayList<>();
+    /** The looked-up word on the current page (moves with it while sliding). */
+    private final List<RectF> highlight = new ArrayList<>();
+    private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     NativeReaderView(Context context, Listener listener) {
         super(context);
@@ -71,6 +75,13 @@ final class NativeReaderView extends View {
         this.background = background;
         this.vertical = vertical;
         this.invertTaps = invertTaps;
+        invalidate();
+    }
+
+    void setHighlight(List<RectF> rects, int color) {
+        highlight.clear();
+        highlight.addAll(rects);
+        highlightPaint.setColor(color);
         invalidate();
     }
 
@@ -110,6 +121,13 @@ final class NativeReaderView extends View {
         }
         canvas.drawColor(background);
         if (cur != null) canvas.drawBitmap(cur, offset, 0, null);
+        if (!highlight.isEmpty()) {
+            float radius = 4 * getResources().getDisplayMetrics().density;
+            canvas.save();
+            canvas.translate(offset, 0);
+            for (RectF r : highlight) canvas.drawRoundRect(r, radius, radius, highlightPaint);
+            canvas.restore();
+        }
         Bitmap other = offset != 0 ? incoming(offset) : null;
         if (other != null) {
             if (offset > 0) {

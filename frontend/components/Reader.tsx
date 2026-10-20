@@ -689,7 +689,8 @@ export default function Reader({
       const available = wordInUpperHalf
         ? window.innerHeight - safeBottom - popupPos.targetBottom - gap - margin
         : popupPos.targetTop - safeTop - gap - margin;
-      const maxHeight = Math.max(160, Math.min(Math.round(window.innerHeight * 0.45), available));
+      // About a third of the screen, so most of the page (and the highlighted word) stays in view.
+      const maxHeight = Math.max(150, Math.min(Math.round(window.innerHeight * 0.34), available));
       const top = wordInUpperHalf ? window.innerHeight - safeBottom - margin : safeTop + margin;
       setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
       setPopupPos(current => current.x === margin && current.y === top && current.anchorBottom === wordInUpperHalf
@@ -2862,7 +2863,7 @@ export default function Reader({
             background: colors.popoverBg,
             border: `1px solid ${colors.border}`,
             borderRadius: '12px',
-            padding: '12px',
+            padding: window.innerWidth < 768 ? '8px 10px' : '12px',
             boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
             display: 'flex',
             flexDirection: 'column',
@@ -3302,7 +3303,7 @@ export default function Reader({
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: colors.textMain }}>
+              <span style={{ fontSize: window.innerWidth < 768 ? '1.15rem' : '1.4rem', fontWeight: 'bold', color: colors.textMain }}>
                 {selectedWord.surface}
               </span>
               <button

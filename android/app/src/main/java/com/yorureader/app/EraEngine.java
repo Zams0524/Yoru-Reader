@@ -48,6 +48,7 @@ final class EraEngine {
     static final int TYPE_FIX_FLOAT = 4;
     static final int TYPE_ARRAY = 5;
     // orebridge/include/openreadera.h
+    static final int DOC_FORMAT_EPUB = 1;
     static final int DOC_FORMAT_HTML = 13;
     static final int CONFIG_EMBEDDED_STYLES = 101;
     static final int CONFIG_FONT_FACE_MAIN = 103;
