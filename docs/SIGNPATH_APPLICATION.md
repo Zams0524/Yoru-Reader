@@ -15,7 +15,7 @@ Formulario: <https://signpath.org/apply.html> · Condiciones: <https://signpath.
 
 **Repository URL:** https://github.com/Zams0524/Yoru-Reader
 
-**License:** MIT (LICENSE file at the repository root)
+**License:** GPL-2.0-or-later (LICENSE file at the repository root). Changed from MIT in v1.4.0 when the Android native reader engine (OpenReadEra EraEPUB, GPL-2.0) was incorporated.
 
 **Download / release page:** https://github.com/Zams0524/Yoru-Reader/releases/latest
 

@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -Command \"$json = $input | Out-String | ConvertFrom-Json; $f = $json.tool_input.file_path; if ($f -and ($f -match '\\.(ts|tsx)$') -and ($f -match 'frontend[\\\\/]')) { $rel = $f -replace [regex]::Escape((Get-Location).Path + [IO.Path]::DirectorySeparatorChar), ''; Write-Host \\\"[hook] TypeScript check: $rel\\\"; $result = & npx tsc --noEmit --skipLibCheck 2>&1 | Select-Object -Last 10; if ($LASTEXITCODE -ne 0) { $result | ForEach-Object { Write-Host $_ }; exit 0 } } \"",
+            "statusMessage": "Verificando tipos TypeScript...",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -Command \"$json = $input | Out-String | ConvertFrom-Json; $f = $json.tool_input.file_path; if ($f -and ($f -match '\\.(ts|tsx|js)$') -and ($f -match 'frontend[\\\\/]')) { $rel = $f -replace [regex]::Escape((Get-Location).Path + [IO.Path]::DirectorySeparatorChar), ''; Write-Host \\\"[hook] ESLint: $rel\\\"; npx eslint --max-warnings 0 $f 2>&1 | Select-Object -Last 8 | ForEach-Object { Write-Host $_ } }\"",
+            "statusMessage": "Revisando ESLint...",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git rev-list*)",
+      "Bash(npx tsc --noEmit*)",
+      "Bash(npx eslint*)"
+    ]
+  }
+}

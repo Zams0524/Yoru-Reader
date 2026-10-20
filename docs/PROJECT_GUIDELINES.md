@@ -70,3 +70,6 @@ Antes de entregar cualquier tarea:
 2. **Verificar la compatibilidad multiplataforma** (PC vs Móvil).
 3. **Compilar y empaquetar limpiamente** ambos ejecutables (stable y dev).
 4. **Explicar de forma concisa y clara** al usuario qué se hizo, por qué se hizo y cómo probarlo.
+
+## 6. MISIÓN DE PRODUCTO Y MEJORA CONTINUA
+Para las decisiones de producto, aprendizaje, arquitectura y rendimiento, lee y aplica YORU_READER_ENGINEERING_PROMPT.md. Úsalo junto con estas reglas; no reemplaza los requisitos locales de compilación, versionado, pruebas ni publicación.
