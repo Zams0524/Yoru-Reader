@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -2991,7 +2991,7 @@ const Library = React.memo(function Library({
                   <div className="yoru-delete-spinner" style={{
                     width: '36px',
                     height: '36px',
-                    border: '3px solid rgba(255, 224, 0, 0.1)',
+                    border: '3px solid rgba(242, 200, 102, 0.1)',
                     borderTop: '3px solid var(--primary)',
                     borderRadius: '50%',
                     animation: 'yoruDeleteSpin 0.8s linear infinite'
@@ -3086,8 +3086,8 @@ const Library = React.memo(function Library({
               width: '28px',
               height: '28px',
               borderRadius: '50%',
-              border: '3px solid rgba(255, 224, 0, 0.2)',
-              borderTopColor: '#FFE000',
+              border: '3px solid rgba(242, 200, 102, 0.2)',
+              borderTopColor: '#f2c866',
               animation: 'spin 1s linear infinite'
             }} />
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -3328,7 +3328,7 @@ const Library = React.memo(function Library({
                 outline: 'none',
                 transition: 'all 0.15s ease'
               }}
-              onMouseEnter={e => { if (numericVal > min) e.currentTarget.style.background = 'rgba(255, 224, 0, 0.15)'; }}
+              onMouseEnter={e => { if (numericVal > min) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               -
@@ -3375,7 +3375,7 @@ const Library = React.memo(function Library({
                 outline: 'none',
                 transition: 'all 0.15s ease'
               }}
-              onMouseEnter={e => { if (numericVal < max) e.currentTarget.style.background = 'rgba(255, 224, 0, 0.15)'; }}
+              onMouseEnter={e => { if (numericVal < max) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               +
@@ -3413,7 +3413,7 @@ const Library = React.memo(function Library({
             }
           }}
           style={{
-            background: isActive ? 'rgba(255, 224, 0, 0.08)' : 'none',
+            background: isActive ? 'rgba(242, 200, 102, 0.08)' : 'none',
             border: 'none',
             display: 'flex',
             alignItems: 'center',
@@ -3644,8 +3644,8 @@ const Library = React.memo(function Library({
               </div>
               {/* Banner: Guía y Tutorial */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(255, 224, 0, 0.08) 0%, rgba(255, 180, 0, 0.03) 100%)',
-                border: '1px solid rgba(255, 224, 0, 0.25)',
+                background: 'linear-gradient(135deg, rgba(242, 200, 102, 0.08) 0%, rgba(255, 180, 0, 0.03) 100%)',
+                border: '1px solid rgba(242, 200, 102, 0.25)',
                 borderRadius: '12px',
                 padding: '16px 20px',
                 display: 'flex',
@@ -3659,12 +3659,12 @@ const Library = React.memo(function Library({
                     width: '42px',
                     height: '42px',
                     borderRadius: '10px',
-                    background: 'rgba(255, 224, 0, 0.15)',
-                    border: '1px solid rgba(255, 224, 0, 0.3)',
+                    background: 'rgba(242, 200, 102, 0.15)',
+                    border: '1px solid rgba(242, 200, 102, 0.3)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#FFE000',
+                    color: '#f2c866',
                     flexShrink: 0
                   }}>
                     <Sparkles size={22} />
@@ -3686,7 +3686,7 @@ const Library = React.memo(function Library({
                   onClick={() => setShowTutorialModal(true)}
                   style={{
                     padding: '10px 20px',
-                    background: '#FFE000',
+                    background: '#f2c866',
                     color: '#000',
                     border: 'none',
                     borderRadius: '8px',
@@ -3696,7 +3696,7 @@ const Library = React.memo(function Library({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    boxShadow: '0 4px 14px rgba(255, 224, 0, 0.3)',
+                    boxShadow: '0 4px 14px rgba(242, 200, 102, 0.3)',
                     transition: 'all 0.15s',
                     flexShrink: 0
                   }}
@@ -4540,7 +4540,7 @@ const Library = React.memo(function Library({
                 type="button" 
                 className="reset-filter-btn"
                 onClick={() => setIsVocabModalOpen(true)}
-                style={{ background: 'rgba(255, 224, 0, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
+                style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
               >
                 <Database size={15} /> {lang === 'es' ? 'Abrir Panel de Vocabulario' : 'Open Vocabulary Panel'}
               </button>
@@ -4561,7 +4561,7 @@ const Library = React.memo(function Library({
                   type="button" 
                   className="reset-filter-btn"
                   onClick={handleExportLibrary}
-                  style={{ background: 'rgba(255, 224, 0, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                  style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                 >
                   <Download size={16} /> {lang === 'es' ? 'Exportar Biblioteca' : 'Export Library'}
                 </button>
@@ -6927,27 +6927,27 @@ const Library = React.memo(function Library({
               gap: '6px',
               padding: '5px 12px',
               borderRadius: '20px',
-              background: 'rgba(255, 224, 0, 0.08)',
-              border: '1px solid rgba(255, 224, 0, 0.28)',
+              background: 'rgba(242, 200, 102, 0.08)',
+              border: '1px solid rgba(242, 200, 102, 0.28)',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3), 0 0 12px rgba(255, 224, 0, 0.15)',
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3), 0 0 12px rgba(242, 200, 102, 0.15)',
               userSelect: 'none',
               marginLeft: '4px'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 224, 0, 0.16)';
-              e.currentTarget.style.borderColor = 'rgba(255, 224, 0, 0.5)';
+              e.currentTarget.style.background = 'rgba(242, 200, 102, 0.16)';
+              e.currentTarget.style.borderColor = 'rgba(242, 200, 102, 0.5)';
               e.currentTarget.style.transform = 'scale(1.05)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 224, 0, 0.08)';
-              e.currentTarget.style.borderColor = 'rgba(255, 224, 0, 0.28)';
+              e.currentTarget.style.background = 'rgba(242, 200, 102, 0.08)';
+              e.currentTarget.style.borderColor = 'rgba(242, 200, 102, 0.28)';
               e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#FFE000', boxShadow: '0 0 6px #FFE000' }} />
-            <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#FFE000', letterSpacing: '0.04em' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f2c866', boxShadow: '0 0 6px #f2c866' }} />
+            <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#f2c866', letterSpacing: '0.04em' }}>
               v{currentAppVersion}
             </span>
           </div>

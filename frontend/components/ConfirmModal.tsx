@@ -1,4 +1,4 @@
-import React, { useState, useCallback, ReactNode } from 'react';
+﻿import React, { useState, useCallback, ReactNode } from 'react';
 
 export interface ConfirmOptions {
   title?: string;
@@ -79,7 +79,7 @@ export function ConfirmModal({
     danger:  { icon: '⚠️', accent: '#ef4444', confirmBg: 'linear-gradient(135deg, #ef4444, #b91c1c)' },
     warning: { icon: '⚠️', accent: '#f59e0b', confirmBg: 'linear-gradient(135deg, #f59e0b, #b45309)' },
     info:    { icon: 'ℹ️', accent: '#60a5fa', confirmBg: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' },
-    default: { icon: '❓', accent: '#FFE000', confirmBg: 'linear-gradient(135deg, #FFE000, #c2aa00)' },
+    default: { icon: '❓', accent: '#f2c866', confirmBg: 'linear-gradient(135deg, #f2c866, #c2aa00)' },
   };
 
   const ts = typeStyles[type] || typeStyles.default;

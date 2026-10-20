@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ExternalLink, Plus, Volume2, X } from 'lucide-react';
 import { tokenizeText } from '../utils/japanese';
 import { lookupWord } from '../utils/dictionary';
@@ -2011,7 +2011,7 @@ export default function Reader({
         textMain: '#ffffff',
         textMuted: 'rgba(255, 255, 255, 0.45)',
         cardBg: 'rgba(255, 255, 255, 0.05)',
-        accent: '#FFE000',
+        accent: '#f2c866',
         popoverBg: '#050507',
       },
       'night-contrast': {
@@ -2021,7 +2021,7 @@ export default function Reader({
         textMain: '#ffffff',
         textMuted: 'rgba(255, 255, 255, 0.6)',
         cardBg: 'rgba(255, 255, 255, 0.06)',
-        accent: '#FFE000',
+        accent: '#f2c866',
         popoverBg: '#000000',
       },
       'sepia-contrast': {
@@ -2061,7 +2061,7 @@ export default function Reader({
       textMain: themeName === 'custom' ? (localStorage.getItem('reader:customText') || '#ffffff') : '#ffffff',
       textMuted: 'rgba(255, 255, 255, 0.45)',
       cardBg: 'rgba(255, 255, 255, 0.05)',
-      accent: '#FFE000',
+      accent: '#f2c866',
       popoverBg: '#050507',
     };
   }, [readerSettings.theme]);
@@ -2476,7 +2476,7 @@ export default function Reader({
               <button
                 onClick={handleConfirmJump}
                 style={{
-                  background: '#FFE000',
+                  background: '#f2c866',
                   border: 'none',
                   color: '#000',
                   borderRadius: '6px',
@@ -2573,7 +2573,7 @@ export default function Reader({
                   cursor: 'pointer',
                   borderRadius: '6px',
                   overflow: 'hidden',
-                  border: galleryIndex === idx ? '2px solid #FFE000' : '2px solid transparent',
+                  border: galleryIndex === idx ? '2px solid #f2c866' : '2px solid transparent',
                   transition: 'border-color 0.15s',
                   background: '#131316',
                   display: 'flex',
@@ -2786,7 +2786,7 @@ export default function Reader({
               style={{
                 background: 'none',
                 border: 'none',
-                color: colors.accent || '#FFE000',
+                color: colors.accent || '#f2c866',
                 fontSize: '0.9rem',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -3324,7 +3324,7 @@ export default function Reader({
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                  e.currentTarget.style.color = '#FFE000';
+                  e.currentTarget.style.color = '#f2c866';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
@@ -3375,9 +3375,9 @@ export default function Reader({
               <button 
                 onClick={handleMineToAnki}
                 style={{
-                  background: 'rgba(255, 224, 0, 0.05)',
-                  border: '1px solid rgba(255, 224, 0, 0.25)',
-                  color: '#FFE000',
+                  background: 'rgba(242, 200, 102, 0.05)',
+                  border: '1px solid rgba(242, 200, 102, 0.25)',
+                  color: '#f2c866',
                   padding: '3px 8px',
                   borderRadius: '5px',
                   cursor: 'pointer',
@@ -3405,8 +3405,8 @@ export default function Reader({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                       <span style={{ 
                         fontSize: '0.68rem', 
-                        background: 'rgba(255, 224, 0, 0.1)', 
-                        color: '#FFE000', 
+                        background: 'rgba(242, 200, 102, 0.1)', 
+                        color: '#f2c866', 
                         padding: '1px 5px', 
                         borderRadius: '3px',
                         fontWeight: 600

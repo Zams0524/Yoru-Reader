@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { X, Database, Upload, Download, RefreshCw, FileText, BarChart3, AlertTriangle } from 'lucide-react';
 import { db } from '../utils/db';
 import { tokenizeText } from '../utils/japanese';
@@ -1090,7 +1090,7 @@ export default function VocabularyModal({
                 onClick={() => setActiveTab(t.id)}
                 style={{
                   flex: 1,
-                  background: activeTab === t.id ? 'rgba(255, 224, 0, 0.05)' : 'none',
+                  background: activeTab === t.id ? 'rgba(242, 200, 102, 0.05)' : 'none',
                   border: 'none',
                   borderBottom: activeTab === t.id ? '2px solid var(--primary)' : '2px solid transparent',
                   color: activeTab === t.id ? 'var(--primary)' : 'var(--text-muted)',
@@ -1359,8 +1359,8 @@ export default function VocabularyModal({
                       onClick={() => setIsCardsModalOpen(true)}
                       className="reset-filter-btn"
                       style={{
-                        background: 'rgba(255, 224, 0, 0.03)',
-                        borderColor: 'rgba(255, 224, 0, 0.25)',
+                        background: 'rgba(242, 200, 102, 0.03)',
+                        borderColor: 'rgba(242, 200, 102, 0.25)',
                         color: 'var(--primary)',
                         marginTop: '4px',
                         justifyContent: 'center',
@@ -1379,7 +1379,7 @@ export default function VocabularyModal({
                       disabled={connectionStatus !== 'connected'}
                       className="reset-filter-btn"
                       style={{
-                        background: connectionStatus === 'connected' ? 'rgba(255, 224, 0, 0.08)' : 'rgba(255,255,255,0.02)',
+                        background: connectionStatus === 'connected' ? 'rgba(242, 200, 102, 0.08)' : 'rgba(255,255,255,0.02)',
                         borderColor: connectionStatus === 'connected' ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
                         color: connectionStatus === 'connected' ? 'var(--primary)' : 'var(--text-muted)',
                         marginTop: '12px',
@@ -1456,7 +1456,7 @@ export default function VocabularyModal({
                       disabled={!jpdbApiKey && !jpdbReviewsFile}
                       className="reset-filter-btn"
                       style={{
-                        background: (jpdbApiKey || jpdbReviewsFile) ? 'rgba(255, 224, 0, 0.08)' : 'rgba(255,255,255,0.02)',
+                        background: (jpdbApiKey || jpdbReviewsFile) ? 'rgba(242, 200, 102, 0.08)' : 'rgba(255,255,255,0.02)',
                         borderColor: (jpdbApiKey || jpdbReviewsFile) ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
                         color: (jpdbApiKey || jpdbReviewsFile) ? 'var(--primary)' : 'var(--text-muted)',
                         marginTop: '12px',
@@ -1515,7 +1515,7 @@ export default function VocabularyModal({
                       disabled={!vocabFile}
                       className="reset-filter-btn"
                       style={{
-                        background: vocabFile ? 'rgba(255, 224, 0, 0.08)' : 'rgba(255,255,255,0.02)',
+                        background: vocabFile ? 'rgba(242, 200, 102, 0.08)' : 'rgba(255,255,255,0.02)',
                         borderColor: vocabFile ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
                         color: vocabFile ? 'var(--primary)' : 'var(--text-muted)',
                         marginTop: '12px',
@@ -1573,7 +1573,7 @@ export default function VocabularyModal({
                       disabled={!selectedFreqDict || freqMaxRank <= 0}
                       className="reset-filter-btn"
                       style={{
-                        background: (selectedFreqDict && freqMaxRank > 0) ? 'rgba(255, 224, 0, 0.08)' : 'rgba(255,255,255,0.02)',
+                        background: (selectedFreqDict && freqMaxRank > 0) ? 'rgba(242, 200, 102, 0.08)' : 'rgba(255,255,255,0.02)',
                         borderColor: (selectedFreqDict && freqMaxRank > 0) ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
                         color: (selectedFreqDict && freqMaxRank > 0) ? 'var(--primary)' : 'var(--text-muted)',
                         marginTop: '12px',
@@ -2057,7 +2057,7 @@ function AnkiCardsModal({ settings, onSave, onClose, availableDecks, availableMo
               className="yomitan-cards-btn-automap"
               onClick={handleAutoMapFields}
               style={{
-                background: 'linear-gradient(135deg, var(--primary, #FFE000) 0%, #ff8c00 100%)',
+                background: 'linear-gradient(135deg, var(--primary, #f2c866) 0%, #ff8c00 100%)',
                 color: '#000',
                 border: 'none',
                 borderRadius: '6px',
@@ -2069,18 +2069,18 @@ function AnkiCardsModal({ settings, onSave, onClose, availableDecks, availableMo
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(255, 224, 0, 0.25)',
+                boxShadow: '0 4px 14px rgba(242, 200, 102, 0.25)',
                 letterSpacing: '0.02em'
               }}
               onMouseEnter={e => {
                 e.currentTarget.style.filter = 'brightness(1.15)';
                 e.currentTarget.style.transform = 'translateY(-1.5px)';
-                e.currentTarget.style.boxShadow = '0 6px 20px rgba(255, 224, 0, 0.4)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(242, 200, 102, 0.4)';
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.filter = 'none';
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 4px 14px rgba(255, 224, 0, 0.25)';
+                e.currentTarget.style.boxShadow = '0 4px 14px rgba(242, 200, 102, 0.25)';
               }}
             >
               <span>✨ {lang === 'es' ? 'Auto-mapear campos' : 'Auto-map fields'}</span>

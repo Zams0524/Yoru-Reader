@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { X, Search, Palette, Clock, Type, Target, Layers, FolderOpen, BookOpen, AlertTriangle, Info } from 'lucide-react';
 import { t } from '../utils/i18n';
 import AppAbout from './AppAbout';
@@ -272,10 +272,10 @@ export default function SettingsModal({
           style={{
             width: '100%',
             padding: '11px 16px',
-            background: 'rgba(255, 224, 0, 0.08)',
-            border: '1px solid rgba(255, 224, 0, 0.25)',
+            background: 'rgba(242, 200, 102, 0.08)',
+            border: '1px solid rgba(242, 200, 102, 0.25)',
             borderRadius: '8px',
-            color: '#FFE000',
+            color: '#f2c866',
             fontWeight: 600,
             fontSize: '0.86rem',
             cursor: 'pointer',
@@ -285,8 +285,8 @@ export default function SettingsModal({
             gap: '8px',
             transition: 'all 0.15s'
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 224, 0, 0.16)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 224, 0, 0.08)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(242, 200, 102, 0.16)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(242, 200, 102, 0.08)'; }}
         >
           💡 {lang === 'es' ? 'Ver Guía Rápida y Atajos de Teclado' : 'View Quick Guide & Shortcuts'}
         </button>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { isPhoneUI } from '../../utils/platform';
 import { initTokenizer } from '../../utils/japanese';
@@ -248,11 +248,11 @@ export default function NativeReaderHost({
     }
   };
   // Accent at about 35 % opacity (ARGB), behind the looked-up word.
-  const highlightColor = useMemo(() => ((0x5a << 24) | cssColorToInt(colors.accent || '#ffe000', 0xffe000)) >>> 0, [colors.accent]);
+  const highlightColor = useMemo(() => ((0x5a << 24) | cssColorToInt(colors.accent || '#f2c866', 0xf2c866)) >>> 0, [colors.accent]);
   const highlightColorRef = useRef(highlightColor);
   highlightColorRef.current = highlightColor;
   // Accent at 25 % opacity for read-aloud sentence highlight (lighter than the word lookup).
-  const ttsHighlightColor = useMemo(() => ((0x40 << 24) | cssColorToInt(colors.accent || '#ffe000', 0xffe000)) >>> 0, [colors.accent]);
+  const ttsHighlightColor = useMemo(() => ((0x40 << 24) | cssColorToInt(colors.accent || '#f2c866', 0xf2c866)) >>> 0, [colors.accent]);
   const ttsHighlightColorRef = useRef(ttsHighlightColor);
   ttsHighlightColorRef.current = ttsHighlightColor;
   // The local parser (Kuromoji) loads once; until then words would be split by script only.

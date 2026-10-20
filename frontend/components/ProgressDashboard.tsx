@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Flame, BookOpen, RefreshCw } from 'lucide-react';
 import { isPhoneUI } from '../utils/platform';
 
@@ -208,10 +208,10 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
 
   const getCellColor = (chars: number) => {
     if (chars === 0) return 'var(--border-light)';
-    if (chars < 500) return 'rgba(255, 224, 0, 0.18)';
-    if (chars < 1500) return 'rgba(255, 224, 0, 0.45)';
-    if (chars < 3000) return 'rgba(255, 224, 0, 0.75)';
-    return '#ffe000';
+    if (chars < 500) return 'rgba(242, 200, 102, 0.18)';
+    if (chars < 1500) return 'rgba(242, 200, 102, 0.45)';
+    if (chars < 3000) return 'rgba(242, 200, 102, 0.75)';
+    return '#f2c866';
   };
 
   // 5. RECENT SESSIONS LIST

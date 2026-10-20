@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 interface ReaderColors {
   textMain: string;
@@ -36,8 +36,8 @@ export default function CharacterCounter({ currChars, totalChars, colors }: Char
         style={{
           height: '100%',
           width: `${Math.max(1, parseFloat(percentage))}%`,
-          background: 'linear-gradient(90deg, #FFE000, #FFA500)',
-          boxShadow: '0 0 8px rgba(255, 224, 0, 0.6)',
+          background: 'linear-gradient(90deg, #f2c866, #d6a940)',
+          boxShadow: '0 0 8px rgba(242, 200, 102, 0.6)',
           transition: 'width 0.3s ease',
         }}
       />
