@@ -136,6 +136,18 @@ export default function ReaderSettingsPopover({
             es={es}
           />
           <PickerRow
+            label={es ? 'Ancho máximo' : 'Max width'}
+            value={settings.readerMaxWidth || 'none'}
+            options={[
+              { value: 'none', label: es ? 'Sin límite' : 'None' },
+              { value: '480px', label: '480px' },
+              { value: '600px', label: '600px' },
+              { value: '720px', label: '720px' },
+              { value: '900px', label: '900px' },
+            ]}
+            onChange={(value) => onSettingChange('readerMaxWidth', value)}
+          />
+          <PickerRow
             label={es ? 'Alineación del texto' : 'Text align'}
             value={textAlign}
             display={`${{
