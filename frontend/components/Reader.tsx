@@ -38,6 +38,7 @@ import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
 import { useReaderSettings, ReaderSettingsState, baseReaderTheme } from '../hooks/useReaderSettings';
+import { useBackHandler } from '../hooks/useBackButton';
 
 // Page-turn keys handled inside ReaderEngine.
 const ENGINE_PAGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ']);
@@ -2053,6 +2054,25 @@ export default function Reader({
     };
   }, [readerSettings.theme]);
 
+  // Android back button: close the top-most panel or popup; with none open, leave the book.
+  useBackHandler(true, () => {
+    const steps: [boolean, () => void][] = [
+      [Boolean(deckSelectorWord), () => setDeckSelectorWord(null)],
+      [Boolean(selectedWord), () => setSelectedWord(null)],
+      [isExtSettingsOpen, () => setIsExtSettingsOpen(false)],
+      [isVoiceSettingsOpen, () => setIsVoiceSettingsOpen(false)],
+      [isJumpModalOpen, () => setIsJumpModalOpen(false)],
+      [isGalleryOpen, () => setIsGalleryOpen(false)],
+      [isSearchOpen, () => setIsSearchOpen(false)],
+      [showSettingsPopover, () => setShowSettingsPopover(false)],
+      [sidebarMode !== null, () => setSidebarMode(null)],
+      [isReadAloudOpen, () => { readAloud.stop(); setIsReadAloudOpen(false); }],
+    ];
+    const step = steps.find(([open]) => open);
+    if (step) step[1]();
+    else handleBack();
+  });
+
   const handleCharsUpdate = useCallback((payload: any) => {
     setCurrentProgress(payload);
     const tracker = readingTrackerRef.current;
@@ -2661,7 +2681,7 @@ export default function Reader({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 20px',
+            padding: 'calc(12px + var(--yoru-safe-top, 0px)) 20px 12px',
             borderBottom: `1px solid ${colors.border || 'rgba(255,255,255,0.08)'}`,
             background: colors.popoverBg || '#1c1c1e',
             flexShrink: 0,

@@ -126,7 +126,7 @@ export default function ReaderSidebar({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '16px',
+          padding: 'calc(16px + var(--yoru-safe-top, 0px)) 16px 16px',
           borderBottom: `1px solid ${colors.border}`,
           flexShrink: 0,
         }}>

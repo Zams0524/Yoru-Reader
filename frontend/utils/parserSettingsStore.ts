@@ -184,8 +184,9 @@ function hexWithAlpha(colour: string, alpha: number): string {
 }
 
 function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[] } {
-  // Reset what index.css hard-codes so that an empty state really looks unstyled.
-  const base = ['color: inherit !important', 'text-decoration: none !important', 'opacity: 1 !important', 'text-shadow: none !important'];
+  // Only the state's own effects: the shared reset in buildWordStyleCss clears the rest, so a
+  // word with several states (e.g. "new frequent") keeps the effects of all of them.
+  const base: string[] = [];
   const hover: string[] = [];
   const shadows: string[] = [];
 
@@ -220,15 +221,18 @@ function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[]
 }
 
 export function buildWordStyleCss(config: WordStyleThemeConfig): string {
-  const rules: string[] = [];
+  // Clear the colours index.css hard-codes (.jiten-word.new etc.) so only saved effects show.
+  // ".jiten-word.jiten-word" outranks index.css; each state rule below outranks this reset.
+  const rules: string[] = [
+    'html .jiten-word.jiten-word { color: inherit !important; text-decoration: none !important; opacity: 1 !important; text-shadow: none !important; }',
+  ];
   for (const [state, classes] of Object.entries(STATE_SELECTORS)) {
     const effects = config?.states?.[state]?.effects;
-    if (!effects) continue;
+    if (!effects?.length) continue;
     const { base, hover } = cssForEffects(effects);
-    const selector = classes.map((cls) => `html .jiten-word.${cls}`).join(', ');
-    rules.push(`${selector} { ${base.join('; ')}; }`);
+    if (base.length) rules.push(`${classes.map((cls) => `html .jiten-word.jiten-word.${cls}`).join(', ')} { ${base.join('; ')}; }`);
     if (hover.length) {
-      rules.push(`${classes.map((cls) => `html .jiten-word.${cls}:hover`).join(', ')} { ${hover.join('; ')}; }`);
+      rules.push(`${classes.map((cls) => `html .jiten-word.jiten-word.${cls}:hover`).join(', ')} { ${hover.join('; ')}; }`);
     }
   }
   return rules.join('\n');
@@ -243,9 +247,11 @@ export function applyLocalWordStyles(): void {
   let config: WordStyleThemeConfig = DEFAULT_WORD_STYLE_CONFIG;
   if (raw) {
     try {
-      config = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      // An unreadable value keeps the Default theme instead of leaving index.css colours.
+      if (parsed && typeof parsed === 'object' && parsed.states) config = parsed;
     } catch {
-      return;
+      /* keep the Default theme */
     }
   }
   if (!el) {

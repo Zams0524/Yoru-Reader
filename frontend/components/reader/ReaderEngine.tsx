@@ -15,6 +15,8 @@ export interface Book {
   title: string;
   chapters: Chapter[];
   _savedSection?: number;
+  // Saved by db.updateBookProgress: section index and first visible paragraph.
+  progress?: { currentChapter?: number; currentPage?: number };
 }
 
 export interface Section {
@@ -227,7 +229,7 @@ function ReaderEngineComponent({
 
   // Current chapter / section index
   const [currSection, setCurrSection] = useState<number>(() => {
-    const saved = book._savedSection;
+    const saved = book._savedSection ?? book.progress?.currentChapter;
     return typeof saved === 'number' && saved >= 0 ? saved : 0;
   });
 
@@ -324,6 +326,13 @@ function ReaderEngineComponent({
 
     return resultSections;
   }, [book]);
+
+  useEffect(() => {
+    if (sections.length > 0 && currSection >= sections.length) {
+      pendingParagraphRef.current = null;
+      setCurrSection(0);
+    }
+  }, [sections.length, currSection]);
 
   const totalChars = useMemo(() => {
     if (sections.length === 0) return 0;
@@ -682,7 +691,10 @@ function ReaderEngineComponent({
     revealRange(range);
   };
 
-  const pendingParagraphRef = useRef<number | null>(null);
+  // Opening a book resumes at the saved paragraph (the effect below shows it once rendered).
+  const pendingParagraphRef = useRef<number | null>(
+    (book.progress?.currentPage ?? 0) > 0 ? book.progress!.currentPage! : null
+  );
   const goToParagraph = useCallback((sectionIndex: number, paragraphId: number) => {
     const show = () => {
       const element = contentRef.current?.querySelector(`[index="${paragraphId}"]`);
@@ -710,9 +722,8 @@ function ReaderEngineComponent({
       pendingParagraphRef.current = null;
       const element = contentRef.current?.querySelector(`[index="${paragraphId}"]`);
       if (!element) return;
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      revealRange(range);
+      showElement(element);
+      updateChars();
     }, 60);
     return () => window.clearTimeout(timer);
   });

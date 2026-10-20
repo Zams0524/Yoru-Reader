@@ -63,6 +63,14 @@ function checkElement(element: HTMLElement, effects: WordEffect[], t: (es: strin
       if (!style.textShadow || style.textShadow === 'none') problems.push(t('sin sombra', 'no shadow'));
     }
   }
+  // Nothing beyond what was saved: no colour or underline the user did not choose.
+  const parentColour = element.parentElement ? getComputedStyle(element.parentElement).color : style.color;
+  if (!effects.some((effect) => effect.type === 'text-colour') && style.color !== parentColour) {
+    problems.push(t(`color extra ${style.color}`, `extra colour ${style.color}`));
+  }
+  if (!effects.some((effect) => effect.type === 'underline') && style.textDecorationLine.includes('underline')) {
+    problems.push(t('subrayado extra', 'extra underline'));
+  }
   if (problems.length) return { ok: false, detail: problems.join(', ') };
   return { ok: true, detail: checked.length ? checked.join(' · ') : t('sin efectos', 'no effects') };
 }

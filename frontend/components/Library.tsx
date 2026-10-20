@@ -15,6 +15,7 @@ import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
+import { useBackHandler } from '../hooks/useBackButton';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -1910,6 +1911,31 @@ const Library = React.memo(function Library({
   const [editHideCover, setEditHideCover] = useState(false);
   const [editDescription, setEditDescription] = useState('');
 
+  // Android back button: close the top-most panel, then return to the library tab.
+  const libraryBackSteps: [boolean, () => void][] = [
+    [Boolean(bindingKeyAction), () => setBindingKeyAction(null)],
+    [Boolean(activeMenuBookId), () => setActiveMenuBookId(null)],
+    [Boolean(previewBook), () => setPreviewBook(null)],
+    [Boolean(editingBook), () => setEditingBook(null)],
+    [isDeckPromptOpen, () => setIsDeckPromptOpen(false)],
+    [isSrsReviewOpen, () => setIsSrsReviewOpen(false)],
+    [isVocabModalOpen, () => setIsVocabModalOpen(false)],
+    [isGDriveSyncOpen, () => setIsGDriveSyncOpen(false)],
+    [isProfileSettingsOpen, () => setIsProfileSettingsOpen(false)],
+    [isProfileDropdownOpen, () => setIsProfileDropdownOpen(false)],
+    [isStatsOpen, () => setIsStatsOpen(false)],
+    [isLibraryMenuOpen, () => setIsLibraryMenuOpen(false)],
+    [isDetailsDropdownOpen, () => setIsDetailsDropdownOpen(false)],
+    [isNotesSortOpen || isNotesFilterOpen, () => { setIsNotesSortOpen(false); setIsNotesFilterOpen(false); }],
+    [isDisplaySettingsOpen, () => setIsDisplaySettingsOpen(false)],
+    [isSidebarOpen, () => setIsSidebarOpen(false)],
+    [selectMode, () => { setSelectMode(false); setSelectedBookIds([]); }],
+    [activeTab !== 'library', () => setActiveTab('library')],
+  ];
+  useBackHandler(libraryBackSteps.some(([open]) => open), () => {
+    libraryBackSteps.find(([open]) => open)?.[1]();
+  });
+
   // Load word statistics from localStorage DB
   const localWordStatuses = db.getWordStatuses();
   const knownWordsCount = Object.values(localWordStatuses).filter(s => s === 'known').length;
@@ -2044,7 +2070,8 @@ const Library = React.memo(function Library({
         setSelectedBookIds([...selectedBookIds, book.id]);
       }
     } else {
-      setPreviewBook(book);
+      // Open the book straight away; its details stay in the card menu ("Show info").
+      onSelectBook(book);
     }
   };
 
@@ -2475,8 +2502,10 @@ const Library = React.memo(function Library({
             style={{
               position: 'absolute',
               top: '32px',
-              ...(menuOpenLeft ? { left: '0' } : { right: '0' }),
+              // Opening "to the left" means anchoring the menu's right edge to the button.
+              ...(menuOpenLeft ? { right: '0' } : { left: '0' }),
               width: '190px',
+              maxWidth: 'calc(100vw - 24px)',
               maxHeight: '420px',
               overflowY: 'auto',
               background: 'rgba(28, 28, 35, 0.98)',
