@@ -242,6 +242,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         File images = new File(dir, "img");
         StringBuilder book = new StringBuilder();
         java.util.Set<String> used = new java.util.TreeSet<>();
+        String css = "";
         try (BufferedReader lines = new BufferedReader(new FileReader(xhtml)); FileWriter index = new FileWriter(new File(dir, PICTURES_FILE))) {
             int ordinal = 0;
             String line;
@@ -257,6 +258,12 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                     }
                     ordinal++;
                 }
+                // The book CSS goes in style.css, a stylesheet of the EPUB, where the engine reads it.
+                int styleStart = line.indexOf("<style>"), styleEnd = line.indexOf("</style>");
+                if (styleStart >= 0 && styleEnd > styleStart) {
+                    css = line.substring(styleStart + 7, styleEnd);
+                    line = line.substring(0, styleStart) + "<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/>" + line.substring(styleEnd + 8);
+                }
                 Matcher image = IMAGE_REF.matcher(line);
                 while (image.find()) used.add(image.group(1));
                 book.append(line).append('\n');
@@ -264,6 +271,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         }
         used.remove(PAGE_PLACEHOLDER);
         StringBuilder manifest = new StringBuilder("<item id=\"book\" href=\"book.xhtml\" media-type=\"application/xhtml+xml\"/>");
+        manifest.append("<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>");
         manifest.append("<item id=\"page\" href=\"img/").append(PAGE_PLACEHOLDER).append("\" media-type=\"image/png\"/>");
         int n = 0;
         for (String name : used) {
@@ -285,6 +293,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             putDeflated(zip, "META-INF/container.xml", container.getBytes(StandardCharsets.UTF_8));
             putDeflated(zip, "content.opf", opf.getBytes(StandardCharsets.UTF_8));
             putDeflated(zip, "book.xhtml", book.toString().getBytes(StandardCharsets.UTF_8));
+            putDeflated(zip, "style.css", css.getBytes(StandardCharsets.UTF_8));
             putStored(zip, "img/" + PAGE_PLACEHOLDER, pagePlaceholder());
             // Images inside the text; already compressed: store them.
             for (String name : used) {
@@ -411,21 +420,26 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         JSObject settings = call.getObject("settings", new JSObject());
         String xpath = call.getString("xpath", "");
         int ordinal = call.getInt("ordinal", -1);
+        String innerPath = call.getString("innerPath", "");
         main.post(() -> {
             final int gen = ++generation;
             ensureView();
             Config base = Config.from(settings, null);
             view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.brightness);
-            view.setPages(null, null, null);
-            view.setHoles(new ArrayList<>());
+            // A reload (new word states) keeps the page, the holes and the popup state until the
+            // new pages are ready; a fresh open starts blank.
+            if (view.getVisibility() != View.VISIBLE) {
+                view.setPages(null, null, null);
+                view.setHoles(new ArrayList<>());
+                popupOpen = false;
+            }
             view.setVisibility(View.VISIBLE);
             pageCount = 0;
             current = 0;
-            popupOpen = false;
             letters = null;
             pendingOpen = () -> {
                 Config c = withScreen(base);
-                engineHandler.post(() -> openOnEngine(gen, call, binary, book, c, xpath, ordinal));
+                engineHandler.post(() -> openOnEngine(gen, call, binary, book, c, xpath, ordinal, innerPath));
             };
             if (viewWidth > 0 && viewHeight > 0 && view.getWidth() == viewWidth) runPendingOpen();
         });
@@ -459,7 +473,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         return c;
     }
 
-    private void openOnEngine(int gen, PluginCall call, File binary, File book, Config c, String xpath, int ordinal) {
+    private void openOnEngine(int gen, PluginCall call, File binary, File book, Config c, String xpath, int ordinal, String innerPath) {
         if (gen != generation) {
             call.reject("CANCELLED");
             return;
@@ -489,8 +503,18 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             bodyPrefix = slash >= 0 ? firstXPath.substring(0, slash + 5) : null;
 
             int page = 0;
-            if (xpath != null && !xpath.isEmpty()) page = pageByXPath(xpath, 0);
-            else if (ordinal > 0 && bodyPrefix != null) page = pageByXPath(bodyPrefix + "/p[" + (ordinal + 1) + "]", 0);
+            // An exact place first; if the document's markup changed since it was saved (word
+            // spans), the block it was in.
+            int block = ordinal;
+            page = -1;
+            if (xpath != null && !xpath.isEmpty()) {
+                page = pageByXPath(xpath, -1);
+                if (page < 0) block = ordinalOf(xpath);
+            } else if (block >= 0 && innerPath != null && !innerPath.isEmpty() && bodyPrefix != null) {
+                page = pageByXPath(bodyPrefix + "/p[" + (block + 1) + "]/" + innerPath, -1);
+            }
+            if (page < 0 && block > 0 && bodyPrefix != null) page = pageByXPath(bodyPrefix + "/p[" + (block + 1) + "]", 0);
+            if (page < 0) page = 0;
             final int startPage = clampPage(page);
             renderAround(gen, startPage);
             loadLetters(gen, startPage);
@@ -608,6 +632,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         Log.i(TAG, String.format(Locale.US, "layout %dx%d density %.2f font %.0f line %.2f padding %.1f%%/%.1f%% -> margins t%d b%d l%d r%d",
             c.width, c.height, c.density, c.fontSize, c.lineHeight, c.verticalPadding, c.horizontalPadding, top, bottom, left, right));
         addConfig(config, EraEngine.CONFIG_VERTICAL_MODE, c.vertical ? "1" : "0");
+        // All of the book's CSS (level 5, unfiltered): word-state colours, picture pages, headings.
+        addConfig(config, EraEngine.CONFIG_ERA_EMBEDDED_STYLES, "5");
         addConfig(config, EraEngine.CONFIG_PAGE_WIDTH, String.valueOf(c.vertical ? c.height : c.width));
         addConfig(config, EraEngine.CONFIG_PAGE_HEIGHT, String.valueOf(c.vertical ? c.width : c.height));
         addConfig(config, EraEngine.CONFIG_FONT_FACE_MAIN, fontFace(c.fontFamily));

@@ -50,7 +50,8 @@ interface NativeReaderPlugin {
   highlight(options: { page: number; index: number; before: number; after: number; color: number }): Promise<void>;
   writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean }): Promise<void>;
   writeBookImage(options: { key: string; name: string; data: string }): Promise<void>;
-  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number }): Promise<NativePosition>;
+  /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
+  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string }): Promise<NativePosition>;
   setSettings(options: { settings: Partial<NativeReaderSettings> }): Promise<void>;
   goTo(options: { ordinal?: number; page?: number }): Promise<void>;
   turnPage(options: { direction: 1 | -1 }): Promise<void>;
@@ -75,9 +76,11 @@ export function isNativeReaderAvailable(): boolean {
  * which depend on the document's structure, are dropped when POSITION_FORMAT changes too).
  * v2: XHTML packed as an EPUB, for images. v3: picture blocks on pages of their own.
  * v4: the plugin swaps those pictures for a page-tall placeholder (pictures.idx). v5: small images
- * (logos) stay in the text (class "si").
+ * (logos) stay in the text (class "si"). v6: words in state spans (nativeReaderWords); the key
+ * is a hash of the HTML, so a state change gives a new export. v7: the plugin moves the CSS into
+ * style.css and the engine reads it unfiltered.
  */
-const EXPORT_VERSION = 5;
+const EXPORT_VERSION = 7;
 /** Bumped when engine xpaths of earlier exports no longer point to the same place. */
 const POSITION_FORMAT = 2;
 const CHUNK_CHARS = 512 * 1024;
@@ -104,19 +107,12 @@ function escapeHtml(text: string): string {
   return text.replace(XML_INVALID, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function hashBook(book: Book): string {
-  // FNV-1a over titles and text: the export is redone when the book changes.
+function hashText(text: string): string {
+  // FNV-1a: the same HTML gives the same key (and the export already on the device).
   let hash = 0x811c9dc5;
-  const add = (text: string) => {
-    for (let i = 0; i < text.length; i++) {
-      hash ^= text.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193);
-    }
-  };
-  for (const chapter of book.chapters || []) {
-    add(chapter.title || '');
-    add('\u0000');
-    add(chapter.content || '');
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(36);
 }
@@ -136,7 +132,15 @@ function lineChars(line: string): number {
  * computeSections / renderSectionContent exactly, so positions stay interchangeable with the
  * WebView reader. Ruby from the book ({base|reading} and Aozora 《》) becomes <ruby>.
  */
-export function exportBookForNativeReader(book: Book, options: { showFurigana?: boolean } = {}): NativeBookExport {
+export interface NativeExportOptions {
+  showFurigana?: boolean;
+  /** Engine markup of each line with its words in state spans (renderBookWords); without it the text is exported plain. */
+  lineHtml?: Map<string, string>;
+  /** Engine CSS for the word states (engineWordCss). */
+  wordCss?: string;
+}
+
+export function exportBookForNativeReader(book: Book, options: NativeExportOptions = {}): NativeBookExport {
   const showFurigana = options.showFurigana !== false;
   const images: { name: string; data: string }[] = [];
   const imageNames = new Map<string, string>();
@@ -157,6 +161,11 @@ export function exportBookForNativeReader(book: Book, options: { showFurigana?: 
     return path ? `<img src="${path}"/>` : '';
   };
 
+  const worded = (line: string) => {
+    const html = options.lineHtml?.get(line);
+    if (html === undefined) return null;
+    return html.replace(XML_INVALID, '').replace(/\{img:([^{}]+)\}/gi, (_m, src) => imgTag(src));
+  };
   const blocks: string[] = [];
   const blockHtml: string[] = [];
   const blockLines: string[] = [];
@@ -175,7 +184,7 @@ export function exportBookForNativeReader(book: Book, options: { showFurigana?: 
       const isHeading = !!heading && line.endsWith('}');
       if (isHeading) {
         classes.push(heading![1]);
-        inner = sanitizeJapaneseText(escapeHtml(line.substring(4, line.length - 1)));
+        inner = worded(line) ?? sanitizeJapaneseText(escapeHtml(line.substring(4, line.length - 1)));
       } else if (!line.trim()) {
         classes.push('e');
         inner = '&#160;';
@@ -183,7 +192,7 @@ export function exportBookForNativeReader(book: Book, options: { showFurigana?: 
         classes.push('i');
         inner = imgTag(line.substring(5, line.length - 1)) || '&#160;';
       } else {
-        inner = sanitizeJapaneseText(escapeHtml(line)).replace(/\{img:([^{}]+)\}/gi, (_m, src) => imgTag(src));
+        inner = worded(line) ?? sanitizeJapaneseText(escapeHtml(line)).replace(/\{img:([^{}]+)\}/gi, (_m, src) => imgTag(src));
       }
       blocks.push(`<p${classes.length ? ` class="${classes.join(' ')}"` : ''}>${inner}</p>`);
       blockHtml.push(inner);
@@ -216,13 +225,14 @@ export function exportBookForNativeReader(book: Book, options: { showFurigana?: 
     + 'img{max-width:100%;max-height:100%}'
     // "Show furigana" off: the book's readings are hidden (a separate export, see the key).
     + (showFurigana ? '' : 'rt,rp{display:none}')
+    + (options.wordCss || '')
     + '</style></head><body>\n'
     + blocks.join('\n')
     + '\n</body></html>\n';
 
   const id = String(book.id || 'book').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'book';
   return {
-    key: `${id}-${hashBook(book)}-v${EXPORT_VERSION}${showFurigana ? '' : 'n'}`,
+    key: `${id}-${hashText(html)}-v${EXPORT_VERSION}`,
     html,
     images,
     blocks: blockHtml,
@@ -325,6 +335,36 @@ export function xpathToTextOffset(blockHtml: string, xpath: string): number {
     total += text.length;
   }
   return -1;
+}
+
+/**
+ * Path inside a block to a character offset of its text without furigana, in the engine's xpath
+ * form ("span[3]/ruby[1]/text()[1].0"), for reopening at the same character after the block's
+ * markup changed. Null if the offset is past the text.
+ */
+export function textOffsetToInnerPath(blockHtml: string, offset: number): string | null {
+  const block = document.createElement('p');
+  block.innerHTML = blockHtml;
+  let total = 0;
+  for (const text of baseTextNodes(block)) {
+    if (offset < total + text.length) {
+      const steps: string[] = [];
+      for (let node: Node = text; node !== block; node = node.parentNode!) {
+        const parent = node.parentNode!;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const index = Array.from(parent.childNodes).filter((c) => c.nodeType === Node.TEXT_NODE).indexOf(node as ChildNode) + 1;
+          steps.unshift(`text()[${index}]`);
+        } else {
+          const tag = (node as Element).tagName.toLowerCase();
+          const index = Array.from(parent.childNodes).filter((c) => c.nodeType === Node.ELEMENT_NODE && (c as Element).tagName.toLowerCase() === tag).indexOf(node as ChildNode) + 1;
+          steps.unshift(`${tag}[${index}]`);
+        }
+      }
+      return `${steps.join('/')}.${offset - total}`;
+    }
+    total += text.length;
+  }
+  return null;
 }
 
 /** CSS colour (hex, rgb()) as 0xRRGGBB. */

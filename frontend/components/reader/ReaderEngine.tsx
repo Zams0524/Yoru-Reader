@@ -189,11 +189,18 @@ export function renderLineWords(line: string, wordStatuses: Record<string, strin
     : tokenizeJapaneseText(processed, wordStatuses);
 }
 
+/** The text Jiten parses for a chapter line ('' for headings and lines without text). */
+export function jitenTextOfLine(line: string): string {
+  if (/^\{h[123]:/.test(line) && line.endsWith('}')) return '';
+  const text = jitenPlainText(sanitizeJapaneseText(line).replace(/\{img:[^{}]*\}/gi, ''));
+  return text.trim() ? text : '';
+}
+
 /** With the Jiten parser on, waits (up to a few seconds) for its parse of the line, as the WebView reader shows it. */
 export async function prepareLineWords(line: string): Promise<void> {
-  if (!isJitenParserEnabled() || (/^\{h[123]:/.test(line) && line.endsWith('}'))) return;
-  const jitenText = jitenPlainText(sanitizeJapaneseText(line).replace(/\{img:[^{}]*\}/gi, ''));
-  if (!jitenText.trim() || getCachedJitenTokens(jitenText)) return;
+  if (!isJitenParserEnabled()) return;
+  const jitenText = jitenTextOfLine(line);
+  if (!jitenText || getCachedJitenTokens(jitenText)) return;
   await Promise.race([
     parseWithJiten([jitenText]).catch(() => []),
     new Promise((resolve) => window.setTimeout(resolve, 3000)),

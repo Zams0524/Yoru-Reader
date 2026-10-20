@@ -238,22 +238,27 @@ export function buildWordStyleCss(config: WordStyleThemeConfig): string {
   return rules.join('\n');
 }
 
-/** Applies the saved word-state styles to the native parser output (no-op on desktop). */
-export function applyLocalWordStyles(): void {
-  if (!usesLocalParserSettings() || typeof document === 'undefined') return;
+/** The saved word-state styles on Android (the Default theme until the user saves another). */
+export function getLocalWordStyleConfig(): WordStyleThemeConfig {
   const raw = readLocal().wordStyleConfig;
-  let el = document.getElementById(STYLE_ELEMENT_ID) as HTMLStyleElement | null;
-  // Nothing saved yet: use the Default theme, so the reader matches what the settings show.
-  let config: WordStyleThemeConfig = DEFAULT_WORD_STYLE_CONFIG;
   if (raw) {
     try {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       // An unreadable value keeps the Default theme instead of leaving index.css colours.
-      if (parsed && typeof parsed === 'object' && parsed.states) config = parsed;
+      if (parsed && typeof parsed === 'object' && parsed.states) return parsed;
     } catch {
       /* keep the Default theme */
     }
   }
+  return DEFAULT_WORD_STYLE_CONFIG;
+}
+
+/** Applies the saved word-state styles to the native parser output (no-op on desktop). */
+export function applyLocalWordStyles(): void {
+  if (!usesLocalParserSettings() || typeof document === 'undefined') return;
+  let el = document.getElementById(STYLE_ELEMENT_ID) as HTMLStyleElement | null;
+  // Nothing saved yet: use the Default theme, so the reader matches what the settings show.
+  const config = getLocalWordStyleConfig();
   if (!el) {
     el = document.createElement('style');
     el.id = STYLE_ELEMENT_ID;

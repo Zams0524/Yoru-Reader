@@ -64,6 +64,7 @@ final class EraEngine {
     static final int CONFIG_PAGE_HEIGHT = 118;
     static final int CONFIG_TEXT_ALIGN = 119;
     static final int CONFIG_HYPHENATION = 120;
+    static final int CONFIG_ERA_EMBEDDED_STYLES = 201;
     static final int CONFIG_VERTICAL_MODE = 203;
     static final int CONFIG_TEXT_INDENT = 204;
     static final int CONFIG_PARAGRAPH_MARGIN = 205;
