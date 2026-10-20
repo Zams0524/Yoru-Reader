@@ -1,6 +1,9 @@
 package com.yorureader.app;
 
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
@@ -26,9 +29,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import org.json.JSONArray;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
@@ -62,6 +68,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private static final String ENGINE_BINARY = "liberaepub.so";
     private static final int KEEP_BOOKS = 4;
     private static final String BOOK_FILE = "book.epub";
+    private static final String PICTURES_FILE = "pictures.idx";
     private static final Pattern BLOCK_IN_XPATH = Pattern.compile("/body/p(?:\\[(\\d+)\\])?(?=/|$)");
     private static final Pattern SAFE_NAME = Pattern.compile("[A-Za-z0-9._-]{1,120}");
 
@@ -85,6 +92,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private Config config;
     private int enginePages = 0;
     private String bodyPrefix = null;
+    /** Blocks that are only a picture (ordinal -> image file): their pages are drawn here, not by the engine. */
+    private Map<Integer, File> pictures = new HashMap<>();
     private static List<String[]> japaneseFonts;  // [path, face], found once per process
     /** Letters of the page on screen (written on the engine thread, read on the main thread). */
     private volatile PageLetters letters;
@@ -257,8 +266,41 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             }
         }
         if (!partial.renameTo(new File(dir, BOOK_FILE))) throw new IOException("rename");
+        indexPictures(xhtml, new File(dir, PICTURES_FILE));
         xhtml.delete();
-        deleteRecursively(images);
+        // img/ stays: picture pages are drawn from these files (drawPicturePage).
+    }
+
+    private static final Pattern PICTURE_BLOCK = Pattern.compile("^<p class=\"(?:[^\"]* )?i(?: [^\"]*)?\"><img src=\"img/([A-Za-z0-9._-]+)\"/></p>$");
+
+    /** "ordinal<TAB>file" for every block that is only a picture (one block per line in the export). */
+    private static void indexPictures(File xhtml, File index) throws IOException {
+        try (BufferedReader lines = new BufferedReader(new FileReader(xhtml)); FileWriter out = new FileWriter(index)) {
+            int ordinal = 0;
+            String line;
+            while ((line = lines.readLine()) != null) {
+                if (!line.startsWith("<p")) continue;
+                Matcher m = PICTURE_BLOCK.matcher(line);
+                if (m.matches()) out.write(ordinal + "\t" + m.group(1) + "\n");
+                ordinal++;
+            }
+        }
+    }
+
+    private static Map<Integer, File> loadPictures(File dir) {
+        Map<Integer, File> pictures = new HashMap<>();
+        File index = new File(dir, PICTURES_FILE);
+        if (!index.isFile()) return pictures;
+        try (BufferedReader lines = new BufferedReader(new FileReader(index))) {
+            String line;
+            while ((line = lines.readLine()) != null) {
+                int tab = line.indexOf('\t');
+                if (tab > 0) pictures.put(Integer.parseInt(line.substring(0, tab)), new File(new File(dir, "img"), line.substring(tab + 1)));
+            }
+        } catch (IOException | NumberFormatException e) {
+            Log.w(TAG, "pictures index", e);
+        }
+        return pictures;
     }
 
     private static void putStored(ZipOutputStream zip, String name, byte[] data) throws IOException {
@@ -289,6 +331,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     }
 
     private void pruneOldBooks(String keep) {
+        // Earlier exports of the same book ("<id>-<hash>-v<version>"): replaced by this one.
+        int versionDash = keep.lastIndexOf('-');
+        int hashDash = versionDash > 0 ? keep.lastIndexOf('-', versionDash - 1) : -1;
+        if (hashDash > 0) {
+            String sameBook = keep.substring(0, hashDash + 1);
+            File[] older = booksDir().listFiles((dir, name) -> name.startsWith(sameBook) && !name.equals(keep));
+            if (older != null) for (File dir : older) deleteRecursively(dir);
+        }
         File[] dirs = booksDir().listFiles(File::isDirectory);
         if (dirs == null || dirs.length <= KEEP_BOOKS) return;
         Arrays.sort(dirs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
@@ -385,6 +435,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             engine.stop();
             cache.clear();
             bodyPrefix = null;
+            pictures = loadPictures(book.getParentFile());
             engine.start(binary, getContext().getFilesDir());
             registerFonts();
             config = c;
@@ -564,10 +615,13 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 if (cache.containsKey(p)) continue;
             }
             try {
-                byte[] pixels = engine.renderPage(p, c.width, c.height);
-                if (pixels == null) continue;
-                Bitmap bitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
-                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
+                Bitmap bitmap = drawPicturePage(p, c);
+                if (bitmap == null) {
+                    byte[] pixels = engine.renderPage(p, c.width, c.height);
+                    if (pixels == null) continue;
+                    bitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
+                    bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
+                }
                 bitmap.prepareToDraw();
                 synchronized (cache) {
                     cache.put(p, bitmap);
@@ -583,6 +637,45 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             cache.keySet().removeIf(p -> p < page - 2 || p > page + 3);
         }
         main.post(() -> { if (gen == generation) publish(); });
+    }
+
+    /**
+     * A page that is only a picture (they get pages of their own, see the export CSS), drawn like
+     * ReadEra does: fitted between the page margins and centred, upright in either direction.
+     * Returns null for any other page.
+     */
+    private Bitmap drawPicturePage(int page, Config c) throws IOException {
+        if (pictures.isEmpty()) return null;
+        String xpath = pageXPath(page);
+        if (!xpath.contains("/img")) return null;
+        File file = pictures.get(ordinalOf(xpath));
+        if (file == null || !file.isFile()) return null;
+        int minMargin = Math.round(10 * c.density);
+        int left = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f)) + c.insets.left;
+        int right = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f)) + c.insets.right;
+        int top = Math.max(minMargin, Math.round(c.height * c.verticalPadding / 100f)) + c.insets.top;
+        int bottom = Math.max(minMargin, Math.round(c.height * c.verticalPadding / 100f)) + c.insets.bottom;
+        int boxW = c.width - left - right, boxH = c.height - top - bottom;
+        if (boxW <= 0 || boxH <= 0) return null;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+        float scale = Math.min(boxW / (float) bounds.outWidth, boxH / (float) bounds.outHeight);
+        BitmapFactory.Options decode = new BitmapFactory.Options();
+        decode.inSampleSize = 1;
+        while (bounds.outWidth / (decode.inSampleSize * 2) >= bounds.outWidth * scale
+            && bounds.outHeight / (decode.inSampleSize * 2) >= bounds.outHeight * scale) decode.inSampleSize *= 2;
+        Bitmap image = BitmapFactory.decodeFile(file.getAbsolutePath(), decode);
+        if (image == null) return null;
+        int w = Math.round(bounds.outWidth * scale), h = Math.round(bounds.outHeight * scale);
+        int x = left + (boxW - w) / 2, y = top + (boxH - h) / 2;
+        Bitmap pageBitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(pageBitmap);
+        canvas.drawColor(0xFF000000 | c.backgroundColor);
+        canvas.drawBitmap(image, null, new Rect(x, y, x + w, y + h), new Paint(Paint.FILTER_BITMAP_FLAG));
+        image.recycle();
+        return pageBitmap;
     }
 
     private void engineFailed(int gen, Throwable e) {

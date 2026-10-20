@@ -70,9 +70,12 @@ export function isNativeReaderAvailable(): boolean {
 
 /**
  * Bumped when the exported book changes, so books are exported again (and saved engine xpaths,
- * which depend on the document's structure, are dropped). v2: XHTML packed as an EPUB, for images.
+ * which depend on the document's structure, are dropped when POSITION_FORMAT changes too).
+ * v2: XHTML packed as an EPUB, for images. v3: picture blocks on pages of their own.
  */
-const EXPORT_VERSION = 2;
+const EXPORT_VERSION = 3;
+/** Bumped when engine xpaths of earlier exports no longer point to the same place. */
+const POSITION_FORMAT = 2;
 const CHUNK_CHARS = 512 * 1024;
 
 export interface NativeBookExport {
@@ -202,7 +205,8 @@ export function exportBookForNativeReader(book: Book): NativeBookExport {
     + 'p.h1{font-size:1.5em;font-weight:bold;margin:1em 0}'
     + 'p.h2{font-size:1.3em;font-weight:bold;margin:0.8em 0}'
     + 'p.h3{font-size:1.15em;font-weight:bold;margin:0.6em 0}'
-    + 'p.i{text-align:center}'
+    // A picture gets a page of its own; the plugin draws it there centred and fitted to the screen.
+    + 'p.i{text-align:center;page-break-before:always;page-break-after:always}'
     + 'img{max-width:100%;max-height:100%}'
     + '</style></head><body>\n'
     + blocks.join('\n')
@@ -329,7 +333,7 @@ export function cssColorToInt(color: string, fallback: number): number {
 }
 
 /** The exact page of a book (xpath) is kept per device; the shared progress only has the paragraph. */
-const POSITION_KEY = `native-reader:position:v${EXPORT_VERSION}:`;
+const POSITION_KEY = `native-reader:position:v${POSITION_FORMAT}:`;
 
 export function loadNativePosition(bookId: string): { xpath: string; paragraph: number } | null {
   try {
