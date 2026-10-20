@@ -194,6 +194,27 @@ export default function ReaderSettingsPopover({
             checked={!disableCss}
             onChange={(value) => onSettingChange('disableCss', !value)}
           />
+          <SwitchRow
+            label={es ? 'Desplazamiento automático' : 'Auto-scroll'}
+            checked={!!settings.autoScrollEnabled}
+            onChange={(value) => onSettingChange('autoScrollEnabled', value)}
+          />
+          {!!settings.autoScrollEnabled && (
+            <div className="readera-settings-row">
+              <span className="readera-settings-label">{es ? 'Velocidad de desplazamiento' : 'Scroll speed'}</span>
+              <input
+                type="range"
+                className="readera-settings-slider"
+                min={0.2}
+                max={3}
+                step={0.1}
+                value={settings.autoScrollSpeed || 1.0}
+                onChange={(e) => onSettingChange('autoScrollSpeed', Number(e.target.value))}
+                aria-label={es ? 'Velocidad de desplazamiento' : 'Scroll speed'}
+                style={{ '--fill': `${(((settings.autoScrollSpeed || 1.0) - 0.2) / 2.8) * 100}%` } as React.CSSProperties}
+              />
+            </div>
+          )}
           {isPhone && (
             <div className="readera-settings-row">
               <span className="readera-settings-label">{es ? 'Brillo del lector' : 'Reader brightness'}</span>
