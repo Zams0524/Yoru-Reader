@@ -117,6 +117,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int textColor, backgroundColor;
         String fontFamily, textAlign;
         boolean invertTaps;
+        boolean kindleTaps;
         int brightness;               // 0-100, below 100 the page is dimmed
         int width, height;           // view size in px
         Insets insets = Insets.NONE;  // system bars and cutout, px
@@ -134,6 +135,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.fontFamily = s.optString("fontFamily", base != null ? base.fontFamily : "");
             c.textAlign = s.optString("textAlign", base != null ? base.textAlign : "original");
             c.invertTaps = s.optBoolean("invertTaps", base != null && base.invertTaps);
+            c.kindleTaps = "kindle".equals(s.optString("tapZoneMode", base != null && base.kindleTaps ? "kindle" : "edge"));
             c.brightness = Math.max(0, Math.min(100, s.optInt("brightness", base != null ? base.brightness : 100)));
             return c;
         }
@@ -425,7 +427,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             final int gen = ++generation;
             ensureView();
             Config base = Config.from(settings, null);
-            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.brightness);
+            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.kindleTaps, base.brightness);
             // A reload (new word states) keeps the page, the holes and the popup state until the
             // new pages are ready; a fresh open starts blank.
             if (view.getVisibility() != View.VISIBLE) {
@@ -1062,7 +1064,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             return;
         }
         Config next = withScreen(Config.from(settings, config));
-        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps, next.brightness);
+        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps, next.kindleTaps, next.brightness);
         final int gen = generation, page = current;
         engineHandler.post(() -> {
             if (gen != generation) return;

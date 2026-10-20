@@ -60,6 +60,7 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']):
     fontFamily: settings.fontFamily,
     textAlign: settings.textAlign || 'original',
     invertTaps: !!settings.invertTapZones,
+    tapZoneMode: settings.tapZoneMode || 'edge',
     brightness: typeof settings.readerBrightness === 'number' ? settings.readerBrightness : 100,
   };
 }

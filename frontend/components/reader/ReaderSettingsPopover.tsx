@@ -168,6 +168,20 @@ export default function ReaderSettingsPopover({
             ]}
             onChange={(value) => setDirection(value as 'auto' | 'vertical' | 'horizontal')}
           />
+          <PickerRow
+            label={es ? 'Zonas de toque' : 'Tap zones'}
+            value={settings.tapZoneMode || 'edge'}
+            options={[
+              { value: 'edge', label: es ? 'Bordes (tercios)' : 'Edges (thirds)' },
+              { value: 'kindle', label: 'Kindle (20 / 80)' },
+            ]}
+            onChange={(value) => onSettingChange('tapZoneMode', value as ReaderSettingsState['tapZoneMode'])}
+          />
+          <SwitchRow
+            label={es ? 'Invertir zonas de toque' : 'Invert tap zones'}
+            checked={!!settings.invertTapZones}
+            onChange={(value) => onSettingChange('invertTapZones', value)}
+          />
           <SwitchRow
             label={es ? 'Barra de progreso' : 'Progress line'}
             checked={!!showProgressLine}

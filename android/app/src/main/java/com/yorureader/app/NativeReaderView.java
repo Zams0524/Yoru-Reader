@@ -52,6 +52,7 @@ final class NativeReaderView extends View {
     /** Vertical text reads right to left: dragging right brings the next page. */
     private boolean vertical = true;
     private boolean invertTaps = false;
+    private boolean kindleTaps = false;
     private final List<Rect> holes = new ArrayList<>();
     /** The looked-up word on the current page (moves with it while sliding). */
     private final List<RectF> highlight = new ArrayList<>();
@@ -72,12 +73,13 @@ final class NativeReaderView extends View {
         invalidate();
     }
 
-    void setLook(int background, boolean vertical, boolean invertTaps, int brightness) {
+    void setLook(int background, boolean vertical, boolean invertTaps, boolean kindleTaps, int brightness) {
         this.background = background;
         // The reader's brightness setting: a black veil over the page (not over Yoru's bars).
         dimPaint.setColor(Color.argb(Math.round((100 - brightness) * 2.55f), 0, 0, 0));
         this.vertical = vertical;
         this.invertTaps = invertTaps;
+        this.kindleTaps = kindleTaps;
         invalidate();
     }
 
@@ -185,9 +187,15 @@ final class NativeReaderView extends View {
                     animateTo(turn ? Math.signum(offset) * getWidth() : 0, turn ? direction : 0);
                 } else if (Math.abs(e.getX() - downX) < touchSlop && Math.abs(e.getY() - downY) < touchSlop) {
                     float x = e.getX();
-                    // Vertical text: the left edge goes forward (the book advances to the left).
-                    int leftEdge = (vertical ? 1 : -1) * (invertTaps ? -1 : 1);
-                    int edge = x < getWidth() / 3f ? leftEdge : x > getWidth() * 2 / 3f ? -leftEdge : 0;
+                    int edge;
+                    if (kindleTaps) {
+                        // Kindle mode: left 20% back, right 80% forward (no vertical correction).
+                        edge = (x < getWidth() * 0.20f ? -1 : 1) * (invertTaps ? -1 : 1);
+                    } else {
+                        // Edge mode: left/right thirds advance, center shows/hides bars.
+                        int leftEdge = (vertical ? 1 : -1) * (invertTaps ? -1 : 1);
+                        edge = x < getWidth() / 3f ? leftEdge : x > getWidth() * 2 / 3f ? -leftEdge : 0;
+                    }
                     listener.onTap(x, e.getY(), edge);
                 }
                 return true;
