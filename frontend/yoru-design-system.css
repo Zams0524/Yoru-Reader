@@ -3696,3 +3696,9 @@ html.platform-android .bottom-navigation-bar {
 html.platform-android .mas-card-installing {
   animation: none;
 }
+
+/* Reader page: its own GPU layer from the start, so the page-turn slide and the finger drag
+   (transform / opacity, ReaderEngine slideIn) run on the compositor without a first-frame stall. */
+html.platform-android .reader-engine-content {
+  will-change: transform, opacity;
+}

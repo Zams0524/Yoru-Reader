@@ -285,6 +285,7 @@ export default function Reader({
   const finalizeReadingSessionRef = useRef<() => void>(() => {});
 
   const handleBack = useCallback(() => {
+    flushProgressRef.current();
     finalizeReadingSessionRef.current();
     const updatedSettings = db.getSettings();
     db.saveSettings(updatedSettings);
@@ -317,6 +318,8 @@ export default function Reader({
     }
   }, [rawSetReaderSetting, settings, onSaveSettings]);
   const [sidebarMode, setSidebarMode] = useState<'toc' | 'bookmarks' | 'notes' | 'session' | 'settings' | null>(null);
+  const sidebarModeRef = useRef(sidebarMode);
+  sidebarModeRef.current = sidebarMode;
   const [bookmarks, setBookmarks] = useState<any[]>(book.bookmarks || []);
   const [currentProgress, setCurrentProgress] = useState({
     currChars: book.progress?.currentPage || 0,
@@ -1036,6 +1039,11 @@ export default function Reader({
       tracker.totalSeconds += wholeSeconds;
       tracker.pendingSeconds += wholeSeconds;
 
+      // Each update re-renders the whole reader: every second only while the session panel is open.
+      if (tracker.totalSeconds % 5 !== 0 && sidebarModeRef.current !== 'session') {
+        if (tracker.pendingSeconds >= 15) flushPendingReadingStats();
+        return;
+      }
       setSession((previous) => {
         const readingTime = tracker.totalSeconds;
         return {
@@ -2073,6 +2081,32 @@ export default function Reader({
     else handleBack();
   });
 
+  // Saving progress rewrites the whole library in IndexedDB (every book's text): never on each
+  // page turn. Keep the latest position and save it after a pause, and always when leaving.
+  const pendingProgressRef = useRef<[number, number, number] | null>(null);
+  const progressTimerRef = useRef<number | null>(null);
+  const flushProgress = useCallback(() => {
+    if (progressTimerRef.current !== null) window.clearTimeout(progressTimerRef.current);
+    progressTimerRef.current = null;
+    const pending = pendingProgressRef.current;
+    if (!pending) return;
+    pendingProgressRef.current = null;
+    onUpdateProgress(book.id, pending[0], pending[1], pending[2]);
+  }, [book.id, onUpdateProgress]);
+  const flushProgressRef = useRef(flushProgress);
+  flushProgressRef.current = flushProgress;
+  useEffect(() => {
+    const onHidden = () => { if (document.visibilityState === 'hidden') flushProgressRef.current(); };
+    const onPageHide = () => flushProgressRef.current();
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onPageHide);
+      flushProgressRef.current();
+    };
+  }, []);
+
   const handleCharsUpdate = useCallback((payload: any) => {
     setCurrentProgress(payload);
     const tracker = readingTrackerRef.current;
@@ -2102,8 +2136,10 @@ export default function Reader({
     }
 
     const percentage = payload.totalChars > 0 ? Math.min(100, Math.floor((payload.currChars / payload.totalChars) * 100)) : 0;
-    onUpdateProgress(book.id, payload.currSection, payload.lastIndex, percentage);
-  }, [book.id, onUpdateProgress]);
+    pendingProgressRef.current = [payload.currSection, payload.lastIndex, percentage];
+    if (progressTimerRef.current !== null) window.clearTimeout(progressTimerRef.current);
+    progressTimerRef.current = window.setTimeout(() => flushProgressRef.current(), 1500);
+  }, []);
 
   const handleNavbarMouseLeave = useCallback(() => {
     if (!sidebarMode && !showSettingsPopover && !isJumpModalOpen && !isGalleryOpen) {

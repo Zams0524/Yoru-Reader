@@ -539,8 +539,14 @@ function ReaderEngineComponent({
       const pageHeight = content.clientHeight || window.innerHeight;
       const from = Math.round(content.scrollTop / pageHeight);
       content.scrollTop = targetPage * pageHeight;
-      if (animate && from !== targetPage) slideIn(content, targetPage > from);
-      updateChars();
+      if (animate && from !== targetPage) {
+        slideIn(content, targetPage > from);
+        // Progress makes the whole reader re-render: do it once the slide has played, so the
+        // first frames of the animation are not delayed.
+        window.setTimeout(updateChars, 280);
+      } else {
+        updateChars();
+      }
       return;
     }
 
