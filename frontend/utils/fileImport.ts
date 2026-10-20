@@ -68,9 +68,11 @@ export function htmlToStructuredParagraphs(doc: Document | Element): any[] {
       }
 
       if (tagName === 'ruby') {
-        // Extract furigana from <rt> element
-        const rtElement = el.querySelector('rt');
-        const rubyReading = rtElement ? rtElement.textContent?.trim() || '' : '';
+        // Furigana: every <rt>, in order. Japanese EPUBs often put one reading per kanji
+        // (<ruby>舞<rt>ぶ</rt>台<rt>たい</rt></ruby>): the word keeps the whole reading (ぶたい).
+        const rubyReading = Array.from(el.querySelectorAll('rt'))
+          .map((rt) => rt.textContent?.trim() || '')
+          .join('');
         
         // Extract kanji base text by cloning and removing rt / rp elements
         const clone = el.cloneNode(true) as Element;

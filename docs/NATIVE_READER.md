@@ -14,6 +14,23 @@ Desde la 1.4.0 (versionCode 143), Android dibuja los libros con un motor nativo 
 
 ## Pendiente (fases 2-4)
 
+### Furigana incompleta en libros ya importados
+
+El importador EPUB/HTML conservaba solo el primer `<rt>` de cada `<ruby>`. Por ejemplo,
+`<ruby>舞<rt>ぶ</rt>台<rt>たい</rt></ruby>` quedaba guardado como `{舞台|ぶ}`.
+Ahora guarda todas las lecturas en orden (`{舞台|ぶたい}`); el fallo afectaba a ambos lectores.
+Los libros guardados necesitan reimportarse desde el archivo original, porque las lecturas
+descartadas no se pueden recuperar de la base de datos.
+
+La reimportación actualiza las lecturas del libro existente solo si coinciden los capítulos,
+su texto base, saltos de línea, títulos e imágenes. Conserva el ID, progreso, marcadores,
+subrayados y demás metadatos. Una edición con texto distinto sigue sin reemplazar el libro.
+El exportado nativo cambia de clave al cambiar las lecturas y se vuelve a generar.
+
+Prueba local de importación, persistencia y exportación nativa (Chromium aislado, sin usar el perfil real):
+`node build/verify-import-readings.cjs [ruta-al-libro.epub]`.
+Esta prueba comprueba los datos y el HTML; no sustituye la comprobación visual en Android.
+
 Funciones del lector web y su estado en el nativo (20 oct):
 
 - Funcionan igual (son paneles del WebView sobre la página): barra superior y menú ⋮, ajustes del libro, índice, búsqueda (salta al párrafo), marcadores e índice de subrayados (salto), galería de imágenes, ir a posición, barra de páginas, medidor de velocidad y sesión de lectura, estadísticas de caracteres.

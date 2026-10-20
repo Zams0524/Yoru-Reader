@@ -157,6 +157,20 @@ const idb = {
   }
 };
 
+/** Only readings may change: base text, line breaks, headings and images must stay identical. */
+function sameTextExceptReadings(current: any[], incoming: any[]): boolean {
+  if (current.length === 0 || current.length !== incoming.length) return false;
+  const baseText = (content: string) => content
+    .replace(/\r\n/g, '\n')
+    .replace(/\{([^|{}]+)\|[^{}]*\}/g, '$1');
+  return current.every((chapter, index) => {
+    const next = incoming[index];
+    return typeof chapter?.content === 'string' && typeof next?.content === 'string'
+      && chapter.title === next.title && chapter.isFromToc === next.isFromToc
+      && baseText(chapter.content) === baseText(next.content);
+  });
+}
+
 export const db = {
   async close() {
     await idb.close();
@@ -295,9 +309,10 @@ export const db = {
     // Check if book already exists by title
     const existingIdx = books.findIndex(b => b.title === book.title);
     if (existingIdx !== -1) {
-      if (books[existingIdx].isDeleted) {
-        // Restore/undelete it!
-        books[existingIdx].isDeleted = false;
+      if (books[existingIdx].isDeleted
+        || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+        // Restore a deleted book, or refresh readings without changing text positions.
+        if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
         books[existingIdx].chapters = book.chapters || [];
         await this.saveBooks(books);
       }
@@ -340,6 +355,11 @@ export const db = {
           books[existingIdx].isDeleted = false;
           books[existingIdx].chapters = book.chapters || [];
           addedCount++;
+        } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+          // Refresh readings an older import lost, preserving progress and annotations.
+          books[existingIdx].chapters = book.chapters || [];
+          addedCount++;
+          console.log(`db.addBooks - Lecturas de "${book.title}" actualizadas (mismo texto).`);
         } else {
           console.log(`db.addBooks - Saltando "${book.title}" porque ya existe.`);
         }
