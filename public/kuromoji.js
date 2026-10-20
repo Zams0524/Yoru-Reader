@@ -8108,23 +8108,49 @@ function BrowserDictionaryLoader(dic_path) {
 
 BrowserDictionaryLoader.prototype = Object.create(DictionaryLoader.prototype);
 
+// Yoru: the Android Gradle plugin gunzips "*.gz" assets and drops the extension
+// when it packages the APK, so dict/base.dat.gz is served there as dict/base.dat.
+// Inside the APK ask for the uncompressed name first; an Android OTA bundle (and
+// every other platform) still has the ".gz" files, so each name falls back to the other.
+function preferUncompressedDict() {
+    var cap = typeof window !== "undefined" && window.Capacitor;
+    return !!(cap && cap.getPlatform && cap.getPlatform() === "android");
+}
+
 /**
  * Utility function to load gzipped dictionary
  * @param {string} url Dictionary URL
  * @param {BrowserDictionaryLoader~onLoad} callback Callback function
  */
 BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
+    if (preferUncompressedDict() && /\.gz$/.test(url)) {
+        loadDictFile(url.replace(/\.gz$/, ""), url, callback);
+    } else {
+        loadDictFile(url, /\.gz$/.test(url) ? url.replace(/\.gz$/, "") : null, callback);
+    }
+};
+
+function loadDictFile(url, fallbackUrl, callback) {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", url, true);
     xhr.responseType = "arraybuffer";
     xhr.onload = function () {
         if (this.status > 0 && this.status !== 200) {
-            callback(xhr.statusText, null);
+            if (fallbackUrl) {
+                loadDictFile(fallbackUrl, null, callback);
+                return;
+            }
+            callback("HTTP " + xhr.status + " loading " + url, null);
             return;
         }
-        var arraybuffer = this.response;
+        var bytes = new Uint8Array(this.response);
+        if (bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
+            // Already uncompressed (APK asset or a server that decoded it).
+            callback(null, this.response);
+            return;
+        }
 
-        var gz = new zlib.Zlib.Gunzip(new Uint8Array(arraybuffer));
+        var gz = new zlib.Zlib.Gunzip(bytes);
         var typed_array = gz.decompress();
         callback(null, typed_array.buffer);
     };
@@ -8132,7 +8158,7 @@ BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
         callback(err, null);
     };
     xhr.send();
-};
+}
 
 /**
  * Callback
