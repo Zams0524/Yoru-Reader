@@ -35,6 +35,7 @@
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",
     "@capacitor/core": "^8.4.1",
+    "fzstd": "^0.1.1",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "kuromoji": "^0.1.2",
@@ -42,6 +43,7 @@
     "pdfjs-dist": "^6.2.108",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "sql.js": "^1.15.1",
     "ts-fsrs": "^5.4.1",
     "ws": "^8.21.0"
   },
@@ -83,7 +85,10 @@
       "installerSidebar": "build/installerSidebar.bmp",
       "uninstallerSidebar": "build/installerSidebar.bmp",
       "multiLanguageInstaller": true,
-      "installerLanguages": ["en_US", "es_ES"],
+      "installerLanguages": [
+        "en_US",
+        "es_ES"
+      ],
       "displayLanguageSelector": false
     },
     "mac": {
