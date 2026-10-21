@@ -971,17 +971,13 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
         })() : (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', maxWidth: '720px', margin: '0 auto' }}>
             
-            {/* Card Container */}
-            <div style={{ 
-              background: '#09090b', 
-              border: '1px solid #27272a', 
-              borderRadius: '16px',
-              padding: 'clamp(18px, 5vw, 30px)',
+            {/* Card content, plain on the background - no boxed container, like Anki's own reviewer */}
+            <div style={{
+              padding: 'clamp(10px, 3vw, 18px) 4px',
               flex: 1,
-              display: 'flex', 
-              flexDirection: 'column', 
-              position: 'relative', 
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative',
               overflowY: 'auto'
             }}>
               {/* Card Header */}
