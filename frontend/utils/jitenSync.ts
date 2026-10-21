@@ -18,6 +18,8 @@ const WORD_KEY_STORAGE = 'yoru_jiten_word_keys_v1';
 const WORD_KEY_LIMIT = 20000;
 const QUEUE_STORAGE = 'yoru_jiten_queue_v1';
 const QUEUE_LIMIT = 2000;
+const THROTTLE_WAIT_MS = 1500;
+const MAX_THROTTLE_RETRIES = 4;
 
 // Jiten knownState codes, as used by the reader extension.
 const CARD_STATES: Record<number, string> = {
@@ -41,6 +43,26 @@ export interface JitenWordInfo {
 }
 
 class JitenAuthError extends Error {}
+
+class JitenHttpError extends Error {
+  constructor(readonly status: number, message: string, readonly retryAfterMs?: number) {
+    super(message);
+  }
+}
+
+// On Android, CapacitorHttp's fetch ignores AbortSignal, so a request that never answers would hang
+// the sync queue for the whole session. Race every call against a timer instead.
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), REQUEST_TIMEOUT_MS);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ── Settings / status ──────────────────────────────────────────────────
 
@@ -87,13 +109,15 @@ async function jitenRequest<T = any>(action: string, body: unknown, apiKey = get
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
+  let text: string;
   try {
-    response = await fetch(`${API_BASE}/${action}`, {
+    response = await withTimeout(fetch(`${API_BASE}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `ApiKey ${apiKey}` },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
-    });
+    }), `Jiten ${action}`);
+    text = await withTimeout(response.text(), `Jiten ${action}`);
   } catch (error) {
     connectionState = 'offline';
     emitChange();
@@ -109,13 +133,19 @@ async function jitenRequest<T = any>(action: string, body: unknown, apiKey = get
     }
     throw new JitenAuthError(`Jiten rejected the API key (${response.status})`);
   }
-  if (!response.ok) throw new Error(`Jiten ${action} failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    const retryAfter = Number(response.headers.get('Retry-After'));
+    throw new JitenHttpError(
+      response.status,
+      `Jiten ${action} failed: HTTP ${response.status} ${text.slice(0, 200)}`,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined,
+    );
+  }
 
   if (connectionState !== 'ok') {
     connectionState = 'ok';
     emitChange();
   }
-  const text = await response.text();
   return (text ? JSON.parse(text) : null) as T;
 }
 
@@ -262,9 +292,9 @@ async function resolveWordKey(term: string, reading: string): Promise<string | n
   if (known) return known;
 
   // Public endpoint, no key needed: splits the text into Jiten words.
-  const response = await fetch(`${API_BASE}/vocabulary/parse?text=${encodeURIComponent(term)}`);
-  if (!response.ok) throw new Error(`Jiten word lookup failed: HTTP ${response.status}`);
-  const parsed: { wordId: number; readingIndex: number; originalText: string }[] = await response.json();
+  const response = await withTimeout(fetch(`${API_BASE}/vocabulary/parse?text=${encodeURIComponent(term)}`), 'Jiten word lookup');
+  if (!response.ok) throw new JitenHttpError(response.status, `Jiten word lookup failed: HTTP ${response.status}`);
+  const parsed: { wordId: number; readingIndex: number; originalText: string }[] = await withTimeout(response.json(), 'Jiten word lookup');
   const match = parsed.find((word) => word.originalText === term) || (parsed.length === 1 ? parsed[0] : null);
   if (!match) return null;
   const key = `${match.wordId}:${match.readingIndex}`;
@@ -306,6 +336,7 @@ export function flushJitenQueue(): Promise<void> {
   if (flushing) return flushing;
   flushing = (async () => {
     try {
+      let throttled = 0;
       for (;;) {
         const queue = loadQueue();
         const op = queue[0];
@@ -322,10 +353,18 @@ export function flushJitenQueue(): Promise<void> {
           }
         } catch (error) {
           if (error instanceof JitenAuthError) break;
-          // Network problems: keep the op and retry later. A bad request would never pass, so drop it.
-          if (!(error instanceof Error) || !/HTTP 4\d\d/.test(error.message)) break;
-          console.warn('[Jiten] Dropping a sync item Jiten refused:', op, error);
+          // Jiten debounces quick changes to the same account (429): wait and send the same item again.
+          if (error instanceof JitenHttpError && error.status === 429 && throttled < MAX_THROTTLE_RETRIES) {
+            throttled += 1;
+            await wait(error.retryAfterMs ?? THROTTLE_WAIT_MS * throttled);
+            continue;
+          }
+          // Network problems, timeouts, server errors or a long throttle: keep the item and retry later.
+          if (!(error instanceof JitenHttpError) || error.status >= 500 || error.status === 429) break;
+          // Any other 4xx would never pass (409 means Jiten already has it), so drop it.
+          console.warn('[Jiten] Dropping a sync item Jiten refused:', op, error.message);
         }
+        throttled = 0;
         const current = loadQueue();
         if (current[0] && current[0].at === op.at && current[0].term === op.term) current.shift();
         saveQueue(current);
@@ -341,9 +380,15 @@ export function getPendingJitenSyncCount(): number {
   return loadQueue().length;
 }
 
+// Queued even while the key is rejected or Jiten is unreachable, so nothing is lost: the queue is
+// sent once the key checks out again (Settings → "Save and check") or the app restarts.
+function canQueueJitenSync(): boolean {
+  return usesLocalParserSettings() && getJitenApiKey().length > 0;
+}
+
 /** Yoru rating 1-4 (Again, Hard, Good, Easy) → Jiten review. */
 export function syncJitenReview(term: string, reading: string, rating: number) {
-  if (!isJitenSyncEnabled() || !term || rating < 1 || rating > 4) return;
+  if (!canQueueJitenSync() || !term || rating < 1 || rating > 4) return;
   const spelling = term.split(':')[0];
   if (!stateOverrides.has(spelling)) stateOverrides.set(spelling, 'young');
   enqueue({ kind: 'review', term: spelling, reading: reading || '', rating, at: Date.now() });
@@ -351,19 +396,20 @@ export function syncJitenReview(term: string, reading: string, rating: number) {
 }
 
 /**
- * Yoru word marks → Jiten deck states.
- * known → never forget, ignored → blacklist, learning → mining deck; "new" undoes the previous mark.
+ * Yoru word marks → Jiten vocabulary states.
+ * known → never forget, ignored → blacklist; "new" undoes the previous mark.
+ * Jiten has no "learning" state (it rejects mining-add): its card is created by the first review.
  */
 export function syncJitenWordStatus(term: string, reading: string, status: string, previousStatus?: string) {
-  if (!isJitenSyncEnabled() || !term) return;
+  if (!canQueueJitenSync() || !term) return;
   const spelling = term.split(':')[0];
   const states: string[] = [];
   if (previousStatus === 'known' && status !== 'known') states.push('neverForget-remove');
   if (previousStatus === 'ignored' && status !== 'ignored') states.push('blacklist-remove');
   if (status === 'known' && previousStatus !== 'known') states.push('neverForget-add');
   if (status === 'ignored' && previousStatus !== 'ignored') states.push('blacklist-add');
-  if (status === 'learning' && previousStatus !== 'learning') states.push('mining-add');
-  if (states.length === 0) return;
+  // "learning" sends nothing, but still shows as young until a review reaches Jiten.
+  if (states.length === 0 && status !== 'learning') return;
 
   const at = Date.now();
   states.forEach((state, index) => enqueue({ kind: 'state', term: spelling, reading: reading || '', state, at: at + index }));
