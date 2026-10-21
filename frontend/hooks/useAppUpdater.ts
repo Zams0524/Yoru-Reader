@@ -22,7 +22,8 @@ export interface UpdaterState {
   status: UpdaterStatus;
   kind: 'installer' | 'ota' | 'apk' | null;
   current: { appVersion: string; hotVersion?: string };
-  latest: { appVersion: string; hotVersion?: string; description?: string } | null;
+  // needsApk: a newer interface exists but is held back until a new APK ships.
+  latest: { appVersion: string; hotVersion?: string; description?: string; needsApk?: boolean } | null;
   progress: { percent: number; transferred?: number; total?: number } | null;
   error: string | null;
   platform: string;
@@ -248,7 +249,9 @@ export function useAppUpdater() {
               downloadOta().catch((err: any) => patch({ status: 'error', error: err?.message || String(err), progress: null }));
             }
           } else {
-            patch({ status: 'up-to-date', kind: null, current, latest: { ...latest, hotVersion: ota?.webVersion } });
+            const needsApk = Boolean(ota) && (!ota.url || ota.nativeVersionCode !== installedCode)
+              && isNewerVersion(ota.webVersion, current.hotVersion);
+            patch({ status: 'up-to-date', kind: null, current, latest: { ...latest, hotVersion: ota?.webVersion, needsApk } });
           }
         } else {
           patch({ status: 'up-to-date', kind: null, current, latest });
