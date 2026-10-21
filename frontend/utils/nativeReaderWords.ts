@@ -240,7 +240,7 @@ export function renderBookWords(
   for (const [line, pieces] of words) {
     const jitenText = jiten ? jitenTextOfLine(line) : '';
     if (jitenText && getCachedJitenTokens(jitenText)) {
-      lines.set(line, toEngineMarkup(renderLineWords(line, statuses), holder));
+      lines.set(line, classRuby(toEngineMarkup(renderLineWords(line, statuses), holder)));
       continue;
     }
     let html = '';
@@ -255,9 +255,18 @@ export function renderBookWords(
         || escapeText(piece.s);
       html += `<span class="w-${state}">${inner}</span>`;
     }
-    lines.set(line, html);
+    lines.set(line, classRuby(html));
   }
   return lines;
+}
+
+/**
+ * The engine paints a background only behind text whose own parent has it (backgrounds are not
+ * inherited), and the text of a word with furigana sits in its <ruby>: the ruby gets the word's
+ * state class too.
+ */
+function classRuby(html: string): string {
+  return html.replace(/<span class="(w-[a-z]+)">((?:<[^>]+>)*?)<ruby>/g, '<span class="$1">$2<ruby class="$1">');
 }
 
 // ── Engine CSS ─────────────────────────────────────────────────────────
@@ -332,9 +341,12 @@ export function engineWordCss(config: WordStyleThemeConfig, textColor: number, b
       });
     }
     const css: string[] = [];
+    // The engine drops a rule with only a background (EpubStylesManager keeps a class only if it
+    // has a font, margin or colour property): a background always comes with its text colour.
+    if (color === null && background !== null) color = textColor;
     if (color !== null) css.push(`color:${hexOf(color)}`);
     if (background !== null) css.push(`background-color:${hexOf(background)}`);
-    if (css.length) rules.push(`span.w-${state}{${css.join(';')}}`);
+    if (css.length) rules.push(`.w-${state}{${css.join(';')}}`);
   });
   return { css: rules.join(''), underlines };
 }

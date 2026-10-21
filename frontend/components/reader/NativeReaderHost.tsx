@@ -145,11 +145,18 @@ export default function NativeReaderHost({
   }, []);
   const [jitenRevision, setJitenRevision] = useState(0);
   useEffect(() => onJitenChange(() => setJitenRevision((revision) => revision + 1)), []);
-  // Marking words in the popup changes states one by one: export once they settle.
+  // Marking words in the popup changes states one by one: export once they settle. The states
+  // also arrive a moment after the reader mounts: the first open waits for them (statusesReady)
+  // instead of opening with every word "new" and reloading.
   const [exportStatuses, setExportStatuses] = useState(wordStatuses);
+  const [statusesReady, setStatusesReady] = useState(false);
   useEffect(() => {
-    const timer = window.setTimeout(() => setExportStatuses(wordStatuses), 700);
+    const timer = window.setTimeout(() => {
+      setExportStatuses(wordStatuses);
+      setStatusesReady(true);
+    }, statusesReady ? 700 : 400);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wordStatuses]);
   const [words, setWords] = useState<BookWords | null>(null);
   const [wordsSettled, setWordsSettled] = useState(false);
@@ -162,8 +169,27 @@ export default function NativeReaderHost({
     const showProgress = window.setTimeout(() => { if (!cancelled) setAnalysisProgress(0); }, 250);
     void analyseBookWords(book, (fraction) => { if (!cancelled) setAnalysisProgress(fraction); }, () => cancelled)
       .catch(() => null)
-      .then((result) => {
+      .then(async (result) => {
         if (cancelled) return;
+        // With Jiten on, its parse of the section being opened comes first (up to a few seconds),
+        // so the book does not open with the local parser's words and reload with Jiten's.
+        if (result && isJitenParserEnabled()) {
+          const paragraph = Number(book.progress?.currentPage) || 0;
+          const from = sections.findIndex((s) => paragraph >= s.startParagraphId && paragraph <= s.lastIndex);
+          const texts: string[] = [];
+          for (const section of sections.slice(Math.max(0, from), Math.max(0, from) + 2)) {
+            const chapter = book.chapters?.[section.chapterIndex]?.content || '';
+            for (const line of chapter.slice(section.startOffset, section.endOffset).split(/\r?\n/)) {
+              const text = jitenTextOfLine(line);
+              if (text) texts.push(text);
+            }
+          }
+          await Promise.race([
+            parseWithJiten(texts).catch(() => []),
+            new Promise((resolve) => window.setTimeout(resolve, 2500)),
+          ]);
+          if (cancelled) return;
+        }
         window.clearTimeout(showProgress);
         setWords(result);
         setWordsSettled(true);
@@ -298,7 +324,7 @@ export default function NativeReaderHost({
 
   // Open the book (export it first if this version is not on the device yet), close on leaving.
   useEffect(() => {
-    if (!wordsSettled) return undefined;
+    if (!wordsSettled || !statusesReady) return undefined;
     let cancelled = false;
     const handles: Promise<{ remove: () => Promise<void> }>[] = [
       NativeReader.addListener('pageChanged', (position) => {
@@ -350,7 +376,7 @@ export default function NativeReaderHost({
       handles.forEach((handle) => handle.then((h) => h.remove()).catch(() => {}));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exported.key, wordsSettled]);
+  }, [exported.key, wordsSettled, statusesReady]);
 
   // Jiten parses what is being read (this section and the next two), as the WebView reader asks
   // for the paragraphs on its page; each parse brings a new export with Jiten's words and states.

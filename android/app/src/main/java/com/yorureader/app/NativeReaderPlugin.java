@@ -509,11 +509,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
             open.add(EraEngine.Item.str(book.getAbsolutePath()));
             open.add(new EraEngine.Item(0));             // not an archive
+            long tOpen = SystemClock.elapsedRealtime();
             EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
+            long tConfig = SystemClock.elapsedRealtime();
             if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
             // Settings that need the document (text alignment, indents, the book's own CSS).
             EraEngine.Response configured = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
             enginePages = configured.intAt(0, opened.intAt(0, 0));
+            Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (tConfig - tOpen) + " ms, relayout " + (SystemClock.elapsedRealtime() - tConfig) + " ms");
             String firstXPath = pageXPath(0);
             int slash = firstXPath.lastIndexOf("/body");
             bodyPrefix = slash >= 0 ? firstXPath.substring(0, slash + 5) : null;
