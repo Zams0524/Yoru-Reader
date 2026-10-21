@@ -47,6 +47,36 @@ async function extractCollectionBytes(zip: JSZip): Promise<Uint8Array> {
   throw new Error('No se encontró una base de datos de Anki reconocible dentro del archivo (collection.anki2/anki21/anki21b).');
 }
 
+/**
+ * Field names per notetype ID, in field order. Anki moved this out of the col.models JSON blob
+ * into its own relational "fields" table in schema v18 (Anki 2.1.28+); modern Anki leaves
+ * col.models as an empty string, so that legacy path is tried first and this is the fallback.
+ */
+function fieldNamesByModelFromTable(db: any): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const fieldRows = db.exec('SELECT ntid, ord, name FROM fields ORDER BY ntid, ord');
+  if (!fieldRows.length) return out;
+  for (const row of fieldRows[0].values) {
+    const [ntid, , name] = row as [number, number, string];
+    const key = String(ntid);
+    if (!out[key]) out[key] = [];
+    out[key].push(String(name));
+  }
+  return out;
+}
+
+/** Deck names by ID, from the same schema-v18 relational "decks" table as the fallback above. */
+function deckNamesFromTable(db: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  const deckRows = db.exec('SELECT id, name FROM decks');
+  if (!deckRows.length) return out;
+  for (const row of deckRows[0].values) {
+    const [id, name] = row as [number, string];
+    out[String(id)] = String(name);
+  }
+  return out;
+}
+
 /** Reads every note+card pair from an Anki .apkg/.colpkg file, with each note's fields by name. */
 export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -54,18 +84,43 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
   const SQL = await loadSql();
   const db = new SQL.Database(bytes);
   try {
-    const colRows = db.exec('SELECT models, decks FROM col LIMIT 1');
-    if (!colRows.length || !colRows[0].values.length) {
-      throw new Error('El archivo no tiene una tabla "col" reconocible. Exporta el mazo desde Anki (File > Export) como .apkg.');
+    let modelsJson = '';
+    let decksJson = '';
+    try {
+      const colRows = db.exec('SELECT models, decks FROM col LIMIT 1');
+      if (colRows.length && colRows[0].values.length) {
+        [modelsJson, decksJson] = colRows[0].values[0] as [string, string];
+      }
+    } catch {
+      // Schema without a models/decks column on "col" at all - fall through to the relational
+      // schema below for both field and deck names.
     }
-    const [modelsJson, decksJson] = colRows[0].values[0] as [string, string];
-    const models = JSON.parse(String(modelsJson)) as Record<string, { flds?: { name: string; ord: number }[] }>;
-    const decks = JSON.parse(String(decksJson)) as Record<string, { name?: string }>;
 
-    const fieldNamesByModel: Record<string, string[]> = {};
-    for (const [mid, model] of Object.entries(models)) {
-      const sorted = [...(model.flds || [])].sort((a, b) => a.ord - b.ord);
-      fieldNamesByModel[mid] = sorted.map((f) => f.name);
+    let fieldNamesByModel: Record<string, string[]> = {};
+    try {
+      if (modelsJson) {
+        const models = JSON.parse(String(modelsJson)) as Record<string, { flds?: { name: string; ord: number }[] }>;
+        for (const [mid, model] of Object.entries(models)) {
+          const sorted = [...(model.flds || [])].sort((a, b) => a.ord - b.ord);
+          fieldNamesByModel[mid] = sorted.map((f) => f.name);
+        }
+      }
+    } catch {
+      // col.models wasn't valid JSON - fall through to the relational schema below.
+    }
+    if (Object.keys(fieldNamesByModel).length === 0) {
+      fieldNamesByModel = fieldNamesByModelFromTable(db);
+    }
+
+    let decks: Record<string, { name?: string }> = {};
+    try {
+      if (decksJson) decks = JSON.parse(String(decksJson)) as Record<string, { name?: string }>;
+    } catch {
+      // col.decks wasn't valid JSON - fall through to the relational schema below.
+    }
+    let deckNames = Object.fromEntries(Object.entries(decks).map(([id, d]) => [id, d.name || '']));
+    if (Object.values(deckNames).every((name) => !name)) {
+      deckNames = deckNamesFromTable(db);
     }
 
     const rows = db.exec(`
@@ -85,7 +140,7 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
       names.forEach((name, i) => { fields[name] = values[i] || ''; });
       out.push({
         fields,
-        deckName: decks[String(did)]?.name || 'Imported',
+        deckName: deckNames[String(did)] || 'Imported',
         interval: ivl || 0,
         reps: reps || 0,
         lapses: lapses || 0,
