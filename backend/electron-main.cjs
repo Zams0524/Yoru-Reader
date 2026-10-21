@@ -565,6 +565,43 @@ function updateWordStatusInApp(data) {
   });
 }
 
+// The reader extension sends its own jitenApiKey as "ApiKey <key>". The default ('local') and the shared
+// Yoru key mean "no Jiten account": the local server answers with Yoru's parser and SRS. A user's real
+// key is forwarded to jiten.moe, so the extension parses, colours and syncs with the user's account.
+const JITEN_API_BASE = 'https://api.jiten.moe/api';
+const JITEN_FORWARD_TIMEOUT_MS = 20000;
+// Only these marks have a Yoru equivalent; any other state leaves Yoru's mark alone.
+const JITEN_TO_LOCAL_STATE = {
+  'neverForget-add': 'known-add',
+  'blacklist-add': 'ignored-add',
+  'neverForget-remove': 'new',
+  'blacklist-remove': 'new',
+};
+
+function userJitenKey(req) {
+  const match = /^ApiKey\s+(.+)$/i.exec(String(req.headers.authorization || '').trim());
+  const key = match ? match[1].trim() : '';
+  if (!key || key === 'local' || key === READER_EXT_SHARED_API_KEY) return '';
+  return key;
+}
+
+async function forwardToJiten(pathAndQuery, method, bodyText, apiKey) {
+  const hasBody = method !== 'GET' && method !== 'HEAD' && bodyText;
+  const response = await net.fetch(`${JITEN_API_BASE}/${pathAndQuery}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `ApiKey ${apiKey}` },
+    body: hasBody ? bodyText : undefined,
+    signal: AbortSignal.timeout(JITEN_FORWARD_TIMEOUT_MS),
+  });
+  // Kept as bytes: besides JSON, the extension fetches word audio through the same endpoint.
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type'),
+    retryAfter: response.headers.get('retry-after'),
+    body: Buffer.from(await response.arrayBuffer()),
+  };
+}
+
 // Start local HTTP server for extension requests
 let localExtServer = null;
 
@@ -593,11 +630,13 @@ function startLocalExtServer() {
     console.log(`[local-ext-server] Request path: ${pathName}`);
 
     // Read POST body
-    let bodyText = '';
+    // Joined as bytes before decoding, so a Japanese character split across two chunks stays intact.
+    const bodyChunks = [];
     await new Promise((resolve) => {
-      req.on('data', chunk => { bodyText += chunk; });
+      req.on('data', chunk => { bodyChunks.push(chunk); });
       req.on('end', resolve);
     });
+    const bodyText = Buffer.concat(bodyChunks).toString('utf8');
 
     let payload = {};
     try {
@@ -606,6 +645,47 @@ function startLocalExtServer() {
 
     res.setHeader('Content-Type', 'application/json');
 
+    const isParse = pathName === 'reader/parse' || pathName === 'parse' || pathName === 'api/parse';
+    const jitenKey = userJitenKey(req);
+    if (jitenKey) {
+      try {
+        const jitenPath = isParse ? 'reader/parse' : pathName;
+        const upstream = await forwardToJiten(`${jitenPath}${reqUrl.search}`, req.method || 'POST', bodyText, jitenKey);
+        // When Jiten is down, parse locally so the book still shows; everything else reports the failure.
+        if (!(isParse && upstream.status >= 500)) {
+          if (upstream.status >= 200 && upstream.status < 300) {
+            try {
+              const data = isParse && upstream.body.length ? JSON.parse(upstream.body.toString('utf8')) : null;
+              if (isParse && data && Array.isArray(data.vocabulary)) {
+                data.vocabulary.forEach(v => { extWordMap[v.wordId] = v.spelling; });
+              }
+              // Keep Yoru's own word list in step with the marks sent to Jiten (Jiten state → Yoru mark).
+              const localState = JITEN_TO_LOCAL_STATE[payload.state];
+              if ((pathName === 'srs/set-vocabulary-state' || pathName === 'set-vocabulary-state') && localState && extWordMap[payload.wordId]) {
+                void updateWordStatusInApp({ word: extWordMap[payload.wordId], state: localState });
+              }
+            } catch (e) {
+              console.warn(`[local-ext-server] Could not mirror Jiten ${pathName} locally:`, e);
+            }
+          }
+          if (upstream.contentType) res.setHeader('Content-Type', upstream.contentType);
+          if (upstream.retryAfter) res.setHeader('Retry-After', upstream.retryAfter);
+          res.writeHead(upstream.status);
+          res.end(upstream.body);
+          return;
+        }
+        console.warn(`[local-ext-server] Jiten parse failed (HTTP ${upstream.status}); parsing locally.`);
+      } catch (err) {
+        if (!isParse) {
+          console.warn(`[local-ext-server] Jiten ${pathName} unreachable:`, err);
+          res.writeHead(502);
+          res.end(JSON.stringify({ error_message: `jiten.moe is unreachable: ${err.message}` }));
+          return;
+        }
+        console.warn('[local-ext-server] Jiten unreachable; parsing locally:', err);
+      }
+    }
+
     try {
       if (pathName === 'reader/ping' || pathName === 'ping' || pathName === 'api/ping') {
         res.writeHead(200);
@@ -613,7 +693,7 @@ function startLocalExtServer() {
         return;
       }
       
-      if (pathName === 'reader/parse' || pathName === 'parse' || pathName === 'api/parse') {
+      if (isParse) {
         if (!mainWindow) throw new Error("Main window not available");
         
         const requestId = ++parseRequestCounter;
