@@ -879,6 +879,27 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         if (areas.isEmpty()) return;
         java.util.Collections.sort(areas);
         float typical = areas.get(areas.size() / 2);
+
+        // Resolve every real letter's state up front, then bridge a single letter that came back
+        // null (antialiasing swallowed its background sample) when both its neighbours on the same
+        // line already agree on one state: it is the same word, not a gap between two states.
+        Underline[] states = new Underline[letters.texts.length];
+        List<Integer> real = new ArrayList<>();
+        for (int i = 0; i < letters.texts.length; i++) {
+            if (letters.texts[i].trim().isEmpty() || isFurigana(letters, i, typical)) continue;
+            states[i] = underlineAt(bitmap, rectOf(letters, i), byBackground);
+            real.add(i);
+        }
+        for (int k = 1; k < real.size() - 1; k++) {
+            int i = real.get(k);
+            if (states[i] != null) continue;
+            int prev = real.get(k - 1), next = real.get(k + 1);
+            if (states[prev] != null && states[prev] == states[next]
+                && onSameLine(rectOf(letters, prev), rectOf(letters, next), c.vertical)) {
+                states[i] = states[prev];
+            }
+        }
+
         Canvas canvas = new Canvas(bitmap);
         Underline current = null;
         RectF run = null;
@@ -890,11 +911,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 continue;
             }
             if (isFurigana(letters, i, typical)) continue;
-            RectF box = new RectF(letters.boxes[i * 4], letters.boxes[i * 4 + 1], letters.boxes[i * 4 + 2], letters.boxes[i * 4 + 3]);
-            Underline u = underlineAt(bitmap, box, byBackground);
-            boolean sameLine = run != null && (c.vertical
-                ? Math.min(run.right, box.right) - Math.max(run.left, box.left) > box.width() / 2
-                : Math.min(run.bottom, box.bottom) - Math.max(run.top, box.top) > box.height() / 2);
+            RectF box = rectOf(letters, i);
+            Underline u = states[i];
+            boolean sameLine = run != null && onSameLine(run, box, c.vertical);
             if (u != null && u == current && sameLine) {
                 run.union(box);
                 continue;
@@ -906,12 +925,27 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         drawUnderline(canvas, run, current, c);
     }
 
-    /** The state whose background shows inside the letter box (sampled near its corners), or null. */
+    private static RectF rectOf(PageLetters letters, int i) {
+        return new RectF(letters.boxes[i * 4], letters.boxes[i * 4 + 1], letters.boxes[i * 4 + 2], letters.boxes[i * 4 + 3]);
+    }
+
+    private static boolean onSameLine(RectF a, RectF b, boolean vertical) {
+        return vertical
+            ? Math.min(a.right, b.right) - Math.max(a.left, b.left) > b.width() / 2
+            : Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > b.height() / 2;
+    }
+
+    /** The state whose background shows inside the letter box (sampled near its corners and centre), or null. */
     private static Underline underlineAt(Bitmap bitmap, RectF box, Map<Integer, Underline> byBackground) {
         int left = (int) Math.ceil(box.left) + 1, right = (int) Math.floor(box.right) - 2;
         int top = (int) Math.ceil(box.top) + 1, bottom = (int) Math.floor(box.bottom) - 2;
         int cx = (left + right) / 2, cy = (top + bottom) / 2;
-        int[][] points = { { left, top }, { right, top }, { left, bottom }, { right, bottom }, { cx, top }, { cx, bottom }, { left, cy }, { right, cy } };
+        int[][] points = {
+            { left, top }, { right, top }, { left, bottom }, { right, bottom },
+            { cx, top }, { cx, bottom }, { left, cy }, { right, cy },
+            // Interior samples away from the glyph's own antialiased edge.
+            { cx, cy - 2 }, { cx, cy + 2 },
+        };
         for (int[] point : points) {
             int x = Math.max(0, Math.min(bitmap.getWidth() - 1, point[0]));
             int y = Math.max(0, Math.min(bitmap.getHeight() - 1, point[1]));
@@ -924,18 +958,21 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private static void drawUnderline(Canvas canvas, RectF run, Underline u, Config c) {
         if (run == null || u == null) return;
         float t = Math.max(1f, u.thickness * c.density);
-        float gap = Math.max(1f, t * 0.6f);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(0xFF000000 | u.color);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(t);
-        // The line runs along the text: horizontally under it, or vertically on its left.
+        // The line runs along the text: horizontally under it, or vertically on its left. In
+        // vertical writing the furigana of the neighbouring column sits just past the left edge,
+        // so that gap stays a thin sliver instead of the wider one used below the horizontal line.
         float x0, y0, x1, y1;
         if (c.vertical) {
+            float gap = Math.max(0.5f, t * 0.2f);
             x0 = x1 = run.left - gap - t / 2;
             y0 = run.top;
             y1 = run.bottom;
         } else {
+            float gap = Math.max(1f, t * 0.6f);
             y0 = y1 = run.bottom + gap + t / 2;
             x0 = run.left;
             x1 = run.right;
