@@ -5679,242 +5679,110 @@ const Library = React.memo(function Library({
                 🗂️ {lang === 'es' ? 'Mazos de Aprendizaje' : 'Learning Decks'}
               </h3>
               
-              <div className="srs-deck-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '16px' }}>
-                {deckList.length === 0 ? (
-                  <div className="srs-empty-state" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-card-hover)', border: '1px dashed var(--border-light)', borderRadius: '12px' }}>
-                    <Zap size={24} style={{ color: 'rgba(255,255,255,0.1)', marginBottom: '8px' }} />
-                    <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600 }}>
-                      {lang === 'es' ? 'No tienes palabras en el sistema de repaso' : 'No words in the review system'}
-                    </p>
-                    <p className="srs-empty-hint">
-                      {isMobile
-                        ? (lang === 'es' ? 'Abre un libro, toca una palabra y guárdala en un mazo para empezar.' : 'Open a book, tap a word, and save it to a deck to get started.')
-                        : (lang === 'es' ? 'Abre un libro, haz clic en una palabra y guárdala en un mazo para empezar.' : 'Open a book, click a word, and save it to a deck to get started.')}
-                    </p>
-                  </div>
-                ) : (
-                  deckList.map((deck) => {
-                    const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
-                    
-                    const total = deck.totalCards;
-                    const mature = deck.totalMature;
-                    const young = deck.totalYoung;
-                    const learning = deck.totalLearning + deck.totalRelearning;
-                    const newCards = deck.totalNew;
-                    const known = mature + young;
-                    const combined = known + learning;
-                    
-                    const pctMature = total > 0 ? (mature / total) * 100 : 0;
-                    const pctKnown = total > 0 ? (known / total) * 100 : 0;
-                    const pctCombined = total > 0 ? (combined / total) * 100 : 0;
-
-                    return (
-                      <div
-                        className="srs-deck-card"
-                        key={deck.name} 
-                        style={{ 
-                          background: 'rgba(255, 255, 255, 0.01)', 
-                          border: '1px solid var(--border-light)', 
-                          borderRadius: '16px',
-                          padding: '16px 20px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          gap: '12px',
-                          transition: 'all 0.15s ease-in-out'
-                        }}
-                      >
-                        {/* Top Info Row */}
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                              <FolderOpen size={16} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deck.name}>
-                                {deck.name}
-                              </span>
-                            </div>
-
-                            {/* Due Counters Badge pills */}
-                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
-                              {deck.newCount > 0 && (
-                                <span style={{ background: '#3b82f6', color: '#ffffff', fontSize: '0.68rem', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }} title={lang === 'es' ? 'Nuevas pendientes' : 'New cards due'}>
-                                  {deck.newCount}
-                                </span>
-                              )}
-                              {deck.learningCount > 0 && (
-                                <span style={{ background: '#f59e0b', color: '#ffffff', fontSize: '0.68rem', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }} title={lang === 'es' ? 'En aprendizaje pendientes' : 'Learning cards due'}>
-                                  {deck.learningCount}
-                                </span>
-                              )}
-                              {deck.reviewCount > 0 && (
-                                <span style={{ background: '#22c55e', color: '#ffffff', fontSize: '0.68rem', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }} title={lang === 'es' ? 'Repasos pendientes' : 'Reviews due'}>
-                                  {deck.reviewCount}
-                                </span>
-                              )}
-                              {deck.newCount === 0 && deck.learningCount === 0 && deck.reviewCount === 0 && (
-                                <span style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--text-muted)', fontSize: '0.68rem', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }}>
-                                  ✓
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Progress Bar & Detailed breakdown */}
-                          {total > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              {/* Colored Progress Bar */}
-                              <div 
-                                title={`${pctMature.toFixed(1)}% mature\n${pctKnown.toFixed(1)}% known (young + mature)`}
-                                style={{ 
-                                  position: 'relative', 
-                                  width: '100%', 
-                                  backgroundColor: 'rgba(255,255,255,0.02)', 
-                                  borderRadius: '6px', 
-                                  height: '14px', 
-                                  overflow: 'hidden',
-                                  border: '1px solid var(--border-light)'
-                                }}
-                              >
-                                {/* Combined (learning + relearning + young + mature) */}
-                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', backgroundColor: 'rgba(245, 158, 11, 0.12)', width: `${pctCombined}%`, transition: 'width 0.4s ease' }} />
-                                {/* Known (young + mature) */}
-                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', backgroundColor: 'rgba(134, 239, 172, 0.15)', width: `${pctKnown}%`, transition: 'width 0.4s ease' }} />
-                                {/* Mature */}
-                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', backgroundColor: 'rgba(34, 197, 94, 0.7)', width: `${pctMature}%`, transition: 'width 0.4s ease' }} />
-                                
-                                {/* Labels Overlay */}
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 6px', fontSize: '0.6rem', fontWeight: 800, color: '#ffffff', textShadow: '0 1px 1px rgba(0,0,0,0.7)' }}>
-                                  <span>{pctMature.toFixed(0)}% {lang === 'es' ? 'maduras' : 'mature'}</span>
-                                  <span>{pctKnown.toFixed(0)}% {lang === 'es' ? 'conocidas' : 'known'}</span>
-                                </div>
-                              </div>
-
-                              {/* Numbers list */}
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                                <span>{total} {lang === 'es' ? 'totales' : 'total'}</span>
-                                <span>·</span>
-                                <span style={{ color: '#3b82f6' }}>{newCards} {lang === 'es' ? 'nuevas' : 'new'}</span>
-                                <span>·</span>
-                                <span style={{ color: '#f59e0b' }}>{learning} {lang === 'es' ? 'aprender' : 'learn'}</span>
-                                <span>·</span>
-                                <span style={{ color: '#86efac' }}>{young} {lang === 'es' ? 'joven' : 'young'}</span>
-                                <span>·</span>
-                                <span style={{ color: '#22c55e' }}>{mature} {lang === 'es' ? 'madura' : 'mature'}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                              {lang === 'es' ? 'Sin tarjetas en este mazo' : 'No cards in this deck'}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Bottom Action Controls */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '10px', marginTop: '4px' }}>
-                          <button
-                            type="button"
+              {deckList.length === 0 ? (
+                <div className="srs-empty-state" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-card-hover)', border: '1px dashed var(--border-light)', borderRadius: '12px' }}>
+                  <Zap size={24} style={{ color: 'rgba(255,255,255,0.1)', marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600 }}>
+                    {lang === 'es' ? 'No tienes palabras en el sistema de repaso' : 'No words in the review system'}
+                  </p>
+                  <p className="srs-empty-hint">
+                    {isMobile
+                      ? (lang === 'es' ? 'Abre un libro, toca una palabra y guárdala en un mazo para empezar.' : 'Open a book, tap a word, and save it to a deck to get started.')
+                      : (lang === 'es' ? 'Abre un libro, haz clic en una palabra y guárdala en un mazo para empezar.' : 'Open a book, click a word, and save it to a deck to get started.')}
+                  </p>
+                </div>
+              ) : (
+                <div className="srs-deck-table-wrap" style={{ overflowX: 'auto' }}>
+                  <table className="srs-deck-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <th style={{ textAlign: 'left', padding: '0 0 10px 0', fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {lang === 'es' ? 'Mazo' : 'Deck'}
+                        </th>
+                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {lang === 'es' ? 'Nuevas' : 'New'}
+                        </th>
+                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {lang === 'es' ? 'Aprender' : 'Learn'}
+                        </th>
+                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {lang === 'es' ? 'Programadas' : 'Review'}
+                        </th>
+                        <th style={{ width: '1%', padding: '0 0 10px 0' }} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deckList.map((deck) => {
+                        const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
+                        return (
+                          <tr
+                            key={deck.name}
+                            className="srs-deck-row"
                             onClick={() => {
-                              if (!isDue) return; // Prevent review if completed
+                              if (!isDue) return;
                               setSelectedDeckFilter(deck.name);
                               setIsSrsReviewOpen(true);
                             }}
-                            disabled={deck.totalCards === 0}
-                            title={deck.totalCards > 0 && !isDue ? (lang === 'es' ? 'Completado por hoy' : 'Completed for today') : undefined}
                             style={{
-                              background: isDue 
-                                ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)' 
-                                : (deck.totalCards > 0 ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255,255,255,0.02)'),
-                              border: isDue 
-                                ? 'none' 
-                                : (deck.totalCards > 0 ? '1px solid rgba(34, 197, 94, 0.3)' : 'none'),
-                              color: isDue 
-                                ? '#ffffff' 
-                                : (deck.totalCards > 0 ? '#22c55e' : 'var(--text-muted)'),
-                              borderRadius: '8px',
-                              padding: '6px 14px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              cursor: (deck.totalCards > 0 && isDue) ? 'pointer' : 'not-allowed',
-                              boxShadow: isDue ? '0 2px 8px rgba(168, 85, 247, 0.2)' : 'none',
-                              transition: 'all 0.15s'
+                              borderBottom: '1px solid var(--border-light)',
+                              cursor: (deck.totalCards > 0 && isDue) ? 'pointer' : 'default',
+                              transition: 'background 0.15s'
                             }}
                           >
-                            {isDue ? (
-                              <Play size={12} fill="#ffffff" />
-                            ) : (
-                              deck.totalCards > 0 ? <Check size={12} style={{ color: '#22c55e' }} /> : <Play size={12} />
-                            )}
-                            <span>
-                              {isDue 
-                                ? (lang === 'es' ? 'Repasar' : 'Review') 
-                                : (deck.totalCards > 0 ? (lang === 'es' ? 'Completado' : 'Completed') : (lang === 'es' ? 'Repasar' : 'Review'))
-                              }
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeckPromptMode('rename');
-                              setDeckPromptTargetId(deck.name);
-                              setDeckPromptValue(deck.name);
-                              setIsDeckPromptOpen(true);
-                            }}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.02)',
-                              border: '1px solid rgba(255, 255, 255, 0.05)',
-                              color: 'var(--text-muted)',
-                              borderRadius: '8px',
-                              width: '28px',
-                              height: '28px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s'
-                            }}
-                            title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
-                          >
-                            <Settings size={12} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeckPromptMode('merge');
-                              setDeckPromptTargetId(deck.name);
-                              setDeckPromptValue('');
-                              setIsDeckPromptOpen(true);
-                            }}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.02)',
-                              border: '1px solid rgba(255, 255, 255, 0.05)',
-                              color: 'var(--text-muted)',
-                              borderRadius: '8px',
-                              width: '28px',
-                              height: '28px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s'
-                            }}
-                            title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                          >
-                            <Layers size={12} />
-                          </button>
-                        </div>
-
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                            <td style={{ padding: '12px 14px 12px 0' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                <FolderOpen size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deck.name}>
+                                  {deck.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.newCount > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
+                              {deck.newCount}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.learningCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                              {deck.learningCount}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.reviewCount > 0 ? '#22c55e' : 'var(--text-muted)' }}>
+                              {deck.reviewCount}
+                            </td>
+                            <td style={{ padding: '12px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeckPromptMode('rename');
+                                  setDeckPromptTargetId(deck.name);
+                                  setDeckPromptValue(deck.name);
+                                  setIsDeckPromptOpen(true);
+                                }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
+                              >
+                                <Settings size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeckPromptMode('merge');
+                                  setDeckPromptTargetId(deck.name);
+                                  setDeckPromptValue('');
+                                  setIsDeckPromptOpen(true);
+                                }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
+                              >
+                                <Layers size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Heatmap below decks list */}
