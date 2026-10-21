@@ -4673,10 +4673,11 @@ const Library = React.memo(function Library({
             const latest = updaterState.latest;
             const appOutdated = Boolean(latest) && isNewerVersion(latest.appVersion, updaterState.current.appVersion);
             // When the installer is outdated, the new interface comes inside it.
-            const uiOutdated = Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
+            const uiNeedsApk = Boolean(latest?.needsApk);
+            const uiOutdated = !uiNeedsApk && Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
             const ready = updaterState.status === 'ready';
             const canUpdate = updateAvailable && !updating;
-            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false) => (
+            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false, needsApk = false) => (
               <div style={{
                 background: 'var(--bg-card)',
                 border: `1px solid ${outdated ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-light)'}`,
@@ -4695,8 +4696,10 @@ const Library = React.memo(function Library({
                     {lang === 'es' ? 'Última: ' : 'Latest: '}{latestVersion || '—'}
                   </div>
                 </div>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: outdated ? '#10b981' : '#3b82f6' }}>
-                  {outdated
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: needsApk ? '#f59e0b' : outdated ? '#10b981' : '#3b82f6', textAlign: 'right' }}>
+                  {needsApk
+                    ? (lang === 'es' ? 'Llega con la próxima app' : 'Comes with the next app')
+                    : outdated
                     ? (lang === 'es' ? 'Disponible' : 'Available')
                     : latest ? (lang === 'es' ? 'Actualizado' : 'Up to date') : '—'}
                 </span>
@@ -4771,7 +4774,8 @@ const Library = React.memo(function Library({
                   lang === 'es' ? 'Interfaz (actualización rápida)' : 'Interface (quick update)',
                   updaterState.current.hotVersion,
                   latest?.hotVersion,
-                  uiOutdated
+                  uiOutdated,
+                  uiNeedsApk
                 )}
 
                 {/* Progress Bar */}
