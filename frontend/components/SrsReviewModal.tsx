@@ -969,16 +969,15 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
             </div>
           );
         })() : (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', maxWidth: '720px', margin: '0 auto' }}>
-            
-            {/* Card content, plain on the background - no boxed container, like Anki's own reviewer */}
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '720px', margin: '0 auto' }}>
+
+            {/* Card content, plain on the background - no boxed container, like Anki's own reviewer.
+                No scroll of its own: the outer Content Area div already scrolls the whole card. */}
             <div style={{
               padding: 'clamp(10px, 3vw, 18px) 4px',
-              flex: 1,
               display: 'flex',
               flexDirection: 'column',
-              position: 'relative',
-              overflowY: 'auto'
+              position: 'relative'
             }}>
               {/* Card Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', color: '#71717a', fontSize: '0.74rem' }}>
