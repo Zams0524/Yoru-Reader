@@ -123,12 +123,16 @@ async function writeCached(book: Book, fingerprint: string, words: BookWords): P
 /**
  * Words of every line of the book: from memory or IndexedDB if this text was analysed before,
  * otherwise with Kuromoji in slices (onProgress gets 0..1) and saved. Null if the parser is not
- * available or isCancelled() turned true.
+ * available or isCancelled() turned true. When the book has to be analysed, the lines in
+ * `first` (the part about to be read) go first and onPartial gets their words, so the book can
+ * open without waiting for the rest.
  */
 export async function analyseBookWords(
   book: Book,
   onProgress: (fraction: number) => void,
   isCancelled: () => boolean,
+  first?: Set<string>,
+  onPartial?: (words: BookWords) => void,
 ): Promise<BookWords | null> {
   const known = memoryCache.get(book);
   if (known) return known;
@@ -146,6 +150,8 @@ export async function analyseBookWords(
   const tokenizer = getTokenizerInstance();
   if (!tokenizer || isCancelled()) return null;
   const lines = new Set<string>();
+  for (const line of first || []) if (hasWords(line)) lines.add(line);
+  const firstCount = onPartial ? lines.size : 0;
   for (const chapter of book.chapters || []) {
     for (const line of (chapter.content || '').split(/\r?\n/)) if (hasWords(line)) lines.add(line);
   }
@@ -153,6 +159,7 @@ export async function analyseBookWords(
   let done = 0;
   let sliceStart = performance.now();
   for (const line of lines) {
+    if (done === firstCount && firstCount > 0 && firstCount < lines.size) onPartial!(new Map(words));
     const pieces: Piece[] = [];
     // Inline images are kept apart; only the text around them is analysed.
     for (const chunk of wordText(line).split(/(\{img:[^{}]+\})/i)) {

@@ -51,7 +51,12 @@ export interface NativePosition {
 interface NativeReaderPlugin {
   hasBook(options: { key: string }): Promise<{ exists: boolean }>;
   highlight(options: { page: number; index: number; before: number; after: number; color: number }): Promise<void>;
-  writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean }): Promise<void>;
+  /**
+   * images (first chunk): size in bytes of each image of the export; the plugin copies the ones an
+   * earlier export of the book has with that size and lists them in `reused` (APKs before 1.4.3
+   * ignore it and answer nothing).
+   */
+  writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean; images?: Record<string, number> }): Promise<{ reused?: string[] } | void>;
   writeBookImage(options: { key: string; name: string; data: string }): Promise<void>;
   /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
   open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string }): Promise<NativePosition>;
@@ -250,16 +255,33 @@ export function exportBookForNativeReader(book: Book, options: NativeExportOptio
   };
 }
 
-/** Writes the exported book to the app's files unless that version is already there. */
-export async function ensureNativeBook(exported: NativeBookExport): Promise<void> {
+/** Bytes of a base64 string. */
+function base64Bytes(data: string): number {
+  const clean = data.replace(/\s/g, '');
+  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+  return Math.floor((clean.length * 3) / 4) - padding;
+}
+
+/**
+ * Writes the exported book to the app's files unless that version is already there. Images an
+ * earlier export of the book already has are copied by the plugin instead of sent again. Stops
+ * (unfinished, so never opened) when isCancelled() turns true: a newer export replaces this one.
+ */
+export async function ensureNativeBook(exported: NativeBookExport, isCancelled: () => boolean = () => false): Promise<void> {
   const { exists } = await NativeReader.hasBook({ key: exported.key });
-  if (exists) return;
+  if (exists || isCancelled()) return;
+  const sizes: Record<string, number> = {};
+  for (const image of exported.images) sizes[image.name] = base64Bytes(image.data);
   // The first call starts a fresh folder; the book counts as written once its HTML is complete.
-  await NativeReader.writeBookChunk({ key: exported.key, data: '', first: true, last: false });
+  const started = await NativeReader.writeBookChunk({ key: exported.key, data: '', first: true, last: false, images: sizes });
+  const reused = new Set((started && started.reused) || []);
   for (const image of exported.images) {
+    if (isCancelled()) return;
+    if (reused.has(image.name)) continue;
     await NativeReader.writeBookImage({ key: exported.key, name: image.name, data: image.data });
   }
   for (let start = 0; start < exported.html.length; start += CHUNK_CHARS) {
+    if (isCancelled()) return;
     await NativeReader.writeBookChunk({
       key: exported.key,
       data: exported.html.slice(start, start + CHUNK_CHARS),
@@ -288,12 +310,25 @@ export function blockOfParagraph(exported: NativeBookExport, paragraph: number):
   return Math.max(0, found);
 }
 
+let inertDocument: Document | null = null;
+
+/**
+ * A block's HTML as a <p> of a document that is never shown: in the page's own document its
+ * <img src="img/n.jpg"> (paths of the exported EPUB) would be fetched from the WebView and fail.
+ */
+function blockElement(blockHtml: string): HTMLElement {
+  if (!inertDocument) inertDocument = document.implementation.createHTMLDocument('');
+  const block = inertDocument.createElement('p');
+  block.innerHTML = blockHtml;
+  return block;
+}
+
 const isFurigana = (node: Node) => !!(node.parentElement && node.parentElement.closest('rt, rp'));
 
 /** Text nodes of an element in reading order, without furigana (<rt>/<rp>). */
 export function baseTextNodes(root: Node): Text[] {
   const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = (root.ownerDocument || document).createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (!isFurigana(node)) nodes.push(node as Text);
   }
@@ -315,8 +350,7 @@ export function xpathToTextOffset(blockHtml: string, xpath: string): number {
     offset = Number(offsetMatch[1]);
     tail = tail.slice(0, -offsetMatch[0].length);
   }
-  const block = document.createElement('p');
-  block.innerHTML = blockHtml;
+  const block = blockElement(blockHtml);
   let node: Node = block;
   for (const step of tail.split('/').filter(Boolean)) {
     const stepMatch = /^(text\(\)|[A-Za-z][A-Za-z0-9]*)(?:\[(\d+)\])?$/.exec(step);
@@ -350,8 +384,7 @@ export function xpathToTextOffset(blockHtml: string, xpath: string): number {
  * markup changed. Null if the offset is past the text.
  */
 export function textOffsetToInnerPath(blockHtml: string, offset: number): string | null {
-  const block = document.createElement('p');
-  block.innerHTML = blockHtml;
+  const block = blockElement(blockHtml);
   let total = 0;
   for (const text of baseTextNodes(block)) {
     if (offset < total + text.length) {

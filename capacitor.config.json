@@ -22,6 +22,7 @@
     ]
   },
   "android": {
+    "loggingBehavior": "none",
     "allowMixedContent": true,
     "captureInput": true,
     "webContentsDebuggingEnabled": false
