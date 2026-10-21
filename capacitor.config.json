@@ -2,6 +2,7 @@
   "appId": "com.yorureader.app",
   "appName": "YoruReader",
   "webDir": "dist",
+  "loggingBehavior": "none",
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
