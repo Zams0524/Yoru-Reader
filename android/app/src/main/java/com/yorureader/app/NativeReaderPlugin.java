@@ -93,6 +93,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private Config config;
     private int enginePages = 0;
     private String bodyPrefix = null;
+    /** Book and layout (layoutKey) the running engine has open; it stays open a while after close. */
+    private File engineBook;
+    private String engineLayout;
+    private static final long ENGINE_IDLE_MS = 5 * 60 * 1000;
+    private final Runnable stopIdleEngine = () -> {
+        engine.stop();
+        engineBook = null;
+    };
     /** Blocks that are only a picture (ordinal -> image file): their pages are drawn here, not by the engine. */
     private Map<Integer, File> pictures = new HashMap<>();
     private static List<String[]> japaneseFonts;  // [path, face], found once per process
@@ -537,28 +545,40 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         }
         try {
             long t0 = SystemClock.elapsedRealtime();
-            engine.stop();
+            engineHandler.removeCallbacks(stopIdleEngine);
             cache.clear();
             pageLetters.clear();
-            bodyPrefix = null;
             pictures = loadPictures(book.getParentFile());
-            engine.start(binary, getContext().getFilesDir());
-            registerFonts();
             config = c;
-            // All settings before OPEN, the document ones too (alignment, indents, the book's CSS):
-            // they go to the engine's empty DOM, which OPEN fills, so the book is laid out once.
-            // Sent after OPEN they cost a second layout of the whole book (about a second).
-            engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
-            List<EraEngine.Item> open = new ArrayList<>();
-            open.add(EraEngine.Item.str(""));            // no socket: open by path
-            open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
-            open.add(EraEngine.Item.str(book.getAbsolutePath()));
-            open.add(new EraEngine.Item(0));             // not an archive
-            long tOpen = SystemClock.elapsedRealtime();
-            EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
-            if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
-            enginePages = opened.intAt(0, 0);
-            Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (SystemClock.elapsedRealtime() - tOpen) + " ms");
+            String layout = layoutKey(c);
+            if (engine.isRunning() && book.equals(engineBook) && layout.equals(engineLayout)) {
+                // The same export with the same layout is still open in the engine (the reader was
+                // left and entered again): no OPEN, no layout of the whole book.
+                Log.i(TAG, "timing: reused the open book");
+            } else {
+                engine.stop();
+                engineBook = null;
+                bodyPrefix = null;
+                engine.start(binary, getContext().getFilesDir());
+                registerFonts();
+                engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, false));
+                List<EraEngine.Item> open = new ArrayList<>();
+                open.add(EraEngine.Item.str(""));            // no socket: open by path
+                open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
+                open.add(EraEngine.Item.str(book.getAbsolutePath()));
+                open.add(new EraEngine.Item(0));             // not an archive
+                long tOpen = SystemClock.elapsedRealtime();
+                EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
+                long tConfig = SystemClock.elapsedRealtime();
+                if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
+                // Settings that need the document (text alignment, indents, the book's own CSS).
+                // Sending them before OPEN does not save time: the styled layout costs the same.
+                EraEngine.Response configured = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
+                enginePages = configured.intAt(0, opened.intAt(0, 0));
+                engineBook = book;
+                engineLayout = layout;
+                Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (tConfig - tOpen) + " ms, relayout " + (SystemClock.elapsedRealtime() - tConfig) + " ms");
+            }
             String firstXPath = pageXPath(0);
             int slash = firstXPath.lastIndexOf("/body");
             bodyPrefix = slash >= 0 ? firstXPath.substring(0, slash + 5) : null;
@@ -595,6 +615,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             Log.e(TAG, "open failed", e);
             String log = engine.logTail();
             engine.stop();
+            engineBook = null;
             call.reject("OPEN_FAILED: " + e.getMessage() + (log.isEmpty() ? "" : "\n" + log));
         }
     }
@@ -727,6 +748,13 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         return config;
     }
 
+    /** Everything layoutConfig depends on: the same key gives the same layout of the book. */
+    private static String layoutKey(Config c) {
+        return c.vertical + "|" + c.width + "x" + c.height + "|" + c.density + "|" + c.insets
+            + "|" + c.fontSize + "|" + c.lineHeight + "|" + c.verticalPadding + "|" + c.horizontalPadding
+            + "|" + c.fontFamily + "|" + c.textAlign + "|" + c.textColor + "|" + c.backgroundColor;
+    }
+
     /** Renders the page and its neighbours (engine thread), then hands them to the view. */
     private void renderAround(int gen, int page) {
         renderPages(gen, page, new int[] { page, page + 1, page - 1, page + 2 });
@@ -812,6 +840,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         Log.e(TAG, "engine failed", e);
         String log = engine.logTail();
         engine.stop();
+        engineBook = null;
         if (gen != generation) return;
         JSObject event = new JSObject();
         event.put("message", e.getMessage() + (log.isEmpty() ? "" : "\n" + log));
@@ -1371,6 +1400,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 config = next;
                 EraEngine.Response r = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(next, true));
                 enginePages = r.intAt(0, enginePages);
+                engineLayout = layoutKey(next);
                 int target = clampPage(xpath.isEmpty() ? page : pageByXPath(xpath, page));
                 synchronized (cache) {
                     cache.clear();
@@ -1456,7 +1486,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         });
     }
 
-    /** Hides the reader and stops the engine. */
+    /** Hides the reader; the engine stops after ENGINE_IDLE_MS unless the reader opens again. */
     @PluginMethod
     public void close(PluginCall call) {
         main.post(() -> {
@@ -1471,12 +1501,15 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 view.setVisibility(View.GONE);
             }
             engineHandler.post(() -> {
-                engine.stop();
+                // The engine keeps the book open for a while: entering the reader again soon
+                // (back from the library, a dictionary app) then skips the whole-book layout.
                 config = null;
                 synchronized (cache) {
                     cache.clear();
                     pageLetters.clear();
                 }
+                engineHandler.removeCallbacks(stopIdleEngine);
+                engineHandler.postDelayed(stopIdleEngine, ENGINE_IDLE_MS);
             });
             call.resolve();
         });
