@@ -48,10 +48,17 @@ const equal = (actual: unknown, expected: unknown, label: string) => {
   const exported = exportBookForNativeReader(corrected as any);
   if (!exported.html.includes('<ruby>舞台<rt>ぶたい</rt></ruby>')) throw new Error('Native export loses reading');
   if (exported.key === exportBookForNativeReader(original as any).key) throw new Error('Stale native cache key');
-  const words = await renderBookWords(corrected as any, {}, () => false);
-  const styled = exportBookForNativeReader(corrected as any, { lineHtml: words! });
+  // Words as analyseBookWords keeps them (Kuromoji does not load in this test page).
+  const analysed = new Map<string, any[]>([
+    [corrected.chapters[0].content.split('\n')[0], [{ s: '舞台', b: '舞台', r: 'ぶたい', ruby: '<ruby>舞台<rt>ぶたい</rt></ruby>' }, 'へ。']],
+    ['次の行。', [{ s: '次', b: '次', r: 'つぎ' }, { s: 'の', b: 'の', r: 'の' }, { s: '行', b: '行', r: 'ぎょう' }, '。']],
+  ]);
+  const words = renderBookWords(analysed, { 次: 'known' }, true);
+  const styled = exportBookForNativeReader(corrected as any, { lineHtml: words });
+  if (!styled.html.includes('<span class="w-mature">次</span>')) throw new Error('Word state not marked from statuses');
+  if (!styled.html.includes('<ruby>行<rt')) throw new Error('No furigana on a new word');
   const doc = new DOMParser().parseFromString(styled.html, 'text/html');
-  equal(Array.from(doc.querySelectorAll('rt')).map(rt => rt.textContent).join(''), 'ぶたい',
+  equal(doc.querySelector('rt')?.textContent, 'ぶたい',
     'Word-state rendering loses author reading');
   passed.push('Native plain/styled export preserves full reading and invalidates cached book');
 

@@ -22,6 +22,8 @@ export interface NativeReaderSettings {
   tapZoneMode: 'edge' | 'kindle';
   /** 0-100: below 100 the page is dimmed (the reader's brightness setting). */
   brightness: number;
+  /** Underlines the plugin draws itself (see engineWordCss). */
+  underlines: { background: number; color: number; thickness: number; style: string }[];
 }
 
 /** A tap on a letter: its engine xpath, block and box on screen (CSS px). */
@@ -388,7 +390,19 @@ export function cssColorToInt(color: string, fallback: number): number {
 /** The exact page of a book (xpath) is kept per device; the shared progress only has the paragraph. */
 const POSITION_KEY = `native-reader:position:v${POSITION_FORMAT}:`;
 
-export function loadNativePosition(bookId: string): { xpath: string; paragraph: number } | null {
+/**
+ * The page on screen: its engine xpath (valid for the export `key` only) and, independent of the
+ * markup, the block and the character in its text (`offset`, -1 if unknown) at the top of it.
+ */
+export interface SavedNativePosition {
+  xpath: string;
+  paragraph: number;
+  key?: string;
+  ordinal?: number;
+  offset?: number;
+}
+
+export function loadNativePosition(bookId: string): SavedNativePosition | null {
   try {
     const saved = JSON.parse(localStorage.getItem(POSITION_KEY + bookId) || 'null');
     return saved && typeof saved.xpath === 'string' && typeof saved.paragraph === 'number' ? saved : null;
@@ -397,9 +411,9 @@ export function loadNativePosition(bookId: string): { xpath: string; paragraph: 
   }
 }
 
-export function saveNativePosition(bookId: string, xpath: string, paragraph: number) {
+export function saveNativePosition(bookId: string, position: SavedNativePosition) {
   try {
-    localStorage.setItem(POSITION_KEY + bookId, JSON.stringify({ xpath, paragraph }));
+    localStorage.setItem(POSITION_KEY + bookId, JSON.stringify(position));
   } catch {
     // Storage full or blocked: the paragraph in the book progress is still saved.
   }

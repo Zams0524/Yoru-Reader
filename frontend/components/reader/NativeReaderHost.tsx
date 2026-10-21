@@ -3,7 +3,8 @@ import type { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { isPhoneUI } from '../../utils/platform';
 import { initTokenizer } from '../../utils/japanese';
 import { getLocalWordStyleConfig } from '../../utils/parserSettingsStore';
-import { engineWordCss, renderBookWords } from '../../utils/nativeReaderWords';
+import { analyseBookWords, engineWordCss, renderBookWords, type BookWords } from '../../utils/nativeReaderWords';
+import { isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 import { computeSections, jitenTextOfLine, prepareLineWords, renderLineWords, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
 import {
@@ -62,6 +63,7 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']):
     invertTaps: !!settings.invertTapZones,
     tapZoneMode: settings.tapZoneMode || 'edge',
     brightness: typeof settings.readerBrightness === 'number' ? settings.readerBrightness : 100,
+    underlines: [],
   };
 }
 
@@ -130,13 +132,14 @@ export default function NativeReaderHost({
   const showFurigana = readerSettings.showFurigana !== false;
   const settings = nativeSettings(readerSettings, colors);
 
-  // Word states: the book opens as plain text at once; then its lines are rendered as the WebView
-  // reader renders them (Jiten when it is on, the local parser otherwise) and the book is exported
-  // again with state colours and furigana on new words — again after a state change, a Jiten
-  // parse or a word-style change. The page on screen stays while the engine reloads.
-  const [parserSettings, setParserSettings] = useState(0);
+  // Word states. The book's words are analysed once (kept in IndexedDB, so later opens take
+  // milliseconds; the first one shows its progress), and the book opens with its colours and
+  // furigana on new words already there, instead of opening plain and reloading. A state change,
+  // a Jiten parse or a word-style change re-marks the words (string building only) and reloads
+  // the engine at the same character.
+  const [parserSettings, setParserSettings] = useState(() => ({ furiganaOnNew: isFuriganaOnNewWords(), revision: 0 }));
   useEffect(() => {
-    const onChange = () => setParserSettings((revision) => revision + 1);
+    const onChange = () => setParserSettings((prev) => ({ furiganaOnNew: isFuriganaOnNewWords(), revision: prev.revision + 1 }));
     window.addEventListener('yoru-parser-settings-changed', onChange);
     return () => window.removeEventListener('yoru-parser-settings-changed', onChange);
   }, []);
@@ -148,24 +151,46 @@ export default function NativeReaderHost({
     const timer = window.setTimeout(() => setExportStatuses(wordStatuses), 700);
     return () => window.clearTimeout(timer);
   }, [wordStatuses]);
-  const [lineHtml, setLineHtml] = useState<Map<string, string> | null>(null);
+  const [words, setWords] = useState<BookWords | null>(null);
+  const [wordsSettled, setWordsSettled] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void initTokenizer().catch(() => undefined)
-        .then(() => renderBookWords(book, exportStatuses, () => cancelled))
-        .then((lines) => { if (!cancelled && lines) setLineHtml(lines); });
-    }, 300);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [book, exportStatuses, jitenRevision, parserSettings]);
+    setWords(null);
+    setWordsSettled(false);
+    // Show the progress only if the analysis is not almost immediate (cached).
+    const showProgress = window.setTimeout(() => { if (!cancelled) setAnalysisProgress(0); }, 250);
+    void analyseBookWords(book, (fraction) => { if (!cancelled) setAnalysisProgress(fraction); }, () => cancelled)
+      .catch(() => null)
+      .then((result) => {
+        if (cancelled) return;
+        window.clearTimeout(showProgress);
+        setWords(result);
+        setWordsSettled(true);
+        setAnalysisProgress(null);
+      });
+    return () => { cancelled = true; window.clearTimeout(showProgress); };
+  }, [book]);
+  const lineHtml = useMemo(
+    () => (words ? renderBookWords(words, exportStatuses, parserSettings.furiganaOnNew) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [words, exportStatuses, parserSettings, jitenRevision],
+  );
+  const wordStyle = useMemo(
+    () => engineWordCss(getLocalWordStyleConfig(), settings.textColor, settings.backgroundColor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parserSettings, settings.textColor, settings.backgroundColor],
+  );
   const exported = useMemo(() => exportBookForNativeReader(book, {
     showFurigana,
     lineHtml: lineHtml || undefined,
-    wordCss: lineHtml ? engineWordCss(getLocalWordStyleConfig(), settings.textColor, settings.backgroundColor) : '',
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [book, showFurigana, lineHtml, parserSettings, settings.textColor, settings.backgroundColor]);
+    wordCss: lineHtml ? wordStyle.css : '',
+  }), [book, showFurigana, lineHtml, wordStyle]);
+  settings.underlines = lineHtml ? wordStyle.underlines : [];
   const [ready, setReady] = useState(false);
   const positionRef = useRef<NativePosition | null>(null);
+  /** The export the engine has open: positions and taps refer to it until a reload replaces it. */
+  const openedExportRef = useRef<typeof exported | null>(null);
   const sectionRef = useRef(0);
   const [currentSection, setCurrentSection] = useState(0);
   const lookupRef = useRef<HTMLDivElement>(null);
@@ -182,14 +207,21 @@ export default function NativeReaderHost({
   const report = (position: NativePosition) => {
     positionRef.current = position;
     if (position.ordinal < 0) return;
-    const paragraph = exported.blockParagraph[Math.min(position.ordinal, exported.blockParagraph.length - 1)] ?? 0;
+    const open = openedExportRef.current ?? exported;
+    const paragraph = open.blockParagraph[Math.min(position.ordinal, open.blockParagraph.length - 1)] ?? 0;
     const sectionIndex = Math.max(0, sections.findIndex((s) => paragraph >= s.startParagraphId && paragraph <= s.lastIndex));
     sectionRef.current = sectionIndex;
     setCurrentSection(sectionIndex);
-    saveNativePosition(String(book.id), position.xpath, paragraph);
+    saveNativePosition(String(book.id), {
+      xpath: position.xpath,
+      paragraph,
+      key: open.key,
+      ordinal: position.ordinal,
+      offset: xpathToTextOffset(open.blocks[position.ordinal] ?? '', position.xpath),
+    });
     callbacks.current.onCharsUpdate?.({
-      currChars: exported.paragraphChars[paragraph] ?? 0,
-      totalChars: exported.totalChars,
+      currChars: open.paragraphChars[paragraph] ?? 0,
+      totalChars: open.totalChars,
       lastIndex: paragraph,
       currSection: sectionIndex,
     });
@@ -199,8 +231,9 @@ export default function NativeReaderHost({
 
   // Tapped letter -> the word span around it, in the paragraph rendered as the WebView reader does.
   const findWord = async (hit: NativeWordHit) => {
-    const line = exported.blockLines[hit.ordinal];
-    const blockHtml = exported.blocks[hit.ordinal];
+    const open = openedExportRef.current ?? exported;
+    const line = open.blockLines[hit.ordinal];
+    const blockHtml = open.blocks[hit.ordinal];
     if (line === undefined || blockHtml === undefined) return;
     await Promise.all([tokenizerReady, prepareLineWords(line)]);
     const container = lookupRef.current;
@@ -260,13 +293,12 @@ export default function NativeReaderHost({
   const findWordRef = useRef(findWord);
   findWordRef.current = findWord;
   const appliedSettingsRef = useRef('');
-  /** The export the engine has open (to find the position again after a reload). */
-  const openedExportRef = useRef<typeof exported | null>(null);
   // Leaving the reader closes the engine (a reload keeps it and the page on screen).
   useEffect(() => () => { void NativeReader.close().catch(() => {}); }, []);
 
   // Open the book (export it first if this version is not on the device yet), close on leaving.
   useEffect(() => {
+    if (!wordsSettled) return undefined;
     let cancelled = false;
     const handles: Promise<{ remove: () => Promise<void> }>[] = [
       NativeReader.addListener('pageChanged', (position) => {
@@ -284,21 +316,26 @@ export default function NativeReaderHost({
         const paragraph = Number(book.progress?.currentPage) || 0;
         const saved = loadNativePosition(String(book.id));
         // Reloaded here (word states, furigana): the character at the top of the page on screen,
-        // found again in the new markup. Otherwise the exact saved page, if the book was not read
-        // further in the WebView reader since.
+        // found again in the new markup. Otherwise the saved page: the same xpath for the same
+        // export, or its character found in this one, if the book was not read further in the
+        // WebView reader since.
         const live = positionRef.current;
         const previous = openedExportRef.current;
-        let reopen: { ordinal: number; innerPath?: string } | null = null;
+        const at = (ordinal: number, offset: number) => {
+          const innerPath = offset >= 0 ? textOffsetToInnerPath(exported.blocks[ordinal] ?? '', offset) : null;
+          return { ordinal, ...(innerPath ? { innerPath } : {}) };
+        };
+        let place: { xpath?: string; ordinal?: number; innerPath?: string };
         if (live && live.ordinal >= 0 && previous) {
-          const offset = xpathToTextOffset(previous.blocks[live.ordinal] ?? '', live.xpath);
-          const innerPath = offset >= 0 ? textOffsetToInnerPath(exported.blocks[live.ordinal] ?? '', offset) : null;
-          reopen = { ordinal: live.ordinal, ...(innerPath ? { innerPath } : {}) };
+          place = at(live.ordinal, xpathToTextOffset(previous.blocks[live.ordinal] ?? '', live.xpath));
+        } else if (saved && saved.paragraph === paragraph) {
+          place = saved.key === exported.key || typeof saved.ordinal !== 'number'
+            ? { xpath: saved.xpath }
+            : at(saved.ordinal, saved.offset ?? -1);
+        } else {
+          place = { ordinal: blockOfParagraph(exported, paragraph) };
         }
-        const position = await NativeReader.open({
-          key: exported.key,
-          settings: settingsRef.current,
-          ...(reopen ?? (saved && saved.paragraph === paragraph ? { xpath: saved.xpath } : { ordinal: blockOfParagraph(exported, paragraph) })),
-        });
+        const position = await NativeReader.open({ key: exported.key, settings: settingsRef.current, ...place });
         openedExportRef.current = exported;
         if (cancelled) return;
         appliedSettingsRef.current = JSON.stringify(settingsRef.current);
@@ -313,7 +350,7 @@ export default function NativeReaderHost({
       handles.forEach((handle) => handle.then((h) => h.remove()).catch(() => {}));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exported.key]);
+  }, [exported.key, wordsSettled]);
 
   // Jiten parses what is being read (this section and the next two), as the WebView reader asks
   // for the paragraphs on its page; each parse brings a new export with Jiten's words and states.
@@ -550,6 +587,14 @@ export default function NativeReaderHost({
       className="native-reader-page"
       style={{ flex: 1, width: '100%', height: '100%', background: colors.bg, position: 'relative', overflow: 'hidden' }}
     >
+      {!ready && analysisProgress !== null && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: colors.textMain, opacity: 0.8, fontFamily: 'var(--font-ui), sans-serif', fontSize: 15 }}>
+          <div>Preparando el libro…</div>
+          <div style={{ width: 160, height: 4, borderRadius: 2, background: 'rgba(127,127,127,0.25)', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round(analysisProgress * 100)}%`, height: '100%', background: colors.accent || '#f2c866', transition: 'width 0.2s' }} />
+          </div>
+        </div>
+      )}
       {/* Off-screen copy of the section being read aloud. */}
       <div ref={readAloudContentRef} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 600, visibility: 'hidden' }} />
       {/* Off-screen copy of the tapped paragraph: the dictionary reads the word from its spans. */}

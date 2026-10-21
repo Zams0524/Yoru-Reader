@@ -119,6 +119,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         boolean invertTaps;
         boolean kindleTaps;
         int brightness;               // 0-100, below 100 the page is dimmed
+        List<Underline> underlines = new ArrayList<>();
         int width, height;           // view size in px
         Insets insets = Insets.NONE;  // system bars and cutout, px
         float density;
@@ -137,6 +138,17 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.invertTaps = s.optBoolean("invertTaps", base != null && base.invertTaps);
             c.kindleTaps = "kindle".equals(s.optString("tapZoneMode", base != null && base.kindleTaps ? "kindle" : "edge"));
             c.brightness = Math.max(0, Math.min(100, s.optInt("brightness", base != null ? base.brightness : 100)));
+            JSONArray lines = s.optJSONArray("underlines");
+            if (lines == null) {
+                if (base != null) c.underlines = base.underlines;
+            } else {
+                for (int i = 0; i < lines.length(); i++) {
+                    org.json.JSONObject line = lines.optJSONObject(i);
+                    if (line == null) continue;
+                    c.underlines.add(new Underline(line.optInt("background"), line.optInt("color"),
+                        (float) line.optDouble("thickness", 2), line.optString("style", "solid")));
+                }
+            }
             return c;
         }
     }
@@ -154,6 +166,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineHandler.post(() -> {
             engine.stop();
             cache.clear();
+            pageLetters.clear();
         });
         engineThread.quitSafely();
     }
@@ -484,6 +497,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             long t0 = SystemClock.elapsedRealtime();
             engine.stop();
             cache.clear();
+            pageLetters.clear();
             bodyPrefix = null;
             pictures = loadPictures(book.getParentFile());
             engine.start(binary, getContext().getFilesDir());
@@ -683,6 +697,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                     if (pixels == null) continue;
                     bitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
                     bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
+                    if (!c.underlines.isEmpty()) drawUnderlines(bitmap, lettersOf(p), c);
                 }
                 bitmap.prepareToDraw();
                 synchronized (cache) {
@@ -697,6 +712,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         }
         synchronized (cache) {
             cache.keySet().removeIf(p -> p < page - 2 || p > page + 3);
+            pageLetters.keySet().removeIf(p -> p < page - 2 || p > page + 3);
         }
         main.post(() -> { if (gen == generation) publish(); });
     }
@@ -798,18 +814,32 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineHandler.post(() -> showPage(gen, page));
     }
 
-    /**
-     * Letter boxes of a page (CMD_REQ_PAGE_TEXT: four floats in 0..1 screen coordinates, already
-     * rotated in vertical mode, then the letter; "\n" marks a paragraph end).
-     */
-    private void loadLetters(int gen, int page) throws IOException {
+    /** An underline of a word state, drawn here (see engineWordCss in nativeReaderWords.ts). */
+    private static final class Underline {
+        final int background;  // RGB of the words' background: how they are found in the page
+        final int color;       // RGB
+        final float thickness; // CSS px
+        final String style;    // solid, dotted, dashed, wavy
+        Underline(int background, int color, float thickness, String style) {
+            this.background = background;
+            this.color = color;
+            this.thickness = thickness;
+            this.style = style;
+        }
+    }
+
+    /** Letters of each rendered page, for its underlines and the letter taps (engine thread). */
+    private final Map<Integer, PageLetters> pageLetters = new HashMap<>();
+
+    /** The page's letter boxes, asked once per page and kept with its bitmap. */
+    private PageLetters lettersOf(int page) throws IOException {
+        PageLetters known = pageLetters.get(page);
+        if (known != null) return known;
         Config c = config;
-        if (c == null) return;
         List<EraEngine.Item> req = new ArrayList<>();
         req.add(new EraEngine.Item(page));
         EraEngine.Response r = engine.request(EraEngine.CMD_REQ_PAGE_TEXT, req);
-        if (r.result != 0 || gen != generation) return;
-        int count = r.items.size() / 5;
+        int count = r.result == 0 ? r.items.size() / 5 : 0;
         float[] boxes = new float[count * 4];
         String[] texts = new String[count];
         for (int i = 0; i < count; i++) {
@@ -821,7 +851,124 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             boxes[i * 4 + 3] = Math.max(t, b) * c.height;
             texts[i] = r.stringAt(at + 4);
         }
-        letters = new PageLetters(page, boxes, texts);
+        PageLetters letters = new PageLetters(page, boxes, texts);
+        pageLetters.put(page, letters);
+        return letters;
+    }
+
+    /**
+     * Underlines of the page's words, drawn on its bitmap. The engine only draws one-pixel
+     * underlines in the text colour, through the furigana, so underlined states come with a
+     * background one step off the page colour instead (invisible): a letter whose box shows that
+     * colour belongs to that state, and consecutive letters of a state on one line get one line
+     * with the state's colour, thickness and style — under the text in horizontal writing, on its
+     * left in vertical writing (the furigana is on the right).
+     */
+    private void drawUnderlines(Bitmap bitmap, PageLetters letters, Config c) {
+        if (c.underlines.isEmpty() || letters.texts.length == 0) return;
+        Map<Integer, Underline> byBackground = new HashMap<>();
+        for (Underline u : c.underlines) byBackground.put(u.background & 0xFFFFFF, u);
+        // Ordinary letters are about the size of the median one; furigana is much smaller.
+        List<Float> areas = new ArrayList<>();
+        for (int i = 0; i < letters.texts.length; i++) {
+            if (!letters.texts[i].trim().isEmpty()) areas.add(letterArea(letters, i));
+        }
+        if (areas.isEmpty()) return;
+        java.util.Collections.sort(areas);
+        float typical = areas.get(areas.size() / 2);
+        Canvas canvas = new Canvas(bitmap);
+        Underline current = null;
+        RectF run = null;
+        for (int i = 0; i < letters.texts.length; i++) {
+            if (letters.texts[i].trim().isEmpty()) {
+                drawUnderline(canvas, run, current, c);
+                run = null;
+                current = null;
+                continue;
+            }
+            if (isFurigana(letters, i, typical)) continue;
+            RectF box = new RectF(letters.boxes[i * 4], letters.boxes[i * 4 + 1], letters.boxes[i * 4 + 2], letters.boxes[i * 4 + 3]);
+            Underline u = underlineAt(bitmap, box, byBackground);
+            boolean sameLine = run != null && (c.vertical
+                ? Math.min(run.right, box.right) - Math.max(run.left, box.left) > box.width() / 2
+                : Math.min(run.bottom, box.bottom) - Math.max(run.top, box.top) > box.height() / 2);
+            if (u != null && u == current && sameLine) {
+                run.union(box);
+                continue;
+            }
+            drawUnderline(canvas, run, current, c);
+            current = u;
+            run = u != null ? box : null;
+        }
+        drawUnderline(canvas, run, current, c);
+    }
+
+    /** The state whose background shows inside the letter box (sampled near its corners), or null. */
+    private static Underline underlineAt(Bitmap bitmap, RectF box, Map<Integer, Underline> byBackground) {
+        int left = (int) Math.ceil(box.left) + 1, right = (int) Math.floor(box.right) - 2;
+        int top = (int) Math.ceil(box.top) + 1, bottom = (int) Math.floor(box.bottom) - 2;
+        int cx = (left + right) / 2, cy = (top + bottom) / 2;
+        int[][] points = { { left, top }, { right, top }, { left, bottom }, { right, bottom }, { cx, top }, { cx, bottom }, { left, cy }, { right, cy } };
+        for (int[] point : points) {
+            int x = Math.max(0, Math.min(bitmap.getWidth() - 1, point[0]));
+            int y = Math.max(0, Math.min(bitmap.getHeight() - 1, point[1]));
+            Underline u = byBackground.get(bitmap.getPixel(x, y) & 0xFFFFFF);
+            if (u != null) return u;
+        }
+        return null;
+    }
+
+    private static void drawUnderline(Canvas canvas, RectF run, Underline u, Config c) {
+        if (run == null || u == null) return;
+        float t = Math.max(1f, u.thickness * c.density);
+        float gap = Math.max(1f, t * 0.6f);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(0xFF000000 | u.color);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(t);
+        // The line runs along the text: horizontally under it, or vertically on its left.
+        float x0, y0, x1, y1;
+        if (c.vertical) {
+            x0 = x1 = run.left - gap - t / 2;
+            y0 = run.top;
+            y1 = run.bottom;
+        } else {
+            y0 = y1 = run.bottom + gap + t / 2;
+            x0 = run.left;
+            x1 = run.right;
+        }
+        android.graphics.Path path = new android.graphics.Path();
+        if ("wavy".equals(u.style)) {
+            float length = c.vertical ? y1 - y0 : x1 - x0;
+            float wave = Math.max(4f, t * 3), amplitude = Math.max(1f, t);
+            path.moveTo(x0, y0);
+            for (float d = 0; d <= length; d += 1) {
+                float off = (float) Math.sin(d / wave * Math.PI) * amplitude;
+                if (c.vertical) path.lineTo(x0 + off, y0 + d);
+                else path.lineTo(x0 + d, y0 + off);
+            }
+        } else {
+            path.moveTo(x0, y0);
+            path.lineTo(x1, y1);
+            if ("dashed".equals(u.style)) {
+                paint.setPathEffect(new android.graphics.DashPathEffect(new float[] { t * 3, t * 2 }, 0));
+            } else if ("dotted".equals(u.style)) {
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setPathEffect(new android.graphics.DashPathEffect(new float[] { 0.1f, t * 2 }, 0));
+            }
+        }
+        canvas.drawPath(path, paint);
+    }
+
+    /**
+     * Letter boxes of a page (CMD_REQ_PAGE_TEXT: four floats in 0..1 screen coordinates, already
+     * rotated in vertical mode, then the letter; "\n" marks a paragraph end).
+     */
+    private void loadLetters(int gen, int page) throws IOException {
+        if (config == null) return;
+        PageLetters pageLettersOf = lettersOf(page);
+        if (gen != generation) return;
+        letters = pageLettersOf;
     }
 
     /** Index of the letter under the point on the page on screen, or -1. */
@@ -1076,6 +1223,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 int target = clampPage(xpath.isEmpty() ? page : pageByXPath(xpath, page));
                 synchronized (cache) {
                     cache.clear();
+                    pageLetters.clear();
                 }
                 final int pages = enginePages;
                 main.post(() -> {
@@ -1176,6 +1324,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 config = null;
                 synchronized (cache) {
                     cache.clear();
+                    pageLetters.clear();
                 }
             });
             call.resolve();
