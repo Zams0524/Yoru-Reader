@@ -900,12 +900,15 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             }
         }
 
-        Canvas canvas = new Canvas(bitmap);
+        // Every run is placed before any line is drawn, so that finding a run's ink never mistakes
+        // an already drawn line for text.
+        List<RectF> runs = new ArrayList<>();
+        List<Underline> runStates = new ArrayList<>();
         Underline current = null;
         RectF run = null;
         for (int i = 0; i < letters.texts.length; i++) {
             if (letters.texts[i].trim().isEmpty()) {
-                drawUnderline(canvas, run, current, c);
+                addRun(runs, runStates, run, current);
                 run = null;
                 current = null;
                 continue;
@@ -918,11 +921,69 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 run.union(box);
                 continue;
             }
-            drawUnderline(canvas, run, current, c);
+            addRun(runs, runStates, run, current);
             current = u;
             run = u != null ? box : null;
         }
-        drawUnderline(canvas, run, current, c);
+        addRun(runs, runStates, run, current);
+
+        float[] inkLefts = new float[runs.size()];
+        for (int k = 0; k < runs.size(); k++) {
+            inkLefts[k] = c.vertical ? inkLeft(bitmap, runs.get(k), c) : Float.NaN;
+        }
+        Canvas canvas = new Canvas(bitmap);
+        for (int k = 0; k < runs.size(); k++) {
+            drawUnderline(canvas, runs.get(k), runStates.get(k), c, inkLefts[k]);
+        }
+    }
+
+    private static void addRun(List<RectF> runs, List<Underline> runStates, RectF run, Underline u) {
+        if (run == null || u == null) return;
+        runs.add(run);
+        runStates.add(u);
+    }
+
+    /**
+     * Left edge of a vertical run's own text, or NaN. In vertical writing the engine's letter boxes
+     * span about the whole step between columns, so their left edge lies far from the glyphs, on
+     * the furigana of the column to the left. The text is the densest ink in the box: from there
+     * the edge goes left until a clear gap, which leaves the neighbour's furigana out.
+     */
+    private static float inkLeft(Bitmap bitmap, RectF run, Config c) {
+        int left = Math.max(0, (int) Math.floor(run.left));
+        int right = Math.min(bitmap.getWidth(), (int) Math.ceil(run.right));
+        int top = Math.max(0, (int) Math.floor(run.top));
+        int bottom = Math.min(bitmap.getHeight(), (int) Math.ceil(run.bottom));
+        int w = right - left, h = bottom - top;
+        if (w <= 0 || h <= 0) return Float.NaN;
+        int[] pixels = new int[w * h];
+        bitmap.getPixels(pixels, 0, w, left, top, w, h);
+        int bg = c.backgroundColor;
+        int[] ink = new int[w];
+        int densest = -1;
+        for (int x = 0; x < w; x++) {
+            for (int y = 0; y < h; y++) {
+                int p = pixels[y * w + x];
+                int d = Math.abs(((p >> 16) & 0xFF) - ((bg >> 16) & 0xFF))
+                    + Math.abs(((p >> 8) & 0xFF) - ((bg >> 8) & 0xFF))
+                    + Math.abs((p & 0xFF) - (bg & 0xFF));
+                // State backgrounds are one step off the page colour: only real ink counts.
+                if (d > 96) ink[x]++;
+            }
+            if (ink[x] > 0 && (densest < 0 || ink[x] > ink[densest])) densest = x;
+        }
+        if (densest < 0) return Float.NaN;
+        int clear = Math.max(2, Math.round(c.fontSize * c.density * 0.25f));
+        int edge = densest, blank = 0;
+        for (int x = densest - 1; x >= 0 && blank < clear; x--) {
+            if (ink[x] > 0) {
+                edge = x;
+                blank = 0;
+            } else {
+                blank++;
+            }
+        }
+        return left + edge;
     }
 
     private static RectF rectOf(PageLetters letters, int i) {
@@ -955,7 +1016,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         return null;
     }
 
-    private static void drawUnderline(Canvas canvas, RectF run, Underline u, Config c) {
+    private static void drawUnderline(Canvas canvas, RectF run, Underline u, Config c, float inkLeft) {
         if (run == null || u == null) return;
         float t = Math.max(1f, u.thickness * c.density);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -963,12 +1024,13 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(t);
         // The line runs along the text: horizontally under it, or vertically on its left. In
-        // vertical writing the furigana of the neighbouring column sits just past the left edge,
-        // so that gap stays a thin sliver instead of the wider one used below the horizontal line.
+        // vertical writing it hugs the text's own ink (inkLeft) rather than the letter box, whose
+        // left edge sits on the furigana of the neighbouring column.
         float x0, y0, x1, y1;
         if (c.vertical) {
-            float gap = Math.max(0.5f, t * 0.2f);
-            x0 = x1 = run.left - gap - t / 2;
+            float gap = Math.max(1f, t * 0.6f);
+            float edge = Float.isNaN(inkLeft) ? run.left : inkLeft;
+            x0 = x1 = edge - gap - t / 2;
             y0 = run.top;
             y1 = run.bottom;
         } else {
