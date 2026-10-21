@@ -5,7 +5,7 @@ import { tokenizeText } from '../utils/japanese';
 import { useConfirm } from './ConfirmModal';
 import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils/yomitanDB';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import { parseApkgFile, type ApkgRawCard } from '../utils/apkgImport';
+import type { ApkgRawCard } from '../utils/apkgImport';
 
 type AnkiFieldValue = string | { value?: unknown } | null | undefined;
 type AnkiCardInfo = {
@@ -598,6 +598,7 @@ export default function VocabularyModal({
     setIsLoading(true);
     setProgressMsg(lang === 'es' ? 'Leyendo el archivo de Anki...' : 'Reading the Anki file...');
     try {
+      const { parseApkgFile } = await import('../utils/apkgImport');
       const cards = await parseApkgFile(file);
       if (cards.length === 0) {
         await showConfirm({

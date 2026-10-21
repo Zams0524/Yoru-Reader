@@ -4,9 +4,11 @@
 // col.decks as JSON blobs) that every .apkg deck-share export uses regardless of the exporting
 // Anki version, since that is what keeps a shared deck importable into any Anki install.
 import JSZip from 'jszip';
-import initSqlJs from 'sql.js';
-// @ts-ignore - resolved to a static asset URL by Vite; no type declarations for this specifier.
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+// The inline build has its .wasm embedded as base64 right in the JS, so sql.js never needs to
+// fetch() a separate asset at runtime - the plain 'sql.js' build does, and that fetch fails under
+// Electron's file:// protocol ("both async and sync fetching of the wasm failed").
+// @ts-ignore - no type declarations published for this specific build path.
+import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
 import { decompress as zstdDecompress } from 'fzstd';
 
 export interface ApkgRawCard {
@@ -26,9 +28,9 @@ export interface ApkgRawCard {
   mod: number;
 }
 
-let sqlPromise: ReturnType<typeof initSqlJs> | null = null;
-function loadSql() {
-  if (!sqlPromise) sqlPromise = initSqlJs({ locateFile: () => sqlWasmUrl });
+let sqlPromise: Promise<any> | null = null;
+function loadSql(): Promise<any> {
+  if (!sqlPromise) sqlPromise = initSqlJs();
   return sqlPromise;
 }
 
