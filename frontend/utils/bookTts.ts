@@ -13,7 +13,8 @@ interface YoruTtsPlugin {
   openSettings(): Promise<void>;
 }
 
-const YoruTts = registerPlugin<YoruTtsPlugin>('YoruTts');
+/** The one registration of the plugin (wordAudio uses it too: Capacitor rejects a second one). */
+export const YoruTts = registerPlugin<YoruTtsPlugin>('YoruTts');
 
 export interface SpeechHandle {
   done: Promise<void>;

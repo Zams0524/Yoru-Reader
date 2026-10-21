@@ -43,6 +43,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -206,9 +207,12 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         File dir = bookDir(key);
         File partial = new File(dir, "book.xhtml.part");
         try {
+            JSArray reused = new JSArray();
             if (first) {
                 deleteRecursively(dir);
                 if (!dir.mkdirs()) throw new IOException("mkdirs " + dir);
+                JSObject images = call.getObject("images", null);
+                if (images != null) for (String name : reuseImages(key, images)) reused.put(name);
             }
             try (Writer writer = new OutputStreamWriter(new FileOutputStream(partial, !first), StandardCharsets.UTF_8)) {
                 writer.write(data);
@@ -217,11 +221,51 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 packEpub(dir, partial);
                 pruneOldBooks(key);
             }
-            call.resolve();
+            JSObject result = new JSObject();
+            result.put("reused", reused);
+            call.resolve(result);
         } catch (IOException e) {
             Log.e(TAG, "writeBookChunk", e);
             call.reject("WRITE_FAILED", e);
         }
+    }
+
+    /**
+     * Copies into the new export the images ({name: bytes}) that an earlier export of the same book
+     * already has with the same size, so a reload (new word states) does not send them again
+     * through the bridge. Returns the names copied.
+     */
+    private List<String> reuseImages(String key, JSObject images) {
+        List<String> copied = new ArrayList<>();
+        String prefix = sameBookPrefix(key);
+        File[] older = prefix == null ? null
+            : booksDir().listFiles((d, name) -> name.startsWith(prefix) && !name.equals(key) && new File(new File(d, name), "img").isDirectory());
+        if (older == null || older.length == 0) return copied;
+        File source = new File(older[0], "img");
+        File target = new File(bookDir(key), "img");
+        Iterator<String> names = images.keys();
+        while (names.hasNext()) {
+            String name = names.next();
+            File from = new File(source, name);
+            if (!SAFE_NAME.matcher(name).matches() || !from.isFile() || from.length() != images.optLong(name, -1)) continue;
+            try {
+                if (!target.isDirectory() && !target.mkdirs()) break;
+                try (FileOutputStream out = new FileOutputStream(new File(target, name))) {
+                    copy(from, out);
+                }
+                copied.add(name);
+            } catch (IOException e) {
+                Log.w(TAG, "reuse image " + name, e);
+            }
+        }
+        return copied;
+    }
+
+    /** "<id>-" of an export key "<id>-<hash>-v<version>", or null. */
+    private static String sameBookPrefix(String key) {
+        int versionDash = key.lastIndexOf('-');
+        int hashDash = versionDash > 0 ? key.lastIndexOf('-', versionDash - 1) : -1;
+        return hashDash > 0 ? key.substring(0, hashDash + 1) : null;
     }
 
     /** Writes an image of the book (base64) next to its HTML, as img/&lt;name&gt;. */
@@ -390,10 +434,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     private void pruneOldBooks(String keep) {
         // Earlier exports of the same book ("<id>-<hash>-v<version>"): replaced by this one.
-        int versionDash = keep.lastIndexOf('-');
-        int hashDash = versionDash > 0 ? keep.lastIndexOf('-', versionDash - 1) : -1;
-        if (hashDash > 0) {
-            String sameBook = keep.substring(0, hashDash + 1);
+        String sameBook = sameBookPrefix(keep);
+        if (sameBook != null) {
             File[] older = booksDir().listFiles((dir, name) -> name.startsWith(sameBook) && !name.equals(keep));
             if (older != null) for (File dir : older) deleteRecursively(dir);
         }
@@ -503,7 +545,10 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             engine.start(binary, getContext().getFilesDir());
             registerFonts();
             config = c;
-            engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, false));
+            // All settings before OPEN, the document ones too (alignment, indents, the book's CSS):
+            // they go to the engine's empty DOM, which OPEN fills, so the book is laid out once.
+            // Sent after OPEN they cost a second layout of the whole book (about a second).
+            engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
             List<EraEngine.Item> open = new ArrayList<>();
             open.add(EraEngine.Item.str(""));            // no socket: open by path
             open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
@@ -511,12 +556,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             open.add(new EraEngine.Item(0));             // not an archive
             long tOpen = SystemClock.elapsedRealtime();
             EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
-            long tConfig = SystemClock.elapsedRealtime();
             if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
-            // Settings that need the document (text alignment, indents, the book's own CSS).
-            EraEngine.Response configured = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
-            enginePages = configured.intAt(0, opened.intAt(0, 0));
-            Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (tConfig - tOpen) + " ms, relayout " + (SystemClock.elapsedRealtime() - tConfig) + " ms");
+            enginePages = opened.intAt(0, 0);
+            Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (SystemClock.elapsedRealtime() - tOpen) + " ms");
             String firstXPath = pageXPath(0);
             int slash = firstXPath.lastIndexOf("/body");
             bodyPrefix = slash >= 0 ? firstXPath.substring(0, slash + 5) : null;
@@ -535,8 +577,10 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             if (page < 0 && block > 0 && bodyPrefix != null) page = pageByXPath(bodyPrefix + "/p[" + (block + 1) + "]", 0);
             if (page < 0) page = 0;
             final int startPage = clampPage(page);
-            renderAround(gen, startPage);
+            // Only the page on screen before answering; its neighbours right after.
+            renderPages(gen, startPage, new int[] { startPage });
             loadLetters(gen, startPage);
+            engineHandler.post(() -> renderAround(gen, startPage));
             String startXPath = pageXPath(startPage);
             Log.i(TAG, "opened " + enginePages + " pages in " + (SystemClock.elapsedRealtime() - t0) + " ms, prefix " + bodyPrefix + ", start " + startXPath);
             final int pages = enginePages;
@@ -685,9 +729,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     /** Renders the page and its neighbours (engine thread), then hands them to the view. */
     private void renderAround(int gen, int page) {
+        renderPages(gen, page, new int[] { page, page + 1, page - 1, page + 2 });
+    }
+
+    /** Renders the given pages (engine thread); page is the one on screen. */
+    private void renderPages(int gen, int page, int[] pages) {
         Config c = config;
         if (c == null) return;
-        for (int p : new int[] { page, page + 1, page - 1, page + 2 }) {
+        for (int p : pages) {
             if (gen != generation) return;
             if (p < 0 || p >= enginePages) continue;
             synchronized (cache) {

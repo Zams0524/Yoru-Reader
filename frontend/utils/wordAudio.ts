@@ -1,4 +1,5 @@
-import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { YoruTts } from './bookTts';
 
 /**
  * Word pronunciation for the reader popup and SRS cards.
@@ -9,13 +10,6 @@ import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
  *    picks the dictionary pitch accent instead of guessing from bare kana.
  * Returns null when neither is available so callers can keep their own fallbacks.
  */
-
-interface YoruTtsPlugin {
-  speak(options: { text: string; rate?: number; voice?: string }): Promise<void>;
-  stop(): Promise<void>;
-}
-
-const YoruTts = registerPlugin<YoruTtsPlugin>('YoruTts');
 
 // JapanesePod101 answers unknown words with this "audio not available" clip.
 const JPOD_MISSING_CLIP_BYTES = 52288;
