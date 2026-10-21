@@ -56,7 +56,7 @@ const equal = (actual: unknown, expected: unknown, label: string) => {
   const words = renderBookWords(analysed, { 次: 'known' }, true);
   const styled = exportBookForNativeReader(corrected as any, { lineHtml: words });
   if (!styled.html.includes('<span class="w-mature">次</span>')) throw new Error('Word state not marked from statuses');
-  if (!styled.html.includes('<ruby>行<rt')) throw new Error('No furigana on a new word');
+  if (!/<ruby class="w-new">行<rt/.test(styled.html)) throw new Error('No furigana on a new word');
   const doc = new DOMParser().parseFromString(styled.html, 'text/html');
   equal(doc.querySelector('rt')?.textContent, 'ぶたい',
     'Word-state rendering loses author reading');
