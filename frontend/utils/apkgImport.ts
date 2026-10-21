@@ -82,8 +82,20 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const bytes = await extractCollectionBytes(zip);
   const SQL = await loadSql();
-  const db = new SQL.Database(bytes);
+  let db = new SQL.Database(bytes);
   try {
+    // Modern Anki declares several columns (e.g. fields.name) with a custom "unicase" collation,
+    // registered by Anki's own Rust backend but unknown to sql.js's plain SQLite build. Even a
+    // plain SELECT against such a table then fails ("no query solution"), since the query planner
+    // can't validate every index built on that table. Patch the schema text in sqlite_master to
+    // drop the unregistered collation, then re-open from the patched bytes so SQLite reparses it -
+    // a no-op when the file doesn't use it, since the REPLACE then matches nothing.
+    db.run('PRAGMA writable_schema = ON');
+    db.run("UPDATE sqlite_master SET sql = REPLACE(sql, ' COLLATE unicase', '') WHERE sql LIKE '%COLLATE unicase%'");
+    db.run('PRAGMA writable_schema = RESET');
+    const patched = db.export();
+    db.close();
+    db = new SQL.Database(patched);
     let modelsJson = '';
     let decksJson = '';
     try {
