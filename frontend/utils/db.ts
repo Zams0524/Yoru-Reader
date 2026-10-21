@@ -777,42 +777,60 @@ export const db = {
     return card;
   },
 
-  saveSrsCard(word: string, cardData: any) {
-    const srsData = this.getSrsData();
+  /** Applies one card's save logic onto an in-memory srsData object, without reading/writing storage. */
+  _applySrsCardEntry(srsData: Record<string, any>, word: string, cardData: any) {
     if (!cardData) {
       delete srsData[word];
-    } else {
-      const existing = srsData[word] || {};
-      // Ensure all fields are JSON serializable and merge with existing data to preserve metadata!
-      const serialized = { ...existing, ...cardData };
-      
-      // Auto-clean volume numbers if not a custom deck name placeholder
-      if (serialized.source && !word.startsWith('_deck_')) {
-        const customDeckKey = `_deck_${serialized.source}`;
-        if (!srsData[customDeckKey]) {
-          serialized.source = this.cleanVolumeNumber(serialized.source);
-        }
-      }
+      return;
+    }
+    const existing = srsData[word] || {};
+    // Ensure all fields are JSON serializable and merge with existing data to preserve metadata!
+    const serialized = { ...existing, ...cardData };
 
-      if (serialized.due instanceof Date) {
-        serialized.dueDate = serialized.due.toISOString();
-        serialized.due = serialized.due.toISOString(); // Keep both for compatibility
+    // Auto-clean volume numbers if not a custom deck name placeholder
+    if (serialized.source && !word.startsWith('_deck_')) {
+      const customDeckKey = `_deck_${serialized.source}`;
+      if (!srsData[customDeckKey]) {
+        serialized.source = this.cleanVolumeNumber(serialized.source);
       }
-      if (serialized.last_review instanceof Date) {
-        serialized.lastReview = serialized.last_review.toISOString();
-        serialized.last_review = serialized.last_review.toISOString();
-      }
-      // Map FSRS 6 fields to legacy fields for backward compatibility with Library stats
-      if (serialized.scheduled_days !== undefined) {
-        serialized.interval = serialized.scheduled_days;
-      }
-      if (serialized.reps !== undefined) {
-        serialized.repetitions = serialized.reps;
-      }
-      if (serialized.difficulty !== undefined) {
-        serialized.ease = Math.max(1.3, Math.min(3.0, 3.0 - (serialized.difficulty - 1) * 0.1888));
-      }
-      srsData[word] = serialized;
+    }
+
+    if (serialized.due instanceof Date) {
+      serialized.dueDate = serialized.due.toISOString();
+      serialized.due = serialized.due.toISOString(); // Keep both for compatibility
+    }
+    if (serialized.last_review instanceof Date) {
+      serialized.lastReview = serialized.last_review.toISOString();
+      serialized.last_review = serialized.last_review.toISOString();
+    }
+    // Map FSRS 6 fields to legacy fields for backward compatibility with Library stats
+    if (serialized.scheduled_days !== undefined) {
+      serialized.interval = serialized.scheduled_days;
+    }
+    if (serialized.reps !== undefined) {
+      serialized.repetitions = serialized.reps;
+    }
+    if (serialized.difficulty !== undefined) {
+      serialized.ease = Math.max(1.3, Math.min(3.0, 3.0 - (serialized.difficulty - 1) * 0.1888));
+    }
+    srsData[word] = serialized;
+  },
+
+  saveSrsCard(word: string, cardData: any) {
+    const srsData = this.getSrsData();
+    this._applySrsCardEntry(srsData, word, cardData);
+    this.saveSrsData(srsData);
+  },
+
+  /**
+   * Saves many cards in one read-modify-write of the SRS blob, instead of one per card. A bulk
+   * import of thousands of cards through saveSrsCard() is O(n^2) - it reads and re-serializes the
+   * whole (growing) blob on every single card - which can take long enough to look hung.
+   */
+  saveSrsCardsBatch(entries: Record<string, any>) {
+    const srsData = this.getSrsData();
+    for (const word of Object.keys(entries)) {
+      this._applySrsCardEntry(srsData, word, entries[word]);
     }
     this.saveSrsData(srsData);
   },

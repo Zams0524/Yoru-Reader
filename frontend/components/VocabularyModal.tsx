@@ -520,7 +520,8 @@ export default function VocabularyModal({
 
         const current = db.getWordStatuses();
         const updated = { ...current };
-        
+
+        const cardsToSave: Record<string, any> = {};
         words.forEach(w => {
           // 'known' would hide the word from the reader and exclude it from SRS review
           // (see SrsReviewModal/Reader): imported Anki cards still need both, regardless
@@ -528,8 +529,9 @@ export default function VocabularyModal({
           updated[w] = 'learning';
 
           const details = wordsMap[w];
-          if (details) db.saveSrsCard(w, buildAnkiSrsCardData(w, details));
+          if (details) cardsToSave[w] = buildAnkiSrsCardData(w, details);
         });
+        db.saveSrsCardsBatch(cardsToSave);
         
         db.saveWordStatuses(updated);
         loadVocabStats();
@@ -714,12 +716,14 @@ export default function VocabularyModal({
       if (ok) {
         const current = db.getWordStatuses();
         const updated = { ...current };
+        const cardsToSave: Record<string, any> = {};
         words.forEach((w) => {
           // 'known' would hide the word from the reader and exclude it from SRS review: imported
           // Anki cards still need both, regardless of how mature they are in Anki.
           updated[w] = 'learning';
-          db.saveSrsCard(w, buildAnkiSrsCardData(w, wordsMap[w]));
+          cardsToSave[w] = buildAnkiSrsCardData(w, wordsMap[w]);
         });
+        db.saveSrsCardsBatch(cardsToSave);
         db.saveWordStatuses(updated);
         loadVocabStats();
         await showConfirm({
