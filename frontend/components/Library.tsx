@@ -8088,7 +8088,7 @@ const Library = React.memo(function Library({
             >
               {gDriveTokens
                 ? (lang === 'es' ? 'Volver a conectar la cuenta' : 'Reconnect account')
-                : (lang === 'es' ? 'Conectar con Google' : 'Connect with Google')}
+                : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}
             </button>
             {!gDriveTokens && (
               <button type="button" className="yoru-btn yoru-btn-ghost" onClick={() => setIsGDriveSyncOpen(false)}>

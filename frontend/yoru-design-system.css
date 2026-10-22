@@ -3535,7 +3535,18 @@ textarea:focus-visible,
 
   html.platform-android .library-sidebar {
     overflow-y: auto;
-    padding-bottom: calc(20px + var(--yoru-safe-bottom, 0px));
+    padding-bottom: 0;
+  }
+
+  /* Google Drive and Settings stay pinned above the system navigation bar. */
+  html.platform-android .library-sidebar .sidebar-footer-group {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-right: -18px;
+    margin-left: -18px;
+    padding: 10px 18px calc(12px + var(--yoru-safe-bottom, 0px));
+    background: var(--bg-panel);
   }
 }
 
