@@ -8,7 +8,7 @@ import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
+import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
@@ -1260,65 +1260,18 @@ const Library = React.memo(function Library({
   // Connect Google Drive Folder via loopback OAuth Flow
   const handleConnectGDrive = async () => {
     try {
-      if (!gDriveClientId.trim()) {
-        alert(lang === 'es' ? 'Introduce tu Client ID para continuar.' : 'Please enter your Client ID to continue.');
-        return;
-      }
       setGDriveSyncStatus('syncing');
-
-      if (Capacitor.getPlatform() === 'android') {
-        const androidClientId = GDRIVE_ANDROID_CLIENT_ID;
-        const nativeTokens = await authorizeGoogleDriveNative();
-        localStorage.setItem('gdrive_client_id', androidClientId);
-        localStorage.removeItem('gdrive_client_secret');
-        localStorage.setItem('gdrive_tokens', JSON.stringify(nativeTokens));
-        setGDriveClientId(androidClientId);
-        setGDriveClientSecret('');
-        setGDriveTokens(nativeTokens);
-
-        const info = await googleDriveService.getUserInfo(nativeTokens, androidClientId, '');
-        localStorage.setItem('gdrive_user_email', info.email);
-        setGDriveUserEmail(info.email);
-        setGDriveSyncStatus('authorized');
-        alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
-        await performCloudSync(nativeTokens, 'bidirectional');
-        return;
-      }
-
-      if (!window.electronAPI || !window.electronAPI.startGoogleOauth) {
-        throw new Error(lang === 'es'
-          ? 'Conecta Google Drive desde la app de Android o desde la app de escritorio.'
-          : 'Connect Google Drive from the Android app or the desktop app.');
-      }
-
-      // 1. Run local loopback callback server and open browser
-      const oauthResult = await window.electronAPI.startGoogleOauth(gDriveClientId.trim());
-      if (!oauthResult || !oauthResult.code) {
-        throw new Error('No authorization code returned from loopback server');
-      }
-
-      // 2. Exchange authorization code + PKCE verifier for access + refresh token
-      const tokenData = await googleDriveService.exchangeCodeForTokens(
-        oauthResult.code,
-        oauthResult.redirectUri,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim(),
-        oauthResult.codeVerifier
-      );
-
-      // 3. Fetch connected user information
-      const info = await googleDriveService.getUserInfo(tokenData, gDriveClientId.trim(), gDriveClientSecret.trim());
-      setGDriveUserEmail(info.email);
-
-      // Save credentials & tokens
-      localStorage.setItem('gdrive_client_id', gDriveClientId.trim());
-      localStorage.setItem('gdrive_client_secret', gDriveClientSecret.trim());
-      localStorage.setItem('gdrive_tokens', JSON.stringify(tokenData));
-      localStorage.setItem('gdrive_user_email', info.email);
-
-      setGDriveTokens(tokenData);
+      const session = await signInWithGoogle();
+      setGDriveClientId(session.clientId);
+      setGDriveClientSecret(session.clientSecret);
+      setGDriveTokens(session.tokens);
+      setGDriveUserEmail(session.email);
+      setIsAutoSyncEnabled(true);
       setGDriveSyncStatus('authorized');
-      alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
+      showToast(lang === 'es'
+        ? `Sesión iniciada como ${session.email}. Tu progreso se guardará en tu Google Drive.`
+        : `Signed in as ${session.email}. Your progress will be saved to your Google Drive.`, 'success');
+      await performCloudSync(session.tokens, 'bidirectional');
     } catch (err) {
       setGDriveSyncStatus(gDriveTokens ? 'authorized' : 'disconnected');
       console.error('Google OAuth connection failed:', err);
@@ -1535,22 +1488,25 @@ const Library = React.memo(function Library({
   const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
     if (cloudSyncInFlightRef.current) return;
     cloudSyncInFlightRef.current = true;
+    // Read the client from storage: right after signing in, the state above is not updated yet
+    const clientId = (localStorage.getItem('gdrive_client_id') ?? gDriveClientId).trim();
+    const clientSecret = (localStorage.getItem('gdrive_client_secret') ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
     try {
       const uploadLocalState = async () => {
         const fullExport = await db.exportFullDatabase();
         await googleDriveService.uploadSyncFile(
           tokens,
-          gDriveClientId.trim(),
+          clientId,
           fullExport,
-          gDriveClientSecret.trim()
+          clientSecret
         );
         markCloudSynced();
       };
 
       const importedData = await googleDriveService.downloadSyncFile(
         tokens,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim()
+        clientId,
+        clientSecret
       );
 
       if (!importedData) {
@@ -4378,7 +4334,7 @@ const Library = React.memo(function Library({
                   className="reset-filter-btn"
                   style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Vincular Google Drive' : 'Link Google Drive')}</span>
+                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
                 </button>
 
                 {gDriveTokens && (
