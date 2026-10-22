@@ -389,3 +389,27 @@ export const googleDriveService = {
     return await downloadRes.blob();
   }
 };
+
+// When this device last synced with Drive, as an ISO timestamp.
+export const LAST_SYNC_STORAGE_KEY = 'gdrive_last_sync_time';
+
+export function readLastSyncMs(): number {
+  const raw = localStorage.getItem(LAST_SYNC_STORAGE_KEY);
+  if (!raw) return 0;
+  const ms = Date.parse(raw);
+  // Older versions stored toLocaleString(), which Date.parse can't read in most locales.
+  // Treat that as "synced just now" so the cloud copy never silently overwrites local data.
+  return Number.isNaN(ms) ? Date.now() : ms;
+}
+
+export function formatSyncTime(value: string): string {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? value : new Date(ms).toLocaleString();
+}
+
+// Only a revoked or expired grant means the user must sign in again; anything else
+// (offline, timeout, a Google hiccup, the Android picker not answering) is retried later.
+export function isGoogleSessionRevoked(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid_grant|token has been (expired or )?revoked/i.test(message);
+}
