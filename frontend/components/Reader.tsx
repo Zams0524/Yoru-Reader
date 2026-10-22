@@ -2355,6 +2355,7 @@ export default function Reader({
           onSleep={readAloud.setSleepMinutes}
           onSettings={() => setIsVoiceSettingsOpen(true)}
           raised={isHeaderVisible}
+          autoHide={readAloud.status === 'playing' && !isHeaderVisible}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
         />
       )}
@@ -2391,6 +2392,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
+          lang={lang}
         />
       ) : (
         <ReaderEngine

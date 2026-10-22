@@ -2570,6 +2570,26 @@ textarea:focus-visible,
   bottom: calc(110px + var(--yoru-safe-bottom, 0px));
 }
 
+/* While reading aloud with the reader's bars hidden, the player slides away after a few seconds. */
+.read-aloud-bar {
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s;
+}
+
+.read-aloud-bar.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 24px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
+
+/* "Hide images" (spoilers): the book's pictures stay blurred until tapped. */
+.reader-hide-images img.yoru-book-img:not(.is-revealed) {
+  filter: blur(22px) brightness(0.6);
+  clip-path: inset(0);
+  cursor: pointer;
+}
+
 /* ReadEra-style dropdowns, font thickness slider and text alignment (v1.3.10) */
 .readera-settings-picker-row {
   cursor: pointer;

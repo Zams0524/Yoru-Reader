@@ -24,6 +24,12 @@ export interface NativeReaderSettings {
   brightness: number;
   /** Underlines the plugin draws itself (see engineWordCss). */
   underlines: { background: number; color: number; thickness: number; style: string }[];
+  /** Pictures on pages of their own are covered until tapped (spoilers). APK 1.4.5+. */
+  hideImages?: boolean;
+  /** Text drawn on a covered picture. */
+  spoilerLabel?: string;
+  /** The export's line-end padding (LINE_END_RESERVE_EM): the plugin shrinks that margin by as much. APK 1.4.5+. */
+  lineEndReserve?: number;
 }
 
 /** A tap on a letter: its engine xpath, block and box on screen (CSS px). */
@@ -69,7 +75,8 @@ interface NativeReaderPlugin {
   setHoles(options: { rects: number[][] }): Promise<void>;
   setPopupOpen(options: { open: boolean }): Promise<void>;
   /** Highlights a read-aloud sentence. relativeBlock: block index from top of current page. */
-  highlightRange(options: { relativeBlock: number; charOffset: number; charLength: number; color: number }): Promise<void>;
+  /** text: the sentence without furigana; APK 1.4.5+ finds it by its letters on the page. */
+  highlightRange(options: { relativeBlock: number; charOffset: number; charLength: number; text?: string; color: number }): Promise<void>;
   /** Clears any word or sentence highlight on the page. */
   clearHighlight(): Promise<void>;
   close(): Promise<void>;
@@ -93,9 +100,18 @@ export function isNativeReaderAvailable(): boolean {
  * v4: the plugin swaps those pictures for a page-tall placeholder (pictures.idx). v5: small images
  * (logos) stay in the text (class "si"). v6: words in state spans (nativeReaderWords); the key
  * is a hash of the HTML, so a state change gives a new export. v7: the plugin moves the CSS into
- * style.css and the engine reads it unfiltered.
+ * style.css and the engine reads it unfiltered. v8: blocks padded at the line end
+ * (LINE_END_RESERVE_EM).
  */
-const EXPORT_VERSION = 7;
+const EXPORT_VERSION = 8;
+/**
+ * Padding at the end of every line of the export, in ems. The engine draws a line longer than it
+ * measured when furigana is wider than its base (the base is spread out), and the page margin then
+ * cuts its last characters. With this padding the line breaks earlier; the plugin (APK 1.4.5+,
+ * settings.lineEndReserve) takes as much off that margin, so lines still end where they did.
+ * An older APK just shows a slightly wider margin.
+ */
+export const LINE_END_RESERVE_EM = 1;
 /** Bumped when engine xpaths of earlier exports no longer point to the same place. */
 const POSITION_FORMAT = 2;
 const CHUNK_CHARS = 512 * 1024;
@@ -229,7 +245,7 @@ export function exportBookForNativeReader(book: Book, options: NativeExportOptio
     + '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/>'
     + `<title>${title}</title><style>`
     + 'body{margin:0;padding:0}'
-    + 'p{margin:0;text-indent:0}'
+    + `p{margin:0;text-indent:0;padding-right:${LINE_END_RESERVE_EM}em}`
     + 'p.ch{page-break-before:always}'
     + 'p.h1{font-size:1.5em;font-weight:bold;margin:1em 0}'
     + 'p.h2{font-size:1.3em;font-weight:bold;margin:0.8em 0}'

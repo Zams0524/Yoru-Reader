@@ -41,6 +41,8 @@ export interface ReaderSettingsState {
   hyphenation: boolean;
   /** Android: draw the book with the native engine (NativeReaderPlugin) instead of the WebView. */
   nativeEngine: boolean;
+  /** The book's pictures are blurred (spoilers) until tapped. */
+  hideImages: boolean;
 }
 
 const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
@@ -69,6 +71,7 @@ const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
   textAlign: 'reader:textAlign',
   hyphenation: 'reader:hyphenation',
   nativeEngine: 'reader:nativeEngine',
+  hideImages: 'reader:hideImages',
 };
 
 function getNumber(key: string, fallback: number): number {
@@ -123,6 +126,7 @@ function loadSettings(): ReaderSettingsState {
     textAlign: getString(LS_KEYS.textAlign, 'original') as ReaderSettingsState['textAlign'],
     hyphenation: getBool(LS_KEYS.hyphenation, false),
     nativeEngine: getBool(LS_KEYS.nativeEngine, true),
+    hideImages: getBool(LS_KEYS.hideImages, false),
   };
 }
 

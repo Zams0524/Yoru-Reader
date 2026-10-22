@@ -18,13 +18,30 @@ interface Props {
   onClose: () => void;
   /** Sits higher while the page bar is shown at the bottom. */
   raised?: boolean;
+  /**
+   * Slides away after AUTO_HIDE_MS without a touch on it (while reading, with the reader's bars
+   * hidden); tapping the page brings the bars back, and the player with them.
+   */
+  autoHide?: boolean;
 }
 
+const AUTO_HIDE_MS = 4000;
+
 export default function ReadAloudBar({
-  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false,
+  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false, autoHide = false,
 }: Props) {
   const es = lang === 'es';
   const [, setNow] = useState(Date.now());
+  const [hidden, setHidden] = useState(false);
+  // Bumped by every touch on the bar: the hide countdown starts again.
+  const [touched, setTouched] = useState(0);
+
+  useEffect(() => {
+    setHidden(false);
+    if (!autoHide) return;
+    const timer = window.setTimeout(() => setHidden(true), AUTO_HIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoHide, touched]);
 
   // Refresh the sleep countdown once a minute.
   useEffect(() => {
@@ -50,7 +67,11 @@ export default function ReadAloudBar({
   const playing = status === 'playing';
 
   return (
-    <div className={`read-aloud-bar${raised ? " is-raised" : ""}`} role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
+    <div
+      className={`read-aloud-bar${raised ? " is-raised" : ""}${hidden ? " is-hidden" : ""}`}
+      onPointerDown={() => setTouched((n) => n + 1)}
+      aria-hidden={hidden || undefined}
+      role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
       <button type="button" className="read-aloud-btn" onClick={() => onSkip(-1)} aria-label={es ? 'Frase anterior' : 'Previous sentence'}>
         <SkipBack size={18} />
       </button>
