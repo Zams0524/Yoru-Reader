@@ -48,6 +48,8 @@ export interface Settings {
   discordShowStats?: string;
   discordBlacklist?: string;
   srsNewCardsPerDay?: number;
+  srsShowAudioButton?: boolean;
+  srsShowFrontSentence?: boolean;
   srsMaxReviewsPerDay?: number;
   fsrsRetentionRate?: number;
   fsrsMaxInterval?: number;
