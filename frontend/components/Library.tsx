@@ -381,7 +381,8 @@ const Library = React.memo(function Library({
   const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename' | 'merge'>('create');
   const [deckPromptTargetId, setDeckPromptTargetId] = useState<string | null>(null);
   const [deckPromptValue, setDeckPromptValue] = useState('');
-  const [srsCalendarYear, setSrsCalendarYear] = useState(new Date().getFullYear());
+  // 0 = the window of weeks that ends today; each step goes one window back.
+  const [srsCalendarPage, setSrsCalendarPage] = useState(0);
   const [separateSuspended, setSeparateSuspended] = useState(false);
   const [notesSearch, setNotesSearch] = useState('');
   const [notesFilterStatus, setNotesFilterStatus] = useState('all');
@@ -4933,43 +4934,37 @@ const Library = React.memo(function Library({
       return null;
     };
     
-    const getYearCalendarCells = (year: number) => {
-      const yearCells = [];
-      const jan1 = new Date(year, 0, 1);
-      const startDay = jan1.getDay();
-      const alignOffset = (startDay + 6) % 7;
-      const startDate = new Date(year, 0, 1);
-      startDate.setDate(startDate.getDate() - alignOffset);
-
-      const tempDate = new Date(startDate);
-      for (let col = 0; col < 54; col++) {
-        const weekCells = [];
+    // Activity heatmap: a window of whole weeks (Monday first) that ends with the
+    // current week, so today is always visible without scrolling sideways.
+    const calendarWeekCount = isMobile ? 18 : 53;
+    const getCalendarWeeks = (page: number) => {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const start = new Date(today);
+      start.setDate(start.getDate() - ((today.getDay() + 6) % 7) - (calendarWeekCount - 1 + page * calendarWeekCount) * 7);
+      const todayYmd = localDate(today);
+      const weeks: { ymd: string; date: Date; count: number; level: number; isFuture: boolean; isToday: boolean }[][] = [];
+      const cursor = new Date(start);
+      for (let col = 0; col < calendarWeekCount; col++) {
+        const week = [];
         for (let row = 0; row < 7; row++) {
-          const ymd = localDate(tempDate);
-          const cellYear = tempDate.getFullYear();
-          const isActive = cellYear === year && activity.activityDays.includes(ymd);
-          weekCells.push({ ymd, isActive, date: new Date(tempDate), isCurrentYear: cellYear === year });
-          tempDate.setDate(tempDate.getDate() + 1);
+          const ymd = localDate(cursor);
+          const count = activity.activityCounts[ymd] || 0;
+          const level = count <= 0 ? 0 : count < 5 ? 1 : count < 15 ? 2 : count < 30 ? 3 : 4;
+          week.push({ ymd, date: new Date(cursor), count, level, isFuture: cursor > today, isToday: ymd === todayYmd });
+          cursor.setDate(cursor.getDate() + 1);
         }
-        if (weekCells.some(c => c.isCurrentYear)) {
-          yearCells.push(weekCells);
-        }
+        weeks.push(week);
       }
-      return yearCells;
+      return weeks;
     };
 
-    const getYearMonthLabels = (yearCells: any[][]) => {
+    const getCalendarMonthLabels = (weeks: { date: Date }[][]) => {
       const labels: { colIndex: number; label: string }[] = [];
-      let lastMonth = -1;
-      yearCells.forEach((week, colIndex) => {
-        const firstOfMonth = week.find(cell => cell.isCurrentYear && cell.date.getDate() === 1);
-        if (!firstOfMonth) return;
-        const m = firstOfMonth.date.getMonth();
-        if (m !== lastMonth) {
-          lastMonth = m;
-          const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' });
-          labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
-        }
+      weeks.forEach((week, colIndex) => {
+        const firstOfMonth = week.find(cell => cell.date.getDate() === 1);
+        if (!firstOfMonth || colIndex > weeks.length - 2) return;
+        const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' }).replace('.', '');
+        labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
       });
       return labels;
     };
@@ -5109,14 +5104,21 @@ const Library = React.memo(function Library({
     // Fetch studied history activity and streak
     const activity = (() => {
       const activityDays = new Set<string>();
+      const activityCounts: Record<string, number> = {};
       let cardsStudiedToday = 0;
 
       const dailyReviews = db.getSrsDailyReviews();
       Object.entries(dailyReviews).forEach(([ymd, count]) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !(Number(count) > 0)) return;
         const date = new Date(`${ymd}T00:00:00`);
-        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) activityDays.add(ymd);
+        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) {
+          activityDays.add(ymd);
+          activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, Number(count));
+        }
       });
+
+      // Days that only show up through a card's last review still count as active.
+      const lastReviewCounts: Record<string, number> = {};
 
       const studiedToday = new Set<string>();
       Object.entries(srsData).forEach(([word, card]: [string, any]) => {
@@ -5127,7 +5129,11 @@ const Library = React.memo(function Library({
         if (!Number.isFinite(reviewDate.getTime())) return;
         const ymd = localDate(reviewDate);
         activityDays.add(ymd);
+        lastReviewCounts[ymd] = (lastReviewCounts[ymd] || 0) + 1;
         if (ymd === todayStr) studiedToday.add(word);
+      });
+      Object.entries(lastReviewCounts).forEach(([ymd, count]) => {
+        activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, count);
       });
       cardsStudiedToday = studiedToday.size;
       
@@ -5155,127 +5161,114 @@ const Library = React.memo(function Library({
           break;
         }
       }
-      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays) };
+      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays), activityCounts };
     })();
 
 
-    const renderActivityCalendar = () => (
-      <div 
-        style={{ 
-          background: 'var(--bg-card)', 
-          border: '1px solid var(--border-light)', 
-          borderRadius: '16px', 
-          padding: '24px', 
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
-          marginTop: '24px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-          <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📅</span>
-            <span>{lang === 'es' ? 'Calendario de Actividad' : 'Activity Calendar'}</span>
-          </h3>
-          
-          {/* Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y - 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &lt;
-            </button>
-            <span style={{ fontSize: '0.85rem', fontWeight: 850, color: '#fff', minWidth: '40px', textAlign: 'center' }}>{srsCalendarYear}</span>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y + 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &gt;
-            </button>
-          </div>
+    const renderActivityCalendar = () => {
+      const weeks = getCalendarWeeks(srsCalendarPage);
+      const monthLabels = getCalendarMonthLabels(weeks);
+      const visibleDays = weeks.flat().filter(cell => !cell.isFuture);
+      const activeInRange = visibleDays.filter(cell => cell.count > 0).length;
+      const locale = lang === 'es' ? 'es-ES' : 'en-US';
+      const firstDay = visibleDays[0]?.date;
+      const lastDay = visibleDays[visibleDays.length - 1]?.date;
+      const monthName = (date?: Date) => {
+        const name = date ? date.toLocaleDateString(locale, { month: 'short' }).replace('.', '') : '';
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      };
+      const rangeLabel = firstDay && lastDay
+        ? (firstDay.getFullYear() === lastDay.getFullYear()
+          ? `${monthName(firstDay)} – ${monthName(lastDay)} ${lastDay.getFullYear()}`
+          : `${monthName(firstDay)} ${firstDay.getFullYear()} – ${monthName(lastDay)} ${lastDay.getFullYear()}`)
+        : '';
+      const dayLetters = lang === 'es' ? ['L', '', 'X', '', 'V', '', 'D'] : ['M', '', 'W', '', 'F', '', 'S'];
+      const gridColumns = { gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` };
+      const cardsWord = (n: number) => lang === 'es' ? (n === 1 ? 'tarjeta' : 'tarjetas') : (n === 1 ? 'card' : 'cards');
 
-          <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-            <span>
-              {lang === 'es' ? 'Racha actual: ' : 'Current streak: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.streak} {lang === 'es' ? 'días' : 'days'}</span>
-            </span>
-            <span>•</span>
-            <span>
-              {lang === 'es' ? 'Repasadas hoy: ' : 'Reviewed today: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.cardsStudiedToday}</span>
-            </span>
-          </div>
-        </div>
-        
-        {/* Year Heatmap Grid */}
-        <div className="srs-calendar-scroll" style={{ overflowX: 'auto', padding: '10px 0 5px 0' }}>
-          <div style={{ minWidth: '680px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            
-            {/* Month Labels aligned to 54 columns */}
-            <div style={{ display: 'flex', position: 'relative', height: '16px', marginLeft: '18px', marginBottom: '4px' }}>
-              {(() => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                const monthLabels = getYearMonthLabels(yearCells);
-                return monthLabels.map((lbl, idx) => (
-                  <span 
-                    key={idx} 
-                    style={{ 
-                      position: 'absolute', 
-                      left: `${lbl.colIndex * 12.2}px`, 
-                      fontSize: '0.62rem', 
-                      color: 'var(--text-muted)', 
-                      fontWeight: 800, 
-                      textTransform: 'uppercase' 
-                    }}
-                  >
-                    {lbl.label}
-                  </span>
-                ));
-              })()}
+      return (
+        <section className="srs-cal">
+          <div className="srs-cal-head">
+            <h3 className="srs-section-title">{lang === 'es' ? 'Actividad' : 'Activity'}</h3>
+            <div className="srs-cal-nav">
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => p + 1); }}
+                aria-label={lang === 'es' ? 'Semanas anteriores' : 'Earlier weeks'}
+              >
+                <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
+              </button>
+              <span className="srs-cal-range">{rangeLabel}</span>
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                disabled={srsCalendarPage === 0}
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => Math.max(0, p - 1)); }}
+                aria-label={lang === 'es' ? 'Semanas siguientes' : 'Later weeks'}
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
+          </div>
 
-            {/* Calendar Grid cells */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              {Array.from({ length: 7 }).map((_, rowIndex) => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                return (
-                  <div key={rowIndex} style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', width: '12px', textAlign: 'right', marginRight: '6px', fontWeight: 'bold' }}>
-                      {rowIndex === 0 ? 'L' : rowIndex === 2 ? 'M' : rowIndex === 4 ? 'V' : rowIndex === 6 ? 'D' : ''}
-                    </span>
-                    {yearCells.map((week, colIndex) => {
-                      const cell = week[rowIndex];
-                      if (!cell) return <div key={colIndex} style={{ width: '9px', height: '9px' }} />;
-                      return (
-                        <div 
-                          key={colIndex} 
-                          title={cell.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + (cell.isActive ? ' (Activo)' : ' (Inactivo)')}
-                          style={{
-                            width: '9px',
-                            height: '9px',
-                            borderRadius: '2px',
-                            background: cell.isActive ? 'rgba(168, 85, 247, 0.85)' : 'rgba(255, 255, 255, 0.03)',
-                            border: cell.isActive ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255, 255, 255, 0.02)',
-                            transition: 'all 0.15s ease',
-                            opacity: cell.isCurrentYear ? 1 : 0.15
-                          }}
-                        />
-                      );
-                    })}
+          <div className="srs-cal-stats">
+            <div>
+              <div className="srs-cal-stat-value is-accent">{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Racha' : 'Streak'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activity.cardsStudiedToday}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Repasadas hoy' : 'Reviewed today'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activeInRange}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Días activos' : 'Active days'}</div>
+            </div>
+          </div>
+
+          <div className="srs-cal-body">
+            <div className="srs-cal-months" style={gridColumns}>
+              {monthLabels.map(lbl => (
+                <span key={lbl.colIndex} style={{ gridColumn: `${lbl.colIndex + 1} / span 4` }}>{lbl.label}</span>
+              ))}
+            </div>
+            <div className="srs-cal-grid-row">
+              <div className="srs-cal-days">
+                {dayLetters.map((letter, i) => <span key={i}>{letter}</span>)}
+              </div>
+              <div className="srs-cal-grid" style={gridColumns}>
+                {weeks.map((week, colIndex) => (
+                  <div key={colIndex} className="srs-cal-week">
+                    {week.map(cell => (
+                      <div
+                        key={cell.ymd}
+                        className={`srs-cal-cell level-${cell.level}${cell.isToday ? ' is-today' : ''}${cell.isFuture ? ' is-future' : ''}`}
+                        title={cell.isFuture ? undefined : `${cell.date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}: ${cell.count} ${cardsWord(cell.count)}`}
+                      />
+                    ))}
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-
           </div>
-        </div>
-      </div>
-    );
+
+          <div className="srs-cal-foot">
+            <span>
+              {lang === 'es' ? 'Hoy' : 'Today'}: {now.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} · {activity.cardsStudiedToday} {cardsWord(activity.cardsStudiedToday)}
+            </span>
+            <div className="srs-cal-legend" aria-hidden="true">
+              <span>{lang === 'es' ? 'Menos' : 'Less'}</span>
+              <i className="srs-cal-cell level-0" />
+              <i className="srs-cal-cell level-1" />
+              <i className="srs-cal-cell level-2" />
+              <i className="srs-cal-cell level-4" />
+              <span>{lang === 'es' ? 'Más' : 'More'}</span>
+            </div>
+          </div>
+        </section>
+      );
+    };
 
     // --- Study Stats Calculations ---
     const studyTimeTodaySeconds = Number(localStorage.getItem(`yoru_reader_srs_study_time_${todayStr}`) || 0);
@@ -5546,51 +5539,48 @@ const Library = React.memo(function Library({
 
         {srsSubTab === 'decks' && (
           <>
-            {/* Header Dashboard Card */}
-            <div className="vocab-dashboard-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', padding: '20px', borderRadius: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
-              <div>
-                <h2 style={{ margin: '0 0 4px 0', fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {lang === 'es' ? 'Repaso de Yoru SRS' : 'Yoru SRS Reviews'}
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  {lang === 'es' ? `Tienes ${totalDueCount} tarjetas pendientes hoy` : `You have ${totalDueCount} reviews pending today`}
-                </p>
+            {/* Today summary */}
+            <section className="srs-today">
+              <div className="srs-today-head">
+                <span>{lang === 'es' ? 'Para hoy' : 'Due today'}</span>
+                <span>
+                  {lang === 'es' ? 'Racha ' : 'Streak '}
+                  <strong>{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</strong>
+                </span>
               </div>
-              
-              {totalDueCount > 0 && (
-                <button
-                  type="button"
-                  className="vocab-action-btn"
-                  onClick={() => {
-                    setSelectedDeckFilter(null);
-                    setIsSrsReviewOpen(true);
-                  }}
-                  style={{
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    border: 'none',
-                    color: '#ffffff',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 14px rgba(168, 85, 247, 0.3)'
-                  }}
-                >
-                  <Zap size={15} fill="rgba(255,255,255,0.2)" />
-                  <span>{lang === 'es' ? 'Repasar Todo' : 'Review All'}</span>
-                </button>
-              )}
-            </div>
+              <div className="srs-today-counts">
+                <div className="srs-today-count is-new">
+                  <strong>{totalNewCount}</strong>
+                  <span>{lang === 'es' ? 'Nuevas' : 'New'}</span>
+                </div>
+                <div className="srs-today-count is-learn">
+                  <strong>{totalLearnCount}</strong>
+                  <span>{lang === 'es' ? 'Aprendiendo' : 'Learning'}</span>
+                </div>
+                <div className="srs-today-count is-review">
+                  <strong>{totalReviewCount}</strong>
+                  <span>{lang === 'es' ? 'Repaso' : 'Review'}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="srs-today-cta"
+                disabled={totalDueCount === 0}
+                onClick={() => {
+                  setSelectedDeckFilter(null);
+                  setIsSrsReviewOpen(true);
+                }}
+              >
+                {totalDueCount > 0
+                  ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
+                  : (lang === 'es' ? 'Estás al día' : 'All caught up')}
+              </button>
+            </section>
 
             {/* Deck List (Mazos) */}
-            <div className="srs-deck-list" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>
-                🗂️ {lang === 'es' ? 'Mazos de Aprendizaje' : 'Learning Decks'}
-              </h3>
-              
+            <section className="srs-deck-list">
+              <h3 className="srs-section-title">{lang === 'es' ? 'Mis mazos' : 'My decks'}</h3>
+
               {deckList.length === 0 ? (
                 <div className="srs-empty-state" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-card-hover)', border: '1px dashed var(--border-light)', borderRadius: '12px' }}>
                   <Zap size={24} style={{ color: 'rgba(255,255,255,0.1)', marginBottom: '8px' }} />
@@ -5604,98 +5594,67 @@ const Library = React.memo(function Library({
                   </p>
                 </div>
               ) : (
-                <div className="srs-deck-table-wrap" style={{ overflowX: 'auto' }}>
-                  <table className="srs-deck-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <th style={{ textAlign: 'left', padding: '0 0 10px 0', fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Mazo' : 'Deck'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Nuevas' : 'New'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Aprender' : 'Learn'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Programadas' : 'Review'}
-                        </th>
-                        <th style={{ width: '1%', padding: '0 0 10px 0' }} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deckList.map((deck) => {
-                        const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
-                        return (
-                          <tr
-                            key={deck.name}
-                            className="srs-deck-row"
-                            onClick={() => {
-                              if (!isDue) return;
-                              setSelectedDeckFilter(deck.name);
-                              setIsSrsReviewOpen(true);
+                <div className="srs-deck-cards">
+                  {deckList.map((deck) => {
+                    const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
+                    return (
+                      <div key={deck.name} className={`srs-deck-item${isDue ? ' is-due' : ''}`}>
+                        <button
+                          type="button"
+                          className="srs-deck-main"
+                          disabled={!isDue}
+                          onClick={() => {
+                            setSelectedDeckFilter(deck.name);
+                            setIsSrsReviewOpen(true);
+                          }}
+                          aria-label={lang === 'es' ? `Repasar ${deck.name}` : `Review ${deck.name}`}
+                        >
+                          <span className="srs-deck-name" title={deck.name}>
+                            <FolderOpen size={15} aria-hidden="true" />
+                            <span>{deck.name}</span>
+                          </span>
+                          <span className="srs-deck-pills">
+                            <span className={`srs-pill is-new${deck.newCount > 0 ? '' : ' is-zero'}`}>{deck.newCount} {lang === 'es' ? 'nuevas' : 'new'}</span>
+                            <span className={`srs-pill is-learn${deck.learningCount > 0 ? '' : ' is-zero'}`}>{deck.learningCount} {lang === 'es' ? 'aprend.' : 'learn'}</span>
+                            <span className={`srs-pill is-review${deck.reviewCount > 0 ? '' : ' is-zero'}`}>{deck.reviewCount} {lang === 'es' ? 'repaso' : 'review'}</span>
+                          </span>
+                        </button>
+                        <div className="srs-deck-actions">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeckPromptMode('rename');
+                              setDeckPromptTargetId(deck.name);
+                              setDeckPromptValue(deck.name);
+                              setIsDeckPromptOpen(true);
                             }}
-                            style={{
-                              borderBottom: '1px solid var(--border-light)',
-                              cursor: (deck.totalCards > 0 && isDue) ? 'pointer' : 'default',
-                              transition: 'background 0.15s'
-                            }}
+                            title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
+                            aria-label={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
                           >
-                            <td style={{ padding: '12px 14px 12px 0' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                <FolderOpen size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deck.name}>
-                                  {deck.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.newCount > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
-                              {deck.newCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.learningCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                              {deck.learningCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.reviewCount > 0 ? '#22c55e' : 'var(--text-muted)' }}>
-                              {deck.reviewCount}
-                            </td>
-                            <td style={{ padding: '12px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('rename');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue(deck.name);
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
-                              >
-                                <Settings size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('merge');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue('');
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                              >
-                                <Layers size={13} />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            <Settings size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeckPromptMode('merge');
+                              setDeckPromptTargetId(deck.name);
+                              setDeckPromptValue('');
+                              setIsDeckPromptOpen(true);
+                            }}
+                            title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
+                            aria-label={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
+                          >
+                            <Layers size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Heatmap below decks list */}
             {renderActivityCalendar()}
@@ -6074,6 +6033,37 @@ const Library = React.memo(function Library({
                 />
                 <label htmlFor="enableFuzzCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
                   {lang === 'es' ? 'Habilitar Fuzz (dispersión aleatoria de intervalos para evitar acumulación)' : 'Enable Fuzz (randomly disperse intervals to prevent study spikes)'}
+                </label>
+              </div>
+            </div>
+
+            {/* Review card Section */}
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {lang === 'es' ? 'Tarjeta de repaso' : 'Review card'}
+              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="checkbox"
+                  id="srsShowAudioButtonCheckbox"
+                  checked={settings.srsShowAudioButton !== false}
+                  onChange={(e) => onSaveSettings({ ...settings, srsShowAudioButton: e.target.checked })}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <label htmlFor="srsShowAudioButtonCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
+                  {lang === 'es' ? 'Mostrar el botón de escuchar la palabra' : 'Show the play-word button'}
+                </label>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="checkbox"
+                  id="srsShowFrontSentenceCheckbox"
+                  checked={settings.srsShowFrontSentence !== false}
+                  onChange={(e) => onSaveSettings({ ...settings, srsShowFrontSentence: e.target.checked })}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <label htmlFor="srsShowFrontSentenceCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
+                  {lang === 'es' ? 'Mostrar la oración del libro antes de ver la respuesta' : 'Show the book sentence before revealing the answer'}
                 </label>
               </div>
             </div>
