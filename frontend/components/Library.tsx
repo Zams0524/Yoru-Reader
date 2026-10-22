@@ -8,7 +8,7 @@ import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
+import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
@@ -1215,8 +1215,16 @@ const Library = React.memo(function Library({
   const [gDriveTokens, setGDriveTokens] = useState(localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null);
   const [gDriveUserEmail, setGDriveUserEmail] = useState(localStorage.getItem('gdrive_user_email') || '');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(localStorage.getItem('gdrive_autosync_enabled') === 'true');
-  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem('gdrive_last_sync_time') || '');
+  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem(LAST_SYNC_STORAGE_KEY) || '');
   const [gDriveSyncStatus, setGDriveSyncStatus] = useState(localStorage.getItem('gdrive_tokens') ? 'authorized' : 'disconnected'); // 'disconnected', 'authorized', 'syncing'
+  const cloudSyncInFlightRef = useRef(false);
+  const lastBackgroundSyncRef = useRef(0);
+
+  const markCloudSynced = () => {
+    const iso = new Date().toISOString();
+    localStorage.setItem(LAST_SYNC_STORAGE_KEY, iso);
+    setLastSyncTime(iso);
+  };
 
   // Load and check token on startup, run sync if auto-sync is enabled
   useEffect(() => {
@@ -1231,13 +1239,13 @@ const Library = React.memo(function Library({
           localStorage.setItem('gdrive_user_email', info.email);
           
           if (localStorage.getItem('gdrive_autosync_enabled') === 'true') {
-            // Perform automatic background restore if cloud file is newer
-            await performCloudSync(tokens, 'download-only');
+            // Restore if the cloud copy is newer, otherwise upload this device's state
+            await performCloudSync(tokens, 'bidirectional');
           }
         } catch (err) {
           console.warn('Failed to validate startup Google Drive tokens:', err);
-          // Don't auto-disconnect if it's just offline (no network)
-          if (navigator.onLine) {
+          // Keep the session through temporary failures; sign out only when Google revoked it
+          if (isGoogleSessionRevoked(err)) {
             setGDriveSyncStatus('disconnected');
             setGDriveUserEmail('');
             localStorage.removeItem('gdrive_tokens');
@@ -1371,9 +1379,7 @@ const Library = React.memo(function Library({
         gDriveClientSecret.trim()
       );
 
-      const timeStr = new Date().toLocaleString();
-      setLastSyncTime(timeStr);
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
+      markCloudSynced();
       setGDriveSyncStatus('authorized');
       alert(lang === 'es'
         ? `✅ Copia de seguridad completa subida a Google Drive con éxito.\nArchivo: yoru_reader_full_backup.zip`
@@ -1505,9 +1511,7 @@ const Library = React.memo(function Library({
         }
       }
 
-      const timeStr = new Date().toLocaleString();
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
-      setLastSyncTime(timeStr);
+      markCloudSynced();
 
       showToast(lang === 'es'
         ? '✅ Copia de seguridad restaurada con éxito. Reiniciando...'
@@ -1525,43 +1529,14 @@ const Library = React.memo(function Library({
   };
 
 
-  // Generic background sync helper using API
-  const performCloudSync = async (tokens, mode = 'full') => {
+  // Background sync of the JSON database with Google Drive.
+  // 'bidirectional': restore if the cloud copy is newer than this device's last sync, else upload.
+  // 'upload-only': upload unless another device synced since; never reloads the app.
+  const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
+    if (cloudSyncInFlightRef.current) return;
+    cloudSyncInFlightRef.current = true;
     try {
-      const importedData = await googleDriveService.downloadSyncFile(
-        tokens,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim()
-      );
-
-      if (!importedData) {
-        // If file doesn't exist and not download-only, upload current db
-        if (mode !== 'download-only') {
-          const fullExport = await db.exportFullDatabase();
-          await googleDriveService.uploadSyncFile(
-            tokens,
-            gDriveClientId.trim(),
-            fullExport,
-            gDriveClientSecret.trim()
-          );
-        }
-        return;
-      }
-
-      // Check modification timestamps if available in backup object
-      const cloudTime = importedData.exportDate ? new Date(importedData.exportDate).getTime() : 0;
-      const localLastTimeStr = localStorage.getItem('gdrive_last_sync_time');
-      const localLastTime = localLastTimeStr ? new Date(localLastTimeStr).getTime() : 0;
-
-      if (cloudTime > localLastTime) {
-        // Cloud has newer data, auto-restore
-        await db.importFullDatabase(importedData);
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        console.log("Auto-sincronizada base de datos desde Google Drive.");
-        window.location.reload();
-      } else if (mode !== 'download-only') {
-        // Local is newer, upload current state
+      const uploadLocalState = async () => {
         const fullExport = await db.exportFullDatabase();
         await googleDriveService.uploadSyncFile(
           tokens,
@@ -1569,14 +1544,54 @@ const Library = React.memo(function Library({
           fullExport,
           gDriveClientSecret.trim()
         );
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        setLastSyncTime(timeStr);
+        markCloudSynced();
+      };
+
+      const importedData = await googleDriveService.downloadSyncFile(
+        tokens,
+        gDriveClientId.trim(),
+        gDriveClientSecret.trim()
+      );
+
+      if (!importedData) {
+        await uploadLocalState();
+        return;
+      }
+
+      const cloudTime = importedData.exportDate ? Date.parse(importedData.exportDate) || 0 : 0;
+      if (cloudTime > readLastSyncMs()) {
+        if (mode === 'upload-only') return;
+        // Cloud has newer data, auto-restore
+        await db.importFullDatabase(importedData);
+        markCloudSynced();
+        console.log("Auto-sincronizada base de datos desde Google Drive.");
+        window.location.reload();
+      } else {
+        await uploadLocalState();
       }
     } catch (err) {
       console.error('Background cloud sync failed:', err);
+    } finally {
+      cloudSyncInFlightRef.current = false;
     }
   };
+
+  // Upload progress when the app goes to the background (switching apps, closing the window)
+  useEffect(() => {
+    const BACKGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (localStorage.getItem('gdrive_autosync_enabled') !== 'true') return;
+      const tokens = localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null;
+      if (!tokens) return;
+      const now = Date.now();
+      if (now - lastBackgroundSyncRef.current < BACKGROUND_SYNC_MIN_INTERVAL_MS) return;
+      lastBackgroundSyncRef.current = now;
+      performCloudSync(tokens, 'upload-only');
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [gDriveClientId, gDriveClientSecret]);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -4390,7 +4405,7 @@ const Library = React.memo(function Library({
                     </div>
                     {lastSyncTime && (
                       <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
+                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
                       </span>
                     )}
                   </div>
@@ -8247,7 +8262,7 @@ const Library = React.memo(function Library({
                   </div>
                   {lastSyncTime && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
+                      {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
                     </div>
                   )}
                 </div>
@@ -8306,7 +8321,7 @@ const Library = React.memo(function Library({
                     marginTop: '10px'
                   }}>
                     <span style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 600 }}>
-                      {lang === 'es' ? 'Sincronización automática' : 'Auto-Sync on startup'}
+                      {lang === 'es' ? 'Sincronización automática' : 'Auto-sync'}
                     </span>
                     <input 
                       type="checkbox"
