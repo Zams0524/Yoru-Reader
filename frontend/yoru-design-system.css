@@ -3798,6 +3798,20 @@ html.platform-android .reader-engine-content {
   box-sizing: border-box;
 }
 
+.book-cover-container .book-status-badge {
+  top: auto;
+  right: 6px;
+  bottom: 6px;
+}
+
+/* Phones: portalled, fixed to the viewport (position set inline from the ⋮ button). */
+.book-context-menu-dropdown.is-floating {
+  position: fixed;
+  top: auto;
+  z-index: 1150;
+  width: min(248px, calc(100vw - 24px));
+}
+
 .context-menu-item-btn {
   display: flex;
   width: 100%;
@@ -4551,5 +4565,13 @@ html.platform-android .reader-engine-content {
     background:
       radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
       linear-gradient(0deg, #0c0e13, #14171e);
+  }
+
+  html.platform-android .mobile-top-app-bar {
+    background:
+      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
+      linear-gradient(180deg, #181b22, #0e1116);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }

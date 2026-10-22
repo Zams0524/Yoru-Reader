@@ -1,4 +1,5 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -411,6 +412,7 @@ const Library = React.memo(function Library({
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
   const [activeMenuBookId, setActiveMenuBookId] = useState(null);
   const [menuOpenLeft, setMenuOpenLeft] = useState(false); // true = dropdown opens to the left of trigger
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null); // phones: the menu floats above the page
   const [activeHeaderDropdown, setActiveHeaderDropdown] = useState(null); // null | 'import' | 'database' | 'theme' | 'more'
   const [dynamicCoverage, setDynamicCoverage] = useState(null);
 
@@ -1950,7 +1952,6 @@ const Library = React.memo(function Library({
     [isNotesSortOpen || isNotesFilterOpen, () => { setIsNotesSortOpen(false); setIsNotesFilterOpen(false); }],
     [isDisplaySettingsOpen, () => setIsDisplaySettingsOpen(false)],
     [isSidebarOpen, () => setIsSidebarOpen(false)],
-    [activeMenuBookId !== null, () => setActiveMenuBookId(null)],
     [selectMode, () => { setSelectMode(false); setSelectedBookIds([]); }],
     [activeTab === 'settings' && isMobile && mobileSettingsSectionOpen, () => setMobileSettingsSectionOpen(false)],
     [activeTab !== 'library', () => setActiveTab('library')],
@@ -2473,6 +2474,18 @@ const Library = React.memo(function Library({
     if (selectMode) return null;
     
     const isMenuOpen = activeMenuBookId === book.id;
+
+    // On phones the menu is portalled and fixed so it never hides behind the bottom bar or the
+    // screen edge: it opens downward from the ⋮ or, in the lower half, upward.
+    let floatingStyle: React.CSSProperties | null = null;
+    if (isMenuOpen && isMobile && menuAnchor) {
+      const width = Math.min(248, window.innerWidth - 24);
+      const left = Math.min(Math.max(12, menuAnchor.right - width), window.innerWidth - 12 - width);
+      floatingStyle = menuAnchor.bottom > window.innerHeight * 0.55
+        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - 64px)` }
+        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - 84px - var(--yoru-safe-bottom, 0px))` };
+    }
+    const placeMenu = (node) => (floatingStyle ? createPortal(node, document.body) : node);
     
     return (
       <div className="card-menu-wrapper" style={{ zIndex: isMenuOpen ? 9999 : 50 }}>
@@ -2483,6 +2496,7 @@ const Library = React.memo(function Library({
             // Detect if trigger is in the right half of screen - open dropdown to the left, else to the right
             const rect = e.currentTarget.getBoundingClientRect();
             setMenuOpenLeft(rect.right > window.innerWidth / 2);
+            setMenuAnchor(rect);
             setActiveMenuBookId(isMenuOpen ? null : book.id);
           }}
           aria-label={lang === 'es' ? 'Opciones del libro' : 'Book options'}
@@ -2493,12 +2507,12 @@ const Library = React.memo(function Library({
         </button>
 
         {/* Opening "to the left" means anchoring the menu's right edge to the button. */}
-        {isMenuOpen && (
+        {isMenuOpen && placeMenu(
           <div 
-            className="book-context-menu-dropdown"
+            className={`book-context-menu-dropdown${floatingStyle ? ' is-floating' : ''}`}
             role="menu"
             onClick={(e) => e.stopPropagation()}
-            style={menuOpenLeft ? { right: 0 } : { left: 0 }}
+            style={floatingStyle || (menuOpenLeft ? { right: 0 } : { left: 0 })}
           >
             <button
               type="button"
@@ -2658,9 +2672,6 @@ const Library = React.memo(function Library({
               {/* Card Context Menu Trigger and Popup */}
               {renderBookCardMenu(book)}
 
-              {/* Status Badge overlay */}
-              {!selectMode && renderStatusBadge(book)}
-
               {/* Checkbox overlay when selectMode is active */}
               {selectMode && (
                 <div className="card-checkbox-container">
@@ -2694,6 +2705,9 @@ const Library = React.memo(function Library({
                     <span>{book.title}</span>
                   </div>
                 )}
+
+                {/* Status badge at the bottom right of the cover, clear of the title */}
+                {!selectMode && renderStatusBadge(book)}
 
                 {/* Progress badge at top left of cover */}
                 {showCardProgress && book.progress.percent > 0 && (
@@ -3905,8 +3919,8 @@ const Library = React.memo(function Library({
                   onChange={(e) => onSaveSettings({ ...settings, writingMode: e.target.value })}
                   className="migaku-select"
                 >
-                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (Escritura japonesa)' : 'Vertical (Japanese layout)'}</option>
-                  <option value="horizontal-tb">{lang === 'es' ? 'Horizontal (Escritura occidental)' : 'Horizontal (Western layout)'}</option>
+                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (japonés)' : 'Vertical (Japanese)'}</option>
+                  <option value="horizontal-tb">Horizontal</option>
                 </select>
               </div>
 
