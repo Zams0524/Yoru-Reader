@@ -1079,6 +1079,17 @@ export const db = {
     }
   },
 
+  // The two most recent copies of this device's data taken right before a cloud sync changed it.
+  async saveSyncBackup(dbExport: any): Promise<void> {
+    const key = 'yoru_sync_backups_v1';
+    const previous = (await idb.get(key)) || [];
+    await idb.set(key, [{ savedAt: new Date().toISOString(), data: dbExport }, ...previous].slice(0, 2));
+  },
+
+  async getSyncBackups(): Promise<{ savedAt: string; data: any }[]> {
+    return (await idb.get('yoru_sync_backups_v1')) || [];
+  },
+
   async idbGet(key: string): Promise<any> {
     return await idb.get(key);
   },
