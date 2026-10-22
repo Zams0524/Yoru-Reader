@@ -610,16 +610,14 @@ export default function NativeReaderHost({
       if (!Number.isFinite(paragraph)) return;
       const state = readAloudRef.current;
       const token = ++state.token;
-      if (paragraph !== state.lastParagraph) {
-        state.lastParagraph = paragraph;
-        // The old page's highlight would stay drawn over the new page (a jump does not clear it
-        // the way a page turn does) until the next sentence.
-        void NativeReader.clearHighlight().catch(() => {});
-        state.jump = goToParagraphRef.current(paragraph);
-      }
-      // Highlight the sentence on the native page.
       const ordinal = Number(block?.dataset.ordinal);
-      if (!block || isNaN(ordinal)) return;
+      if (!block || isNaN(ordinal)) {
+        if (paragraph !== state.lastParagraph) {
+          state.lastParagraph = paragraph;
+          state.jump = goToParagraphRef.current(paragraph);
+        }
+        return;
+      }
       let charOffset = 0;
       let charLength = 0;
       let beforeStart = true;
@@ -640,7 +638,26 @@ export default function NativeReaderHost({
           charLength += textNode.length;
         }
       }
+      // The page follows the voice. The plugin of APK 1.4.4+ goes to the page of the sentence's
+      // first character (a paragraph can go on over several pages) and clears the highlight when
+      // the page changes; older ones only go to a paragraph's first page.
+      if (positionRef.current?.goToInnerPath) {
+        state.lastParagraph = paragraph;
+        // In the markup of the book the plugin has open (word states may differ from this copy's).
+        const innerPath = textOffsetToInnerPath((openedExportRef.current ?? exported).blocks[ordinal] ?? '', charOffset);
+        state.jump = state.jump.then(() => (innerPath
+          ? NativeReader.goTo({ ordinal, innerPath }).catch(() => {})
+          : goToParagraphRef.current(paragraph)));
+      } else if (paragraph !== state.lastParagraph) {
+        state.lastParagraph = paragraph;
+        // The old page's highlight would stay drawn over the new page (a jump does not clear it
+        // the way a page turn does) until the next sentence.
+        void NativeReader.clearHighlight().catch(() => {});
+        state.jump = goToParagraphRef.current(paragraph);
+      }
       if (charLength <= 0) return;
+      // The engine has no letters for a paragraph's indent (its leading spaces, "　").
+      const indent = /^\s*/.exec(baseTextNodes(block).map((node) => node.data).join(''))![0].length;
       // Only once the page is the one the sentence is on: its top block and character are known then.
       void state.jump.then(() => {
         if (token !== readAloudRef.current.token) return;
@@ -648,16 +665,17 @@ export default function NativeReaderHost({
         const pageStartOrdinal = position && position.ordinal >= 0 ? position.ordinal : 0;
         const relativeBlock = ordinal - pageStartOrdinal;
         if (relativeBlock < 0) return;
-        let start = charOffset;
-        let length = charLength;
+        // Characters of the block before the page's first letter: its indent, or all that is on
+        // earlier pages for a paragraph that began on one.
+        let skipped = indent;
         if (relativeBlock === 0 && position) {
-          // A paragraph that began on an earlier page: the page's letters start mid-block.
           const blocks = (openedExportRef.current ?? exported).blocks;
-          const pageStartChar = Math.max(0, xpathToTextOffset(blocks[pageStartOrdinal] ?? '', position.xpath));
-          start -= pageStartChar;
-          if (start < 0) { length += start; start = 0; }
-          if (length <= 0) return;
+          skipped = Math.max(indent, xpathToTextOffset(blocks[pageStartOrdinal] ?? '', position.xpath));
         }
+        let start = charOffset - skipped;
+        let length = charLength;
+        if (start < 0) { length += start; start = 0; }
+        if (length <= 0) return;
         void NativeReader.highlightRange({
           relativeBlock,
           charOffset: start,
