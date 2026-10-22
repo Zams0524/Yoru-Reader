@@ -1,4 +1,5 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -8,7 +9,8 @@ import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
+import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
@@ -411,6 +413,7 @@ const Library = React.memo(function Library({
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
   const [activeMenuBookId, setActiveMenuBookId] = useState(null);
   const [menuOpenLeft, setMenuOpenLeft] = useState(false); // true = dropdown opens to the left of trigger
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null); // phones: the menu floats above the page
   const [activeHeaderDropdown, setActiveHeaderDropdown] = useState(null); // null | 'import' | 'database' | 'theme' | 'more'
   const [dynamicCoverage, setDynamicCoverage] = useState(null);
 
@@ -1215,8 +1218,16 @@ const Library = React.memo(function Library({
   const [gDriveTokens, setGDriveTokens] = useState(localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null);
   const [gDriveUserEmail, setGDriveUserEmail] = useState(localStorage.getItem('gdrive_user_email') || '');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(localStorage.getItem('gdrive_autosync_enabled') === 'true');
-  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem('gdrive_last_sync_time') || '');
+  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem(LAST_SYNC_STORAGE_KEY) || '');
   const [gDriveSyncStatus, setGDriveSyncStatus] = useState(localStorage.getItem('gdrive_tokens') ? 'authorized' : 'disconnected'); // 'disconnected', 'authorized', 'syncing'
+  const cloudSyncInFlightRef = useRef(false);
+  const lastBackgroundSyncRef = useRef(0);
+
+  const markCloudSynced = () => {
+    const iso = new Date().toISOString();
+    localStorage.setItem(LAST_SYNC_STORAGE_KEY, iso);
+    setLastSyncTime(iso);
+  };
 
   // Load and check token on startup, run sync if auto-sync is enabled
   useEffect(() => {
@@ -1231,13 +1242,15 @@ const Library = React.memo(function Library({
           localStorage.setItem('gdrive_user_email', info.email);
           
           if (localStorage.getItem('gdrive_autosync_enabled') === 'true') {
-            // Perform automatic background restore if cloud file is newer
-            await performCloudSync(tokens, 'download-only');
+            // The library mounts again when a book is closed: give the reader a moment to save
+            // its last position, then merge with Drive in both directions
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await performCloudSync(tokens, 'bidirectional');
           }
         } catch (err) {
           console.warn('Failed to validate startup Google Drive tokens:', err);
-          // Don't auto-disconnect if it's just offline (no network)
-          if (navigator.onLine) {
+          // Keep the session through temporary failures; sign out only when Google revoked it
+          if (isGoogleSessionRevoked(err)) {
             setGDriveSyncStatus('disconnected');
             setGDriveUserEmail('');
             localStorage.removeItem('gdrive_tokens');
@@ -1252,65 +1265,18 @@ const Library = React.memo(function Library({
   // Connect Google Drive Folder via loopback OAuth Flow
   const handleConnectGDrive = async () => {
     try {
-      if (!gDriveClientId.trim()) {
-        alert(lang === 'es' ? 'Introduce tu Client ID para continuar.' : 'Please enter your Client ID to continue.');
-        return;
-      }
       setGDriveSyncStatus('syncing');
-
-      if (Capacitor.getPlatform() === 'android') {
-        const androidClientId = GDRIVE_ANDROID_CLIENT_ID;
-        const nativeTokens = await authorizeGoogleDriveNative();
-        localStorage.setItem('gdrive_client_id', androidClientId);
-        localStorage.removeItem('gdrive_client_secret');
-        localStorage.setItem('gdrive_tokens', JSON.stringify(nativeTokens));
-        setGDriveClientId(androidClientId);
-        setGDriveClientSecret('');
-        setGDriveTokens(nativeTokens);
-
-        const info = await googleDriveService.getUserInfo(nativeTokens, androidClientId, '');
-        localStorage.setItem('gdrive_user_email', info.email);
-        setGDriveUserEmail(info.email);
-        setGDriveSyncStatus('authorized');
-        alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
-        await performCloudSync(nativeTokens, 'bidirectional');
-        return;
-      }
-
-      if (!window.electronAPI || !window.electronAPI.startGoogleOauth) {
-        throw new Error(lang === 'es'
-          ? 'Conecta Google Drive desde la app de Android o desde la app de escritorio.'
-          : 'Connect Google Drive from the Android app or the desktop app.');
-      }
-
-      // 1. Run local loopback callback server and open browser
-      const oauthResult = await window.electronAPI.startGoogleOauth(gDriveClientId.trim());
-      if (!oauthResult || !oauthResult.code) {
-        throw new Error('No authorization code returned from loopback server');
-      }
-
-      // 2. Exchange authorization code + PKCE verifier for access + refresh token
-      const tokenData = await googleDriveService.exchangeCodeForTokens(
-        oauthResult.code,
-        oauthResult.redirectUri,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim(),
-        oauthResult.codeVerifier
-      );
-
-      // 3. Fetch connected user information
-      const info = await googleDriveService.getUserInfo(tokenData, gDriveClientId.trim(), gDriveClientSecret.trim());
-      setGDriveUserEmail(info.email);
-
-      // Save credentials & tokens
-      localStorage.setItem('gdrive_client_id', gDriveClientId.trim());
-      localStorage.setItem('gdrive_client_secret', gDriveClientSecret.trim());
-      localStorage.setItem('gdrive_tokens', JSON.stringify(tokenData));
-      localStorage.setItem('gdrive_user_email', info.email);
-
-      setGDriveTokens(tokenData);
+      const session = await signInWithGoogle();
+      setGDriveClientId(session.clientId);
+      setGDriveClientSecret(session.clientSecret);
+      setGDriveTokens(session.tokens);
+      setGDriveUserEmail(session.email);
+      setIsAutoSyncEnabled(true);
       setGDriveSyncStatus('authorized');
-      alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
+      showToast(lang === 'es'
+        ? `Sesión iniciada como ${session.email}. Tu progreso se guardará en tu Google Drive.`
+        : `Signed in as ${session.email}. Your progress will be saved to your Google Drive.`, 'success');
+      await performCloudSync(session.tokens, 'bidirectional');
     } catch (err) {
       setGDriveSyncStatus(gDriveTokens ? 'authorized' : 'disconnected');
       console.error('Google OAuth connection failed:', err);
@@ -1371,9 +1337,7 @@ const Library = React.memo(function Library({
         gDriveClientSecret.trim()
       );
 
-      const timeStr = new Date().toLocaleString();
-      setLastSyncTime(timeStr);
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
+      markCloudSynced();
       setGDriveSyncStatus('authorized');
       alert(lang === 'es'
         ? `✅ Copia de seguridad completa subida a Google Drive con éxito.\nArchivo: yoru_reader_full_backup.zip`
@@ -1505,9 +1469,7 @@ const Library = React.memo(function Library({
         }
       }
 
-      const timeStr = new Date().toLocaleString();
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
-      setLastSyncTime(timeStr);
+      markCloudSynced();
 
       showToast(lang === 'es'
         ? '✅ Copia de seguridad restaurada con éxito. Reiniciando...'
@@ -1525,58 +1487,84 @@ const Library = React.memo(function Library({
   };
 
 
-  // Generic background sync helper using API
-  const performCloudSync = async (tokens, mode = 'full') => {
+  // Background sync of the JSON database with Google Drive. Never replaces one side with the
+  // other: both are merged (mergeDatabaseExports), this device's copy is backed up before the
+  // merge is written, and an upload that would leave Drive with fewer books is refused.
+  // 'bidirectional': apply the merge here (reloading if anything changed) and upload it.
+  // 'upload-only': upload the merge when Drive lacks something; never touches local data.
+  const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
+    if (cloudSyncInFlightRef.current) return;
+    cloudSyncInFlightRef.current = true;
+    // Read the client from storage: right after signing in, the state above is not updated yet
+    const clientId = (localStorage.getItem('gdrive_client_id') ?? gDriveClientId).trim();
+    const clientSecret = (localStorage.getItem('gdrive_client_secret') ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
     try {
-      const importedData = await googleDriveService.downloadSyncFile(
-        tokens,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim()
-      );
+      const cloudData = await googleDriveService.downloadSyncFile(tokens, clientId, clientSecret);
+      const localData = await db.exportFullDatabase();
 
-      if (!importedData) {
-        // If file doesn't exist and not download-only, upload current db
-        if (mode !== 'download-only') {
-          const fullExport = await db.exportFullDatabase();
-          await googleDriveService.uploadSyncFile(
-            tokens,
-            gDriveClientId.trim(),
-            fullExport,
-            gDriveClientSecret.trim()
-          );
-        }
+      if (!cloudData) {
+        await googleDriveService.uploadSyncFile(tokens, clientId, localData, clientSecret);
+        markCloudSynced();
         return;
       }
 
-      // Check modification timestamps if available in backup object
-      const cloudTime = importedData.exportDate ? new Date(importedData.exportDate).getTime() : 0;
-      const localLastTimeStr = localStorage.getItem('gdrive_last_sync_time');
-      const localLastTime = localLastTimeStr ? new Date(localLastTimeStr).getTime() : 0;
+      const cloudTime = cloudData.exportDate ? Date.parse(cloudData.exportDate) || 0 : 0;
+      const { merged, localChanged, cloudChanged } = mergeDatabaseExports(localData, cloudData, cloudTime > readLastSyncMs());
 
-      if (cloudTime > localLastTime) {
-        // Cloud has newer data, auto-restore
-        await db.importFullDatabase(importedData);
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        console.log("Auto-sincronizada base de datos desde Google Drive.");
-        window.location.reload();
-      } else if (mode !== 'download-only') {
-        // Local is newer, upload current state
-        const fullExport = await db.exportFullDatabase();
-        await googleDriveService.uploadSyncFile(
-          tokens,
-          gDriveClientId.trim(),
-          fullExport,
-          gDriveClientSecret.trim()
-        );
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        setLastSyncTime(timeStr);
+      if (localChanged && mode === 'bidirectional') {
+        await db.saveSyncBackup(localData);
+        await db.importFullDatabase(merged);
+      }
+      if (cloudChanged) {
+        if (countLiveBooks(merged) < countLiveBooks(cloudData)) {
+          throw new Error('Refusing to upload a library with fewer books than the copy in Google Drive');
+        }
+        await googleDriveService.uploadSyncFile(tokens, clientId, merged, clientSecret);
+      }
+      if (mode === 'bidirectional' || !localChanged) markCloudSynced();
+
+      // Reload to show what came from Drive, at most once a minute so a bad merge cannot loop
+      if (localChanged && mode === 'bidirectional') {
+        const lastReload = Number(sessionStorage.getItem('yoru_sync_reload_at')) || 0;
+        if (Date.now() - lastReload > 60_000) {
+          sessionStorage.setItem('yoru_sync_reload_at', String(Date.now()));
+          console.log("Progreso combinado con Google Drive.");
+          window.location.reload();
+        }
       }
     } catch (err) {
       console.error('Background cloud sync failed:', err);
+    } finally {
+      cloudSyncInFlightRef.current = false;
     }
   };
+
+  // Upload progress when the app goes to the background (switching apps, closing the window),
+  // and every few minutes while it stays open
+  useEffect(() => {
+    const BACKGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+    const PERIODIC_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    const syncInBackground = () => {
+      if (localStorage.getItem('gdrive_autosync_enabled') !== 'true') return;
+      const tokens = localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null;
+      if (!tokens) return;
+      const now = Date.now();
+      if (now - lastBackgroundSyncRef.current < BACKGROUND_SYNC_MIN_INTERVAL_MS) return;
+      lastBackgroundSyncRef.current = now;
+      performCloudSync(tokens, 'upload-only');
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') syncInBackground();
+    };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') syncInBackground();
+    }, PERIODIC_SYNC_INTERVAL_MS);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gDriveClientId, gDriveClientSecret]);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -1912,6 +1900,27 @@ const Library = React.memo(function Library({
   const [editDescription, setEditDescription] = useState('');
 
   // Android back button: close the top-most panel, then return to the library tab.
+  // Title shown in the phone top bar while a settings section is open.
+  const settingsSectionTitle = (sectionId: string) => {
+    const titles = {
+      'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
+      'sec-dicts': ['Diccionarios', 'Dictionaries'],
+      'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
+      'sec-text-style': ['Estilo de texto', 'Text Style'],
+      'sec-stats': ['Estadísticas', 'Statistics'],
+      'sec-reading-day': ['Día de lectura', 'Reading Day'],
+      'sec-vocab-manage': ['Vocabulario y Anki', 'Vocabulary & Anki'],
+      'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
+      'sec-discord': ['Discord', 'Discord'],
+      'sec-backup': ['Copias de seguridad', 'Backups'],
+      'sec-updates': ['Actualizaciones', 'Updates'],
+      'sec-about': ['Acerca de', 'About'],
+      'sec-danger': ['Zona de peligro', 'Danger Zone'],
+    }[sectionId];
+    if (!titles) return lang === 'es' ? 'Configuración' : 'Settings';
+    return lang === 'es' ? titles[0] : titles[1];
+  };
+
   const libraryBackSteps: [boolean, () => void][] = [
     [Boolean(bindingKeyAction), () => setBindingKeyAction(null)],
     [Boolean(activeMenuBookId), () => setActiveMenuBookId(null)],
@@ -1930,6 +1939,7 @@ const Library = React.memo(function Library({
     [isDisplaySettingsOpen, () => setIsDisplaySettingsOpen(false)],
     [isSidebarOpen, () => setIsSidebarOpen(false)],
     [selectMode, () => { setSelectMode(false); setSelectedBookIds([]); }],
+    [activeTab === 'settings' && isMobile && mobileSettingsSectionOpen, () => setMobileSettingsSectionOpen(false)],
     [activeTab !== 'library', () => setActiveTab('library')],
   ];
   useBackHandler(libraryBackSteps.some(([open]) => open), () => {
@@ -2397,7 +2407,7 @@ const Library = React.memo(function Library({
       );
       tooltip = 'Completado';
     } else if (status === 'reading') {
-      color = '#3b82f6'; // blue
+      color = 'var(--primary)';
       icon = (
         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
           <path d="M8 5v14l11-7z"></path>
@@ -2438,22 +2448,8 @@ const Library = React.memo(function Library({
     return (
       <div 
         title={tooltip}
-        style={{
-          position: 'absolute',
-          top: '8px',
-          right: '40px',
-          width: '20px',
-          height: '20px',
-          borderRadius: '50%',
-          backgroundColor: color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-          zIndex: 10,
-          border: '1px solid rgba(255,255,255,0.1)'
-        }}
+        className="book-status-badge"
+        style={{ color }}
       >
         {icon}
       </div>
@@ -2464,9 +2460,21 @@ const Library = React.memo(function Library({
     if (selectMode) return null;
     
     const isMenuOpen = activeMenuBookId === book.id;
+
+    // On phones the menu is portalled and fixed so it never hides behind the bottom bar or the
+    // screen edge: it opens downward from the ⋮ or, in the lower half, upward.
+    let floatingStyle: React.CSSProperties | null = null;
+    if (isMenuOpen && isMobile && menuAnchor) {
+      const width = Math.min(248, window.innerWidth - 24);
+      const left = Math.min(Math.max(12, menuAnchor.right - width), window.innerWidth - 12 - width);
+      floatingStyle = menuAnchor.bottom > window.innerHeight * 0.55
+        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - 64px)` }
+        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - 84px - var(--yoru-safe-bottom, 0px))` };
+    }
+    const placeMenu = (node) => (floatingStyle ? createPortal(node, document.body) : node);
     
     return (
-      <div className="card-menu-wrapper" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: isMenuOpen ? 9999 : 50 }}>
+      <div className="card-menu-wrapper" style={{ zIndex: isMenuOpen ? 9999 : 50 }}>
         <button 
           className="card-menu-trigger-btn"
           onClick={(e) => {
@@ -2474,77 +2482,50 @@ const Library = React.memo(function Library({
             // Detect if trigger is in the right half of screen - open dropdown to the left, else to the right
             const rect = e.currentTarget.getBoundingClientRect();
             setMenuOpenLeft(rect.right > window.innerWidth / 2);
+            setMenuAnchor(rect);
             setActiveMenuBookId(isMenuOpen ? null : book.id);
           }}
-          style={{
-            background: 'rgba(28, 28, 32, 0.75)',
-            backdropFilter: 'blur(4px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '50%',
-            width: '28px',
-            height: '28px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'rgba(255, 255, 255, 0.85)',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-          }}
+          aria-label={lang === 'es' ? 'Opciones del libro' : 'Book options'}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
         >
           <MoreVertical size={14} />
         </button>
 
-        {isMenuOpen && (
+        {/* Opening "to the left" means anchoring the menu's right edge to the button. */}
+        {isMenuOpen && placeMenu(
           <div 
-            className="book-context-menu-dropdown"
+            className={`book-context-menu-dropdown${floatingStyle ? ' is-floating' : ''}`}
+            role="menu"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              top: '32px',
-              // Opening "to the left" means anchoring the menu's right edge to the button.
-              ...(menuOpenLeft ? { right: '0' } : { left: '0' }),
-              width: '190px',
-              maxWidth: 'calc(100vw - 24px)',
-              maxHeight: '420px',
-              overflowY: 'auto',
-              background: 'rgba(28, 28, 35, 0.98)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              padding: '6px 0',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-              animation: 'tabViewFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-              zIndex: 1000
-            }}
+            style={floatingStyle || (menuOpenLeft ? { right: 0 } : { left: 0 })}
           >
-            <button 
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
+              onClick={() => {
+                setActiveMenuBookId(null);
+                onSelectBook(book);
+              }}
+            >
+              <Play size={16} /> {lang === 'es' ? 'Seguir leyendo' : 'Continue reading'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
               onClick={() => {
                 setActiveMenuBookId(null);
                 onOpenInfo(book);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-main)',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease'
-              }}
-              className="context-menu-item-btn"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Info size={14} style={{ color: 'rgba(255, 255, 255, 0.7)' }} /> {lang === 'es' ? 'Ver detalles' : 'Show details'}
-              </div>
+              <Info size={16} /> {lang === 'es' ? 'Ver detalles' : 'Show details'}
             </button>
-            
-            <button 
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
               onClick={() => {
                 setActiveMenuBookId(null);
                 setEditingBook(book);
@@ -2552,73 +2533,44 @@ const Library = React.memo(function Library({
                 setEditHideCover(book.hideCover === true);
                 setEditDescription(book.description || '');
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease'
-              }}
-              className="context-menu-item-btn"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Pencil size={14} style={{ color: 'rgba(255, 255, 255, 0.7)' }} /> {lang === 'es' ? 'Editar título' : 'Edit title'}
-              </div>
+              <Pencil size={16} /> {lang === 'es' ? 'Editar título' : 'Edit title'}
             </button>
 
-            <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />
-            <div style={{ padding: '2px 0' }}>
-              <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', padding: '4px 12px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{lang === 'es' ? 'Estado' : 'Status'}</div>
-              {[
-                { key: 'reading', label: lang === 'es' ? 'En progreso' : 'In progress', color: '#3b82f6', icon: <Play size={12} fill="currentColor" /> },
-                { key: 'completed', label: lang === 'es' ? 'Completado' : 'Completed', color: '#10b981', icon: <Check size={12} strokeWidth={3} /> },
-                { key: 'paused', label: lang === 'es' ? 'Pausado' : 'Paused', color: '#f59e0b', icon: <Pause size={12} fill="currentColor" /> },
-                { key: 'planning', label: lang === 'es' ? 'Planeado' : 'Planned', color: '#a855f7', icon: <Clock size={12} /> },
-                { key: 'dropped', label: lang === 'es' ? 'Dropeado' : 'Dropped', color: '#9ca3af', icon: <X size={12} strokeWidth={3} /> },
-                { key: 'unread', label: lang === 'es' ? 'Sin iniciar' : 'Not started', color: '#ef4444', icon: <RotateCcw size={12} /> }
-              ].map(opt => {
-                const isCurrent = book.status === opt.key || (opt.key === 'unread' && !book.status);
-                return (
-                  <button 
-                    key={opt.key}
-                    onClick={async () => {
-                      setActiveMenuBookId(null);
-                      await onUpdateBookDetails(book.id, { status: opt.key });
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      width: '100%',
-                      padding: '5px 12px',
-                      background: isCurrent ? 'rgba(255,255,255,0.06)' : 'none',
-                      border: 'none',
-                      color: isCurrent ? opt.color : 'rgba(255,255,255,0.8)',
-                      fontWeight: isCurrent ? 600 : 400,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'background 0.15s ease'
-                    }}
-                    className="context-menu-item-btn"
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', color: isCurrent ? opt.color : 'rgba(255,255,255,0.4)' }}>{opt.icon}</span>
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            <div className="context-menu-separator" />
+            <div className="context-menu-label">{lang === 'es' ? 'Estado' : 'Status'}</div>
+            {[
+              { key: 'reading', label: lang === 'es' ? 'Leyendo' : 'Reading' },
+              { key: 'completed', label: lang === 'es' ? 'Terminado' : 'Completed' },
+              { key: 'paused', label: lang === 'es' ? 'En pausa' : 'Paused' },
+              { key: 'planning', label: lang === 'es' ? 'Pendiente' : 'Planned' },
+              { key: 'dropped', label: lang === 'es' ? 'Abandonado' : 'Dropped' },
+              { key: 'unread', label: lang === 'es' ? 'Sin empezar' : 'Not started' }
+            ].map(opt => {
+              const isCurrent = book.status === opt.key || (opt.key === 'unread' && !book.status);
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isCurrent}
+                  className={`context-menu-item-btn context-menu-status${isCurrent ? ' is-current' : ''}`}
+                  onClick={async () => {
+                    setActiveMenuBookId(null);
+                    await onUpdateBookDetails(book.id, { status: opt.key });
+                  }}
+                >
+                  <span className="context-menu-radio" aria-hidden="true" />
+                  {opt.label}
+                </button>
+              );
+            })}
 
-
-
-            <button 
+            <div className="context-menu-separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn is-danger"
               onClick={async () => {
                 setActiveMenuBookId(null);
                 const ok = await showConfirm({
@@ -2631,23 +2583,8 @@ const Library = React.memo(function Library({
                   onDeleteBook(book.id);
                 }
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: '#ef4444',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease',
-                gap: '8px'
-              }}
-              className="context-menu-item-btn"
             >
-              <Trash2 size={14} /> {lang === 'es' ? 'Eliminar' : 'Delete'}
+              <Trash2 size={16} /> {lang === 'es' ? 'Eliminar…' : 'Delete…'}
             </button>
           </div>
         )}
@@ -2721,9 +2658,6 @@ const Library = React.memo(function Library({
               {/* Card Context Menu Trigger and Popup */}
               {renderBookCardMenu(book)}
 
-              {/* Status Badge overlay */}
-              {!selectMode && renderStatusBadge(book)}
-
               {/* Checkbox overlay when selectMode is active */}
               {selectMode && (
                 <div className="card-checkbox-container">
@@ -2757,6 +2691,9 @@ const Library = React.memo(function Library({
                     <span>{book.title}</span>
                   </div>
                 )}
+
+                {/* Status badge at the bottom right of the cover, clear of the title */}
+                {!selectMode && renderStatusBadge(book)}
 
                 {/* Progress badge at top left of cover */}
                 {showCardProgress && book.progress.percent > 0 && (
@@ -3398,11 +3335,14 @@ const Library = React.memo(function Library({
       return terms.every(term => tagsStr.toLowerCase().includes(term));
     };
 
-    const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords) => {
+    const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords, description = '', danger = false) => {
       if (!matchesSearch(searchKeywords)) return null;
-      const isActive = activeSettingsSection === sectionId;
+      // On phones the list is a menu, not a sidebar: no "current section" highlight.
+      const isActive = !isMobile && activeSettingsSection === sectionId;
       return (
         <button
+          type="button"
+          className={`settings-nav-item${isActive ? ' is-active' : ''}${danger ? ' is-danger' : ''}`}
           onClick={() => {
             setActiveSettingsSection(sectionId);
             setSettingsSearchQuery('');
@@ -3412,25 +3352,17 @@ const Library = React.memo(function Library({
               scrollToSection(sectionId);
             }
           }}
-          style={{
-            background: isActive ? 'rgba(242, 200, 102, 0.08)' : 'none',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '8px 10px',
-            borderRadius: '6px',
-            fontSize: '0.86rem',
-            color: isActive ? 'var(--primary)' : 'var(--text-muted)',
-            width: '100%',
-            textAlign: 'left',
-            cursor: 'pointer',
-            fontWeight: isActive ? '600' : '500',
-            transition: 'all 0.15s ease'
-          }}
         >
-          {IconComponent && <IconComponent size={15} style={{ color: isActive ? 'var(--primary)' : 'var(--text-muted)', flexShrink: 0 }} />}
-          <span>{label}</span>
+          {IconComponent && (
+            <span className="settings-nav-icon" aria-hidden="true">
+              <IconComponent size={isMobile ? 18 : 15} />
+            </span>
+          )}
+          <span className="settings-nav-text">
+            <span className="settings-nav-label">{label}</span>
+            {isMobile && description && <span className="settings-nav-desc">{description}</span>}
+          </span>
+          {isMobile && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
         </button>
       );
     };
@@ -3459,53 +3391,53 @@ const Library = React.memo(function Library({
               {!isMobile && <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '2px 5px', borderRadius: '4px', border: '1px solid var(--border-light)', fontWeight: 'bold' }}>CTRL F</span>}
             </div>
   
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            <div className="settings-nav-groups">
               {/* General Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Settings size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'General' : 'General'}</span>
+                <div className="settings-nav-group-title">
+                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'General' : 'General'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e Idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general')}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip')}
-                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
+                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
+                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
                 </div>
               </div>
   
               {/* Reading Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <BookOpen size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
+                <div className="settings-nav-group-title">
+                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights')}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled')}
-                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
+                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
+                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno', lang === 'es' ? 'A qué hora empieza tu día' : 'When your day starts')}
                 </div>
               </div>
 
               {/* Integration Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Plug size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
+                <div className="settings-nav-group-title">
+                  <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management', Database, 'vocabulario vocabulary import export jpdb anki file frequency')}
-                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync')}
-                  {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect')}
+                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
+                  {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
               </div>
   
               {/* Data Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Database size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
+                <div className="settings-nav-group-title">
+                  <Database size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad')}
-                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta')}
-                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS)}
-                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library')}
+                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions')}
+                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics')}
+                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
                 </div>
               </div>
             </div>
@@ -3542,30 +3474,6 @@ const Library = React.memo(function Library({
         {/* Right Content Pane */}
         {showContent && (
           <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: '100px' }}>
-            {isMobile && (
-              <button 
-                type="button"
-                className="settings-back-btn" 
-                onClick={() => setMobileSettingsSectionOpen(false)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  marginBottom: '16px',
-                  alignSelf: 'flex-start',
-                  fontWeight: 600
-                }}
-              >
-                ← {lang === 'es' ? 'Volver' : 'Back'}
-              </button>
-            )}
           
           {showDiagnostics && matchesSearch(ABOUT_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-about') && (
             <div id="sec-about" className="settings-section-card" style={{ minWidth: 0 }}>
@@ -3997,8 +3905,8 @@ const Library = React.memo(function Library({
                   onChange={(e) => onSaveSettings({ ...settings, writingMode: e.target.value })}
                   className="migaku-select"
                 >
-                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (Escritura japonesa)' : 'Vertical (Japanese layout)'}</option>
-                  <option value="horizontal-tb">{lang === 'es' ? 'Horizontal (Escritura occidental)' : 'Horizontal (Western layout)'}</option>
+                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (japonés)' : 'Vertical (Japanese)'}</option>
+                  <option value="horizontal-tb">Horizontal</option>
                 </select>
               </div>
 
@@ -4363,7 +4271,7 @@ const Library = React.memo(function Library({
                   className="reset-filter-btn"
                   style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Vincular Google Drive' : 'Link Google Drive')}</span>
+                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
                 </button>
 
                 {gDriveTokens && (
@@ -4390,7 +4298,7 @@ const Library = React.memo(function Library({
                     </div>
                     {lastSyncTime && (
                       <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
+                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
                       </span>
                     )}
                   </div>
@@ -6572,7 +6480,7 @@ const Library = React.memo(function Library({
           {activeTab === 'settings' ? (
             <button
               className="mobile-icon-btn mobile-leading-btn"
-              onClick={() => setActiveTab('library')}
+              onClick={() => (mobileSettingsSectionOpen ? setMobileSettingsSectionOpen(false) : setActiveTab('library'))}
               title={lang === 'es' ? 'Volver' : 'Back'}
               aria-label={lang === 'es' ? 'Volver' : 'Back'}
             >
@@ -6596,6 +6504,7 @@ const Library = React.memo(function Library({
             {activeTab === 'library' ? (lang === 'es' ? 'Novelas' : 'Novel') :
              activeTab === 'srs' ? 'Yoru SRS' :
              activeTab === 'statistics' ? (lang === 'es' ? 'Estadísticas' : 'Progress') :
+             mobileSettingsSectionOpen ? settingsSectionTitle(activeSettingsSection) :
              (lang === 'es' ? 'Configuración' : 'Settings')}
           </h1>
           <div className="mobile-top-actions">
@@ -6619,11 +6528,6 @@ const Library = React.memo(function Library({
             {activeTab === 'srs' && (
               <button className="mobile-icon-btn" onClick={() => setActiveTab('settings')} title="Settings">
                 <Settings size={20} />
-              </button>
-            )}
-            {activeTab === 'statistics' && (
-              <button className="mobile-icon-btn" onClick={() => setIsDetailsDropdownOpen(!isDetailsDropdownOpen)} title="Options">
-                <MoreVertical size={20} />
               </button>
             )}
           </div>
@@ -6980,168 +6884,70 @@ const Library = React.memo(function Library({
 
 
 
-      {/* Yomitan style Select Mode Panel */}
-      {activeTab === 'library' && selectMode && (
-        <div 
-          className="yomitan-select-mode-panel"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            width: '320px',
-            background: 'rgba(22, 22, 28, 0.95)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '12px',
-            padding: '16px',
-            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
-            zIndex: 9999,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px'
-          }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-              <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>{lang === 'es' ? 'Modo Selección' : 'Select Mode'}</span>
-              <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>
-                {selectedBookIds.length} {lang === 'es' ? (selectedBookIds.length === 1 ? 'libro seleccionado' : 'libros seleccionados') : (selectedBookIds.length === 1 ? 'book selected' : 'books selected')}
-              </span>
+      {/* Select mode: compact action panel that sits above the bottom navigation */}
+      {activeTab === 'library' && selectMode && (() => {
+        const count = selectedBookIds.length;
+        const none = count === 0;
+        const actions = [
+          { key: 'series', onClick: handleSetSeries, Icon: Layers, label: lang === 'es' ? 'Serie' : 'Series' },
+          { key: 'author', onClick: handleSetAuthor, Icon: User, label: lang === 'es' ? 'Autor' : 'Author' },
+          { key: 'add-tags', onClick: handleAddTags, Icon: Tag, label: lang === 'es' ? 'Añadir etiquetas' : 'Add tags' },
+          { key: 'remove-tags', onClick: handleRemoveTags, Icon: CircleSlash, label: lang === 'es' ? 'Quitar etiquetas' : 'Remove tags' },
+          { key: 'blur', onClick: handleBlurCovers, Icon: EyeOff, label: lang === 'es' ? 'Difuminar portada' : 'Blur covers' },
+          { key: 'unread', onClick: handleMarkAsUnread, Icon: RotateCcw, label: lang === 'es' ? 'Marcar no leído' : 'Mark unread' },
+          { key: 'export', onClick: handleExportSelection, Icon: Download, label: lang === 'es' ? 'Exportar' : 'Export' },
+          { key: 'stats', onClick: handleOpenStatistics, Icon: BarChart3, label: lang === 'es' ? 'Estadísticas' : 'Statistics' },
+          { key: 'clear-stats', onClick: handleDeleteStatistics, Icon: Calendar, label: lang === 'es' ? 'Borrar estadísticas' : 'Clear stats' },
+        ];
+        return (
+          <div className="yomitan-select-mode-panel" role="toolbar" aria-label={lang === 'es' ? 'Acciones de selección' : 'Selection actions'}>
+            <div className="select-panel-head">
+              <div className="select-panel-title">
+                <strong>
+                  {none
+                    ? (lang === 'es' ? 'Toca libros para elegirlos' : 'Tap books to select them')
+                    : lang === 'es'
+                      ? `${count} ${count === 1 ? 'libro seleccionado' : 'libros seleccionados'}`
+                      : `${count} ${count === 1 ? 'book selected' : 'books selected'}`}
+                </strong>
+                <span className="select-panel-links">
+                  <button type="button" onClick={handleSelectAllVisible}>{lang === 'es' ? 'Seleccionar todos' : 'Select all'}</button>
+                  {!none && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <button type="button" onClick={handleClearSelection}>{lang === 'es' ? 'Limpiar' : 'Clear'}</button>
+                    </>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="panel-close-btn"
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelectedBookIds([]);
+                }}
+                aria-label={lang === 'es' ? 'Salir del modo selección' : 'Exit select mode'}
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button 
-              onClick={() => {
-                setSelectMode(false);
-                setSelectedBookIds([]);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '4px',
-                borderRadius: '4px',
-                transition: 'all 0.15s ease'
-              }}
-              className="panel-close-btn"
-            >
-              <X size={16} />
+
+            <div className="select-panel-grid">
+              {actions.map(({ key, onClick, Icon, label }) => (
+                <button key={key} type="button" className="select-panel-action-btn" onClick={onClick} disabled={none}>
+                  <Icon size={18} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+
+            <button type="button" className="select-panel-delete-btn" onClick={handleBulkDelete} disabled={none}>
+              <Trash2 size={16} /> {lang === 'es' ? 'Eliminar seleccionados' : 'Delete selected'}
             </button>
           </div>
-
-          {/* Grid Actions */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <button 
-              onClick={handleSelectAllVisible}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <Check size={14} style={{ color: 'var(--primary)' }} /> {lang === 'es' ? 'Seleccionar visibles' : 'Select visible'}
-            </button>
-
-            <button 
-              onClick={handleClearSelection}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <CircleSlash size={14} style={{ color: 'rgba(255,255,255,0.5)' }} /> {lang === 'es' ? 'Limpiar' : 'Clear'}
-            </button>
-
-            <button 
-              onClick={handleSetSeries}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <BookOpen size={14} style={{ color: '#60a5fa' }} /> {lang === 'es' ? 'Establecer serie' : 'Set series'}
-            </button>
-
-            <button 
-              onClick={handleSetAuthor}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <User size={14} style={{ color: '#a78bfa' }} /> {lang === 'es' ? 'Establecer autor' : 'Set author'}
-            </button>
-
-            <button 
-              onClick={handleAddTags}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Tag size={14} style={{ color: '#34d399' }} /> {lang === 'es' ? 'Añadir etiquetas' : 'Add tags'}
-            </button>
-
-            <button 
-              onClick={handleRemoveTags}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Tag size={14} style={{ color: '#f87171' }} /> {lang === 'es' ? 'Quitar etiquetas' : 'Remove tags'}
-            </button>
-
-            <button 
-              onClick={handleBlurCovers}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <EyeOff size={14} style={{ color: '#fbbf24' }} /> {lang === 'es' ? 'Desenfocar portadas' : 'Blur covers'}
-            </button>
-
-            <button 
-              onClick={handleMarkAsUnread}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <RotateCcw size={14} style={{ color: '#38bdf8' }} /> {lang === 'es' ? 'Marcar como no leído' : 'Mark as unread'}
-            </button>
-
-            <button 
-              onClick={handleExportSelection}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Download size={14} style={{ color: '#fb7185' }} /> {lang === 'es' ? 'Exportar selección' : 'Export selection'}
-            </button>
-
-            <button 
-              onClick={handleOpenStatistics}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <BarChart3 size={14} style={{ color: '#fb923c' }} /> {lang === 'es' ? 'Ver estadísticas' : 'View statistics'}
-            </button>
-
-            <button 
-              onClick={handleDeleteStatistics}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Calendar size={14} style={{ color: '#f43f5e' }} /> {lang === 'es' ? 'Borrar estadísticas' : 'Clear statistics'}
-            </button>
-
-            <button 
-              onClick={handleBulkDelete}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Trash2 size={14} /> {lang === 'es' ? 'Eliminar seleccionados' : 'Delete selected'}
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 2. Two-column Sidebar + Main Content Layout */}
       {activeTab === 'library' && (
@@ -8194,145 +8000,96 @@ const Library = React.memo(function Library({
         </div>
       )}
 
-      {/* Google Drive / Cloud Sync Modal */}
+      {/* Google Drive / Cloud Sync: bottom sheet on phones, centered dialog on desktop */}
       {isGDriveSyncOpen && (
-        <div className="modal-overlay" onClick={() => setIsGDriveSyncOpen(false)} style={{ zIndex: 1200 }}>
-          <div className="settings-modal" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '420px', padding: '24px', background: 'var(--bg-app)', border: '1px solid var(--border-light)' }}>
-            <div className="modal-header" style={{ marginBottom: '20px' }}>
-              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
-                <Cloud size={20} style={{ color: '#4285F4' }} />
-                <span>{lang === 'es' ? 'Sincronización Google Drive' : 'Google Drive Sync'}</span>
-              </h3>
-              <button className="close-modal-btn" onClick={() => setIsGDriveSyncOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.5, marginBottom: '20px' }}>
-              {lang === 'es' 
-                ? 'Sincroniza tus libros, progreso y vocabulario directamente con tu cuenta de Google Drive utilizando la API oficial.' 
-                : 'Sync your books, progress, and vocabulary directly with your Google Drive account using the official API.'}
-            </div>
-
-            {/* Connection Status Card */}
-            <div style={{ 
-              background: 'var(--bg-card)', 
-              border: '1px solid var(--border-light)', 
-              borderRadius: '12px', 
-              padding: '16px', 
-              marginBottom: '20px' 
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                  {lang === 'es' ? 'ESTADO' : 'STATUS'}
-                </span>
-                <span style={{ 
-                  fontSize: '0.75rem', 
-                  fontWeight: 700, 
-                  textTransform: 'uppercase',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: gDriveSyncStatus === 'authorized' ? 'rgba(52, 211, 153, 0.1)' : gDriveSyncStatus === 'syncing' ? 'rgba(251, 191, 36, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  color: gDriveSyncStatus === 'authorized' ? '#34d399' : gDriveSyncStatus === 'syncing' ? '#fbbf24' : '#f87171'
-                }}>
+        <div className="yoru-sheet-overlay" onClick={() => setIsGDriveSyncOpen(false)}>
+          <div
+            className="yoru-sheet gdrive-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdrive-sheet-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="yoru-sheet-handle" aria-hidden="true" />
+            <div className="gdrive-sheet-head">
+              <span className="gdrive-sheet-icon" aria-hidden="true"><Cloud size={22} /></span>
+              <div className="gdrive-sheet-heading">
+                <h3 id="gdrive-sheet-title">
+                  {gDriveTokens ? 'Google Drive' : (lang === 'es' ? 'Guarda tu progreso' : 'Save your progress')}
+                </h3>
+                <span className={`yoru-status-pill is-${gDriveSyncStatus === 'authorized' ? 'ok' : gDriveSyncStatus === 'syncing' ? 'busy' : 'idle'}`}>
+                  <i aria-hidden="true" />
                   {gDriveSyncStatus === 'authorized' ? (lang === 'es' ? 'Conectado' : 'Connected') :
-                   gDriveSyncStatus === 'syncing' ? (lang === 'es' ? 'Sincronizando...' : 'Syncing...') :
-                   (lang === 'es' ? 'Desconectado' : 'Disconnected')}
+                   gDriveSyncStatus === 'syncing' ? (lang === 'es' ? 'Sincronizando…' : 'Syncing…') :
+                   (lang === 'es' ? 'Sin conectar' : 'Not connected')}
                 </span>
               </div>
-
-              {gDriveTokens ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>✅</span> <span>{lang === 'es' ? 'Cuenta vinculada' : 'Account linked'}</span>
-                  </div>
-                  {lastSyncTime && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  {lang === 'es' ? 'Ninguna cuenta conectada' : 'No account connected'}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-              <button 
-                type="button"
-                onClick={handleConnectGDrive}
-                disabled={gDriveSyncStatus === 'syncing'}
-                className="vocab-action-btn"
-                style={{ width: '100%', padding: '12px', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
-              >
-                <span>🔑</span> {gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Conectar cuenta' : 'Connect account')}
-              </button>
-
-              {gDriveTokens && (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <button 
-                      type="button"
-                      onClick={handleUploadGDrive}
-                      disabled={gDriveSyncStatus === 'syncing'}
-                      className="vocab-action-btn"
-                      style={{ padding: '12px', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', background: 'rgba(66, 133, 244, 0.1)', color: '#4285F4', border: '1px solid rgba(66, 133, 244, 0.2)' }}
-                    >
-                      <span>📤</span> {lang === 'es' ? 'Subir copia completa' : 'Upload full backup'}
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={handleDownloadGDrive}
-                      disabled={gDriveSyncStatus === 'syncing'}
-                      className="vocab-action-btn"
-                      style={{ padding: '12px', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.2)' }}
-                    >
-                      <span>📥</span> {lang === 'es' ? 'Descargar' : 'Download'}
-                    </button>
-                  </div>
-
-                  {/* Auto-Sync Toggle Option */}
-                  <label style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    padding: '12px', 
-                    borderRadius: '8px',
-                    background: 'rgba(255,255,255,0.01)',
-                    border: '1px solid rgba(255,255,255,0.03)',
-                    cursor: 'pointer',
-                    marginTop: '10px'
-                  }}>
-                    <span style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 600 }}>
-                      {lang === 'es' ? 'Sincronización automática' : 'Auto-Sync on startup'}
-                    </span>
-                    <input 
-                      type="checkbox"
-                      checked={isAutoSyncEnabled}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setIsAutoSyncEnabled(val);
-                        localStorage.setItem('gdrive_autosync_enabled', val ? 'true' : 'false');
-                      }}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                type="button"
-                className="create-profile-cancel"
-                onClick={() => setIsGDriveSyncOpen(false)}
-                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                {lang === 'es' ? 'Cerrar' : 'Close'}
+              <button type="button" className="yoru-sheet-close" onClick={() => setIsGDriveSyncOpen(false)} aria-label={lang === 'es' ? 'Cerrar' : 'Close'}>
+                <X size={18} />
               </button>
             </div>
+
+            {gDriveTokens ? (
+              <p className="gdrive-sheet-text">
+                {lastSyncTime
+                  ? `${lang === 'es' ? 'Última sincronización:' : 'Last sync:'} ${formatSyncTime(lastSyncTime)}`
+                  : (lang === 'es' ? 'Tu cuenta está vinculada. Aún no se ha sincronizado.' : 'Your account is linked. Not synced yet.')}
+              </p>
+            ) : (
+              <>
+                <p className="gdrive-sheet-text">
+                  {lang === 'es'
+                    ? 'Conecta tu cuenta de Google y sigue leyendo donde lo dejaste, en el móvil o en el PC.'
+                    : 'Connect your Google account and pick up where you left off, on your phone or your PC.'}
+                </p>
+                <ul className="gdrive-sheet-list">
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Libros y la página donde vas' : 'Books and the page you are on'}</li>
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Vocabulario y repasos SRS' : 'Vocabulary and SRS reviews'}</li>
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Estadísticas de lectura' : 'Reading statistics'}</li>
+                </ul>
+              </>
+            )}
+
+            {gDriveTokens && (
+              <>
+                <div className="gdrive-sheet-actions">
+                  <button type="button" className="yoru-btn yoru-btn-secondary" onClick={handleUploadGDrive} disabled={gDriveSyncStatus === 'syncing'}>
+                    <Upload size={16} /> {lang === 'es' ? 'Subir copia' : 'Upload backup'}
+                  </button>
+                  <button type="button" className="yoru-btn yoru-btn-secondary" onClick={handleDownloadGDrive} disabled={gDriveSyncStatus === 'syncing'}>
+                    <Download size={16} /> {lang === 'es' ? 'Descargar' : 'Download'}
+                  </button>
+                </div>
+                <label className="yoru-switch-row">
+                  <span>{lang === 'es' ? 'Sincronización automática' : 'Auto-sync'}</span>
+                  <input 
+                    type="checkbox"
+                    checked={isAutoSyncEnabled}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setIsAutoSyncEnabled(val);
+                      localStorage.setItem('gdrive_autosync_enabled', val ? 'true' : 'false');
+                    }}
+                  />
+                </label>
+              </>
+            )}
+
+            <button
+              type="button"
+              className={`yoru-btn ${gDriveTokens ? 'yoru-btn-ghost' : 'yoru-btn-primary'}`}
+              onClick={handleConnectGDrive}
+              disabled={gDriveSyncStatus === 'syncing'}
+            >
+              {gDriveTokens
+                ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again')
+                : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}
+            </button>
+            {!gDriveTokens && (
+              <button type="button" className="yoru-btn yoru-btn-ghost" onClick={() => setIsGDriveSyncOpen(false)}>
+                {lang === 'es' ? 'Ahora no' : 'Not now'}
+              </button>
+            )}
           </div>
         </div>
       )}

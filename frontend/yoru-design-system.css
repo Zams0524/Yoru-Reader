@@ -3535,7 +3535,18 @@ textarea:focus-visible,
 
   html.platform-android .library-sidebar {
     overflow-y: auto;
-    padding-bottom: calc(20px + var(--yoru-safe-bottom, 0px));
+    padding-bottom: 0;
+  }
+
+  /* Google Drive and Settings stay pinned above the system navigation bar. */
+  html.platform-android .library-sidebar .sidebar-footer-group {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-right: -18px;
+    margin-left: -18px;
+    padding: 10px 18px calc(12px + var(--yoru-safe-bottom, 0px));
+    background: var(--bg-panel);
   }
 }
 
@@ -3701,4 +3712,866 @@ html.platform-android .mas-card-installing {
    (transform / opacity, ReaderEngine slideIn) run on the compositor without a first-frame stall. */
 html.platform-android .reader-engine-content {
   will-change: transform, opacity;
+}
+
+/* ==========================================================================
+   Menus v2 (nix/menus-rediseno): book menu, select mode, settings list,
+   Google Drive sheet and progress picker. One accent (gold); red only for
+   destructive actions; 44-48px touch rows on Android.
+   ========================================================================== */
+:root {
+  --yoru-danger: #ef7d7d;
+  --yoru-danger-soft: rgba(239, 125, 125, 0.12);
+  --yoru-ok: #8fd19e;
+  --yoru-gold-soft: rgba(242, 200, 102, 0.13);
+  --yoru-on-gold: #1d1708;
+}
+
+[data-theme='light'],
+[data-theme='sepia'] {
+  --yoru-danger: #c2413b;
+  --yoru-danger-soft: rgba(194, 65, 59, 0.1);
+  --yoru-ok: #2f8a4a;
+  --yoru-gold-soft: rgba(163, 107, 18, 0.12);
+}
+
+/* ---- Book card: ⋮ trigger, status badge and menu ---- */
+.card-menu-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.card-menu-trigger-btn {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-app) 78%, transparent);
+  color: var(--text-main);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease;
+}
+
+.card-menu-trigger-btn[aria-expanded='true'] {
+  border-color: var(--border-focus);
+  color: var(--primary);
+}
+
+.book-status-badge {
+  position: absolute;
+  top: 8px;
+  right: 40px;
+  z-index: 10;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.book-context-menu-dropdown {
+  position: absolute;
+  top: 34px;
+  z-index: 1000;
+  display: flex;
+  width: 224px;
+  max-width: calc(100vw - 24px);
+  max-height: min(460px, 70vh);
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  animation: tabViewFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.book-cover-container .book-status-badge {
+  top: auto;
+  right: 6px;
+  bottom: 6px;
+}
+
+/* Phones: portalled, fixed to the viewport (position set inline from the ⋮ button). */
+.book-context-menu-dropdown.is-floating {
+  position: fixed;
+  top: auto;
+  z-index: 1150;
+  width: min(248px, calc(100vw - 24px));
+}
+
+.context-menu-item-btn {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.context-menu-item-btn svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.context-menu-item-btn:hover,
+.context-menu-item-btn:focus-visible {
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.context-menu-item-btn.is-danger,
+.context-menu-item-btn.is-danger svg {
+  color: var(--yoru-danger);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-light);
+}
+
+.context-menu-label {
+  padding: 6px 10px 2px;
+  color: var(--text-dark);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.context-menu-radio {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, var(--text-dark) 70%, transparent);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.context-menu-status.is-current {
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.context-menu-status.is-current .context-menu-radio {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 3px var(--bg-panel);
+}
+
+/* ---- Select mode panel ---- */
+.yomitan-select-mode-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9999;
+  display: flex;
+  width: 340px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  animation: tabViewFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.select-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.select-panel-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.select-panel-title strong {
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.select-panel-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dark);
+  font-size: 0.8rem;
+}
+
+.select-panel-links button {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.yomitan-select-mode-panel .panel-close-btn {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.select-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.select-panel-action-btn {
+  display: flex;
+  min-height: 64px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 550;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.select-panel-action-btn svg {
+  color: var(--primary);
+}
+
+.select-panel-action-btn:not(:disabled):hover,
+.select-panel-action-btn:focus-visible {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.select-panel-delete-btn {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 12px;
+  background: var(--yoru-danger-soft);
+  color: var(--yoru-danger);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.select-panel-action-btn:disabled,
+.select-panel-delete-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---- Settings list ---- */
+.settings-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-nav-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.settings-nav-group-title svg {
+  opacity: 0.7;
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-light);
+}
+
+.settings-nav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.settings-nav-item.is-active {
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.settings-nav-item.is-danger {
+  color: var(--yoru-danger);
+}
+
+.settings-nav-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-nav-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav-desc {
+  overflow: hidden;
+  color: var(--text-dark);
+  font-size: 0.76rem;
+  font-weight: 450;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav-chevron {
+  flex-shrink: 0;
+  color: var(--text-dark);
+}
+
+/* ---- Bottom sheet (Google Drive) ---- */
+.yoru-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  animation: yoruSheetFade 0.18s ease;
+}
+
+.yoru-sheet {
+  display: flex;
+  width: min(420px, 100%);
+  max-height: 100%;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--bg-panel);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+
+.yoru-sheet-handle {
+  display: none;
+  width: 38px;
+  height: 4px;
+  flex-shrink: 0;
+  align-self: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-dark) 55%, transparent);
+}
+
+.gdrive-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gdrive-sheet-icon {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+}
+
+.gdrive-sheet-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.gdrive-sheet-heading h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.yoru-sheet-close {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.yoru-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.yoru-status-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dark);
+}
+
+.yoru-status-pill.is-ok i { background: var(--yoru-ok); }
+.yoru-status-pill.is-busy i { background: var(--primary); }
+
+.gdrive-sheet-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.gdrive-sheet-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  list-style: none;
+}
+
+.gdrive-sheet-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gdrive-sheet-list svg {
+  flex-shrink: 0;
+  color: var(--yoru-ok);
+}
+
+.gdrive-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.yoru-btn {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.yoru-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.yoru-btn-primary {
+  background: var(--button-gradient);
+  color: var(--yoru-on-gold);
+}
+
+.yoru-btn-secondary {
+  border-color: var(--border-light);
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+
+.yoru-btn-ghost {
+  min-height: 40px;
+  background: none;
+  color: var(--text-muted);
+}
+
+.yoru-switch-row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.yoru-switch-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+@keyframes yoruSheetFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes yoruSheetUp {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ---- Progress: time window picker and KPI cards ---- */
+.progress-window-picker {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.progress-window-picker button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.progress-window-picker button.is-active {
+  background: var(--primary);
+  color: var(--yoru-on-gold);
+}
+
+.progress-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.progress-kpi-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-sizing: border-box;
+}
+
+.progress-kpi-value {
+  margin: 8px 0;
+  color: var(--text-main);
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yoru-sheet-overlay,
+  .yoru-sheet,
+  .yomitan-select-mode-panel,
+  .book-context-menu-dropdown {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Book menu: bigger rows for thumbs. */
+  html.platform-android .card-menu-trigger-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  html.platform-android .book-context-menu-dropdown {
+    top: 40px;
+    width: 236px;
+    max-height: min(600px, calc(100dvh - 170px));
+  }
+
+  html.platform-android .context-menu-item-btn {
+    min-height: 44px;
+    font-size: 0.9rem;
+  }
+
+  /* Select mode: full-width panel that stays above the bottom navigation. */
+  .yomitan-select-mode-panel {
+    right: 8px;
+    bottom: calc(76px + var(--yoru-safe-bottom, 0px));
+    left: 8px;
+    width: auto;
+  }
+
+  html.platform-android .library-container:has(.book-card.select-mode-active),
+  html.platform-android .library-container:has(.book-list-row.select-mode-active) {
+    padding-bottom: calc(330px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+
+  /* Settings list: a flat menu with descriptions instead of a sidebar. */
+  .settings-nav-groups {
+    gap: 18px;
+  }
+
+  .settings-nav-group-title {
+    margin: 0 0 4px 4px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+  }
+
+  .settings-nav-group-title svg {
+    display: none;
+  }
+
+  .settings-nav-group {
+    gap: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .settings-nav-item {
+    min-height: 58px;
+    gap: 14px;
+    padding: 8px 6px;
+    border-radius: 12px;
+    color: var(--text-main);
+  }
+
+  .settings-nav-item:active {
+    background: var(--surface-soft);
+  }
+
+  .settings-nav-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+  }
+
+  .settings-nav-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .settings-nav-item.is-danger .settings-nav-icon {
+    background: var(--yoru-danger-soft);
+    color: var(--yoru-danger);
+  }
+
+  html.platform-android .yomitan-settings-sidebar,
+  html.platform-android .yomitan-settings-pane {
+    padding-bottom: calc(92px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+
+  /* Settings sections: the top bar names the section, so drop the card frame
+     and let each option breathe as its own row. */
+  html.platform-android .yomitan-settings-pane .settings-section-card {
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html.platform-android .yomitan-settings-pane .settings-card-title {
+    margin: 4px 0 6px !important;
+    font-size: 1.05rem !important;
+  }
+
+  html.platform-android .yomitan-settings-pane .settings-card-desc {
+    margin-bottom: 14px !important;
+    font-size: 0.84rem !important;
+  }
+
+  html.platform-android .yomitan-settings-pane .settings-row-control {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    min-height: 56px;
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  html.platform-android .yomitan-settings-pane .settings-row-control > .settings-label-text {
+    min-width: 0;
+    flex: 1 1 140px;
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  html.platform-android .yomitan-settings-pane .migaku-select {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    flex: 1 1 170px;
+    border-color: var(--border-light);
+    border-radius: 12px;
+    background-color: var(--surface-raised);
+    color: var(--text-main);
+    text-overflow: ellipsis;
+  }
+
+  /* Google Drive: bottom sheet on phones. */
+  .yoru-sheet-overlay {
+    align-items: flex-end;
+    padding: calc(var(--yoru-safe-top, 0px) + 24px) 0 0;
+  }
+
+  .yoru-sheet {
+    width: 100%;
+    max-height: 100%;
+    gap: 14px;
+    padding: 10px 18px calc(18px + var(--yoru-safe-bottom, 0px));
+    border-bottom: none;
+    border-radius: 22px 22px 0 0;
+    animation: yoruSheetUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .yoru-sheet-handle {
+    display: block;
+  }
+
+  /* Progress: the picker spans the width so it never overflows. */
+  .progress-header .progress-window-picker {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .progress-window-picker button {
+    min-height: 36px;
+    padding: 6px 4px;
+  }
+
+  .progress-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .progress-kpi-value {
+    font-size: 1.45rem;
+  }
+
+  /* The bottom bar is solid: nothing shows through it while scrolling. */
+  html.platform-android .bottom-navigation-bar {
+    z-index: 1100;
+    background:
+      radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
+      linear-gradient(0deg, #0c0e13, #14171e);
+  }
+
+  html.platform-android .mobile-top-app-bar {
+    background:
+      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
+      linear-gradient(180deg, #181b22, #0e1116);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }

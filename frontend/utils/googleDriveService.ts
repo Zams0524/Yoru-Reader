@@ -389,3 +389,84 @@ export const googleDriveService = {
     return await downloadRes.blob();
   }
 };
+
+// When this device last synced with Drive, as an ISO timestamp.
+export const LAST_SYNC_STORAGE_KEY = 'gdrive_last_sync_time';
+
+export function readLastSyncMs(): number {
+  const raw = localStorage.getItem(LAST_SYNC_STORAGE_KEY);
+  if (!raw) return 0;
+  const ms = Date.parse(raw);
+  // Older versions stored toLocaleString(), which Date.parse can't read in most locales.
+  // Treat that as "synced just now" so the cloud copy never silently overwrites local data.
+  return Number.isNaN(ms) ? Date.now() : ms;
+}
+
+export function formatSyncTime(value: string): string {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? value : new Date(ms).toLocaleString();
+}
+
+// Only a revoked or expired grant means the user must sign in again; anything else
+// (offline, timeout, a Google hiccup, the Android picker not answering) is retried later.
+export function isGoogleSessionRevoked(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid_grant|token has been (expired or )?revoked/i.test(message);
+}
+
+export const AUTOSYNC_STORAGE_KEY = 'gdrive_autosync_enabled';
+
+export interface GoogleSession {
+  tokens: GoogleTokens;
+  clientId: string;
+  clientSecret: string;
+  email: string;
+}
+
+// Signs in with Google (native picker on Android, browser + loopback on desktop), stores the
+// session and turns automatic sync on: signing in is what links the user's progress to Drive.
+// onBrowserAuth is called while the desktop flow waits for the browser, so it can be cancelled.
+export async function signInWithGoogle(onBrowserAuth?: (waiting: boolean) => void): Promise<GoogleSession> {
+  let tokens: GoogleTokens;
+  let clientId: string;
+  let clientSecret = '';
+
+  if (Capacitor.getPlatform() === 'android') {
+    clientId = GDRIVE_ANDROID_CLIENT_ID;
+    tokens = await authorizeGoogleDriveNative();
+  } else {
+    if (!window.electronAPI?.startGoogleOauth) {
+      throw new Error('Google sign-in is only available in the Android or desktop app.');
+    }
+    // The Android client id may be stored from a restored backup; desktop needs its own client
+    const storedId = localStorage.getItem('gdrive_client_id');
+    clientId = (storedId && storedId !== GDRIVE_ANDROID_CLIENT_ID ? storedId : DEFAULT_GDRIVE_CLIENT_ID).trim();
+    clientSecret = (localStorage.getItem('gdrive_client_secret')
+      ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
+    if (!clientId) throw new Error('This build has no Google client configured.');
+    onBrowserAuth?.(true);
+    let oauthResult;
+    try {
+      oauthResult = await window.electronAPI.startGoogleOauth(clientId);
+    } finally {
+      onBrowserAuth?.(false);
+    }
+    if (!oauthResult?.code) throw new Error('No authorization code returned from loopback server');
+    tokens = await googleDriveService.exchangeCodeForTokens(
+      oauthResult.code,
+      oauthResult.redirectUri,
+      clientId,
+      clientSecret,
+      oauthResult.codeVerifier
+    );
+  }
+
+  const info = await googleDriveService.getUserInfo(tokens, clientId, clientSecret);
+  localStorage.setItem('gdrive_client_id', clientId);
+  if (clientSecret) localStorage.setItem('gdrive_client_secret', clientSecret);
+  else localStorage.removeItem('gdrive_client_secret');
+  localStorage.setItem('gdrive_tokens', JSON.stringify(tokens));
+  localStorage.setItem('gdrive_user_email', info.email);
+  localStorage.setItem(AUTOSYNC_STORAGE_KEY, 'true');
+  return { tokens, clientId, clientSecret, email: info.email };
+}

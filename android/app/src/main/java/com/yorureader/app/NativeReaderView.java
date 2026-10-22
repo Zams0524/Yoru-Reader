@@ -46,6 +46,8 @@ final class NativeReaderView extends View {
     private float downX, downY;
     private boolean dragging;
     private ValueAnimator animator;
+    /** A turn asked for while its page was still being drawn: done as soon as the page arrives. */
+    private int pendingTurn = 0;
     private final int touchSlop;
     private final Paint shadowPaint = new Paint();
     private int background = Color.rgb(12, 14, 19);
@@ -71,6 +73,15 @@ final class NativeReaderView extends View {
         this.cur = cur;
         this.next = next;
         invalidate();
+        if (pendingTurn != 0 && incomingFor(pendingTurn) != null) {
+            int direction = pendingTurn;
+            pendingTurn = 0;
+            turn(direction);
+        }
+    }
+
+    private Bitmap incomingFor(int direction) {
+        return direction == 1 ? next : prev;
     }
 
     void setLook(int background, boolean vertical, boolean invertTaps, boolean kindleTaps, int brightness) {
@@ -107,7 +118,12 @@ final class NativeReaderView extends View {
     }
 
     private Bitmap incoming(float dx) {
-        return directionForDrag(dx) == 1 ? next : prev;
+        return incomingFor(directionForDrag(dx));
+    }
+
+    /** The page can turn that way and its bitmap is ready (sliding in an empty page shows only the background). */
+    private boolean canSlide(int direction) {
+        return listener.canTurn(direction) && incomingFor(direction) != null;
     }
 
     @Override
@@ -164,6 +180,7 @@ final class NativeReaderView extends View {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 if (animator != null && animator.isRunning()) animator.end();
+                pendingTurn = 0;
                 downX = e.getX();
                 downY = e.getY();
                 dragging = false;
@@ -175,7 +192,7 @@ final class NativeReaderView extends View {
                     getParent().requestDisallowInterceptTouchEvent(true);
                 }
                 if (dragging) {
-                    offset = listener.canTurn(directionForDrag(dx)) ? dx : dx / 4;
+                    offset = canSlide(directionForDrag(dx)) ? dx : dx / 4;
                     invalidate();
                 }
                 return true;
@@ -183,7 +200,7 @@ final class NativeReaderView extends View {
             case MotionEvent.ACTION_UP: {
                 if (dragging) {
                     int direction = directionForDrag(offset);
-                    boolean turn = Math.abs(offset) > getWidth() * 0.18f && listener.canTurn(direction);
+                    boolean turn = Math.abs(offset) > getWidth() * 0.18f && canSlide(direction);
                     animateTo(turn ? Math.signum(offset) * getWidth() : 0, turn ? direction : 0);
                 } else if (Math.abs(e.getX() - downX) < touchSlop && Math.abs(e.getY() - downY) < touchSlop) {
                     float x = e.getX();
@@ -212,6 +229,11 @@ final class NativeReaderView extends View {
     /** Slides to the next (1) or previous (-1) page. */
     void turn(int direction) {
         if (isAnimating() || !listener.canTurn(direction)) return;
+        if (incomingFor(direction) == null) {
+            pendingTurn = direction;
+            return;
+        }
+        pendingTurn = 0;
         // The current page leaves towards where the incoming page is not: vertical next = to the right.
         float sign = vertical ? direction : -direction;
         animateTo(sign * getWidth(), direction);

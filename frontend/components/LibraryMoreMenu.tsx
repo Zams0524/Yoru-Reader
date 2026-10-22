@@ -49,6 +49,10 @@ export default function LibraryMoreMenu({
     <>
       <div className="library-menu-backdrop" onClick={onClose} />
       <div className="library-menu" role="menu" aria-label={es ? 'Opciones de la biblioteca' : 'Library options'}>
+        <button type="button" role="menuitem" className="library-menu-item" onClick={() => { onClose(); onSelectBooks(); }}>
+          <span className="library-menu-item-label"><ListChecks size={18} />{es ? 'Seleccionar libros' : 'Select books'}</span>
+        </button>
+        <div className="library-menu-divider" />
         <div className="library-menu-section-head">
           <span>{es ? 'Ordenar por' : 'Sort by'}</span>
           <button
@@ -86,9 +90,6 @@ export default function LibraryMoreMenu({
         ))}
 
         <div className="library-menu-divider" />
-        <button type="button" role="menuitem" className="library-menu-item" onClick={() => { onClose(); onSelectBooks(); }}>
-          <span className="library-menu-item-label"><ListChecks size={18} />{es ? 'Seleccionar libros' : 'Select books'}</span>
-        </button>
         <button type="button" role="menuitem" className="library-menu-item" onClick={() => { onClose(); onMoreOptions(); }}>
           <span className="library-menu-item-label"><SlidersHorizontal size={18} />{es ? 'Más opciones de vista…' : 'More view options…'}</span>
         </button>

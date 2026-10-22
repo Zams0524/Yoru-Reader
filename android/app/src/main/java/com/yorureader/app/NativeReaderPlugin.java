@@ -86,6 +86,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private boolean popupOpen = false;
     /** Bumped on every open and close: work queued for an older book is dropped. */
     private volatile int generation = 0;
+    /**
+     * Bumped on every page turn (main thread). During a burst of turns, the engine work of the
+     * pages flipped past is dropped so the page the reader lands on is drawn first.
+     */
+    private volatile int turnSeq = 0;
 
     // Engine thread.
     private final EraEngine engine = new EraEngine();
@@ -626,6 +631,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         result.put("pages", pages);
         result.put("xpath", xpath);
         result.put("ordinal", ordinalOf(xpath));
+        // goTo takes innerPath (APKs before 1.4.4 ignore it and go to the block's first page).
+        result.put("goToInnerPath", true);
         return result;
     }
 
@@ -755,17 +762,23 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             + "|" + c.fontFamily + "|" + c.textAlign + "|" + c.textColor + "|" + c.backgroundColor;
     }
 
-    /** Renders the page and its neighbours (engine thread), then hands them to the view. */
+    /**
+     * Renders the page and its neighbours (engine thread), then hands them to the view. Reading
+     * goes forward, so the two next pages come before the previous one.
+     */
     private void renderAround(int gen, int page) {
-        renderPages(gen, page, new int[] { page, page + 1, page - 1, page + 2 });
+        renderPages(gen, page, new int[] { page, page + 1, page + 2, page - 1 });
     }
 
     /** Renders the given pages (engine thread); page is the one on screen. */
     private void renderPages(int gen, int page, int[] pages) {
         Config c = config;
         if (c == null) return;
+        final int seq = turnSeq;
         for (int p : pages) {
             if (gen != generation) return;
+            // A newer turn renders around its own page.
+            if (seq != turnSeq) return;
             if (p < 0 || p >= enginePages) continue;
             synchronized (cache) {
                 if (cache.containsKey(p)) continue;
@@ -787,8 +800,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 engineFailed(gen, e);
                 return;
             }
-            // The page on screen first, then the rest.
-            if (p == page) main.post(() -> { if (gen == generation) publish(); });
+            // Each page reaches the view as soon as it is drawn: a turn waiting for it goes on at once.
+            main.post(() -> { if (gen == generation) publish(); });
         }
         synchronized (cache) {
             cache.keySet().removeIf(p -> p < page - 2 || p > page + 3);
@@ -891,8 +904,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         current = Math.max(0, Math.min(pageCount - 1, current + direction));
         view.setHighlight(new ArrayList<>(), 0);
         publish();
-        final int gen = generation, page = current;
-        engineHandler.post(() -> showPage(gen, page));
+        final int gen = generation, page = current, seq = ++turnSeq;
+        engineHandler.post(() -> {
+            // Skipped when another turn came before the engine got here.
+            if (seq == turnSeq) showPage(gen, page);
+        });
     }
 
     /** An underline of a word state, drawn here (see engineWordCss in nativeReaderWords.ts). */
@@ -1421,11 +1437,15 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         });
     }
 
-    /** Jumps to a block (ordinal) or page. */
+    /**
+     * Jumps to a block (ordinal) or page. innerPath (with ordinal): a place inside the block, see
+     * textOffsetToInnerPath; already on its page, nothing is done (read aloud asks for every sentence).
+     */
     @PluginMethod
     public void goTo(PluginCall call) {
         int ordinal = call.getInt("ordinal", -1);
         int page = call.getInt("page", -1);
+        String innerPath = call.getString("innerPath", "");
         final int gen = generation;
         engineHandler.post(() -> {
             if (gen != generation || config == null) {
@@ -1434,11 +1454,19 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             }
             try {
                 int target = page;
-                if (ordinal >= 0 && bodyPrefix != null) target = pageByXPath(bodyPrefix + "/p[" + (ordinal + 1) + "]", current);
+                boolean inner = ordinal >= 0 && bodyPrefix != null && innerPath != null && !innerPath.isEmpty();
+                if (inner) target = pageByXPath(bodyPrefix + "/p[" + (ordinal + 1) + "]/" + innerPath, -1);
+                if (ordinal >= 0 && bodyPrefix != null && (!inner || target < 0)) target = pageByXPath(bodyPrefix + "/p[" + (ordinal + 1) + "]", current);
                 final int to = clampPage(target);
+                if (inner && to == current) {
+                    call.resolve();
+                    return;
+                }
                 main.post(() -> {
                     if (gen != generation) return;
                     current = to;
+                    // As a turn does: a highlight belongs to the page it was drawn on.
+                    if (view != null) view.setHighlight(new ArrayList<>(), 0);
                     publish();
                 });
                 showPage(gen, to);
