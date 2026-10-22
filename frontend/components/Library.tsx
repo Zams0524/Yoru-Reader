@@ -8,6 +8,7 @@ import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
+import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
@@ -1482,9 +1483,11 @@ const Library = React.memo(function Library({
   };
 
 
-  // Background sync of the JSON database with Google Drive.
-  // 'bidirectional': restore if the cloud copy is newer than this device's last sync, else upload.
-  // 'upload-only': upload unless another device synced since; never reloads the app.
+  // Background sync of the JSON database with Google Drive. Never replaces one side with the
+  // other: both are merged (mergeDatabaseExports), this device's copy is backed up before the
+  // merge is written, and an upload that would leave Drive with fewer books is refused.
+  // 'bidirectional': apply the merge here (reloading if anything changed) and upload it.
+  // 'upload-only': upload the merge when Drive lacks something; never touches local data.
   const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
     if (cloudSyncInFlightRef.current) return;
     cloudSyncInFlightRef.current = true;
@@ -1492,38 +1495,38 @@ const Library = React.memo(function Library({
     const clientId = (localStorage.getItem('gdrive_client_id') ?? gDriveClientId).trim();
     const clientSecret = (localStorage.getItem('gdrive_client_secret') ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
     try {
-      const uploadLocalState = async () => {
-        const fullExport = await db.exportFullDatabase();
-        await googleDriveService.uploadSyncFile(
-          tokens,
-          clientId,
-          fullExport,
-          clientSecret
-        );
+      const cloudData = await googleDriveService.downloadSyncFile(tokens, clientId, clientSecret);
+      const localData = await db.exportFullDatabase();
+
+      if (!cloudData) {
+        await googleDriveService.uploadSyncFile(tokens, clientId, localData, clientSecret);
         markCloudSynced();
-      };
-
-      const importedData = await googleDriveService.downloadSyncFile(
-        tokens,
-        clientId,
-        clientSecret
-      );
-
-      if (!importedData) {
-        await uploadLocalState();
         return;
       }
 
-      const cloudTime = importedData.exportDate ? Date.parse(importedData.exportDate) || 0 : 0;
-      if (cloudTime > readLastSyncMs()) {
-        if (mode === 'upload-only') return;
-        // Cloud has newer data, auto-restore
-        await db.importFullDatabase(importedData);
-        markCloudSynced();
-        console.log("Auto-sincronizada base de datos desde Google Drive.");
-        window.location.reload();
-      } else {
-        await uploadLocalState();
+      const cloudTime = cloudData.exportDate ? Date.parse(cloudData.exportDate) || 0 : 0;
+      const { merged, localChanged, cloudChanged } = mergeDatabaseExports(localData, cloudData, cloudTime > readLastSyncMs());
+
+      if (localChanged && mode === 'bidirectional') {
+        await db.saveSyncBackup(localData);
+        await db.importFullDatabase(merged);
+      }
+      if (cloudChanged) {
+        if (countLiveBooks(merged) < countLiveBooks(cloudData)) {
+          throw new Error('Refusing to upload a library with fewer books than the copy in Google Drive');
+        }
+        await googleDriveService.uploadSyncFile(tokens, clientId, merged, clientSecret);
+      }
+      if (mode === 'bidirectional' || !localChanged) markCloudSynced();
+
+      // Reload to show what came from Drive, at most once a minute so a bad merge cannot loop
+      if (localChanged && mode === 'bidirectional') {
+        const lastReload = Number(sessionStorage.getItem('yoru_sync_reload_at')) || 0;
+        if (Date.now() - lastReload > 60_000) {
+          sessionStorage.setItem('yoru_sync_reload_at', String(Date.now()));
+          console.log("Progreso combinado con Google Drive.");
+          window.location.reload();
+        }
       }
     } catch (err) {
       console.error('Background cloud sync failed:', err);
