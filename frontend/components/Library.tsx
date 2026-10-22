@@ -8,7 +8,8 @@ import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { t } from '../utils/i18n';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
+import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
@@ -1239,7 +1240,9 @@ const Library = React.memo(function Library({
           localStorage.setItem('gdrive_user_email', info.email);
           
           if (localStorage.getItem('gdrive_autosync_enabled') === 'true') {
-            // Restore if the cloud copy is newer, otherwise upload this device's state
+            // The library mounts again when a book is closed: give the reader a moment to save
+            // its last position, then merge with Drive in both directions
+            await new Promise((resolve) => setTimeout(resolve, 2000));
             await performCloudSync(tokens, 'bidirectional');
           }
         } catch (err) {
@@ -1260,65 +1263,18 @@ const Library = React.memo(function Library({
   // Connect Google Drive Folder via loopback OAuth Flow
   const handleConnectGDrive = async () => {
     try {
-      if (!gDriveClientId.trim()) {
-        alert(lang === 'es' ? 'Introduce tu Client ID para continuar.' : 'Please enter your Client ID to continue.');
-        return;
-      }
       setGDriveSyncStatus('syncing');
-
-      if (Capacitor.getPlatform() === 'android') {
-        const androidClientId = GDRIVE_ANDROID_CLIENT_ID;
-        const nativeTokens = await authorizeGoogleDriveNative();
-        localStorage.setItem('gdrive_client_id', androidClientId);
-        localStorage.removeItem('gdrive_client_secret');
-        localStorage.setItem('gdrive_tokens', JSON.stringify(nativeTokens));
-        setGDriveClientId(androidClientId);
-        setGDriveClientSecret('');
-        setGDriveTokens(nativeTokens);
-
-        const info = await googleDriveService.getUserInfo(nativeTokens, androidClientId, '');
-        localStorage.setItem('gdrive_user_email', info.email);
-        setGDriveUserEmail(info.email);
-        setGDriveSyncStatus('authorized');
-        alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
-        await performCloudSync(nativeTokens, 'bidirectional');
-        return;
-      }
-
-      if (!window.electronAPI || !window.electronAPI.startGoogleOauth) {
-        throw new Error(lang === 'es'
-          ? 'Conecta Google Drive desde la app de Android o desde la app de escritorio.'
-          : 'Connect Google Drive from the Android app or the desktop app.');
-      }
-
-      // 1. Run local loopback callback server and open browser
-      const oauthResult = await window.electronAPI.startGoogleOauth(gDriveClientId.trim());
-      if (!oauthResult || !oauthResult.code) {
-        throw new Error('No authorization code returned from loopback server');
-      }
-
-      // 2. Exchange authorization code + PKCE verifier for access + refresh token
-      const tokenData = await googleDriveService.exchangeCodeForTokens(
-        oauthResult.code,
-        oauthResult.redirectUri,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim(),
-        oauthResult.codeVerifier
-      );
-
-      // 3. Fetch connected user information
-      const info = await googleDriveService.getUserInfo(tokenData, gDriveClientId.trim(), gDriveClientSecret.trim());
-      setGDriveUserEmail(info.email);
-
-      // Save credentials & tokens
-      localStorage.setItem('gdrive_client_id', gDriveClientId.trim());
-      localStorage.setItem('gdrive_client_secret', gDriveClientSecret.trim());
-      localStorage.setItem('gdrive_tokens', JSON.stringify(tokenData));
-      localStorage.setItem('gdrive_user_email', info.email);
-
-      setGDriveTokens(tokenData);
+      const session = await signInWithGoogle();
+      setGDriveClientId(session.clientId);
+      setGDriveClientSecret(session.clientSecret);
+      setGDriveTokens(session.tokens);
+      setGDriveUserEmail(session.email);
+      setIsAutoSyncEnabled(true);
       setGDriveSyncStatus('authorized');
-      alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
+      showToast(lang === 'es'
+        ? `Sesión iniciada como ${session.email}. Tu progreso se guardará en tu Google Drive.`
+        : `Signed in as ${session.email}. Your progress will be saved to your Google Drive.`, 'success');
+      await performCloudSync(session.tokens, 'bidirectional');
     } catch (err) {
       setGDriveSyncStatus(gDriveTokens ? 'authorized' : 'disconnected');
       console.error('Google OAuth connection failed:', err);
@@ -1529,45 +1485,50 @@ const Library = React.memo(function Library({
   };
 
 
-  // Background sync of the JSON database with Google Drive.
-  // 'bidirectional': restore if the cloud copy is newer than this device's last sync, else upload.
-  // 'upload-only': upload unless another device synced since; never reloads the app.
+  // Background sync of the JSON database with Google Drive. Never replaces one side with the
+  // other: both are merged (mergeDatabaseExports), this device's copy is backed up before the
+  // merge is written, and an upload that would leave Drive with fewer books is refused.
+  // 'bidirectional': apply the merge here (reloading if anything changed) and upload it.
+  // 'upload-only': upload the merge when Drive lacks something; never touches local data.
   const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
     if (cloudSyncInFlightRef.current) return;
     cloudSyncInFlightRef.current = true;
+    // Read the client from storage: right after signing in, the state above is not updated yet
+    const clientId = (localStorage.getItem('gdrive_client_id') ?? gDriveClientId).trim();
+    const clientSecret = (localStorage.getItem('gdrive_client_secret') ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
     try {
-      const uploadLocalState = async () => {
-        const fullExport = await db.exportFullDatabase();
-        await googleDriveService.uploadSyncFile(
-          tokens,
-          gDriveClientId.trim(),
-          fullExport,
-          gDriveClientSecret.trim()
-        );
+      const cloudData = await googleDriveService.downloadSyncFile(tokens, clientId, clientSecret);
+      const localData = await db.exportFullDatabase();
+
+      if (!cloudData) {
+        await googleDriveService.uploadSyncFile(tokens, clientId, localData, clientSecret);
         markCloudSynced();
-      };
-
-      const importedData = await googleDriveService.downloadSyncFile(
-        tokens,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim()
-      );
-
-      if (!importedData) {
-        await uploadLocalState();
         return;
       }
 
-      const cloudTime = importedData.exportDate ? Date.parse(importedData.exportDate) || 0 : 0;
-      if (cloudTime > readLastSyncMs()) {
-        if (mode === 'upload-only') return;
-        // Cloud has newer data, auto-restore
-        await db.importFullDatabase(importedData);
-        markCloudSynced();
-        console.log("Auto-sincronizada base de datos desde Google Drive.");
-        window.location.reload();
-      } else {
-        await uploadLocalState();
+      const cloudTime = cloudData.exportDate ? Date.parse(cloudData.exportDate) || 0 : 0;
+      const { merged, localChanged, cloudChanged } = mergeDatabaseExports(localData, cloudData, cloudTime > readLastSyncMs());
+
+      if (localChanged && mode === 'bidirectional') {
+        await db.saveSyncBackup(localData);
+        await db.importFullDatabase(merged);
+      }
+      if (cloudChanged) {
+        if (countLiveBooks(merged) < countLiveBooks(cloudData)) {
+          throw new Error('Refusing to upload a library with fewer books than the copy in Google Drive');
+        }
+        await googleDriveService.uploadSyncFile(tokens, clientId, merged, clientSecret);
+      }
+      if (mode === 'bidirectional' || !localChanged) markCloudSynced();
+
+      // Reload to show what came from Drive, at most once a minute so a bad merge cannot loop
+      if (localChanged && mode === 'bidirectional') {
+        const lastReload = Number(sessionStorage.getItem('yoru_sync_reload_at')) || 0;
+        if (Date.now() - lastReload > 60_000) {
+          sessionStorage.setItem('yoru_sync_reload_at', String(Date.now()));
+          console.log("Progreso combinado con Google Drive.");
+          window.location.reload();
+        }
       }
     } catch (err) {
       console.error('Background cloud sync failed:', err);
@@ -1576,11 +1537,12 @@ const Library = React.memo(function Library({
     }
   };
 
-  // Upload progress when the app goes to the background (switching apps, closing the window)
+  // Upload progress when the app goes to the background (switching apps, closing the window),
+  // and every few minutes while it stays open
   useEffect(() => {
     const BACKGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'hidden') return;
+    const PERIODIC_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    const syncInBackground = () => {
       if (localStorage.getItem('gdrive_autosync_enabled') !== 'true') return;
       const tokens = localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null;
       if (!tokens) return;
@@ -1589,8 +1551,17 @@ const Library = React.memo(function Library({
       lastBackgroundSyncRef.current = now;
       performCloudSync(tokens, 'upload-only');
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') syncInBackground();
+    };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') syncInBackground();
+    }, PERIODIC_SYNC_INTERVAL_MS);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [gDriveClientId, gDriveClientSecret]);
 
   // Close profile dropdown when clicking outside
@@ -4378,7 +4349,7 @@ const Library = React.memo(function Library({
                   className="reset-filter-btn"
                   style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Vincular Google Drive' : 'Link Google Drive')}</span>
+                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
                 </button>
 
                 {gDriveTokens && (
