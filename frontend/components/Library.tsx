@@ -6054,17 +6054,32 @@ const Library = React.memo(function Library({
                   {lang === 'es' ? 'Mostrar el botón de escuchar la palabra' : 'Show the play-word button'}
                 </label>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input
-                  type="checkbox"
-                  id="srsShowFrontSentenceCheckbox"
-                  checked={settings.srsShowFrontSentence !== false}
-                  onChange={(e) => onSaveSettings({ ...settings, srsShowFrontSentence: e.target.checked })}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                />
-                <label htmlFor="srsShowFrontSentenceCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
-                  {lang === 'es' ? 'Mostrar la oración del libro antes de ver la respuesta' : 'Show the book sentence before revealing the answer'}
-                </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: 700 }}>
+                  {lang === 'es' ? '¿Qué ves antes de la respuesta?' : 'What do you see before the answer?'}
+                </span>
+                <div className="srs-front-modes" role="radiogroup" aria-label={lang === 'es' ? 'Frente de la tarjeta' : 'Card front'}>
+                  {([
+                    ['word', lang === 'es' ? 'Solo la palabra' : 'Word only', lang === 'es' ? 'Lees la palabra y recuerdas su significado.' : 'Read the word and recall its meaning.'],
+                    ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence', lang === 'es' ? 'Ves la oración del libro con la palabra marcada.' : 'See the book sentence with the word marked.'],
+                    ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only', lang === 'es' ? 'Suena la palabra sin mostrarla; la ves al girar la tarjeta.' : 'The word plays without being shown; you see it when you flip the card.'],
+                  ] as const).map(([mode, title, hint]) => {
+                    const selected = (settings.srsCardFront || 'word') === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`srs-front-mode${selected ? ' is-selected' : ''}`}
+                        onClick={() => onSaveSettings({ ...settings, srsCardFront: mode })}
+                      >
+                        <strong>{title}</strong>
+                        <span>{hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

@@ -5249,3 +5249,72 @@ html.platform-android .reader-engine-content {
   background: var(--bg-card-hover);
   color: var(--text-main);
 }
+
+.srs-rv-listen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.srs-rv-listen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--border-focus);
+  border-radius: 999px;
+  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+  color: var(--primary);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.srs-rv-listen-btn.is-playing {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.srs-rv-front-sentence.is-main {
+  margin: 0 auto;
+  font-size: 1.45rem;
+  line-height: 1.8;
+  color: var(--text-main);
+}
+
+.srs-front-modes {
+  display: grid;
+  gap: 8px;
+}
+
+.srs-front-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.srs-front-mode strong {
+  font-size: 0.88rem;
+}
+
+.srs-front-mode span {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.srs-front-mode.is-selected {
+  border-color: var(--border-focus);
+  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+}

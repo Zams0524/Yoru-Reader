@@ -174,7 +174,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const rawSettings = db.getSettings();
   const lang = rawSettings.appLanguage || 'en';
   const showAudioButton = rawSettings.srsShowAudioButton !== false;
-  const showFrontSentence = rawSettings.srsShowFrontSentence !== false;
+  // What the front of the card asks with: the word, the word inside its book sentence, or only its audio.
+  const frontMode: 'word' | 'sentence' | 'audio' = ['sentence', 'audio'].includes(rawSettings.srsCardFront) ? rawSettings.srsCardFront : 'word';
 
   const fsrsRetentionRate = rawSettings.fsrsRetentionRate !== undefined ? Number(rawSettings.fsrsRetentionRate) : 0.90;
   const fsrsMaxInterval = rawSettings.fsrsMaxInterval !== undefined ? Number(rawSettings.fsrsMaxInterval) : 36500;
@@ -643,6 +644,13 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     }
   };
 
+  // Listening cards: say the word as soon as the card appears.
+  useEffect(() => {
+    if (!isOpen || showAnswer || frontMode !== 'audio' || !currentReviewWord || isFinished) return;
+    playWordTts(currentReviewWord, db.getSrsCard(currentReviewWord)?.reading);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, currentReviewWord, currentIndex, showAnswer, frontMode, isFinished]);
+
   const handleToggleBlacklist = () => {
     if (dueCards.length === 0) return;
     const word = dueCards[0];
@@ -962,6 +970,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: showAnswer ? 'flex-start' : 'center' }}>
                   {/* Spelling Area */}
+                  {(showAnswer || frontMode === 'word' || (frontMode === 'sentence' && !srsCardData?.sentence)) && (
                   <div style={{ textAlign: 'center', marginBottom: showAnswer ? '20px' : '0' }}>
                     {showAnswer && currentEntry?.reading && (
                       <div style={{ 
@@ -1005,6 +1014,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                       )}
                     </h2>
                   </div>
+                  )}
 
                   {showAnswer && <div style={{ borderBottom: '1px solid var(--border-light)', width: '100%', marginBottom: '20px', marginTop: '10px' }}></div>}
 
@@ -1077,10 +1087,34 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                       )}
                     </div>
                   ) : (
-                    showFrontSentence && srsCardData?.sentence ? (
-                      <p className="srs-rv-front-sentence">
-                        {sentenceParts ? <>{sentenceParts[0]}<mark className="srs-rv-mark">{sentenceParts[1]}</mark>{sentenceParts[2]}</> : srsCardData.sentence}
-                      </p>
+                    frontMode === 'audio' ? (
+                      <div className="srs-rv-listen">
+                        <button
+                          type="button"
+                          className={`srs-rv-listen-btn${isTtsPlaying ? ' is-playing' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); playWordTts(displayWord, srsCardData?.reading); }}
+                          aria-label={lang === 'es' ? 'Escuchar otra vez' : 'Play again'}
+                        >
+                          <Volume2 size={34} />
+                        </button>
+                        <span>{lang === 'es' ? 'Escucha la palabra y recuerda qué significa' : 'Listen to the word and recall its meaning'}</span>
+                      </div>
+                    ) : frontMode === 'sentence' && srsCardData?.sentence ? (
+                      <div className="srs-rv-listen">
+                        <p className="srs-rv-front-sentence is-main">
+                          {sentenceParts ? <>{sentenceParts[0]}<mark className="srs-rv-mark">{sentenceParts[1]}</mark>{sentenceParts[2]}</> : srsCardData.sentence}
+                        </p>
+                        {showAudioButton && (
+                          <button
+                            type="button"
+                            className="srs-rv-icon-btn"
+                            onClick={(e) => { e.stopPropagation(); playWordTts(displayWord, srsCardData?.reading); }}
+                            aria-label={lang === 'es' ? 'Escuchar la palabra' : 'Play word audio'}
+                          >
+                            <Volume2 size={18} />
+                          </button>
+                        )}
+                      </div>
                     ) : null
                   )}
                 </div>
