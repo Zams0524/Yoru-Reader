@@ -171,6 +171,15 @@ function sameTextExceptReadings(current: any[], incoming: any[]): boolean {
   });
 }
 
+let bookAccessQueue: Promise<unknown> = Promise.resolve();
+
+// Runs library reads and writes one at a time, in call order.
+function serializeBookAccess<T>(task: () => Promise<T>): Promise<T> {
+  const run = bookAccessQueue.then(task, task);
+  bookAccessQueue = run.catch(() => undefined);
+  return run;
+}
+
 export const db = {
   async close() {
     await idb.close();
@@ -256,7 +265,18 @@ export const db = {
   },
 
   // --- Books Management (IndexedDB powered) ---
-  async getBooks(): Promise<Book[]> {
+  // The whole library is one IndexedDB value, so every change is read-modify-write. All access
+  // goes through serializeBookAccess so two changes (e.g. the reading position and the reading
+  // stats saved together when leaving a book) never overwrite each other with a stale copy.
+  getBooks(): Promise<Book[]> {
+    return serializeBookAccess(() => this._readBooks());
+  },
+
+  saveBooks(books: Book[]): Promise<void> {
+    return serializeBookAccess(() => this._writeBooks(books));
+  },
+
+  async _readBooks(): Promise<Book[]> {
     try {
       const key = this._getKey(STORAGE_KEYS.BOOKS);
       let books = await idb.get(key);
@@ -295,7 +315,7 @@ export const db = {
     }
   },
 
-  async saveBooks(books: Book[]): Promise<void> {
+  async _writeBooks(books: Book[]): Promise<void> {
     try {
       const key = this._getKey(STORAGE_KEYS.BOOKS);
       await idb.set(key, books);
@@ -304,69 +324,23 @@ export const db = {
     }
   },
 
-  async addBook(book: Partial<Book>): Promise<Book[]> {
-    const books = await this.getBooks();
-    // Check if book already exists by title
-    const existingIdx = books.findIndex(b => b.title === book.title);
-    if (existingIdx !== -1) {
-      if (books[existingIdx].isDeleted
-        || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
-        // Restore a deleted book, or refresh readings without changing text positions.
-        if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
-        books[existingIdx].chapters = book.chapters || [];
-        await this.saveBooks(books);
-      }
-      return books;
-    }
-    const newBook: Book = {
-      id: `book-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: book.title || 'Libro sin título',
-      author: book.author || 'Desconocido',
-      cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      chapters: book.chapters || [],
-      progress: {
-        currentChapter: 0,
-        currentPage: 0,
-        percent: 0,
-        charactersRead: 0,
-        secondsRead: 0
-      },
-      status: 'unread', // 'unread', 'reading', 'completed'
-      createdAt: new Date().toISOString()
-    };
-    books.push(newBook);
-    await this.saveBooks(books);
-    return books;
-  },
-
-  async addBooks(booksList: Partial<Book>[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    console.log("db.addBooks - Libros existentes en DB:", books.map(b => b.title));
-    console.log("db.addBooks - Libros nuevos a añadir:", booksList.map(b => b.title));
-    let addedCount = 0;
-    const now = Date.now();
-    
-    for (let i = 0; i < booksList.length; i++) {
-      const book = booksList[i];
+  addBook(book: Partial<Book>): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      // Check if book already exists by title
       const existingIdx = books.findIndex(b => b.title === book.title);
       if (existingIdx !== -1) {
-        if (books[existingIdx].isDeleted) {
-          // Restore/undelete it!
-          books[existingIdx].isDeleted = false;
+        if (books[existingIdx].isDeleted
+          || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+          // Restore a deleted book, or refresh readings without changing text positions.
+          if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
           books[existingIdx].chapters = book.chapters || [];
-          addedCount++;
-        } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
-          // Refresh readings an older import lost, preserving progress and annotations.
-          books[existingIdx].chapters = book.chapters || [];
-          addedCount++;
-          console.log(`db.addBooks - Lecturas de "${book.title}" actualizadas (mismo texto).`);
-        } else {
-          console.log(`db.addBooks - Saltando "${book.title}" porque ya existe.`);
+          await this._writeBooks(books);
         }
-        continue;
+        return books;
       }
       const newBook: Book = {
-        id: `book-${now}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `book-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         title: book.title || 'Libro sin título',
         author: book.author || 'Desconocido',
         cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -378,64 +352,118 @@ export const db = {
           charactersRead: 0,
           secondsRead: 0
         },
-        status: 'unread',
+        status: 'unread', // 'unread', 'reading', 'completed'
         createdAt: new Date().toISOString()
       };
       books.push(newBook);
-      addedCount++;
-    }
+      await this._writeBooks(books);
+      return books;
+    });
+  },
+
+  addBooks(booksList: Partial<Book>[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      console.log("db.addBooks - Libros existentes en DB:", books.map(b => b.title));
+      console.log("db.addBooks - Libros nuevos a añadir:", booksList.map(b => b.title));
+      let addedCount = 0;
+      const now = Date.now();
     
-    if (addedCount > 0) {
-      console.log("db.addBooks - Guardando libros combinados:", books.map(b => b.title));
-      await this.saveBooks(books);
-    }
-    return books;
-  },
-
-  async updateBookProgress(bookId: string, currentChapter: number, currentPage: number, percent: number): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        const newStatus = percent >= 99 ? 'completed' : (percent > 0 ? 'reading' : book.status);
-        return {
-          ...book,
-          progress: { 
-            ...(book.progress || {}), 
-            currentChapter, 
-            currentPage, 
-            percent 
-          },
-          status: newStatus as 'unread' | 'reading' | 'completed',
-          lastRead: new Date().toISOString()
-        };
-      }
-      return book;
-    });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
-  },
-
-  async incrementReadingStats(bookId: string, charsToAdd: number, secondsToAdd: number): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        const prevProgress = book.progress || {};
-        const prevChars = prevProgress.charactersRead || 0;
-        const prevSeconds = prevProgress.secondsRead || 0;
-        return {
-          ...book,
+      for (let i = 0; i < booksList.length; i++) {
+        const book = booksList[i];
+        const existingIdx = books.findIndex(b => b.title === book.title);
+        if (existingIdx !== -1) {
+          if (books[existingIdx].isDeleted) {
+            // Restore/undelete it!
+            books[existingIdx].isDeleted = false;
+            books[existingIdx].chapters = book.chapters || [];
+            addedCount++;
+          } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+            // Refresh readings an older import lost, preserving progress and annotations.
+            books[existingIdx].chapters = book.chapters || [];
+            addedCount++;
+            console.log(`db.addBooks - Lecturas de "${book.title}" actualizadas (mismo texto).`);
+          } else {
+            console.log(`db.addBooks - Saltando "${book.title}" porque ya existe.`);
+          }
+          continue;
+        }
+        const newBook: Book = {
+          id: `book-${now}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+          title: book.title || 'Libro sin título',
+          author: book.author || 'Desconocido',
+          cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          chapters: book.chapters || [],
           progress: {
-            ...prevProgress,
-            charactersRead: prevChars + charsToAdd,
-            secondsRead: prevSeconds + secondsToAdd
+            currentChapter: 0,
+            currentPage: 0,
+            percent: 0,
+            charactersRead: 0,
+            secondsRead: 0
           },
-          lastRead: new Date().toISOString()
+          status: 'unread',
+          createdAt: new Date().toISOString()
         };
+        books.push(newBook);
+        addedCount++;
       }
-      return book;
+    
+      if (addedCount > 0) {
+        console.log("db.addBooks - Guardando libros combinados:", books.map(b => b.title));
+        await this._writeBooks(books);
+      }
+      return books;
     });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  },
+
+  updateBookProgress(bookId: string, currentChapter: number, currentPage: number, percent: number): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          const newStatus = percent >= 99 ? 'completed' : (percent > 0 ? 'reading' : book.status);
+          return {
+            ...book,
+            progress: { 
+              ...(book.progress || {}), 
+              currentChapter, 
+              currentPage, 
+              percent 
+            },
+            status: newStatus as 'unread' | 'reading' | 'completed',
+            lastRead: new Date().toISOString()
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
+  },
+
+  incrementReadingStats(bookId: string, charsToAdd: number, secondsToAdd: number): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          const prevProgress = book.progress || {};
+          const prevChars = prevProgress.charactersRead || 0;
+          const prevSeconds = prevProgress.secondsRead || 0;
+          return {
+            ...book,
+            progress: {
+              ...prevProgress,
+              charactersRead: prevChars + charsToAdd,
+              secondsRead: prevSeconds + secondsToAdd
+            },
+            lastRead: new Date().toISOString()
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
   async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0): Promise<void> {
@@ -567,82 +595,94 @@ export const db = {
     });
   },
 
-  async saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        return {
-          ...book,
-          bookmarks
-        };
-      }
-      return book;
+  saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          return {
+            ...book,
+            bookmarks
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
     });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
   },
 
-  async saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async deleteBook(bookId: string): Promise<Book[]> {
-    const books = await this.getBooks();
-    const settings = this.getSettings();
-    let updatedBooks: Book[];
-    if (settings.keepStatsOnDelete !== false) {
-      updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, chapters: [] } : b);
-    } else {
-      const book = books.find(b => b.id === bookId);
-      if (book && book.title) {
-        await this.deleteReadingStatsForBook(book.title);
+  deleteBook(bookId: string): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const settings = this.getSettings();
+      let updatedBooks: Book[];
+      if (settings.keepStatsOnDelete !== false) {
+        updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, chapters: [] } : b);
+      } else {
+        const book = books.find(b => b.id === bookId);
+        if (book && book.title) {
+          await this.deleteReadingStatsForBook(book.title);
+        }
+        updatedBooks = books.filter(b => b.id !== bookId);
       }
-      updatedBooks = books.filter(b => b.id !== bookId);
-    }
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async deleteBooks(bookIds: string[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const settings = this.getSettings();
-    let updatedBooks: Book[];
-    if (settings.keepStatsOnDelete !== false) {
-      updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, chapters: [] } : b);
-    } else {
-      const deletedBooks = books.filter(b => bookIds.includes(b.id));
+  deleteBooks(bookIds: string[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const settings = this.getSettings();
+      let updatedBooks: Book[];
+      if (settings.keepStatsOnDelete !== false) {
+        updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, chapters: [] } : b);
+      } else {
+        const deletedBooks = books.filter(b => bookIds.includes(b.id));
+        for (const b of deletedBooks) {
+          if (b.title) {
+            await this.deleteReadingStatsForBook(b.title);
+          }
+        }
+        updatedBooks = books.filter(b => !bookIds.includes(b.id));
+      }
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
+  },
+
+  clearDeletedBooks(): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const deletedBooks = books.filter(b => b.isDeleted);
       for (const b of deletedBooks) {
         if (b.title) {
           await this.deleteReadingStatsForBook(b.title);
         }
       }
-      updatedBooks = books.filter(b => !bookIds.includes(b.id));
-    }
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+      const updatedBooks = books.filter(b => !b.isDeleted);
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async clearDeletedBooks(): Promise<Book[]> {
-    const books = await this.getBooks();
-    const deletedBooks = books.filter(b => b.isDeleted);
-    for (const b of deletedBooks) {
-      if (b.title) {
-        await this.deleteReadingStatsForBook(b.title);
-      }
-    }
-    const updatedBooks = books.filter(b => !b.isDeleted);
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
-  },
-
-  async updateBookDetails(bookId: string, data: Partial<Book>): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(b => b.id === bookId ? { ...b, ...data, updatedAt: new Date().toISOString() } : b);
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  updateBookDetails(bookId: string, data: Partial<Book>): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(b => b.id === bookId ? { ...b, ...data, updatedAt: new Date().toISOString() } : b);
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
   // --- Word Status Management (Migaku state: 'new' | 'learning' | 'known') ---
