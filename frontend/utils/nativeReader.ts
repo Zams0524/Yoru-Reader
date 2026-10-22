@@ -46,6 +46,8 @@ export interface NativePosition {
   xpath: string;
   /** Block of the exported book at the top of the page, -1 if unknown. */
   ordinal: number;
+  /** goTo takes innerPath (APK 1.4.4+). */
+  goToInnerPath?: boolean;
 }
 
 interface NativeReaderPlugin {
@@ -61,7 +63,8 @@ interface NativeReaderPlugin {
   /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
   open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string }): Promise<NativePosition>;
   setSettings(options: { settings: Partial<NativeReaderSettings> }): Promise<void>;
-  goTo(options: { ordinal?: number; page?: number }): Promise<void>;
+  /** innerPath (with ordinal, APK 1.4.4+): a place inside that block; already on its page, nothing happens. */
+  goTo(options: { ordinal?: number; page?: number; innerPath?: string }): Promise<void>;
   turnPage(options: { direction: 1 | -1 }): Promise<void>;
   setHoles(options: { rects: number[][] }): Promise<void>;
   setPopupOpen(options: { open: boolean }): Promise<void>;

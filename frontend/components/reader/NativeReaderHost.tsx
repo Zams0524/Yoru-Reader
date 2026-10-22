@@ -512,9 +512,9 @@ export default function NativeReaderHost({
     };
   }, [ready, rootRef]);
 
-  const goToParagraph = (paragraph: number) => {
-    void NativeReader.goTo({ ordinal: blockOfParagraph(exported, paragraph) }).catch(() => {});
-  };
+  // Resolves once the engine is on the new page (its pageChanged has been reported).
+  const goToParagraph = (paragraph: number): Promise<void> =>
+    NativeReader.goTo({ ordinal: blockOfParagraph(exported, paragraph) }).catch(() => {});
   const goToParagraphRef = useRef(goToParagraph);
   goToParagraphRef.current = goToParagraph;
 
@@ -565,7 +565,9 @@ export default function NativeReaderHost({
   // Read aloud works on DOM blocks: an off-screen copy of the open section, from the paragraph on
   // screen to the end of the section, with the WebView reader's block names. The page follows
   // the paragraph being read.
-  const readAloudRef = useRef({ section: -1, lastParagraph: -1 });
+  // jump: the page change asked for the paragraph being read; token: the latest sentence, so a
+  // highlight that waited for a jump is dropped if another sentence came meanwhile.
+  const readAloudRef = useRef({ section: -1, lastParagraph: -1, jump: Promise.resolve(), token: 0 });
   const readAloudIdleRef = useRef(readAloudIdle);
   readAloudIdleRef.current = readAloudIdle;
   const readAloudContentRef = useRef<HTMLDivElement>(null);
@@ -606,16 +608,16 @@ export default function NativeReaderHost({
       const block = range.startContainer.parentElement?.closest('[index]') as HTMLElement | null;
       const paragraph = Number(block?.getAttribute('index'));
       if (!Number.isFinite(paragraph)) return;
-      if (paragraph !== readAloudRef.current.lastParagraph) {
-        readAloudRef.current.lastParagraph = paragraph;
-        goToParagraphRef.current(paragraph);
-      }
-      // Highlight the sentence on the native page.
+      const state = readAloudRef.current;
+      const token = ++state.token;
       const ordinal = Number(block?.dataset.ordinal);
-      if (!block || isNaN(ordinal)) return;
-      const pageStartOrdinal = positionRef.current?.ordinal ?? 0;
-      const relativeBlock = ordinal - pageStartOrdinal;
-      if (relativeBlock < 0) return;
+      if (!block || isNaN(ordinal)) {
+        if (paragraph !== state.lastParagraph) {
+          state.lastParagraph = paragraph;
+          state.jump = goToParagraphRef.current(paragraph);
+        }
+        return;
+      }
       let charOffset = 0;
       let charLength = 0;
       let beforeStart = true;
@@ -636,13 +638,51 @@ export default function NativeReaderHost({
           charLength += textNode.length;
         }
       }
+      // The page follows the voice. The plugin of APK 1.4.4+ goes to the page of the sentence's
+      // first character (a paragraph can go on over several pages) and clears the highlight when
+      // the page changes; older ones only go to a paragraph's first page.
+      if (positionRef.current?.goToInnerPath) {
+        state.lastParagraph = paragraph;
+        // In the markup of the book the plugin has open (word states may differ from this copy's).
+        const innerPath = textOffsetToInnerPath((openedExportRef.current ?? exported).blocks[ordinal] ?? '', charOffset);
+        state.jump = state.jump.then(() => (innerPath
+          ? NativeReader.goTo({ ordinal, innerPath }).catch(() => {})
+          : goToParagraphRef.current(paragraph)));
+      } else if (paragraph !== state.lastParagraph) {
+        state.lastParagraph = paragraph;
+        // The old page's highlight would stay drawn over the new page (a jump does not clear it
+        // the way a page turn does) until the next sentence.
+        void NativeReader.clearHighlight().catch(() => {});
+        state.jump = goToParagraphRef.current(paragraph);
+      }
       if (charLength <= 0) return;
-      void NativeReader.highlightRange({
-        relativeBlock,
-        charOffset,
-        charLength,
-        color: ttsHighlightColorRef.current,
-      }).catch(() => {});
+      // The engine has no letters for a paragraph's indent (its leading spaces, "　").
+      const indent = /^\s*/.exec(baseTextNodes(block).map((node) => node.data).join(''))![0].length;
+      // Only once the page is the one the sentence is on: its top block and character are known then.
+      void state.jump.then(() => {
+        if (token !== readAloudRef.current.token) return;
+        const position = positionRef.current;
+        const pageStartOrdinal = position && position.ordinal >= 0 ? position.ordinal : 0;
+        const relativeBlock = ordinal - pageStartOrdinal;
+        if (relativeBlock < 0) return;
+        // Characters of the block before the page's first letter: its indent, or all that is on
+        // earlier pages for a paragraph that began on one.
+        let skipped = indent;
+        if (relativeBlock === 0 && position) {
+          const blocks = (openedExportRef.current ?? exported).blocks;
+          skipped = Math.max(indent, xpathToTextOffset(blocks[pageStartOrdinal] ?? '', position.xpath));
+        }
+        let start = charOffset - skipped;
+        let length = charLength;
+        if (start < 0) { length += start; start = 0; }
+        if (length <= 0) return;
+        void NativeReader.highlightRange({
+          relativeBlock,
+          charOffset: start,
+          charLength: length,
+          color: ttsHighlightColorRef.current,
+        }).catch(() => {});
+      });
     },
   };
   const readAloudApiRef = useRef(readAloudApi);
