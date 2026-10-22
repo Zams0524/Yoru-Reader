@@ -1242,7 +1242,9 @@ const Library = React.memo(function Library({
           localStorage.setItem('gdrive_user_email', info.email);
           
           if (localStorage.getItem('gdrive_autosync_enabled') === 'true') {
-            // Restore if the cloud copy is newer, otherwise upload this device's state
+            // The library mounts again when a book is closed: give the reader a moment to save
+            // its last position, then merge with Drive in both directions
+            await new Promise((resolve) => setTimeout(resolve, 2000));
             await performCloudSync(tokens, 'bidirectional');
           }
         } catch (err) {
@@ -1537,11 +1539,12 @@ const Library = React.memo(function Library({
     }
   };
 
-  // Upload progress when the app goes to the background (switching apps, closing the window)
+  // Upload progress when the app goes to the background (switching apps, closing the window),
+  // and every few minutes while it stays open
   useEffect(() => {
     const BACKGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'hidden') return;
+    const PERIODIC_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    const syncInBackground = () => {
       if (localStorage.getItem('gdrive_autosync_enabled') !== 'true') return;
       const tokens = localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null;
       if (!tokens) return;
@@ -1550,8 +1553,17 @@ const Library = React.memo(function Library({
       lastBackgroundSyncRef.current = now;
       performCloudSync(tokens, 'upload-only');
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') syncInBackground();
+    };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') syncInBackground();
+    }, PERIODIC_SYNC_INTERVAL_MS);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [gDriveClientId, gDriveClientSecret]);
 
   // Close profile dropdown when clicking outside

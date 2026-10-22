@@ -17,6 +17,7 @@ type ProfileData = {
   books?: any[];
   settings?: any;
   wordStatuses?: Record<string, string> | null;
+  wordStatusTimes?: Record<string, string> | null;
   srsData?: Record<string, any> | null;
 };
 
@@ -97,11 +98,33 @@ function mergeSrs(local: Record<string, any> | null | undefined, cloud: Record<s
   return result;
 }
 
-function mergeStatuses(local: Record<string, string> | null | undefined, cloud: Record<string, string> | null | undefined, preferCloud: boolean) {
-  if (!local) return cloud ?? null;
-  if (!cloud) return local;
-  // No per-word dates: on conflict, the side that changed most recently wins.
-  return preferCloud ? { ...local, ...cloud } : { ...cloud, ...local };
+// Word by word, the side that changed the word last wins, including removing its status.
+// Words with no recorded change (data from before times were kept) fall back to preferCloud.
+function mergeStatuses(local: ProfileData, cloud: ProfileData, preferCloud: boolean) {
+  const localStatuses = local.wordStatuses || {};
+  const cloudStatuses = cloud.wordStatuses || {};
+  const localTimes = local.wordStatusTimes || {};
+  const cloudTimes = cloud.wordStatusTimes || {};
+  const statuses: Record<string, string> = {};
+  const times: Record<string, string> = { ...cloudTimes, ...localTimes };
+  const words = new Set([...Object.keys(localStatuses), ...Object.keys(cloudStatuses), ...Object.keys(localTimes), ...Object.keys(cloudTimes)]);
+  for (const word of words) {
+    const localTime = time(localTimes[word]);
+    const cloudTime = time(cloudTimes[word]);
+    let useCloud: boolean;
+    if (localTime || cloudTime) {
+      useCloud = cloudTime > localTime;
+    } else if (!(word in localStatuses) || !(word in cloudStatuses)) {
+      useCloud = !(word in localStatuses); // only one side has it: keep it
+    } else {
+      useCloud = preferCloud;
+    }
+    const source = useCloud ? cloudStatuses : localStatuses;
+    if (useCloud && cloudTimes[word]) times[word] = cloudTimes[word];
+    if (word in source) statuses[word] = source[word];
+  }
+  if (!local.wordStatuses && !cloud.wordStatuses) return { wordStatuses: null, wordStatusTimes: Object.keys(times).length ? times : null };
+  return { wordStatuses: statuses, wordStatusTimes: Object.keys(times).length ? times : null };
 }
 
 // Key order does not matter: a merged book spreads both copies and may list keys differently.
@@ -134,7 +157,7 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
     profileData[id] = {
       books: mergeBooks(l.books, c.books),
       settings: l.settings ?? c.settings ?? null,
-      wordStatuses: mergeStatuses(l.wordStatuses, c.wordStatuses, preferCloud),
+      ...mergeStatuses(l, c, preferCloud),
       srsData: mergeSrs(l.srsData, c.srsData, preferCloud),
     };
   }
@@ -152,7 +175,8 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
     || profiles.some(({ id }) => {
       const s = side.profileData?.[id] || {};
       const m = profileData[id];
-      return !sameJson(s.books, m.books) || !sameJson(s.wordStatuses, m.wordStatuses) || !sameJson(s.srsData, m.srsData);
+      return !sameJson(s.books, m.books) || !sameJson(s.wordStatuses, m.wordStatuses)
+        || !sameJson(s.wordStatusTimes, m.wordStatusTimes) || !sameJson(s.srsData, m.srsData);
     });
 
   return { merged, localChanged: differs(local), cloudChanged: differs(cloud) };

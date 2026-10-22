@@ -64,6 +64,8 @@ export interface Profile {
   avatar?: string;
 }
 
+const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';
+
 const STORAGE_KEYS = {
   BOOKS: 'migaku_reader_books',
   WORD_STATUS: 'migaku_reader_word_status',
@@ -698,10 +700,35 @@ export const db = {
 
   saveWordStatuses(statuses: Record<string, string>) {
     try {
+      this._stampWordStatusChanges(this.getWordStatuses(), statuses);
       localStorage.setItem(this._getKey(STORAGE_KEYS.WORD_STATUS), JSON.stringify(statuses));
     } catch (e) {
       console.error('Error saving word statuses:', e);
     }
+  },
+
+  // When each word's status last changed (or was removed), so cloud sync can merge two devices
+  // word by word instead of one side overwriting the other.
+  getWordStatusTimes(): Record<string, string> {
+    try {
+      const data = localStorage.getItem(this._getKey(WORD_STATUS_TIMES_KEY));
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  },
+
+  _stampWordStatusChanges(previous: Record<string, string>, next: Record<string, string>) {
+    const now = new Date().toISOString();
+    const times = this.getWordStatusTimes();
+    let changed = false;
+    for (const word of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+      if (previous[word] !== next[word]) {
+        times[word] = now;
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(this._getKey(WORD_STATUS_TIMES_KEY), JSON.stringify(times));
   },
 
   setWordStatus(word: string, status: string | null) {
@@ -903,6 +930,8 @@ export const db = {
       const statusKey = `migaku_reader_word_status_${p.id}`;
       const statusRaw = localStorage.getItem(statusKey);
       const wordStatuses = statusRaw ? JSON.parse(statusRaw) : null;
+      const timesRaw = localStorage.getItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`);
+      const wordStatusTimes = timesRaw ? JSON.parse(timesRaw) : null;
 
       // 4. SRS Data
       const srsKey = `yoru_reader_srs_data_${p.id}`;
@@ -913,6 +942,7 @@ export const db = {
         books,
         settings,
         wordStatuses,
+        wordStatusTimes,
         srsData
       };
     }
@@ -946,6 +976,9 @@ export const db = {
         if (pData.wordStatuses) {
           const statusKey = `migaku_reader_word_status_${p.id}`;
           localStorage.setItem(statusKey, JSON.stringify(pData.wordStatuses));
+        }
+        if (pData.wordStatusTimes) {
+          localStorage.setItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`, JSON.stringify(pData.wordStatusTimes));
         }
         // 4. SRS data
         if (pData.srsData) {
