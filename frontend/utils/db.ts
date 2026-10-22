@@ -49,7 +49,7 @@ export interface Settings {
   discordBlacklist?: string;
   srsNewCardsPerDay?: number;
   srsShowAudioButton?: boolean;
-  srsShowFrontSentence?: boolean;
+  srsCardFront?: 'word' | 'sentence' | 'audio';
   srsMaxReviewsPerDay?: number;
   fsrsRetentionRate?: number;
   fsrsMaxInterval?: number;
