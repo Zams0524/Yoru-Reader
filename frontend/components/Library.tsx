@@ -6621,11 +6621,6 @@ const Library = React.memo(function Library({
                 <Settings size={20} />
               </button>
             )}
-            {activeTab === 'statistics' && (
-              <button className="mobile-icon-btn" onClick={() => setIsDetailsDropdownOpen(!isDetailsDropdownOpen)} title="Options">
-                <MoreVertical size={20} />
-              </button>
-            )}
           </div>
         </header>
       ) : (
