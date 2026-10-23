@@ -1,5 +1,7 @@
 const { app, BrowserWindow, shell, ipcMain, session, protocol, net, webContents } = require('electron');
 const path = require('path');
+// Node's net (Discord IPC pipe): `net` above is Electron's, which has no createConnection.
+const nodeNet = require('net');
 const http = require('http');
 const url = require('url');
 const { spawn } = require('child_process');
@@ -1116,7 +1118,14 @@ function connectDiscordRpc() {
         : path.join(process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || process.env.TMP || process.env.TEMP || '/tmp', `discord-ipc-${pipeIndex}`);
 
       console.log(`[Discord RPC] Trying pipe: ${pipePath}`);
-      const socket = net.createConnection(pipePath, () => {
+      let socket;
+      try {
+        socket = nodeNet.createConnection(pipePath, onConnect);
+      } catch (err) {
+        isDiscordConnecting = false;
+        return reject(err);
+      }
+      function onConnect() {
         discordRpcSocket = socket;
 
         // Opcode 0: Handshake
@@ -1147,7 +1156,7 @@ function connectDiscordRpc() {
             // ignore non-json frames
           }
         });
-      });
+      }
 
       socket.on('error', (err) => {
         socket.destroy();
