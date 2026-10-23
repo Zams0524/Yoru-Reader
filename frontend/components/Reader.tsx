@@ -468,6 +468,8 @@ export default function Reader({
   const [showAllSenses, setShowAllSenses] = useState(false);
   const [showAllFreqs, setShowAllFreqs] = useState(false);
   const popupSwipeRef = useRef<number | null>(null);
+  const dictEntryRef = useRef<any | null>(null);
+  dictEntryRef.current = dictEntry;
   const [dictLoading, setDictLoading] = useState(false);
   const [srsCard, setSrsCard] = useState<any | null>(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -775,7 +777,8 @@ export default function Reader({
       reading = parts[1];
     }
     
-    if (selectedWord && selectedWord.basicForm === word && selectedWord.reading === reading) {
+    // Same word again: keep the popup, unless the lookup found nothing (a retry may find it).
+    if (selectedWord && selectedWord.basicForm === word && selectedWord.reading === reading && !dictEntryRef.current?.isFallback) {
       return;
     }
     
