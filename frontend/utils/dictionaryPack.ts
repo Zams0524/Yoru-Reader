@@ -19,6 +19,7 @@ export interface PackItem {
 
 
 const PITCH = /pitch|アクセント/i;
+const SPANISH = /spanish|español/i;
 const FREQUENCY = /frequen|frecuencia|meta|Netflix|YouTube|novels|anime|visual novel|VN Freq/i;
 
 export const isPitchDictionary = (dictionary: any) => PITCH.test(dictionary?.title || '');
@@ -45,11 +46,18 @@ export function packItems(lang: Lang): PackItem[] {
   ];
 }
 
-/** Which parts of the recommended set are installed (any dictionary of that kind counts). */
-export function packStatus(installed: any[]): Record<PackItemId, boolean> {
+/**
+ * Which parts of the recommended set are installed (any dictionary of that kind counts).
+ *
+ * With `lang`, the term dictionary has to be in that language: the first launch installs the
+ * English JMdict before the welcome screen asks, so choosing Spanish there must still bring the
+ * Spanish one (QA-PC-20261023-04).
+ */
+export function packStatus(installed: any[], lang?: Lang): Record<PackItemId, boolean> {
   const ready = (installed || []).filter(dictionary => dictionary.importState !== 'installing');
+  const inLanguage = (dictionary: any) => !lang || SPANISH.test(dictionary?.title || '') === (lang === 'es');
   return {
-    dictionary: ready.some(isTermDictionary),
+    dictionary: ready.some(dictionary => isTermDictionary(dictionary) && inLanguage(dictionary)),
     frequency: ready.some(isFrequencyDictionary),
     pitch: ready.some(isPitchDictionary),
   };
@@ -58,7 +66,8 @@ export function packStatus(installed: any[]): Record<PackItemId, boolean> {
 /** Installs whatever is missing from the recommended set. Calls while it runs share the same job. */
 let running: Promise<void> | null = null;
 
-export function installRecommendedPack(lang: Lang, only?: PackItemId[]): Promise<void> {
+/** `sameLanguage`: an English JMdict does not count when `lang` is Spanish (see `packStatus`). */
+export function installRecommendedPack(lang: Lang, only?: PackItemId[], sameLanguage = false): Promise<void> {
   if (running) return running;
   running = (async () => {
     let installed = await getInstalledDictionaries();
@@ -68,7 +77,7 @@ export function installRecommendedPack(lang: Lang, only?: PackItemId[]): Promise
       for (const dictionary of interrupted) await deleteDictionary(dictionary.title);
       installed = await getInstalledDictionaries();
     }
-    const status = packStatus(installed);
+    const status = packStatus(installed, sameLanguage ? lang : undefined);
     const missing = packItems(lang).filter(item => !status[item.id] && (!only || only.includes(item.id)));
     if (missing.length === 0) return;
     publish({ ...IDLE, running: true, total: missing.length });
