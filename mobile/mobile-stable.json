@@ -1,6 +1,7 @@
 {
     "appVersion":  "1.4.5",
     "versionCode":  155,
+    "sourceCommit":  "29fe5320e375534dda1900e062d1f16cb960e2ce",
     "apkUrl":  "https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.apk",
     "description":  "Yoru Reader Android v1.4.5"
 }

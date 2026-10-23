@@ -11,6 +11,16 @@ $version = [regex]::Match($gradleFile, 'versionName\s+"([^"]+)"').Groups[1].Valu
 $code = [regex]::Match($gradleFile, 'versionCode\s+(\d+)').Groups[1].Value
 Write-Host "== Yoru Reader $version ($code) ==" -ForegroundColor Yellow
 
+# Commit del que sale el APK: publish-apk.ps1 lo guarda en mobile-stable.json (sourceCommit) y el
+# workflow compara contra el para decidir si la OTA de interfaz sirve a los telefonos con este APK.
+$git = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $git) { $git = 'C:\Program Files\Git\cmd\git.exe' }
+$sourceCommit = (& $git rev-parse HEAD).Trim()
+$dirty = & $git status --porcelain -- android capacitor.config.json package.json
+if ($dirty) { Write-Warning "Hay cambios nativos sin commit; el APK no corresponde exactamente a $sourceCommit." }
+New-Item -ItemType Directory -Force '.android-build-tmp' | Out-Null
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot ".android-build-tmp\apk-$code.commit"), $sourceCommit, [Text.UTF8Encoding]::new($false))
+
 Write-Host '1/4 Compilando la interfaz (Vite)...' -ForegroundColor Cyan
 & $node 'node_modules\vite\bin\vite.js' build
 if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion de Vite.' }

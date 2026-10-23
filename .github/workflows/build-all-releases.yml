@@ -68,12 +68,31 @@ jobs:
           }
 
           // Android OTA: the UI bundle is built against the APK versionCode in build.gradle.
-          // If Android native code changed after that versionCode was set, phones with that
-          // APK lack the new native code, so the bundle is not offered until the version is bumped.
+          // If Android native code changed after the APK with that versionCode was built, phones
+          // with that APK lack the new native code, so the bundle is not offered until the
+          // version is bumped. The base is the commit the APK was built from:
+          // - APK published (mobile/mobile-stable.json has this versionCode): its sourceCommit,
+          //   recorded by publish-apk.ps1; for older manifests without it, the publish commit.
+          // - versionCode bumped but not published yet: the commit that set it in build.gradle.
           const androidVersionCode = Number(fs.readFileSync('android/app/build.gradle', 'utf8').match(/versionCode\s+(\d+)/)[1]);
+          const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
           let androidOta = true;
           try {
-            const base = execFileSync('git', ['log', '-1', '--format=%H', '-G', 'versionCode', '--', 'android/app/build.gradle'], { encoding: 'utf8' }).trim();
+            const published = JSON.parse(fs.readFileSync('mobile/mobile-stable.json', 'utf8'));
+            let base = '';
+            if (Number(published.versionCode) === androidVersionCode) {
+              if (published.sourceCommit) {
+                base = git('rev-parse', '--verify', `${published.sourceCommit}^{commit}`);
+                // A commit outside main's history (unpushed, squashed) says nothing about this build.
+                git('merge-base', '--is-ancestor', base, process.env.COMMIT_SHA);
+              } else {
+                base = git('log', '-1', '--format=%H', '-G', '"versionCode"', '--', 'mobile/mobile-stable.json');
+              }
+              console.log(`Android base: APK ${androidVersionCode} published from ${base}`);
+            } else {
+              base = git('log', '-1', '--format=%H', '-G', 'versionCode', '--', 'android/app/build.gradle');
+              console.log(`Android base: versionCode ${androidVersionCode} not published yet, set in ${base}`);
+            }
             if (base) {
               const changed = execFileSync('git', ['diff', '--name-only', base, process.env.COMMIT_SHA], { encoding: 'utf8' })
                 .split(/\r?\n/).filter(file => /^android\//.test(file) || file === 'capacitor.config.json');
@@ -81,11 +100,12 @@ jobs:
                 .split(/\r?\n/).filter(line => /^[+-][^+-]/.test(line) && /capacitor|cordova/i.test(line));
               if (changed.length || pkgDiff.length) {
                 androidOta = false;
-                console.log(`::warning::Android native files changed since versionCode ${androidVersionCode} was set (${[...changed, ...pkgDiff].join(', ')}). Bump versionCode and publish an APK; the Android UI update is withheld.`);
+                console.log(`::warning::Android native files changed since the APK base ${base.slice(0, 7)} (versionCode ${androidVersionCode}) (${[...changed, ...pkgDiff].join(', ')}). Bump versionCode and publish an APK; the Android UI update is withheld.`);
               }
             }
-          } catch {
+          } catch (error) {
             androidOta = false;
+            console.log(`::warning::Could not find the commit the Android APK ${androidVersionCode} was built from (${error.message.split('\n')[0]}); the Android UI update is withheld.`);
           }
 
           const appVersion = nativeChanged ? buildVersion : manifest.appVersion;
