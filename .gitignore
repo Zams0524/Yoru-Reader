@@ -144,3 +144,5 @@ yoru-reader-svelte/build/
 yoru-reader-svelte/dist/
 yoru-reader-svelte/node_modules/
 yoru-reader-svelte/*.mjs
+# Auditoría QA en el teléfono (mobile/qa/auditoria.mjs)
+qa-runs/
