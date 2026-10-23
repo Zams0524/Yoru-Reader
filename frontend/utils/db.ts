@@ -425,7 +425,8 @@ export const db = {
       const books = await this._readBooks();
       const updatedBooks = books.map(book => {
         if (book.id === bookId) {
-          const newStatus = percent >= 99 ? 'completed' : (percent > 0 ? 'reading' : book.status);
+          // A finished book stays finished when it is opened again: only the user moves it back to "reading".
+          const newStatus = percent >= 99 || book.status === 'completed' ? 'completed' : (percent > 0 ? 'reading' : book.status);
           return {
             ...book,
             progress: { 

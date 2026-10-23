@@ -60,10 +60,15 @@ export function offsetInBlock(block: Element, node: Node, offset: number): numbe
   return -1;
 }
 
-/** Katakana → hiragana and lower case, one character for one character (offsets stay valid). */
+/**
+ * Katakana → hiragana, full-width letters and digits → ASCII (ＢＤ finds BD), ideographic space → space
+ * and lower case, one character for one character (offsets stay valid).
+ */
 export function normalizeForSearch(text: string): string {
   return text
     .replace(/[ァ-ヶ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60))
+    .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, ' ')
     .toLowerCase();
 }
 
