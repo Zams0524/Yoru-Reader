@@ -172,13 +172,18 @@ export function useDictionaryInstall(lang: Lang) {
   const refresh = useCallback(async () => {
     try {
       const list = await getInstalledDictionaries();
+      // A term dictionary in the language chosen on the welcome screen: the first launch installs
+      // the English JMdict before the person picks Spanish.
+      const spanish = /spanish|español/i;
       setHasDictionary((list || []).some((dictionary: any) =>
-        dictionary.hasTerms === true ||
-        (dictionary.hasTerms === undefined && !dictionary.hasFreqs && !/frequency|frequen|frecuencia|pitch|アクセント|meta/i.test(dictionary.title || ''))));
+        dictionary.importState !== 'installing' &&
+        spanish.test(dictionary.title || '') === (lang === 'es') &&
+        (dictionary.hasTerms === true ||
+        (dictionary.hasTerms === undefined && !dictionary.hasFreqs && !/frequency|frequen|frecuencia|pitch|アクセント|meta/i.test(dictionary.title || '')))));
     } catch {
       setHasDictionary(false);
     }
-  }, []);
+  }, [lang]);
 
   useEffect(() => {
     void refresh();
