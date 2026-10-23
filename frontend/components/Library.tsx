@@ -8,6 +8,7 @@ import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
+import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
@@ -378,9 +379,10 @@ const Library = React.memo(function Library({
   const [selectedDeckFilter, setSelectedDeckFilter] = useState<string | null>(null);
   const [srsSubTab, setSrsSubTab] = useState<'decks' | 'stats' | 'notes' | 'history' | 'settings'>('decks');
   const [isDeckPromptOpen, setIsDeckPromptOpen] = useState(false);
-  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename' | 'merge'>('create');
+  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename'>('create');
   const [deckPromptTargetId, setDeckPromptTargetId] = useState<string | null>(null);
   const [deckPromptValue, setDeckPromptValue] = useState('');
+  const [deckOptionsDraft, setDeckOptionsDraft] = useState<SrsDeckOptions>({});
   // 0 = the window of weeks that ends today; each step goes one window back.
   const [srsCalendarPage, setSrsCalendarPage] = useState(0);
   const [separateSuspended, setSeparateSuspended] = useState(false);
@@ -4816,6 +4818,14 @@ const Library = React.memo(function Library({
     setIsDeckPromptOpen(true);
   };
 
+  const openDeckSettings = (deckName: string) => {
+    setDeckPromptMode('rename');
+    setDeckPromptTargetId(deckName);
+    setDeckPromptValue(deckName);
+    setDeckOptionsDraft({ ...getDeckOptions(settings, deckName) });
+    setIsDeckPromptOpen(true);
+  };
+
   const handleDeckPromptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = deckPromptValue.trim();
@@ -4858,42 +4868,19 @@ const Library = React.memo(function Library({
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo renombrado' : 'Deck renamed', 'success');
       }
-    } else if (deckPromptMode === 'merge' && deckPromptTargetId) {
-      const sourceName = deckPromptTargetId;
-      const targetName = trimmed;
-      if (sourceName !== targetName) {
-        if (confirm(lang === 'es'
-          ? `¿Estás seguro de que deseas fusionar todo el contenido del mazo "${sourceName}" dentro del mazo "${targetName}"? El mazo "${sourceName}" será eliminado.`
-          : `Are you sure you want to merge all content from deck "${sourceName}" into deck "${targetName}"? The deck "${sourceName}" will be deleted.`
-        )) {
-          // Delete placeholder of source mazo
-          db.saveSrsCard(`_deck_${sourceName}`, null);
-          
-          // Ensure target mazo has a placeholder card if not the default
-          if (targetName !== 'Yoru Reader') {
-            db.saveSrsCard(`_deck_${targetName}`, {
-              word: `_deck_${targetName}`,
-              source: targetName,
-              state: 0,
-              dueDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              due: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              isPlaceholder: true
-            });
-          }
+    }
 
-          // Move all cards from source to target
-          const srsData = db.getSrsData();
-          Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-            if (card && card.source === sourceName) {
-              card.source = targetName;
-              db.saveSrsCard(word, card);
-            }
-          });
-
-          setSrsUpdateTrigger(t => t + 1);
-          showToast(lang === 'es' ? 'Mazos fusionados con éxito' : 'Decks merged successfully', 'success');
-        }
-      }
+    if (deckPromptMode === 'rename' && deckPromptTargetId) {
+      // Save the deck's own options under its (possibly new) name; empty fields fall back to the global settings.
+      const cleaned: SrsDeckOptions = {};
+      if (deckOptionsDraft.newPerDay !== undefined) cleaned.newPerDay = deckOptionsDraft.newPerDay;
+      if (deckOptionsDraft.reviewsPerDay !== undefined) cleaned.reviewsPerDay = deckOptionsDraft.reviewsPerDay;
+      if (deckOptionsDraft.cardFront) cleaned.cardFront = deckOptionsDraft.cardFront;
+      if (deckOptionsDraft.paused) cleaned.paused = true;
+      let next = withDeckOptions(settings, deckPromptTargetId, null);
+      next = withDeckOptions(next, trimmed, Object.keys(cleaned).length > 0 ? cleaned : null);
+      onSaveSettings(next);
+      if (trimmed === deckPromptTargetId) showToast(lang === 'es' ? 'Ajustes del mazo guardados' : 'Deck settings saved', 'success');
     }
 
     setIsDeckPromptOpen(false);
@@ -4913,6 +4900,7 @@ const Library = React.memo(function Library({
           }
         });
         db.saveSrsData(srsData);
+        onSaveSettings(withDeckOptions(settings, deckName, null));
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo eliminado' : 'Deck deleted', 'info');
         setIsDeckPromptOpen(false);
@@ -4980,6 +4968,7 @@ const Library = React.memo(function Library({
       totalRelearning: number;
       totalYoung: number;
       totalMature: number;
+      paused?: boolean;
     }> = {};
     let totalDueCount = 0;
     
@@ -5005,6 +4994,9 @@ const Library = React.memo(function Library({
     const reviewsLeftToday = Math.max(0, maxReviewsLimit - reviewsDoneToday);
     let newCardsRemainingToday = newCardsLeftToday;
     let reviewsRemainingToday = reviewsLeftToday;
+    const deckLimits = getDeckLimitsLeft(settings, srsData, todayHistory, newCardsStudiedToday);
+    const deckNewLeft: Record<string, number> = {};
+    const deckReviewsLeft: Record<string, number> = {};
 
     const initDeck = (name: string) => {
       if (!decks[name]) {
@@ -5017,8 +5009,11 @@ const Library = React.memo(function Library({
           totalLearning: 0,
           totalRelearning: 0,
           totalYoung: 0,
-          totalMature: 0
+          totalMature: 0,
+          paused: deckLimits.isPaused(name)
         };
+        deckNewLeft[name] = deckLimits.newLeft(name);
+        deckReviewsLeft[name] = deckLimits.reviewsLeft(name);
       }
     };
 
@@ -5066,21 +5061,23 @@ const Library = React.memo(function Library({
         // Count due cards
         const dueDate = getCardDueDate(card);
         const isDue = !dueDate || dueDate <= now;
-        if (isDue) {
+        if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
-            if (newCardsRemainingToday > 0) {
+            if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
               decks[deckName].newCount++;
               totalDueCount++;
               newCardsRemainingToday--;
+              deckNewLeft[deckName]--;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
             totalDueCount++;
           } else {
-            if (reviewsRemainingToday > 0) {
+            if (reviewsRemainingToday > 0 && deckReviewsLeft[deckName] > 0) {
               totalDueCount++;
               decks[deckName].reviewCount++;
               reviewsRemainingToday--;
+              deckReviewsLeft[deckName]--;
             }
           }
         }
@@ -5614,6 +5611,7 @@ const Library = React.memo(function Library({
                             <span>{deck.name}</span>
                           </span>
                           <span className="srs-deck-pills">
+                            {deck.paused && <span className="srs-pill is-zero">{lang === 'es' ? 'En pausa' : 'Paused'}</span>}
                             <span className={`srs-pill is-new${deck.newCount > 0 ? '' : ' is-zero'}`}>{deck.newCount} {lang === 'es' ? 'nuevas' : 'new'}</span>
                             <span className={`srs-pill is-learn${deck.learningCount > 0 ? '' : ' is-zero'}`}>{deck.learningCount} {lang === 'es' ? 'aprend.' : 'learn'}</span>
                             <span className={`srs-pill is-review${deck.reviewCount > 0 ? '' : ' is-zero'}`}>{deck.reviewCount} {lang === 'es' ? 'repaso' : 'review'}</span>
@@ -5624,29 +5622,12 @@ const Library = React.memo(function Library({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setDeckPromptMode('rename');
-                              setDeckPromptTargetId(deck.name);
-                              setDeckPromptValue(deck.name);
-                              setIsDeckPromptOpen(true);
+                              openDeckSettings(deck.name);
                             }}
                             title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
                             aria-label={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
                           >
                             <Settings size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeckPromptMode('merge');
-                              setDeckPromptTargetId(deck.name);
-                              setDeckPromptValue('');
-                              setIsDeckPromptOpen(true);
-                            }}
-                            title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                            aria-label={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                          >
-                            <Layers size={16} />
                           </button>
                         </div>
                       </div>
@@ -8185,160 +8166,130 @@ const Library = React.memo(function Library({
           <span>{toast.message}</span>
         </div>
       )}
-      {isDeckPromptOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10001
-        }}>
-          <form 
-            onSubmit={handleDeckPromptSubmit}
-            style={{
-              background: '#16161c',
-              border: '1px solid var(--border-light)',
-              borderRadius: '16px',
-              padding: '24px',
-              width: '380px',
-              maxWidth: '90%',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
-            }}
-          >
-            <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 700 }}>
-              {deckPromptMode === 'create' 
-                ? (lang === 'es' ? 'Crear Nuevo Mazo' : 'Create New Deck')
-                : deckPromptMode === 'rename'
-                  ? (lang === 'es' ? 'Renombrar Mazo' : 'Rename Deck')
-                  : (lang === 'es' ? 'Fusionar Mazo' : 'Merge Decks')
-              }
-            </h3>
+      {isDeckPromptOpen && (() => {
+        const isSettings = deckPromptMode === 'rename';
+        const deckCardCount = isSettings
+          ? Object.entries(db.getSrsData()).filter(([word, card]: [string, any]) => !word.startsWith('_deck_') && card && (card.source || 'Yoru Reader').trim() === deckPromptTargetId).length
+          : 0;
+        const globalNew = Number(settings.srsNewCardsPerDay ?? 20);
+        const globalReviews = Number(settings.srsMaxReviewsPerDay ?? 200);
+        const setLimit = (key: 'newPerDay' | 'reviewsPerDay', raw: string) => {
+          setDeckOptionsDraft(d => {
+            const next = { ...d };
+            if (raw.trim() === '') delete next[key];
+            else next[key] = Math.max(0, Math.floor(Number(raw) || 0));
+            return next;
+          });
+        };
+        const frontOptions: [string, string][] = [
+          ['', lang === 'es' ? 'Usar el ajuste general' : 'Use the general setting'],
+          ['word', lang === 'es' ? 'Solo la palabra' : 'Word only'],
+          ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence'],
+          ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only'],
+        ];
+        return (
+        <div className="srs-deck-modal-backdrop" onClick={() => setIsDeckPromptOpen(false)}>
+          <form className="srs-deck-modal" onSubmit={handleDeckPromptSubmit} onClick={(e) => e.stopPropagation()}>
+            <div className="srs-deck-modal-head">
+              <h3>
+                {isSettings
+                  ? (lang === 'es' ? 'Ajustes del mazo' : 'Deck settings')
+                  : (lang === 'es' ? 'Crear nuevo mazo' : 'Create new deck')}
+              </h3>
+              {isSettings && (
+                <span>{deckCardCount} {lang === 'es' ? (deckCardCount === 1 ? 'tarjeta' : 'tarjetas') : (deckCardCount === 1 ? 'card' : 'cards')}</span>
+              )}
+            </div>
 
-            {deckPromptMode === 'merge' ? (
-              <select
-                value={deckPromptValue}
-                onChange={(e) => setDeckPromptValue(e.target.value)}
-                required
-                style={{
-                  background: '#1c1c24',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                <option value="" disabled style={{ background: '#16161c' }}>
-                  {lang === 'es' ? 'Seleccionar mazo destino...' : 'Select target deck...'}
-                </option>
-                {(() => {
-                  const srsData = db.getSrsData();
-                  const deckNames = new Set<string>();
-                  Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-                    if (word.startsWith('_deck_')) {
-                      const dName = word.substring(6).trim();
-                      if (dName) deckNames.add(dName);
-                    } else if (card && card.source && !word.startsWith('_')) {
-                      deckNames.add(card.source.trim());
-                    }
-                  });
-                  return Array.from(deckNames)
-                    .filter(name => name !== deckPromptTargetId)
-                    .sort((a, b) => a.localeCompare(b, 'ja'))
-                    .map(name => (
-                      <option key={name} value={name} style={{ background: '#16161c' }}>
-                        {name}
-                      </option>
-                    ));
-                })()}
-              </select>
-            ) : (
-              <input 
+            <label className="srs-deck-field">
+              <span>{lang === 'es' ? 'Nombre' : 'Name'}</span>
+              <input
                 type="text"
                 value={deckPromptValue}
                 onChange={(e) => setDeckPromptValue(e.target.value)}
                 placeholder={lang === 'es' ? 'Nombre del mazo...' : 'Deck name...'}
                 required
-                autoFocus
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  transition: 'border-color 0.2s'
-                }}
+                autoFocus={!isSettings}
               />
+            </label>
+
+            {isSettings && (
+              <>
+                <div className="srs-deck-field-row">
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Nuevas por día' : 'New cards per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.newPerDay ?? ''}
+                      placeholder={lang === 'es' ? `General: ${globalNew}` : `General: ${globalNew}`}
+                      onChange={(e) => setLimit('newPerDay', e.target.value)}
+                    />
+                  </label>
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Repasos por día' : 'Reviews per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.reviewsPerDay ?? ''}
+                      placeholder={`General: ${globalReviews}`}
+                      onChange={(e) => setLimit('reviewsPerDay', e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <label className="srs-deck-field">
+                  <span>{lang === 'es' ? 'Qué ves antes de la respuesta' : 'What you see before the answer'}</span>
+                  <select
+                    value={deckOptionsDraft.cardFront || ''}
+                    onChange={(e) => {
+                      const value = e.target.value as SrsDeckOptions['cardFront'] | '';
+                      setDeckOptionsDraft(d => {
+                        const next = { ...d };
+                        if (value) next.cardFront = value;
+                        else delete next.cardFront;
+                        return next;
+                      });
+                    }}
+                  >
+                    {frontOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+
+                <label className="srs-deck-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(deckOptionsDraft.paused)}
+                    onChange={(e) => setDeckOptionsDraft(d => ({ ...d, paused: e.target.checked }))}
+                  />
+                  <span>
+                    <strong>{lang === 'es' ? 'Pausar el mazo' : 'Pause this deck'}</strong>
+                    <small>{lang === 'es' ? 'No aparece en los repasos hasta que lo reactives. No se pierde el progreso.' : 'It stays out of reviews until you turn it back on. No progress is lost.'}</small>
+                  </span>
+                </label>
+              </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button
-                type="button"
-                className="create-profile-cancel"
-                onClick={() => setIsDeckPromptOpen(false)}
-                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                {lang === 'es' ? 'Cancelar' : 'Cancel'}
-              </button>
-
-              {deckPromptMode === 'rename' && (
-                <button
-                  type="button"
-                  onClick={handleDeckPromptDelete}
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid #ef4444',
-                    color: '#f87171',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {lang === 'es' ? 'Eliminar' : 'Delete'}
+            <div className="srs-deck-modal-actions">
+              {isSettings && (
+                <button type="button" className="srs-deck-delete" onClick={handleDeckPromptDelete}>
+                  <Trash2 size={15} />
+                  <span>{lang === 'es' ? 'Eliminar mazo' : 'Delete deck'}</span>
                 </button>
               )}
-
-              <button
-                type="submit"
-                style={{
-                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  borderRadius: '8px',
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {deckPromptMode === 'create'
-                  ? (lang === 'es' ? 'Crear' : 'Create')
-                  : deckPromptMode === 'rename'
-                    ? (lang === 'es' ? 'Guardar' : 'Save')
-                    : (lang === 'es' ? 'Fusionar' : 'Merge')
-                }
+              <button type="button" className="srs-deck-cancel" onClick={() => setIsDeckPromptOpen(false)}>
+                {lang === 'es' ? 'Cancelar' : 'Cancel'}
+              </button>
+              <button type="submit" className="srs-deck-save">
+                {isSettings ? (lang === 'es' ? 'Guardar' : 'Save') : (lang === 'es' ? 'Crear' : 'Create')}
               </button>
             </div>
           </form>
         </div>
-      )}
+        );
+      })()}
       {deleteAllState && renderDeleteAllModal()}
       {confirmModal}
     </div>

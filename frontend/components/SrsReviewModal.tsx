@@ -8,6 +8,7 @@ import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 import { isPhoneUI } from '../utils/platform';
+import { getDeckLimitsLeft, getDeckName, getDeckOptions } from '../utils/srsDeckOptions';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -175,7 +176,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const lang = rawSettings.appLanguage || 'en';
   const showAudioButton = rawSettings.srsShowAudioButton !== false;
   // What the front of the card asks with: the word, the word inside its book sentence, or only its audio.
-  const frontMode: 'word' | 'sentence' | 'audio' = ['sentence', 'audio'].includes(rawSettings.srsCardFront) ? rawSettings.srsCardFront : 'word';
+  // A deck can override the general setting.
+  const generalFrontMode: 'word' | 'sentence' | 'audio' = ['sentence', 'audio'].includes(rawSettings.srsCardFront) ? rawSettings.srsCardFront : 'word';
 
   const fsrsRetentionRate = rawSettings.fsrsRetentionRate !== undefined ? Number(rawSettings.fsrsRetentionRate) : 0.90;
   const fsrsMaxInterval = rawSettings.fsrsMaxInterval !== undefined ? Number(rawSettings.fsrsMaxInterval) : 36500;
@@ -215,6 +217,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const currentReviewWord = dueCards[0] || null;
   const currentReviewCard = currentReviewWord ? db.getSrsCard(currentReviewWord) : null;
   const currentReviewCardKey = JSON.stringify(currentReviewCard);
+  const frontMode = (currentReviewCard && getDeckOptions(rawSettings, getDeckName(currentReviewCard)).cardFront) || generalFrontMode;
   const currentReviewIntervals = React.useMemo(
     () => calculateSrsIntervals(currentReviewCard, fsrs),
     [currentReviewWord, currentReviewCardKey, fsrs],
@@ -400,6 +403,10 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       });
     }
     
+    // Paused decks stay out of every session.
+    const deckLimits = getDeckLimitsLeft(rawSettings, srsData, [], []);
+    learningWords = learningWords.filter(word => !deckLimits.isPaused(getDeckName(srsData[word])));
+
     let due = learningWords.filter(word => {
       const card = srsData[word];
       const dueDate = getCardDue(card);
@@ -434,6 +441,18 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     const configuredReviewLimit = Number(rawSettings.srsMaxReviewsPerDay ?? 200);
     const maxReviewsLimit = Number.isFinite(configuredReviewLimit) ? Math.max(0, Math.floor(configuredReviewLimit)) : 200;
     const reviewsLeftToday = Math.max(0, maxReviewsLimit - reviewsDoneToday);
+    const perDeck = getDeckLimitsLeft(rawSettings, srsData, todayHistory, newCardsStudiedToday);
+    // Keep at most each deck's own daily limit, in queue order.
+    const takePerDeck = (words: string[], left: (deck: string) => number) => {
+      const remaining: Record<string, number> = {};
+      return words.filter(word => {
+        const deck = getDeckName(srsData[word]);
+        if (remaining[deck] === undefined) remaining[deck] = left(deck);
+        if (remaining[deck] <= 0) return false;
+        remaining[deck]--;
+        return true;
+      });
+    };
 
     let finalDue: string[] = [];
     {
@@ -470,8 +489,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       dueReviews.sort((a, b) => getDueTimestamp(a) - getDueTimestamp(b));
       finalDue = [
         ...dueLearning,
-        ...dueReviews.slice(0, reviewsLeftToday),
-        ...shuffle(dueNew.slice(0, newCardsLeftToday)),
+        ...takePerDeck(dueReviews, perDeck.reviewsLeft).slice(0, reviewsLeftToday),
+        ...shuffle(takePerDeck(shuffle(dueNew), perDeck.newLeft).slice(0, newCardsLeftToday)),
       ];
     }
 
