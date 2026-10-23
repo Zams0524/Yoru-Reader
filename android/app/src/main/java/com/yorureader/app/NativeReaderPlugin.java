@@ -692,7 +692,12 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         List<EraEngine.Item> req = new ArrayList<>();
         req.add(EraEngine.Item.str(xpath));
         EraEngine.Response r = engine.request(EraEngine.CMD_REQ_CRE_PAGE_BY_XPATH, req);
-        return r.result == 0 ? r.intAt(0, fallback) : fallback;
+        int page = r.result == 0 ? r.intAt(0, fallback) : fallback;
+        // The engine can place the first letter of a page on the page before (seen with the saved
+        // start of a page, text().4 inside a ruby span: a cold start reopened one page back and
+        // saved that). The next page starting exactly there is the right one.
+        if (page >= 0 && page + 1 < enginePages && xpath.equals(pageXPath(page + 1))) page++;
+        return page;
     }
 
     /** System Japanese fonts (Noto Serif/Sans CJK JP on most phones). The scan is done once. */
