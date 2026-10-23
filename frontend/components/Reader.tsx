@@ -2415,6 +2415,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
+          bottomReserve={isReadAloudOpen ? readAloudReach : 0}
         />
       )}
 

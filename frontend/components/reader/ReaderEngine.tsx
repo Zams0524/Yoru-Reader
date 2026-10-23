@@ -73,6 +73,8 @@ export interface ReaderEngineProps {
   targetCharPosition?: number | null;
   wordStatuses?: Record<string, string>;
   colors: any;
+  /** Px at the bottom of the screen the text leaves free (the read-aloud player covers them). */
+  bottomReserve?: number;
 }
 
 export function sanitizeJapaneseText(text: string): string {
@@ -347,6 +349,7 @@ function ReaderEngineComponent({
   targetCharPosition,
   wordStatuses = {},
   colors,
+  bottomReserve = 0,
 }: ReaderEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -440,13 +443,15 @@ function ReaderEngineComponent({
     const vpPx = Math.max(10, window.innerHeight * (verticalPadding / 100));
     const vp = `${vpPx}px`;
     const hp = `${Math.max(10, window.innerWidth * (horizontalPadding / 100))}px`;
+    // The bottom margin grows to clear the read-aloud player while it is open.
+    const bottomPx = Math.max(vpPx, bottomReserve);
 
     const base: React.CSSProperties = {
       margin: 'auto',
       fontFamily: fontFamily !== '__default__' ? `"${fontFamily}", serif` : 'inherit',
       fontSize: `${fontSize}px`,
       lineHeight: `${lineHeight}`,
-      padding: `${vp} ${hp}`,
+      padding: `${vp} ${hp} ${bottomPx}px`,
       backgroundColor: colors.bg,
       color: colors.textMain,
       boxSizing: 'border-box',
@@ -466,8 +471,8 @@ function ReaderEngineComponent({
         // In vertical-rl a column's width is its height and columns stack downwards: each column
         // fills the page between the top and bottom margins, and the gap spans both margins, so
         // page N starts exactly at N * page height.
-        columnGap: `${vpPx * 2}px`,
-        columnWidth: `${Math.max(120, boxHeight - vpPx * 2)}px`,
+        columnGap: `${vpPx + bottomPx}px`,
+        columnWidth: `${Math.max(120, boxHeight - vpPx - bottomPx)}px`,
         columnFill: 'auto',
       };
     } else if (paginated && !vertical) {
@@ -501,7 +506,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, bottomReserve]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
@@ -1401,7 +1406,8 @@ export const ReaderEngine = React.memo(ReaderEngineComponent, (prevProps, nextPr
     prevProps.targetParagraphId === nextProps.targetParagraphId &&
     prevProps.targetCharPosition === nextProps.targetCharPosition &&
     prevProps.wordStatuses === nextProps.wordStatuses &&
-    prevProps.colors === nextProps.colors
+    prevProps.colors === nextProps.colors &&
+    prevProps.bottomReserve === nextProps.bottomReserve
   );
 });
 
