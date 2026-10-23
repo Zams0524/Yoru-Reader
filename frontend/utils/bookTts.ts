@@ -18,7 +18,8 @@ export const YoruTts = registerPlugin<YoruTtsPlugin>('YoruTts');
 
 export interface SpeechHandle {
   done: Promise<void>;
-  stop: () => void;
+  /** Resolves once the engine has stopped (Android), so the next sentence is not cut by a late stop. */
+  stop: () => void | Promise<void>;
 }
 
 export interface SpeechOptions {
@@ -87,7 +88,7 @@ export function speakSentence(text: string, options: SpeechOptions): SpeechHandl
   if (Capacitor.isNativePlatform()) {
     return {
       done: YoruTts.speak({ text, rate: options.rate, voice: options.voice }),
-      stop: () => { void YoruTts.stop().catch(() => undefined); },
+      stop: () => YoruTts.stop().catch(() => undefined),
     };
   }
 
