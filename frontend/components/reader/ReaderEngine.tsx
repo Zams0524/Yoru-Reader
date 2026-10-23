@@ -221,6 +221,22 @@ export async function prepareLineWords(line: string): Promise<void> {
 }
 
 /**
+ * A chapter's name as the reader shows it: untitled chapters are named in the app's language, and
+ * so are the Spanish names the importer (fileImport.ts) stores for them ("Capítulo 3", "Portada").
+ */
+export function chapterDisplayTitle(title: string | undefined, chapterIdx: number, appLanguage?: string): string {
+  let lang = appLanguage || 'en';
+  if (!appLanguage) {
+    try { lang = localStorage.getItem('app_language') || 'en'; } catch { /* no storage */ }
+  }
+  const chapterWord = t('chapter', lang);
+  if (!title) return `${chapterWord} ${chapterIdx + 1}`;
+  if (lang !== 'en') return title;
+  if (title === 'Portada') return 'Cover';
+  return title.replace(/^Capítulo (\d+)$/, `${chapterWord} $1`);
+}
+
+/**
  * Splits the book into sections of about 3000 characters (chapter boundaries kept) and numbers
  * its paragraphs the way renderSectionContent does (the `index` attribute of each block).
  */
@@ -229,17 +245,6 @@ export function computeSections(book: Book): Section[] {
   let paragraphId = 0;
   let charAccum = 0;
   const resultSections: Section[] = [];
-  // Untitled chapters are named in the app's language. The importer (fileImport.ts) stores
-  // Spanish names for them ("Capítulo 3", "Portada"); those are translated here too.
-  let lang = 'en';
-  try { lang = localStorage.getItem('app_language') || 'en'; } catch { /* no storage */ }
-  const chapterWord = t('chapter', lang);
-  const titleOf = (title: string | undefined, chapterIdx: number) => {
-    if (!title) return `${chapterWord} ${chapterIdx + 1}`;
-    if (lang !== 'en') return title;
-    if (title === 'Portada') return 'Cover';
-    return title.replace(/^Capítulo (\d+)$/, `${chapterWord} $1`);
-  };
 
   book.chapters.forEach((chapter, chapterIdx) => {
     const chapterContent = chapter.content || '';
@@ -284,7 +289,7 @@ export function computeSections(book: Book): Section[] {
       if (sectionCharCount >= 3000) {
         resultSections.push({
           id: `chapter-${chapterIdx}-${subSectionIdx}`,
-          title: subSectionIdx === 0 || !chapter.title ? titleOf(chapter.title, chapterIdx) : `${titleOf(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
+          title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
           chapterIndex: chapterIdx,
           startOffset: sectionStartOffset,
           endOffset: lineEndOffset,
@@ -308,7 +313,7 @@ export function computeSections(book: Book): Section[] {
     if (sectionHasContent || resultSections.length === 0) {
       resultSections.push({
         id: `chapter-${chapterIdx}-${subSectionIdx}`,
-        title: subSectionIdx === 0 || !chapter.title ? titleOf(chapter.title, chapterIdx) : `${titleOf(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
+        title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
         chapterIndex: chapterIdx,
         startOffset: sectionStartOffset,
         endOffset: chapterContent.length,
