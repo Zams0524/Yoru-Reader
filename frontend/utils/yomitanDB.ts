@@ -934,7 +934,7 @@ export async function searchYomitanDB(word: string, reading: string = ''): Promi
         finalDefs.forEach((d: string) => {
           combinedDefs.push(d);
           fullDefinitions.push({
-            dictionary: res.dictionary || 'Glosario',
+            dictionary: res.dictionary || '', // the popup names it in the app's language
             glossary: d,
             partsOfSpeech: resPos
           });

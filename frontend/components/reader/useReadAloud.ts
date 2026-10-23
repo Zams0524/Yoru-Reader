@@ -116,8 +116,9 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   sleepRef.current = sleepEndsAt;
 
   const stopSpeech = () => {
-    handleRef.current?.stop();
+    const handle = handleRef.current;
     handleRef.current = null;
+    return Promise.resolve(handle?.stop());
   };
 
   const run = useCallback(async (startIndex: number) => {
@@ -200,11 +201,17 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     void run(indexRef.current);
   }, [apiRef, run]);
 
-  const skip = useCallback((delta: number) => {
-    stopSpeech();
-    const next = Math.max(0, indexRef.current + delta);
-    void run(next);
+  // Speaks again from `index` once the engine has really stopped. Starting at once let the native stop
+  // land after the new sentence began, which ended it as "done" and skipped it (QA-20261023-07).
+  const restartAt = useCallback(async (index: number) => {
+    const restartId = ++runRef.current;
+    await stopSpeech();
+    if (restartId === runRef.current) void run(index);
   }, [run]);
+
+  const skip = useCallback((delta: number) => {
+    void restartAt(Math.max(0, indexRef.current + delta));
+  }, [restartAt]);
 
   const stop = useCallback(() => {
     runRef.current++;
@@ -219,22 +226,16 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     rateRef.current = value;
     try { localStorage.setItem(RATE_STORAGE, String(value)); } catch { /* ignore */ }
     // Apply at once: restart the current sentence at the new speed.
-    if (runRef.current && handleRef.current) {
-      stopSpeech();
-      void run(indexRef.current);
-    }
-  }, [run]);
+    if (runRef.current && handleRef.current) void restartAt(indexRef.current);
+  }, [restartAt]);
 
   const setVoice = useCallback((value: string) => {
     setChosenVoice(value);
     voiceRef.current = value || voice;
     try { localStorage.setItem(VOICE_STORAGE, value); } catch { /* ignore */ }
     // Hear the new voice at once.
-    if (handleRef.current) {
-      stopSpeech();
-      void run(indexRef.current);
-    }
-  }, [run, voice]);
+    if (handleRef.current) void restartAt(indexRef.current);
+  }, [restartAt, voice]);
 
   const setSleepMinutes = useCallback((minutes: number | null) => {
     setSleepEndsAt(minutes ? Date.now() + minutes * 60_000 : null);

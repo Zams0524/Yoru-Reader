@@ -111,6 +111,18 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private static List<String[]> japaneseFonts;  // [path, face], found once per process
     /** Letters of the page on screen (written on the engine thread, read on the main thread). */
     private volatile PageLetters letters;
+    /** Pictures (block ordinals) uncovered with a tap while images are hidden; kept per book. */
+    private final java.util.Set<Integer> revealedPictures = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    private String revealedBook;
+    /**
+     * Place the last relayout kept (engine thread), and the page it landed on. Relayouts in a row
+     * without a page turn keep this place instead of the new page's first letter, which lies
+     * before it: otherwise every size change and back would drift a page or two backwards.
+     */
+    private String layoutAnchor;
+    private int layoutAnchorPage = -1;
+    /** Covered picture pages: page -> [ordinal, left, top, right, bottom] (engine thread writes, main thread reads). */
+    private final Map<Integer, float[]> coveredPictures = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Letter boxes of one page in view px (left, top, right, bottom), in the engine's hitbox order. */
     private static final class PageLetters {
@@ -133,6 +145,16 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         boolean invertTaps;
         boolean kindleTaps;
         int brightness;               // 0-100, below 100 the page is dimmed
+        /** Picture pages are covered (spoilers) until tapped. */
+        boolean hideImages;
+        String spoilerLabel;
+        /**
+         * Room kept at the end of every line, in ems (the export's CSS pads each block by as much):
+         * the engine's margin there shrinks by the same amount, so lines end where they did, but a
+         * line the engine made longer than it measured (ruby wider than its base) still fits
+         * instead of being cut by the page margin.
+         */
+        float lineEndReserve;
         List<Underline> underlines = new ArrayList<>();
         int width, height;           // view size in px
         Insets insets = Insets.NONE;  // system bars and cutout, px
@@ -152,6 +174,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.invertTaps = s.optBoolean("invertTaps", base != null && base.invertTaps);
             c.kindleTaps = "kindle".equals(s.optString("tapZoneMode", base != null && base.kindleTaps ? "kindle" : "edge"));
             c.brightness = Math.max(0, Math.min(100, s.optInt("brightness", base != null ? base.brightness : 100)));
+            c.hideImages = s.optBoolean("hideImages", base != null && base.hideImages);
+            c.spoilerLabel = s.optString("spoilerLabel", base != null ? base.spoilerLabel : "");
+            c.lineEndReserve = Math.max(0f, Math.min(3f, (float) s.optDouble("lineEndReserve", base != null ? base.lineEndReserve : 0)));
             JSONArray lines = s.optJSONArray("underlines");
             if (lines == null) {
                 if (base != null) c.underlines = base.underlines;
@@ -487,6 +512,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             return;
         }
         book.getParentFile().setLastModified(System.currentTimeMillis());
+        String bookPrefix = sameBookPrefix(key);
+        if (bookPrefix == null || !bookPrefix.equals(revealedBook)) {
+            revealedPictures.clear();
+            revealedBook = bookPrefix;
+        }
         JSObject settings = call.getObject("settings", new JSObject());
         String xpath = call.getString("xpath", "");
         int ordinal = call.getInt("ordinal", -1);
@@ -553,6 +583,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             engineHandler.removeCallbacks(stopIdleEngine);
             cache.clear();
             pageLetters.clear();
+            coveredPictures.clear();
+            layoutAnchor = null;
+            layoutAnchorPage = -1;
             pictures = loadPictures(book.getParentFile());
             config = c;
             String layout = layoutKey(c);
@@ -659,7 +692,12 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         List<EraEngine.Item> req = new ArrayList<>();
         req.add(EraEngine.Item.str(xpath));
         EraEngine.Response r = engine.request(EraEngine.CMD_REQ_CRE_PAGE_BY_XPATH, req);
-        return r.result == 0 ? r.intAt(0, fallback) : fallback;
+        int page = r.result == 0 ? r.intAt(0, fallback) : fallback;
+        // The engine can place the first letter of a page on the page before (seen with the saved
+        // start of a page, text().4 inside a ruby span: a cold start reopened one page back and
+        // saved that). The next page starting exactly there is the right one.
+        if (page >= 0 && page + 1 < enginePages && xpath.equals(pageXPath(page + 1))) page++;
+        return page;
     }
 
     /** System Japanese fonts (Noto Serif/Sans CJK JP on most phones). The scan is done once. */
@@ -720,6 +758,10 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int hp = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f));
         int top = vp + c.insets.top, bottom = vp + c.insets.bottom;
         int left = hp + c.insets.left, right = hp + c.insets.right;
+        // The line ends at the bottom of the screen in vertical text, at the right in horizontal.
+        int reserve = Math.round(c.lineEndReserve * c.fontSize * c.density);
+        if (c.vertical) bottom = Math.max(0, bottom - reserve);
+        else right = Math.max(0, right - reserve);
         Log.i(TAG, String.format(Locale.US, "layout %dx%d density %.2f font %.0f line %.2f padding %.1f%%/%.1f%% -> margins t%d b%d l%d r%d",
             c.width, c.height, c.density, c.fontSize, c.lineHeight, c.verticalPadding, c.horizontalPadding, top, bottom, left, right));
         addConfig(config, EraEngine.CONFIG_VERTICAL_MODE, c.vertical ? "1" : "0");
@@ -759,7 +801,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private static String layoutKey(Config c) {
         return c.vertical + "|" + c.width + "x" + c.height + "|" + c.density + "|" + c.insets
             + "|" + c.fontSize + "|" + c.lineHeight + "|" + c.verticalPadding + "|" + c.horizontalPadding
-            + "|" + c.fontFamily + "|" + c.textAlign + "|" + c.textColor + "|" + c.backgroundColor;
+            + "|" + c.fontFamily + "|" + c.textAlign + "|" + c.textColor + "|" + c.backgroundColor
+            + "|" + c.lineEndReserve;
     }
 
     /**
@@ -806,6 +849,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         synchronized (cache) {
             cache.keySet().removeIf(p -> p < page - 2 || p > page + 3);
             pageLetters.keySet().removeIf(p -> p < page - 2 || p > page + 3);
+            coveredPictures.keySet().removeIf(p -> p < page - 2 || p > page + 3);
         }
         main.post(() -> { if (gen == generation) publish(); });
     }
@@ -819,7 +863,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         if (pictures.isEmpty()) return null;
         String xpath = pageXPath(page);
         if (!xpath.contains("/img")) return null;
-        File file = pictures.get(ordinalOf(xpath));
+        int ordinal = ordinalOf(xpath);
+        File file = pictures.get(ordinal);
         if (file == null || !file.isFile()) return null;
         int minMargin = Math.round(10 * c.density);
         int left = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f)) + c.insets.left;
@@ -844,9 +889,60 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         Bitmap pageBitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(pageBitmap);
         canvas.drawColor(0xFF000000 | c.backgroundColor);
-        canvas.drawBitmap(image, null, new Rect(x, y, x + w, y + h), new Paint(Paint.FILTER_BITMAP_FLAG));
+        Rect box = new Rect(x, y, x + w, y + h);
+        if (c.hideImages && !revealedPictures.contains(ordinal)) {
+            drawCoveredPicture(canvas, image, box, c);
+            coveredPictures.put(page, new float[] { ordinal, box.left, box.top, box.right, box.bottom });
+        } else {
+            canvas.drawBitmap(image, null, box, new Paint(Paint.FILTER_BITMAP_FLAG));
+            coveredPictures.remove(page);
+        }
         image.recycle();
         return pageBitmap;
+    }
+
+    /**
+     * A hidden picture (spoiler setting): only its blurred colours, darkened, with a hint to tap
+     * it. The blur is the picture shrunk to a few dozen pixels and stretched back.
+     */
+    private void drawCoveredPicture(Canvas canvas, Bitmap image, Rect box, Config c) {
+        // Down in two steps and up in two: bilinear scaling smooths each step, so the result is a
+        // soft blur instead of a mosaic.
+        Bitmap mid = Bitmap.createScaledBitmap(image, Math.max(1, box.width() / 8), Math.max(1, box.height() / 8), true);
+        Bitmap small = Bitmap.createScaledBitmap(mid, Math.max(1, box.width() / 40), Math.max(1, box.height() / 40), true);
+        mid.recycle();
+        Bitmap soft = Bitmap.createScaledBitmap(small, Math.max(1, box.width() / 6), Math.max(1, box.height() / 6), true);
+        small.recycle();
+        canvas.drawBitmap(soft, null, box, new Paint(Paint.FILTER_BITMAP_FLAG));
+        soft.recycle();
+        Paint veil = new Paint();
+        veil.setColor(0x8C000000);
+        canvas.drawRect(box, veil);
+        String label = c.spoilerLabel == null || c.spoilerLabel.isEmpty() ? "Toca para ver la imagen" : c.spoilerLabel;
+        Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        text.setColor(0xFFFFFFFF);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(16 * c.density);
+        float maxWidth = box.width() - 24 * c.density;
+        if (maxWidth > 0 && text.measureText(label) > maxWidth) text.setTextSize(text.getTextSize() * maxWidth / text.measureText(label));
+        Paint.FontMetrics metrics = text.getFontMetrics();
+        canvas.drawText(label, box.exactCenterX(), box.exactCenterY() - (metrics.ascent + metrics.descent) / 2, text);
+    }
+
+    /** Uncovers the hidden picture under the tap, if any: its page is drawn again. */
+    private boolean revealPictureAt(float x, float y) {
+        float[] covered = coveredPictures.get(current);
+        if (covered == null || x < covered[1] || x > covered[3] || y < covered[2] || y > covered[4]) return false;
+        revealedPictures.add((int) covered[0]);
+        final int gen = generation, page = current;
+        engineHandler.post(() -> {
+            if (gen != generation) return;
+            synchronized (cache) {
+                cache.remove(page);
+            }
+            renderPages(gen, page, new int[] { page });
+        });
+        return true;
     }
 
     private void engineFailed(int gen, Throwable e) {
@@ -886,11 +982,19 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     @Override
     public void onSized(int width, int height) {
+        // The keyboard (search) only shrinks the view for a moment: keep the layout, so the page
+        // count and place stay as they were when it closes.
+        if (viewWidth == width && pendingOpen == null && keyboardShown()) return;
         boolean changed = viewWidth != 0 && (viewWidth != width || viewHeight != height);
         viewWidth = width;
         viewHeight = height;
         if (pendingOpen != null) runPendingOpen();
         else if (changed && config != null) applySettings(new JSObject(), null);
+    }
+
+    private boolean keyboardShown() {
+        WindowInsetsCompat insets = view == null ? null : ViewCompat.getRootWindowInsets(view);
+        return insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
     }
 
     @Override
@@ -1202,6 +1306,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             notifyListeners("tap", event);
             return;
         }
+        if (revealPictureAt(x, y)) return;
         int letter = letterAt(x, y);
         if (letter >= 0) {
             lookUpLetter(letter);
@@ -1323,13 +1428,18 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     /**
      * Highlights a sentence for read-aloud: relativeBlock is the block's index relative to the
      * first block on the current page (0 = first block visible), charOffset and charLength count
-     * base-text characters (furigana excluded). color is ARGB.
+     * base-text characters (furigana excluded). text (optional) is the sentence itself: when given,
+     * the sentence is found by its letters on the page (the occurrence nearest to the counted
+     * place), since counting blocks and characters goes wrong by a line or more whenever the page's
+     * letters do not match the book one for one (empty blocks, furigana mistaken for text). A
+     * sentence cut by the page edge is matched by the part that is on the page. color is ARGB.
      */
     @PluginMethod
     public void highlightRange(PluginCall call) {
         int relativeBlock = call.getInt("relativeBlock", -1);
         int charOffset = Math.max(0, call.getInt("charOffset", 0));
         int charLength = call.getInt("charLength", 0);
+        String text = call.getString("text", "");
         long color = call.getLong("color", 0x40FFE000L);
         main.post(() -> {
             PageLetters letters = this.letters;
@@ -1337,35 +1447,17 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 call.resolve();
                 return;
             }
-            // Reference area for furigana detection: first non-empty letter.
-            float refArea = 0;
-            for (int i = 0; i < letters.texts.length; i++) {
-                if (!letters.texts[i].trim().isEmpty()) { refArea = letterArea(letters, i); break; }
+            float typical = typicalLetterArea(letters);
+            int[] range = text == null || text.trim().isEmpty() ? null
+                : findSentence(letters, typical, text, countedStart(letters, typical, relativeBlock, charOffset));
+            if (range == null) range = countedRange(letters, typical, relativeBlock, charOffset, charLength);
+            if (range == null) {
+                call.resolve();
+                return;
             }
-            // Skip relativeBlock paragraph separators to reach the target block.
-            int blockCount = 0;
-            int i = 0;
-            while (i < letters.texts.length && blockCount < relativeBlock) {
-                if ("\n".equals(letters.texts[i])) blockCount++;
-                i++;
-            }
-            if (blockCount < relativeBlock) { call.resolve(); return; }
-            // Find the letter at charOffset (counting only base-text characters).
-            int startIndex = -1, baseCount = 0;
-            for (int j = i; j < letters.texts.length; j++) {
-                if ("\n".equals(letters.texts[j])) break;
-                if (isFurigana(letters, j, refArea)) continue;
-                if (baseCount == charOffset) { startIndex = j; break; }
-                baseCount++;
-            }
-            if (startIndex < 0) { call.resolve(); return; }
-            // Collect charLength base-text characters (furigana included in the highlight).
             List<Integer> picked = new ArrayList<>();
-            int remaining = charLength;
-            for (int j = startIndex; j < letters.texts.length && remaining > 0; j++) {
-                if ("\n".equals(letters.texts[j])) break;
-                picked.add(j);
-                if (!isFurigana(letters, j, refArea)) remaining--;
+            for (int j = range[0]; j <= range[1]; j++) {
+                if (!"\n".equals(letters.texts[j])) picked.add(j);
             }
             // Build highlight boxes (one per line, same as highlight()).
             List<RectF> boxes = new ArrayList<>();
@@ -1383,6 +1475,96 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             view.setHighlight(boxes, (int) color);
             call.resolve();
         });
+    }
+
+    /** Area of the page's ordinary letters (the median one): furigana is much smaller. */
+    private static float typicalLetterArea(PageLetters letters) {
+        List<Float> areas = new ArrayList<>();
+        for (int i = 0; i < letters.texts.length; i++) {
+            if (!letters.texts[i].trim().isEmpty()) areas.add(letterArea(letters, i));
+        }
+        if (areas.isEmpty()) return 0;
+        java.util.Collections.sort(areas);
+        return areas.get(areas.size() / 2);
+    }
+
+    private static boolean isBaseLetter(PageLetters letters, int i, float typical) {
+        String t = letters.texts[i];
+        return !"\n".equals(t) && !t.trim().isEmpty() && !isFurigana(letters, i, typical);
+    }
+
+    /**
+     * Letter index of base character charOffset of the relativeBlock-th block on the page,
+     * counting paragraph ends ("\n"), or -1.
+     */
+    private static int countedStart(PageLetters letters, float typical, int relativeBlock, int charOffset) {
+        int blockCount = 0, i = 0;
+        while (i < letters.texts.length && blockCount < relativeBlock) {
+            if ("\n".equals(letters.texts[i])) blockCount++;
+            i++;
+        }
+        if (blockCount < relativeBlock) return -1;
+        int baseCount = 0;
+        for (int j = i; j < letters.texts.length; j++) {
+            if ("\n".equals(letters.texts[j])) break;
+            if (isFurigana(letters, j, typical)) continue;
+            if (baseCount == charOffset) return j;
+            baseCount++;
+        }
+        return -1;
+    }
+
+    /** [first, last] letter of the sentence by counting blocks and characters, or null. */
+    private static int[] countedRange(PageLetters letters, float typical, int relativeBlock, int charOffset, int charLength) {
+        int startIndex = countedStart(letters, typical, relativeBlock, charOffset);
+        if (startIndex < 0) return null;
+        int remaining = charLength, last = startIndex;
+        for (int j = startIndex; j < letters.texts.length && remaining > 0; j++) {
+            if ("\n".equals(letters.texts[j])) break;
+            last = j;
+            if (!isFurigana(letters, j, typical)) remaining--;
+        }
+        return new int[] { startIndex, last };
+    }
+
+    /**
+     * [first, last] letter of the sentence found by its text among the page's base letters, or
+     * null. Whitespace is ignored on both sides. The whole sentence, nearest to hint (a letter
+     * index, -1 if unknown); else its beginning at the end of the page or its end at the start.
+     */
+    private static int[] findSentence(PageLetters letters, float typical, String sentence, int hint) {
+        StringBuilder page = new StringBuilder();
+        List<Integer> owner = new ArrayList<>();  // letter index of each char of page
+        for (int i = 0; i < letters.texts.length; i++) {
+            if (!isBaseLetter(letters, i, typical)) continue;
+            String t = letters.texts[i].replaceAll("\\s+", "");
+            for (int k = 0; k < t.length(); k++) {
+                page.append(t.charAt(k));
+                owner.add(i);
+            }
+        }
+        String needle = sentence.replaceAll("\\s+", "");
+        if (needle.isEmpty() || page.length() == 0) return null;
+        String text = page.toString();
+        int best = -1;
+        long bestDistance = Long.MAX_VALUE;
+        for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+            long distance = hint < 0 ? at : Math.abs((long) owner.get(at) - hint);
+            if (distance < bestDistance) {
+                best = at;
+                bestDistance = distance;
+            }
+        }
+        if (best >= 0) return new int[] { owner.get(best), owner.get(best + needle.length() - 1) };
+        // Cut by the page edge. Two characters at least, so that a stray match is unlikely.
+        int min = Math.min(needle.length(), 2);
+        for (int k = Math.min(needle.length() - 1, text.length()); k >= min; k--) {
+            if (text.endsWith(needle.substring(0, k))) return new int[] { owner.get(text.length() - k), owner.get(text.length() - 1) };
+        }
+        for (int k = Math.min(needle.length() - 1, text.length()); k >= min; k--) {
+            if (text.startsWith(needle.substring(needle.length() - k))) return new int[] { owner.get(0), owner.get(k - 1) };
+        }
+        return null;
     }
 
     /** Clears any word or sentence highlight on the page. */
@@ -1412,15 +1594,18 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineHandler.post(() -> {
             if (gen != generation) return;
             try {
-                String xpath = pageXPath(page);
+                String xpath = layoutAnchor != null && layoutAnchorPage == page ? layoutAnchor : pageXPath(page);
                 config = next;
                 EraEngine.Response r = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(next, true));
                 enginePages = r.intAt(0, enginePages);
                 engineLayout = layoutKey(next);
                 int target = clampPage(xpath.isEmpty() ? page : pageByXPath(xpath, page));
+                layoutAnchor = xpath.isEmpty() ? null : xpath;
+                layoutAnchorPage = target;
                 synchronized (cache) {
                     cache.clear();
                     pageLetters.clear();
+                    coveredPictures.clear();
                 }
                 final int pages = enginePages;
                 main.post(() -> {
@@ -1535,6 +1720,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 synchronized (cache) {
                     cache.clear();
                     pageLetters.clear();
+                    coveredPictures.clear();
                 }
                 engineHandler.removeCallbacks(stopIdleEngine);
                 engineHandler.postDelayed(stopIdleEngine, ENGINE_IDLE_MS);

@@ -8,6 +8,7 @@ import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
+import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
@@ -378,10 +379,12 @@ const Library = React.memo(function Library({
   const [selectedDeckFilter, setSelectedDeckFilter] = useState<string | null>(null);
   const [srsSubTab, setSrsSubTab] = useState<'decks' | 'stats' | 'notes' | 'history' | 'settings'>('decks');
   const [isDeckPromptOpen, setIsDeckPromptOpen] = useState(false);
-  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename' | 'merge'>('create');
+  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename'>('create');
   const [deckPromptTargetId, setDeckPromptTargetId] = useState<string | null>(null);
   const [deckPromptValue, setDeckPromptValue] = useState('');
-  const [srsCalendarYear, setSrsCalendarYear] = useState(new Date().getFullYear());
+  const [deckOptionsDraft, setDeckOptionsDraft] = useState<SrsDeckOptions>({});
+  // 0 = the window of weeks that ends today; each step goes one window back.
+  const [srsCalendarPage, setSrsCalendarPage] = useState(0);
   const [separateSuspended, setSeparateSuspended] = useState(false);
   const [notesSearch, setNotesSearch] = useState('');
   const [notesFilterStatus, setNotesFilterStatus] = useState('all');
@@ -4815,6 +4818,14 @@ const Library = React.memo(function Library({
     setIsDeckPromptOpen(true);
   };
 
+  const openDeckSettings = (deckName: string) => {
+    setDeckPromptMode('rename');
+    setDeckPromptTargetId(deckName);
+    setDeckPromptValue(deckName);
+    setDeckOptionsDraft({ ...getDeckOptions(settings, deckName) });
+    setIsDeckPromptOpen(true);
+  };
+
   const handleDeckPromptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = deckPromptValue.trim();
@@ -4857,42 +4868,19 @@ const Library = React.memo(function Library({
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo renombrado' : 'Deck renamed', 'success');
       }
-    } else if (deckPromptMode === 'merge' && deckPromptTargetId) {
-      const sourceName = deckPromptTargetId;
-      const targetName = trimmed;
-      if (sourceName !== targetName) {
-        if (confirm(lang === 'es'
-          ? `¿Estás seguro de que deseas fusionar todo el contenido del mazo "${sourceName}" dentro del mazo "${targetName}"? El mazo "${sourceName}" será eliminado.`
-          : `Are you sure you want to merge all content from deck "${sourceName}" into deck "${targetName}"? The deck "${sourceName}" will be deleted.`
-        )) {
-          // Delete placeholder of source mazo
-          db.saveSrsCard(`_deck_${sourceName}`, null);
-          
-          // Ensure target mazo has a placeholder card if not the default
-          if (targetName !== 'Yoru Reader') {
-            db.saveSrsCard(`_deck_${targetName}`, {
-              word: `_deck_${targetName}`,
-              source: targetName,
-              state: 0,
-              dueDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              due: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              isPlaceholder: true
-            });
-          }
+    }
 
-          // Move all cards from source to target
-          const srsData = db.getSrsData();
-          Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-            if (card && card.source === sourceName) {
-              card.source = targetName;
-              db.saveSrsCard(word, card);
-            }
-          });
-
-          setSrsUpdateTrigger(t => t + 1);
-          showToast(lang === 'es' ? 'Mazos fusionados con éxito' : 'Decks merged successfully', 'success');
-        }
-      }
+    if (deckPromptMode === 'rename' && deckPromptTargetId) {
+      // Save the deck's own options under its (possibly new) name; empty fields fall back to the global settings.
+      const cleaned: SrsDeckOptions = {};
+      if (deckOptionsDraft.newPerDay !== undefined) cleaned.newPerDay = deckOptionsDraft.newPerDay;
+      if (deckOptionsDraft.reviewsPerDay !== undefined) cleaned.reviewsPerDay = deckOptionsDraft.reviewsPerDay;
+      if (deckOptionsDraft.cardFront) cleaned.cardFront = deckOptionsDraft.cardFront;
+      if (deckOptionsDraft.paused) cleaned.paused = true;
+      let next = withDeckOptions(settings, deckPromptTargetId, null);
+      next = withDeckOptions(next, trimmed, Object.keys(cleaned).length > 0 ? cleaned : null);
+      onSaveSettings(next);
+      if (trimmed === deckPromptTargetId) showToast(lang === 'es' ? 'Ajustes del mazo guardados' : 'Deck settings saved', 'success');
     }
 
     setIsDeckPromptOpen(false);
@@ -4912,6 +4900,7 @@ const Library = React.memo(function Library({
           }
         });
         db.saveSrsData(srsData);
+        onSaveSettings(withDeckOptions(settings, deckName, null));
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo eliminado' : 'Deck deleted', 'info');
         setIsDeckPromptOpen(false);
@@ -4933,43 +4922,37 @@ const Library = React.memo(function Library({
       return null;
     };
     
-    const getYearCalendarCells = (year: number) => {
-      const yearCells = [];
-      const jan1 = new Date(year, 0, 1);
-      const startDay = jan1.getDay();
-      const alignOffset = (startDay + 6) % 7;
-      const startDate = new Date(year, 0, 1);
-      startDate.setDate(startDate.getDate() - alignOffset);
-
-      const tempDate = new Date(startDate);
-      for (let col = 0; col < 54; col++) {
-        const weekCells = [];
+    // Activity heatmap: a window of whole weeks (Monday first) that ends with the
+    // current week, so today is always visible without scrolling sideways.
+    const calendarWeekCount = isMobile ? 18 : 53;
+    const getCalendarWeeks = (page: number) => {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const start = new Date(today);
+      start.setDate(start.getDate() - ((today.getDay() + 6) % 7) - (calendarWeekCount - 1 + page * calendarWeekCount) * 7);
+      const todayYmd = localDate(today);
+      const weeks: { ymd: string; date: Date; count: number; level: number; isFuture: boolean; isToday: boolean }[][] = [];
+      const cursor = new Date(start);
+      for (let col = 0; col < calendarWeekCount; col++) {
+        const week = [];
         for (let row = 0; row < 7; row++) {
-          const ymd = localDate(tempDate);
-          const cellYear = tempDate.getFullYear();
-          const isActive = cellYear === year && activity.activityDays.includes(ymd);
-          weekCells.push({ ymd, isActive, date: new Date(tempDate), isCurrentYear: cellYear === year });
-          tempDate.setDate(tempDate.getDate() + 1);
+          const ymd = localDate(cursor);
+          const count = activity.activityCounts[ymd] || 0;
+          const level = count <= 0 ? 0 : count < 5 ? 1 : count < 15 ? 2 : count < 30 ? 3 : 4;
+          week.push({ ymd, date: new Date(cursor), count, level, isFuture: cursor > today, isToday: ymd === todayYmd });
+          cursor.setDate(cursor.getDate() + 1);
         }
-        if (weekCells.some(c => c.isCurrentYear)) {
-          yearCells.push(weekCells);
-        }
+        weeks.push(week);
       }
-      return yearCells;
+      return weeks;
     };
 
-    const getYearMonthLabels = (yearCells: any[][]) => {
+    const getCalendarMonthLabels = (weeks: { date: Date }[][]) => {
       const labels: { colIndex: number; label: string }[] = [];
-      let lastMonth = -1;
-      yearCells.forEach((week, colIndex) => {
-        const firstOfMonth = week.find(cell => cell.isCurrentYear && cell.date.getDate() === 1);
-        if (!firstOfMonth) return;
-        const m = firstOfMonth.date.getMonth();
-        if (m !== lastMonth) {
-          lastMonth = m;
-          const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' });
-          labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
-        }
+      weeks.forEach((week, colIndex) => {
+        const firstOfMonth = week.find(cell => cell.date.getDate() === 1);
+        if (!firstOfMonth || colIndex > weeks.length - 2) return;
+        const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' }).replace('.', '');
+        labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
       });
       return labels;
     };
@@ -4985,6 +4968,7 @@ const Library = React.memo(function Library({
       totalRelearning: number;
       totalYoung: number;
       totalMature: number;
+      paused?: boolean;
     }> = {};
     let totalDueCount = 0;
     
@@ -5010,6 +4994,9 @@ const Library = React.memo(function Library({
     const reviewsLeftToday = Math.max(0, maxReviewsLimit - reviewsDoneToday);
     let newCardsRemainingToday = newCardsLeftToday;
     let reviewsRemainingToday = reviewsLeftToday;
+    const deckLimits = getDeckLimitsLeft(settings, srsData, todayHistory, newCardsStudiedToday);
+    const deckNewLeft: Record<string, number> = {};
+    const deckReviewsLeft: Record<string, number> = {};
 
     const initDeck = (name: string) => {
       if (!decks[name]) {
@@ -5022,8 +5009,11 @@ const Library = React.memo(function Library({
           totalLearning: 0,
           totalRelearning: 0,
           totalYoung: 0,
-          totalMature: 0
+          totalMature: 0,
+          paused: deckLimits.isPaused(name)
         };
+        deckNewLeft[name] = deckLimits.newLeft(name);
+        deckReviewsLeft[name] = deckLimits.reviewsLeft(name);
       }
     };
 
@@ -5071,21 +5061,23 @@ const Library = React.memo(function Library({
         // Count due cards
         const dueDate = getCardDueDate(card);
         const isDue = !dueDate || dueDate <= now;
-        if (isDue) {
+        if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
-            if (newCardsRemainingToday > 0) {
+            if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
               decks[deckName].newCount++;
               totalDueCount++;
               newCardsRemainingToday--;
+              deckNewLeft[deckName]--;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
             totalDueCount++;
           } else {
-            if (reviewsRemainingToday > 0) {
+            if (reviewsRemainingToday > 0 && deckReviewsLeft[deckName] > 0) {
               totalDueCount++;
               decks[deckName].reviewCount++;
               reviewsRemainingToday--;
+              deckReviewsLeft[deckName]--;
             }
           }
         }
@@ -5109,14 +5101,21 @@ const Library = React.memo(function Library({
     // Fetch studied history activity and streak
     const activity = (() => {
       const activityDays = new Set<string>();
+      const activityCounts: Record<string, number> = {};
       let cardsStudiedToday = 0;
 
       const dailyReviews = db.getSrsDailyReviews();
       Object.entries(dailyReviews).forEach(([ymd, count]) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !(Number(count) > 0)) return;
         const date = new Date(`${ymd}T00:00:00`);
-        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) activityDays.add(ymd);
+        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) {
+          activityDays.add(ymd);
+          activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, Number(count));
+        }
       });
+
+      // Days that only show up through a card's last review still count as active.
+      const lastReviewCounts: Record<string, number> = {};
 
       const studiedToday = new Set<string>();
       Object.entries(srsData).forEach(([word, card]: [string, any]) => {
@@ -5127,7 +5126,11 @@ const Library = React.memo(function Library({
         if (!Number.isFinite(reviewDate.getTime())) return;
         const ymd = localDate(reviewDate);
         activityDays.add(ymd);
+        lastReviewCounts[ymd] = (lastReviewCounts[ymd] || 0) + 1;
         if (ymd === todayStr) studiedToday.add(word);
+      });
+      Object.entries(lastReviewCounts).forEach(([ymd, count]) => {
+        activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, count);
       });
       cardsStudiedToday = studiedToday.size;
       
@@ -5155,127 +5158,114 @@ const Library = React.memo(function Library({
           break;
         }
       }
-      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays) };
+      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays), activityCounts };
     })();
 
 
-    const renderActivityCalendar = () => (
-      <div 
-        style={{ 
-          background: 'var(--bg-card)', 
-          border: '1px solid var(--border-light)', 
-          borderRadius: '16px', 
-          padding: '24px', 
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
-          marginTop: '24px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-          <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📅</span>
-            <span>{lang === 'es' ? 'Calendario de Actividad' : 'Activity Calendar'}</span>
-          </h3>
-          
-          {/* Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y - 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &lt;
-            </button>
-            <span style={{ fontSize: '0.85rem', fontWeight: 850, color: '#fff', minWidth: '40px', textAlign: 'center' }}>{srsCalendarYear}</span>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y + 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &gt;
-            </button>
-          </div>
+    const renderActivityCalendar = () => {
+      const weeks = getCalendarWeeks(srsCalendarPage);
+      const monthLabels = getCalendarMonthLabels(weeks);
+      const visibleDays = weeks.flat().filter(cell => !cell.isFuture);
+      const activeInRange = visibleDays.filter(cell => cell.count > 0).length;
+      const locale = lang === 'es' ? 'es-ES' : 'en-US';
+      const firstDay = visibleDays[0]?.date;
+      const lastDay = visibleDays[visibleDays.length - 1]?.date;
+      const monthName = (date?: Date) => {
+        const name = date ? date.toLocaleDateString(locale, { month: 'short' }).replace('.', '') : '';
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      };
+      const rangeLabel = firstDay && lastDay
+        ? (firstDay.getFullYear() === lastDay.getFullYear()
+          ? `${monthName(firstDay)} – ${monthName(lastDay)} ${lastDay.getFullYear()}`
+          : `${monthName(firstDay)} ${firstDay.getFullYear()} – ${monthName(lastDay)} ${lastDay.getFullYear()}`)
+        : '';
+      const dayLetters = lang === 'es' ? ['L', '', 'X', '', 'V', '', 'D'] : ['M', '', 'W', '', 'F', '', 'S'];
+      const gridColumns = { gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` };
+      const cardsWord = (n: number) => lang === 'es' ? (n === 1 ? 'tarjeta' : 'tarjetas') : (n === 1 ? 'card' : 'cards');
 
-          <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-            <span>
-              {lang === 'es' ? 'Racha actual: ' : 'Current streak: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.streak} {lang === 'es' ? 'días' : 'days'}</span>
-            </span>
-            <span>•</span>
-            <span>
-              {lang === 'es' ? 'Repasadas hoy: ' : 'Reviewed today: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.cardsStudiedToday}</span>
-            </span>
-          </div>
-        </div>
-        
-        {/* Year Heatmap Grid */}
-        <div className="srs-calendar-scroll" style={{ overflowX: 'auto', padding: '10px 0 5px 0' }}>
-          <div style={{ minWidth: '680px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            
-            {/* Month Labels aligned to 54 columns */}
-            <div style={{ display: 'flex', position: 'relative', height: '16px', marginLeft: '18px', marginBottom: '4px' }}>
-              {(() => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                const monthLabels = getYearMonthLabels(yearCells);
-                return monthLabels.map((lbl, idx) => (
-                  <span 
-                    key={idx} 
-                    style={{ 
-                      position: 'absolute', 
-                      left: `${lbl.colIndex * 12.2}px`, 
-                      fontSize: '0.62rem', 
-                      color: 'var(--text-muted)', 
-                      fontWeight: 800, 
-                      textTransform: 'uppercase' 
-                    }}
-                  >
-                    {lbl.label}
-                  </span>
-                ));
-              })()}
+      return (
+        <section className="srs-cal">
+          <div className="srs-cal-head">
+            <h3 className="srs-section-title">{lang === 'es' ? 'Actividad' : 'Activity'}</h3>
+            <div className="srs-cal-nav">
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => p + 1); }}
+                aria-label={lang === 'es' ? 'Semanas anteriores' : 'Earlier weeks'}
+              >
+                <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
+              </button>
+              <span className="srs-cal-range">{rangeLabel}</span>
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                disabled={srsCalendarPage === 0}
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => Math.max(0, p - 1)); }}
+                aria-label={lang === 'es' ? 'Semanas siguientes' : 'Later weeks'}
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
+          </div>
 
-            {/* Calendar Grid cells */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              {Array.from({ length: 7 }).map((_, rowIndex) => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                return (
-                  <div key={rowIndex} style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', width: '12px', textAlign: 'right', marginRight: '6px', fontWeight: 'bold' }}>
-                      {rowIndex === 0 ? 'L' : rowIndex === 2 ? 'M' : rowIndex === 4 ? 'V' : rowIndex === 6 ? 'D' : ''}
-                    </span>
-                    {yearCells.map((week, colIndex) => {
-                      const cell = week[rowIndex];
-                      if (!cell) return <div key={colIndex} style={{ width: '9px', height: '9px' }} />;
-                      return (
-                        <div 
-                          key={colIndex} 
-                          title={cell.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + (cell.isActive ? ' (Activo)' : ' (Inactivo)')}
-                          style={{
-                            width: '9px',
-                            height: '9px',
-                            borderRadius: '2px',
-                            background: cell.isActive ? 'rgba(168, 85, 247, 0.85)' : 'rgba(255, 255, 255, 0.03)',
-                            border: cell.isActive ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255, 255, 255, 0.02)',
-                            transition: 'all 0.15s ease',
-                            opacity: cell.isCurrentYear ? 1 : 0.15
-                          }}
-                        />
-                      );
-                    })}
+          <div className="srs-cal-stats">
+            <div>
+              <div className="srs-cal-stat-value is-accent">{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Racha' : 'Streak'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activity.cardsStudiedToday}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Repasadas hoy' : 'Reviewed today'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activeInRange}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Días activos' : 'Active days'}</div>
+            </div>
+          </div>
+
+          <div className="srs-cal-body">
+            <div className="srs-cal-months" style={gridColumns}>
+              {monthLabels.map(lbl => (
+                <span key={lbl.colIndex} style={{ gridColumn: `${lbl.colIndex + 1} / span 4` }}>{lbl.label}</span>
+              ))}
+            </div>
+            <div className="srs-cal-grid-row">
+              <div className="srs-cal-days">
+                {dayLetters.map((letter, i) => <span key={i}>{letter}</span>)}
+              </div>
+              <div className="srs-cal-grid" style={gridColumns}>
+                {weeks.map((week, colIndex) => (
+                  <div key={colIndex} className="srs-cal-week">
+                    {week.map(cell => (
+                      <div
+                        key={cell.ymd}
+                        className={`srs-cal-cell level-${cell.level}${cell.isToday ? ' is-today' : ''}${cell.isFuture ? ' is-future' : ''}`}
+                        title={cell.isFuture ? undefined : `${cell.date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}: ${cell.count} ${cardsWord(cell.count)}`}
+                      />
+                    ))}
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-
           </div>
-        </div>
-      </div>
-    );
+
+          <div className="srs-cal-foot">
+            <span>
+              {lang === 'es' ? 'Hoy' : 'Today'}: {now.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} · {activity.cardsStudiedToday} {cardsWord(activity.cardsStudiedToday)}
+            </span>
+            <div className="srs-cal-legend" aria-hidden="true">
+              <span>{lang === 'es' ? 'Menos' : 'Less'}</span>
+              <i className="srs-cal-cell level-0" />
+              <i className="srs-cal-cell level-1" />
+              <i className="srs-cal-cell level-2" />
+              <i className="srs-cal-cell level-4" />
+              <span>{lang === 'es' ? 'Más' : 'More'}</span>
+            </div>
+          </div>
+        </section>
+      );
+    };
 
     // --- Study Stats Calculations ---
     const studyTimeTodaySeconds = Number(localStorage.getItem(`yoru_reader_srs_study_time_${todayStr}`) || 0);
@@ -5546,51 +5536,48 @@ const Library = React.memo(function Library({
 
         {srsSubTab === 'decks' && (
           <>
-            {/* Header Dashboard Card */}
-            <div className="vocab-dashboard-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', padding: '20px', borderRadius: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
-              <div>
-                <h2 style={{ margin: '0 0 4px 0', fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {lang === 'es' ? 'Repaso de Yoru SRS' : 'Yoru SRS Reviews'}
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  {lang === 'es' ? `Tienes ${totalDueCount} tarjetas pendientes hoy` : `You have ${totalDueCount} reviews pending today`}
-                </p>
+            {/* Today summary */}
+            <section className="srs-today">
+              <div className="srs-today-head">
+                <span>{lang === 'es' ? 'Para hoy' : 'Due today'}</span>
+                <span>
+                  {lang === 'es' ? 'Racha ' : 'Streak '}
+                  <strong>{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</strong>
+                </span>
               </div>
-              
-              {totalDueCount > 0 && (
-                <button
-                  type="button"
-                  className="vocab-action-btn"
-                  onClick={() => {
-                    setSelectedDeckFilter(null);
-                    setIsSrsReviewOpen(true);
-                  }}
-                  style={{
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    border: 'none',
-                    color: '#ffffff',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 14px rgba(168, 85, 247, 0.3)'
-                  }}
-                >
-                  <Zap size={15} fill="rgba(255,255,255,0.2)" />
-                  <span>{lang === 'es' ? 'Repasar Todo' : 'Review All'}</span>
-                </button>
-              )}
-            </div>
+              <div className="srs-today-counts">
+                <div className="srs-today-count is-new">
+                  <strong>{totalNewCount}</strong>
+                  <span>{lang === 'es' ? 'Nuevas' : 'New'}</span>
+                </div>
+                <div className="srs-today-count is-learn">
+                  <strong>{totalLearnCount}</strong>
+                  <span>{lang === 'es' ? 'Aprendiendo' : 'Learning'}</span>
+                </div>
+                <div className="srs-today-count is-review">
+                  <strong>{totalReviewCount}</strong>
+                  <span>{lang === 'es' ? 'Repaso' : 'Review'}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="srs-today-cta"
+                disabled={totalDueCount === 0}
+                onClick={() => {
+                  setSelectedDeckFilter(null);
+                  setIsSrsReviewOpen(true);
+                }}
+              >
+                {totalDueCount > 0
+                  ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
+                  : (lang === 'es' ? 'Estás al día' : 'All caught up')}
+              </button>
+            </section>
 
             {/* Deck List (Mazos) */}
-            <div className="srs-deck-list" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>
-                🗂️ {lang === 'es' ? 'Mazos de Aprendizaje' : 'Learning Decks'}
-              </h3>
-              
+            <section className="srs-deck-list">
+              <h3 className="srs-section-title">{lang === 'es' ? 'Mis mazos' : 'My decks'}</h3>
+
               {deckList.length === 0 ? (
                 <div className="srs-empty-state" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-card-hover)', border: '1px dashed var(--border-light)', borderRadius: '12px' }}>
                   <Zap size={24} style={{ color: 'rgba(255,255,255,0.1)', marginBottom: '8px' }} />
@@ -5604,98 +5591,51 @@ const Library = React.memo(function Library({
                   </p>
                 </div>
               ) : (
-                <div className="srs-deck-table-wrap" style={{ overflowX: 'auto' }}>
-                  <table className="srs-deck-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <th style={{ textAlign: 'left', padding: '0 0 10px 0', fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Mazo' : 'Deck'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Nuevas' : 'New'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Aprender' : 'Learn'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Programadas' : 'Review'}
-                        </th>
-                        <th style={{ width: '1%', padding: '0 0 10px 0' }} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deckList.map((deck) => {
-                        const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
-                        return (
-                          <tr
-                            key={deck.name}
-                            className="srs-deck-row"
-                            onClick={() => {
-                              if (!isDue) return;
-                              setSelectedDeckFilter(deck.name);
-                              setIsSrsReviewOpen(true);
+                <div className="srs-deck-cards">
+                  {deckList.map((deck) => {
+                    const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
+                    return (
+                      <div key={deck.name} className={`srs-deck-item${isDue ? ' is-due' : ''}`}>
+                        <button
+                          type="button"
+                          className="srs-deck-main"
+                          disabled={!isDue}
+                          onClick={() => {
+                            setSelectedDeckFilter(deck.name);
+                            setIsSrsReviewOpen(true);
+                          }}
+                          aria-label={lang === 'es' ? `Repasar ${deck.name}` : `Review ${deck.name}`}
+                        >
+                          <span className="srs-deck-name" title={deck.name}>
+                            <FolderOpen size={15} aria-hidden="true" />
+                            <span>{deck.name}</span>
+                          </span>
+                          <span className="srs-deck-pills">
+                            {deck.paused && <span className="srs-pill is-zero">{lang === 'es' ? 'En pausa' : 'Paused'}</span>}
+                            <span className={`srs-pill is-new${deck.newCount > 0 ? '' : ' is-zero'}`}>{deck.newCount} {lang === 'es' ? 'nuevas' : 'new'}</span>
+                            <span className={`srs-pill is-learn${deck.learningCount > 0 ? '' : ' is-zero'}`}>{deck.learningCount} {lang === 'es' ? 'aprend.' : 'learn'}</span>
+                            <span className={`srs-pill is-review${deck.reviewCount > 0 ? '' : ' is-zero'}`}>{deck.reviewCount} {lang === 'es' ? 'repaso' : 'review'}</span>
+                          </span>
+                        </button>
+                        <div className="srs-deck-actions">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeckSettings(deck.name);
                             }}
-                            style={{
-                              borderBottom: '1px solid var(--border-light)',
-                              cursor: (deck.totalCards > 0 && isDue) ? 'pointer' : 'default',
-                              transition: 'background 0.15s'
-                            }}
+                            title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
+                            aria-label={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
                           >
-                            <td style={{ padding: '12px 14px 12px 0' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                <FolderOpen size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deck.name}>
-                                  {deck.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.newCount > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
-                              {deck.newCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.learningCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                              {deck.learningCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.reviewCount > 0 ? '#22c55e' : 'var(--text-muted)' }}>
-                              {deck.reviewCount}
-                            </td>
-                            <td style={{ padding: '12px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('rename');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue(deck.name);
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
-                              >
-                                <Settings size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('merge');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue('');
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                              >
-                                <Layers size={13} />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            <Settings size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Heatmap below decks list */}
             {renderActivityCalendar()}
@@ -5707,7 +5647,7 @@ const Library = React.memo(function Library({
         {srsSubTab === 'stats' && (
           <>
             {/* 2-Column Layout: Hoy + Pronóstico */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
               
               {/* Column 1: Hoy */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '180px' }}>
@@ -5921,42 +5861,32 @@ const Library = React.memo(function Library({
 
               return (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', overflow: 'hidden' }}>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.01)' }}>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Palabra' : 'Word'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Mazo' : 'Deck'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Calificación' : 'Grade'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Intervalo' : 'Interval'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Fecha' : 'Date'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {history.map((entry: any, idx: number) => {
-                          const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
-                          const relativeTime = (() => {
-                            const diff = Date.now() - new Date(entry.timestamp).getTime();
-                            const mins = Math.floor(diff / 60000);
-                            const hours = Math.floor(mins / 60);
-                            if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
-                            if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
-                            if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
-                            return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
-                          })();
-                          return (
-                            <tr key={idx} style={{ borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                              <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '0.95rem' }}>{displayWord}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>{entry.deckName}</td>
-                              <td style={{ padding: '12px 16px' }}>{getGradeBadge(entry.grade)}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 650 }}>{entry.interval}d</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>{relativeTime}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  {history.map((entry: any, idx: number) => {
+                    const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
+                    const relativeTime = (() => {
+                      const diff = Date.now() - new Date(entry.timestamp).getTime();
+                      const mins = Math.floor(diff / 60000);
+                      const hours = Math.floor(mins / 60);
+                      if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
+                      if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
+                      if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
+                      return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
+                    })();
+                    // One row per review: word and grade on top, deck · interval · date below.
+                    return (
+                      <div key={idx} style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px', borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <span style={{ fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '1rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayWord}</span>
+                          <span style={{ flexShrink: 0 }}>{getGradeBadge(entry.grade)}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {entry.deckName && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{entry.deckName}</span>}
+                          <span style={{ whiteSpace: 'nowrap' }}>{lang === 'es' ? 'Intervalo' : 'Interval'} {entry.interval}d</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{relativeTime}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -6023,7 +5953,9 @@ const Library = React.memo(function Library({
               <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {lang === 'es' ? 'Parámetros del Algoritmo FSRS-6' : 'FSRS-6 Algorithm Parameters'}
               </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Two columns on wide screens; on a phone each field gets the full width so the
+                  number and its label are not squeezed by the slider. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '6px' }}>
                     {lang === 'es' ? 'Retención solicitada (FSRS)' : 'Requested retention (FSRS)'}
@@ -6075,6 +6007,52 @@ const Library = React.memo(function Library({
                 <label htmlFor="enableFuzzCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
                   {lang === 'es' ? 'Habilitar Fuzz (dispersión aleatoria de intervalos para evitar acumulación)' : 'Enable Fuzz (randomly disperse intervals to prevent study spikes)'}
                 </label>
+              </div>
+            </div>
+
+            {/* Review card Section */}
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {lang === 'es' ? 'Tarjeta de repaso' : 'Review card'}
+              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="checkbox"
+                  id="srsShowAudioButtonCheckbox"
+                  checked={settings.srsShowAudioButton !== false}
+                  onChange={(e) => onSaveSettings({ ...settings, srsShowAudioButton: e.target.checked })}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <label htmlFor="srsShowAudioButtonCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
+                  {lang === 'es' ? 'Mostrar el botón de escuchar la palabra' : 'Show the play-word button'}
+                </label>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: 700 }}>
+                  {lang === 'es' ? '¿Qué ves antes de la respuesta?' : 'What do you see before the answer?'}
+                </span>
+                <div className="srs-front-modes" role="radiogroup" aria-label={lang === 'es' ? 'Frente de la tarjeta' : 'Card front'}>
+                  {([
+                    ['word', lang === 'es' ? 'Solo la palabra' : 'Word only', lang === 'es' ? 'Lees la palabra y recuerdas su significado.' : 'Read the word and recall its meaning.'],
+                    ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence', lang === 'es' ? 'Ves la oración del libro con la palabra marcada.' : 'See the book sentence with the word marked.'],
+                    ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only', lang === 'es' ? 'Suena la palabra sin mostrarla; la ves al girar la tarjeta.' : 'The word plays without being shown; you see it when you flip the card.'],
+                  ] as const).map(([mode, title, hint]) => {
+                    const selected = (settings.srsCardFront || 'word') === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`srs-front-mode${selected ? ' is-selected' : ''}`}
+                        onClick={() => onSaveSettings({ ...settings, srsCardFront: mode })}
+                      >
+                        <strong>{title}</strong>
+                        <span>{hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -6168,6 +6146,20 @@ const Library = React.memo(function Library({
       } else if (status === 'ignored') {
         statusText = lang === 'es' ? 'Ignorado' : 'Ignored';
         statusClass = 'ignored';
+      }
+      // A word still being learned shows its SRS card state, so it matches History and Stats.
+      const card = srsData[word];
+      if (status === 'learning' && card) {
+        if (isNewSrsCard(card)) {
+          statusText = lang === 'es' ? 'Nueva' : 'New';
+          statusClass = 'new';
+        } else if (card.state === 2) {
+          statusText = lang === 'es' ? 'Repaso' : 'Review';
+          statusClass = 'known';
+        } else if (card.state === 3) {
+          statusText = lang === 'es' ? 'Reaprendiendo' : 'Relearning';
+          statusClass = 'learning';
+        }
       }
       return { word, status, statusText, statusClass };
     });
@@ -6270,6 +6262,13 @@ const Library = React.memo(function Library({
             {lang === 'es' ? 'Mis Tarjetas' : 'My Cards'}
             <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500 }}>({countAll})</span>
           </h2>
+          {allSrsCards.length !== countAll && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {lang === 'es'
+                ? `${countAll} palabras guardadas · ${allSrsCards.length} con tarjeta de repaso`
+                : `${countAll} saved words · ${allSrsCards.length} with a review card`}
+            </div>
+          )}
         </div>
 
         {/* Jiten Filter Pills Row */}
@@ -8178,160 +8177,130 @@ const Library = React.memo(function Library({
           <span>{toast.message}</span>
         </div>
       )}
-      {isDeckPromptOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10001
-        }}>
-          <form 
-            onSubmit={handleDeckPromptSubmit}
-            style={{
-              background: '#16161c',
-              border: '1px solid var(--border-light)',
-              borderRadius: '16px',
-              padding: '24px',
-              width: '380px',
-              maxWidth: '90%',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
-            }}
-          >
-            <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 700 }}>
-              {deckPromptMode === 'create' 
-                ? (lang === 'es' ? 'Crear Nuevo Mazo' : 'Create New Deck')
-                : deckPromptMode === 'rename'
-                  ? (lang === 'es' ? 'Renombrar Mazo' : 'Rename Deck')
-                  : (lang === 'es' ? 'Fusionar Mazo' : 'Merge Decks')
-              }
-            </h3>
+      {isDeckPromptOpen && (() => {
+        const isSettings = deckPromptMode === 'rename';
+        const deckCardCount = isSettings
+          ? Object.entries(db.getSrsData()).filter(([word, card]: [string, any]) => !word.startsWith('_deck_') && card && (card.source || 'Yoru Reader').trim() === deckPromptTargetId).length
+          : 0;
+        const globalNew = Number(settings.srsNewCardsPerDay ?? 20);
+        const globalReviews = Number(settings.srsMaxReviewsPerDay ?? 200);
+        const setLimit = (key: 'newPerDay' | 'reviewsPerDay', raw: string) => {
+          setDeckOptionsDraft(d => {
+            const next = { ...d };
+            if (raw.trim() === '') delete next[key];
+            else next[key] = Math.max(0, Math.floor(Number(raw) || 0));
+            return next;
+          });
+        };
+        const frontOptions: [string, string][] = [
+          ['', lang === 'es' ? 'Usar el ajuste general' : 'Use the general setting'],
+          ['word', lang === 'es' ? 'Solo la palabra' : 'Word only'],
+          ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence'],
+          ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only'],
+        ];
+        return (
+        <div className="srs-deck-modal-backdrop" onClick={() => setIsDeckPromptOpen(false)}>
+          <form className="srs-deck-modal" onSubmit={handleDeckPromptSubmit} onClick={(e) => e.stopPropagation()}>
+            <div className="srs-deck-modal-head">
+              <h3>
+                {isSettings
+                  ? (lang === 'es' ? 'Ajustes del mazo' : 'Deck settings')
+                  : (lang === 'es' ? 'Crear nuevo mazo' : 'Create new deck')}
+              </h3>
+              {isSettings && (
+                <span>{deckCardCount} {lang === 'es' ? (deckCardCount === 1 ? 'tarjeta' : 'tarjetas') : (deckCardCount === 1 ? 'card' : 'cards')}</span>
+              )}
+            </div>
 
-            {deckPromptMode === 'merge' ? (
-              <select
-                value={deckPromptValue}
-                onChange={(e) => setDeckPromptValue(e.target.value)}
-                required
-                style={{
-                  background: '#1c1c24',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                <option value="" disabled style={{ background: '#16161c' }}>
-                  {lang === 'es' ? 'Seleccionar mazo destino...' : 'Select target deck...'}
-                </option>
-                {(() => {
-                  const srsData = db.getSrsData();
-                  const deckNames = new Set<string>();
-                  Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-                    if (word.startsWith('_deck_')) {
-                      const dName = word.substring(6).trim();
-                      if (dName) deckNames.add(dName);
-                    } else if (card && card.source && !word.startsWith('_')) {
-                      deckNames.add(card.source.trim());
-                    }
-                  });
-                  return Array.from(deckNames)
-                    .filter(name => name !== deckPromptTargetId)
-                    .sort((a, b) => a.localeCompare(b, 'ja'))
-                    .map(name => (
-                      <option key={name} value={name} style={{ background: '#16161c' }}>
-                        {name}
-                      </option>
-                    ));
-                })()}
-              </select>
-            ) : (
-              <input 
+            <label className="srs-deck-field">
+              <span>{lang === 'es' ? 'Nombre' : 'Name'}</span>
+              <input
                 type="text"
                 value={deckPromptValue}
                 onChange={(e) => setDeckPromptValue(e.target.value)}
                 placeholder={lang === 'es' ? 'Nombre del mazo...' : 'Deck name...'}
                 required
-                autoFocus
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  transition: 'border-color 0.2s'
-                }}
+                autoFocus={!isSettings}
               />
+            </label>
+
+            {isSettings && (
+              <>
+                <div className="srs-deck-field-row">
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Nuevas por día' : 'New cards per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.newPerDay ?? ''}
+                      placeholder={lang === 'es' ? `General: ${globalNew}` : `General: ${globalNew}`}
+                      onChange={(e) => setLimit('newPerDay', e.target.value)}
+                    />
+                  </label>
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Repasos por día' : 'Reviews per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.reviewsPerDay ?? ''}
+                      placeholder={`General: ${globalReviews}`}
+                      onChange={(e) => setLimit('reviewsPerDay', e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <label className="srs-deck-field">
+                  <span>{lang === 'es' ? 'Qué ves antes de la respuesta' : 'What you see before the answer'}</span>
+                  <select
+                    value={deckOptionsDraft.cardFront || ''}
+                    onChange={(e) => {
+                      const value = e.target.value as SrsDeckOptions['cardFront'] | '';
+                      setDeckOptionsDraft(d => {
+                        const next = { ...d };
+                        if (value) next.cardFront = value;
+                        else delete next.cardFront;
+                        return next;
+                      });
+                    }}
+                  >
+                    {frontOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+
+                <label className="srs-deck-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(deckOptionsDraft.paused)}
+                    onChange={(e) => setDeckOptionsDraft(d => ({ ...d, paused: e.target.checked }))}
+                  />
+                  <span>
+                    <strong>{lang === 'es' ? 'Pausar el mazo' : 'Pause this deck'}</strong>
+                    <small>{lang === 'es' ? 'No aparece en los repasos hasta que lo reactives. No se pierde el progreso.' : 'It stays out of reviews until you turn it back on. No progress is lost.'}</small>
+                  </span>
+                </label>
+              </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button
-                type="button"
-                className="create-profile-cancel"
-                onClick={() => setIsDeckPromptOpen(false)}
-                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                {lang === 'es' ? 'Cancelar' : 'Cancel'}
-              </button>
-
-              {deckPromptMode === 'rename' && (
-                <button
-                  type="button"
-                  onClick={handleDeckPromptDelete}
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid #ef4444',
-                    color: '#f87171',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {lang === 'es' ? 'Eliminar' : 'Delete'}
+            <div className="srs-deck-modal-actions">
+              {isSettings && (
+                <button type="button" className="srs-deck-delete" onClick={handleDeckPromptDelete}>
+                  <Trash2 size={15} />
+                  <span>{lang === 'es' ? 'Eliminar mazo' : 'Delete deck'}</span>
                 </button>
               )}
-
-              <button
-                type="submit"
-                style={{
-                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  borderRadius: '8px',
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {deckPromptMode === 'create'
-                  ? (lang === 'es' ? 'Crear' : 'Create')
-                  : deckPromptMode === 'rename'
-                    ? (lang === 'es' ? 'Guardar' : 'Save')
-                    : (lang === 'es' ? 'Fusionar' : 'Merge')
-                }
+              <button type="button" className="srs-deck-cancel" onClick={() => setIsDeckPromptOpen(false)}>
+                {lang === 'es' ? 'Cancelar' : 'Cancel'}
+              </button>
+              <button type="submit" className="srs-deck-save">
+                {isSettings ? (lang === 'es' ? 'Guardar' : 'Save') : (lang === 'es' ? 'Crear' : 'Create')}
               </button>
             </div>
           </form>
         </div>
-      )}
+        );
+      })()}
       {deleteAllState && renderDeleteAllModal()}
       {confirmModal}
     </div>

@@ -14,6 +14,7 @@ import {
   cssColorToInt,
   ensureNativeBook,
   exportBookForNativeReader,
+  LINE_END_RESERVE_EM,
   loadNativePosition,
   saveNativePosition,
   type NativeBookExport,
@@ -48,9 +49,11 @@ interface Props {
   onError?: (message: string) => void;
   /** Read aloud is not running: its next start reads from the page on screen. */
   readAloudIdle?: boolean;
+  /** UI language ('es', 'en'): texts the plugin draws on the page. */
+  lang?: string;
 }
 
-function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']): NativeReaderSettings {
+function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], lang?: string): NativeReaderSettings {
   return {
     vertical: settings.vertical,
     fontSize: settings.fontSize,
@@ -64,6 +67,9 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']):
     invertTaps: !!settings.invertTapZones,
     tapZoneMode: settings.tapZoneMode || 'edge',
     brightness: typeof settings.readerBrightness === 'number' ? settings.readerBrightness : 100,
+    hideImages: !!settings.hideImages,
+    spoilerLabel: lang === 'es' ? 'Imagen oculta · toca para verla' : 'Hidden image · tap to show',
+    lineEndReserve: LINE_END_RESERVE_EM,
     underlines: [],
   };
 }
@@ -147,11 +153,12 @@ export default function NativeReaderHost({
   targetCharPosition,
   onError,
   readAloudIdle = true,
+  lang,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
   const sections = useMemo(() => computeSections(book), [book]);
   const showFurigana = readerSettings.showFurigana !== false;
-  const settings = nativeSettings(readerSettings, colors);
+  const settings = nativeSettings(readerSettings, colors, lang);
 
   // Word states. The book's words are analysed once (kept in IndexedDB, so later opens take
   // milliseconds; the first one shows its progress), and the book opens with its colours and
@@ -620,22 +627,29 @@ export default function NativeReaderHost({
       }
       let charOffset = 0;
       let charLength = 0;
+      // The sentence without furigana: the plugin finds it by its letters on the page.
+      let sentenceText = '';
       let beforeStart = true;
       for (const textNode of baseTextNodes(block)) {
         if (beforeStart) {
           if (textNode === range.startContainer) {
             beforeStart = false;
             charOffset += range.startOffset;
-            charLength += (textNode === range.endContainer)
-              ? range.endOffset - range.startOffset
-              : textNode.length - range.startOffset;
+            const end = textNode === range.endContainer ? range.endOffset : textNode.length;
+            charLength += end - range.startOffset;
+            sentenceText += textNode.data.slice(range.startOffset, end);
             if (textNode === range.endContainer) break;
           } else {
             charOffset += textNode.length;
           }
         } else {
-          if (textNode === range.endContainer) { charLength += range.endOffset; break; }
+          if (textNode === range.endContainer) {
+            charLength += range.endOffset;
+            sentenceText += textNode.data.slice(0, range.endOffset);
+            break;
+          }
           charLength += textNode.length;
+          sentenceText += textNode.data;
         }
       }
       // The page follows the voice. The plugin of APK 1.4.4+ goes to the page of the sentence's
@@ -680,6 +694,7 @@ export default function NativeReaderHost({
           relativeBlock,
           charOffset: start,
           charLength: length,
+          text: sentenceText,
           color: ttsHighlightColorRef.current,
         }).catch(() => {});
       });

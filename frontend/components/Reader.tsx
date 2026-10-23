@@ -13,7 +13,7 @@ import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
-import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
+import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reader/ReaderEngine';
 import NativeReaderHost from './reader/NativeReaderHost';
 import { isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
@@ -1827,7 +1827,11 @@ export default function Reader({
 
   const handleSrsReview = (word: string, grade: number, preview?: any) => {
     const currentCard = db.getSrsCard(word);
-    const intervals = preview ? { repeats: preview } : calculateSrsIntervals(currentCard);
+    // A preview from the popup only carries the scheduled repeats; the readable labels
+    // (again/hard/good/easy) come from the same card, so reuse the memoized intervals.
+    const intervals = preview
+      ? { ...(preview === selectedSrsIntervals.repeats ? selectedSrsIntervals : calculateSrsIntervals(currentCard)), repeats: preview }
+      : calculateSrsIntervals(currentCard);
     const updatedCard = { 
       ...currentCard,
       ...(intervals.repeats as any)[grade] 
@@ -2355,6 +2359,7 @@ export default function Reader({
           onSleep={readAloud.setSleepMinutes}
           onSettings={() => setIsVoiceSettingsOpen(true)}
           raised={isHeaderVisible}
+          autoHide={readAloud.status === 'playing' && !isHeaderVisible}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
         />
       )}
@@ -2391,6 +2396,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
+          lang={lang}
         />
       ) : (
         <ReaderEngine
@@ -2827,7 +2833,7 @@ export default function Reader({
         <ReaderSidebar
           mode={sidebarMode}
           onClose={() => setSidebarMode(null)}
-          sections={book.chapters.map((ch: any, idx: number) => ({ id: `chapter-${idx}`, title: ch.title, isFromToc: ch.isFromToc }))}
+          sections={book.chapters.map((ch: any, idx: number) => ({ id: `chapter-${idx}`, title: chapterDisplayTitle(ch.title, idx, lang), isFromToc: ch.isFromToc }))}
           currSection={currentProgress.currSection}
           onGoToSection={(idx: number) => {
             skipNextReadingPositionRef.current = true;
@@ -3399,7 +3405,10 @@ export default function Reader({
             {!dictLoading ? (
               dictEntry && dictEntry.definitions && dictEntry.definitions.length > 0 ? (
                 dictEntry.definitions.map((def: any, idx: number) => {
-                  const glossary = typeof def === 'string' ? def : (def?.glossary || '');
+                  // The "nothing found" entry from lookupWord is shown in the app's language.
+                  const glossary = dictEntry.isFallback
+                    ? t('noDefFound', lang)
+                    : typeof def === 'string' ? def : (def?.glossary || '');
                   return (
                   <div key={idx} style={{ marginBottom: '8px', fontSize: '0.85rem', lineHeight: '1.4', color: colors.textMain }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
@@ -3411,7 +3420,7 @@ export default function Reader({
                         borderRadius: '3px',
                         fontWeight: 600
                       }}>
-                        {(typeof def === 'string' ? '' : def?.dictionary) || 'Glosario'}
+                        {(typeof def === 'string' ? '' : def?.dictionary) || (lang === 'es' ? 'Glosario' : 'Glossary')}
                       </span>
                       {typeof def !== 'string' && def?.partsOfSpeech && def.partsOfSpeech.map((pos: string, pIdx: number) => (
                         <span key={pIdx} style={{ fontSize: '0.62rem', color: colors.textMuted, fontStyle: 'italic' }}>

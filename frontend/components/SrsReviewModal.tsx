@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Volume2, Eye, Clock, LogOut, Menu, Undo2, Ban, Star, Settings, ChevronDown, Columns } from 'lucide-react';
+import { X, Volume2, Eye, Clock, Undo2, Ban, Star } from 'lucide-react';
 import { db } from '../utils/db';
 import { lookupWord } from '../utils/dictionary';
 import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
@@ -8,6 +8,7 @@ import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 import { isPhoneUI } from '../utils/platform';
+import { getDeckLimitsLeft, getDeckName, getDeckOptions } from '../utils/srsDeckOptions';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -173,6 +174,10 @@ interface HistoryEntry {
 export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: SrsReviewModalProps) {
   const rawSettings = db.getSettings();
   const lang = rawSettings.appLanguage || 'en';
+  const showAudioButton = rawSettings.srsShowAudioButton !== false;
+  // What the front of the card asks with: the word, the word inside its book sentence, or only its audio.
+  // A deck can override the general setting.
+  const generalFrontMode: 'word' | 'sentence' | 'audio' = ['sentence', 'audio'].includes(rawSettings.srsCardFront) ? rawSettings.srsCardFront : 'word';
 
   const fsrsRetentionRate = rawSettings.fsrsRetentionRate !== undefined ? Number(rawSettings.fsrsRetentionRate) : 0.90;
   const fsrsMaxInterval = rawSettings.fsrsMaxInterval !== undefined ? Number(rawSettings.fsrsMaxInterval) : 36500;
@@ -212,6 +217,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const currentReviewWord = dueCards[0] || null;
   const currentReviewCard = currentReviewWord ? db.getSrsCard(currentReviewWord) : null;
   const currentReviewCardKey = JSON.stringify(currentReviewCard);
+  const frontMode = (currentReviewCard && getDeckOptions(rawSettings, getDeckName(currentReviewCard)).cardFront) || generalFrontMode;
   const currentReviewIntervals = React.useMemo(
     () => calculateSrsIntervals(currentReviewCard, fsrs),
     [currentReviewWord, currentReviewCardKey, fsrs],
@@ -397,6 +403,10 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       });
     }
     
+    // Paused decks stay out of every session.
+    const deckLimits = getDeckLimitsLeft(rawSettings, srsData, [], []);
+    learningWords = learningWords.filter(word => !deckLimits.isPaused(getDeckName(srsData[word])));
+
     let due = learningWords.filter(word => {
       const card = srsData[word];
       const dueDate = getCardDue(card);
@@ -431,6 +441,18 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     const configuredReviewLimit = Number(rawSettings.srsMaxReviewsPerDay ?? 200);
     const maxReviewsLimit = Number.isFinite(configuredReviewLimit) ? Math.max(0, Math.floor(configuredReviewLimit)) : 200;
     const reviewsLeftToday = Math.max(0, maxReviewsLimit - reviewsDoneToday);
+    const perDeck = getDeckLimitsLeft(rawSettings, srsData, todayHistory, newCardsStudiedToday);
+    // Keep at most each deck's own daily limit, in queue order.
+    const takePerDeck = (words: string[], left: (deck: string) => number) => {
+      const remaining: Record<string, number> = {};
+      return words.filter(word => {
+        const deck = getDeckName(srsData[word]);
+        if (remaining[deck] === undefined) remaining[deck] = left(deck);
+        if (remaining[deck] <= 0) return false;
+        remaining[deck]--;
+        return true;
+      });
+    };
 
     let finalDue: string[] = [];
     {
@@ -467,8 +489,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       dueReviews.sort((a, b) => getDueTimestamp(a) - getDueTimestamp(b));
       finalDue = [
         ...dueLearning,
-        ...dueReviews.slice(0, reviewsLeftToday),
-        ...shuffle(dueNew.slice(0, newCardsLeftToday)),
+        ...takePerDeck(dueReviews, perDeck.reviewsLeft).slice(0, reviewsLeftToday),
+        ...shuffle(takePerDeck(shuffle(dueNew), perDeck.newLeft).slice(0, newCardsLeftToday)),
       ];
     }
 
@@ -641,6 +663,13 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     }
   };
 
+  // Listening cards: say the word as soon as the card appears.
+  useEffect(() => {
+    if (!isOpen || showAnswer || frontMode !== 'audio' || !currentReviewWord || isFinished) return;
+    playWordTts(currentReviewWord, db.getSrsCard(currentReviewWord)?.reading);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, currentReviewWord, currentIndex, showAnswer, frontMode, isFinished]);
+
   const handleToggleBlacklist = () => {
     if (dueCards.length === 0) return;
     const word = dueCards[0];
@@ -733,94 +762,73 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
   const srsCardData = currentReviewCard;
   const intervals = currentReviewIntervals;
 
-  const newCardsCount = dueCards.filter(w => {
+  let newCardsCount = 0;
+  let learningCardsCount = 0;
+  dueCards.forEach(w => {
     const card = db.getSrsCard(w);
-    return isNewSrsCard(card);
-  }).length;
-  const reviewCardsCount = dueCards.length - newCardsCount;
+    if (isNewSrsCard(card)) newCardsCount++;
+    else if ([State.Learning, State.Relearning].includes(card?.state)) learningCardsCount++;
+  });
+  const reviewCardsCount = dueCards.length - newCardsCount - learningCardsCount;
+  const currentCardKind = !srsCardData || isNewSrsCard(srsCardData)
+    ? 'new'
+    : ([State.Learning, State.Relearning].includes(srsCardData.state) ? 'learn' : 'review');
+  const currentCardKindLabel = lang === 'es'
+    ? { new: 'Nueva', learn: 'Aprendiendo', review: 'Repaso' }[currentCardKind]
+    : { new: 'New', learn: 'Learning', review: 'Review' }[currentCardKind];
+  const sentenceParts = (() => {
+    const sentence = srsCardData?.sentence || '';
+    const at = displayWord ? sentence.indexOf(displayWord) : -1;
+    return at < 0 ? null : [sentence.slice(0, at), displayWord, sentence.slice(at + displayWord.length)];
+  })();
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: '#000000',
-      zIndex: 1500,
-      display: 'flex',
-      flexDirection: 'column',
-      color: '#ffffff',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-    }}>
+    <div className="srs-rv">
       
-      {/* Native Top Navigation Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'calc(14px + var(--yoru-safe-top, 0px)) 24px 14px', background: '#000000', borderBottom: '1px solid #18181b', position: 'relative' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '0.74rem', padding: '4px 10px', borderRadius: '6px', fontWeight: 800 }}>
-            {newCardsCount} new
-          </span>
-          <span style={{ background: '#16a34a', color: '#ffffff', fontSize: '0.74rem', padding: '4px 10px', borderRadius: '6px', fontWeight: 800 }}>
-            {reviewCardsCount} review
-          </span>
+      {/* Top bar: exit, queue counts, timer */}
+      <div className="srs-rv-top">
+        <button type="button" className="srs-rv-icon-btn" onClick={onClose} aria-label={lang === 'es' ? 'Salir del repaso' : 'Exit review'} title={lang === 'es' ? 'Salir' : 'Exit'}>
+          <X size={18} />
+        </button>
+        <div className="srs-rv-counts" aria-label={lang === 'es' ? 'Tarjetas pendientes' : 'Cards left'}>
+          <span className="srs-pill is-new" title={lang === 'es' ? 'Nuevas' : 'New'}>{newCardsCount}</span>
+          <span className="srs-pill is-learn" title={lang === 'es' ? 'Aprendiendo' : 'Learning'}>{learningCardsCount}</span>
+          <span className="srs-pill is-review" title={lang === 'es' ? 'Repaso' : 'Review'}>{reviewCardsCount}</span>
         </div>
- 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em' }}>
-            <span style={{ color: '#ffffff' }}>{dueCards.length > 0 ? Math.min(currentIndex + 1, sessionCount) : currentIndex}</span>
-            <span style={{ color: '#71717a', margin: '0 4px' }}>/</span>
-            <span style={{ color: '#71717a' }}>{sessionCount}</span>
-          </div>
-          {isTimerVisible && (
-            <div style={{ fontSize: '0.74rem', color: '#71717a', fontWeight: 700, marginTop: '2px' }}>
-              {formatTimer(timerSeconds)}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={() => setIsTimerVisible(prev => !prev)}
-            style={{ background: 'transparent', border: '1px solid #27272a', borderRadius: '8px', color: '#a1a1aa', width: '36px', height: '36px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: 'all 0.15s' }}
-            title={lang === 'es' ? 'Mostrar/Ocultar cronómetro' : 'Show/Hide timer'}
-          >
-            <Clock size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ background: 'transparent', border: '1px solid #27272a', borderRadius: '8px', color: '#ef4444', width: '36px', height: '36px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: 'all 0.15s' }}
-            title={lang === 'es' ? 'Salir' : 'Exit'}
-          >
-            <LogOut size={16} />
-          </button>
-          <button
-            type="button"
-            style={{ background: 'transparent', border: '1px solid #27272a', borderRadius: '8px', color: '#a1a1aa', width: '36px', height: '36px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: 'all 0.15s' }}
-          >
-            <Menu size={16} />
-          </button>
-        </div>
+        <button
+          type="button"
+          className={`srs-rv-icon-btn${isTimerVisible ? ' is-active' : ''}`}
+          onClick={() => setIsTimerVisible(prev => !prev)}
+          aria-label={lang === 'es' ? 'Mostrar/Ocultar cronómetro' : 'Show/Hide timer'}
+          title={lang === 'es' ? 'Mostrar/Ocultar cronómetro' : 'Show/Hide timer'}
+        >
+          <Clock size={18} />
+        </button>
       </div>
 
-      {/* Red Progress Bar */}
-      <div style={{ width: '100%', height: '4px', background: '#18181b', position: 'relative' }}>
-        <div style={{ 
-          width: `${sessionCount > 0 ? Math.min(100, (currentIndex / sessionCount) * 100) : 0}%`, 
-          height: '100%', 
-          background: '#ef4444', 
-          transition: 'width 0.2s ease-in-out' 
-        }} />
+      <div className="srs-rv-progress">
+        <div className="srs-rv-progress-track">
+          <div className="srs-rv-progress-fill" style={{ width: `${sessionCount > 0 ? Math.min(100, (currentIndex / sessionCount) * 100) : 0}%` }} />
+        </div>
+        <div className="srs-rv-progress-meta">
+          <span>
+            {dueCards.length > 0 ? Math.min(currentIndex + 1, sessionCount) : currentIndex} {lang === 'es' ? 'de' : 'of'} {sessionCount}
+            {isTimerVisible && <> · {formatTimer(timerSeconds)}</>}
+          </span>
+          {srsCardData?.source && !isFinished && dueCards.length > 0 && <span className="srs-rv-source">{srsCardData.source}</span>}
+        </div>
       </div>
 
       {/* Content Area */}
-      <div style={{ flex: 1, minHeight: 0, padding: '24px 24px calc(24px + var(--yoru-safe-bottom, 0px))', display: 'flex', flexDirection: 'column', background: '#000000', overflowY: 'auto', justifyContent: 'center', alignItems: 'center' }}>
+      <div className="srs-rv-content">
         
         {dueCards.length === 0 && !isFinished ? (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#71717a', maxWidth: '450px', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', maxWidth: '450px', width: '100%' }}>
             <div style={{ fontSize: '4.5rem', marginBottom: '24px' }}>🏆</div>
-            <h3 style={{ fontSize: '1.6rem', color: '#ffffff', marginBottom: '10px', fontWeight: 800 }}>
+            <h3 style={{ fontSize: '1.6rem', color: 'var(--text-main)', marginBottom: '10px', fontWeight: 800 }}>
               {lang === 'es' ? '¡Estás al día!' : 'Zero reviews due!'}
             </h3>
-            <p style={{ fontSize: '0.9rem', lineHeight: '1.6', textAlign: 'center', color: '#a1a1aa', margin: '0 0 32px 0' }}>
+            <p style={{ fontSize: '0.9rem', lineHeight: '1.6', textAlign: 'center', color: 'var(--text-muted)', margin: '0 0 32px 0' }}>
               {lang === 'es' 
                 ? 'No tienes palabras pendientes de repaso en este mazo en este momento. ¡Buen trabajo!' 
                 : 'You have no words due for review in this deck right now. Great job!'}
@@ -828,7 +836,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
             <button 
               type="button" 
               onClick={onClose} 
-              style={{ padding: '12px 36px', background: 'var(--primary)', color: '#000000', border: 'none', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
+              style={{ padding: '12px 36px', background: 'var(--primary)', color: 'var(--srs-on-primary)', border: 'none', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
             >
               {lang === 'es' ? 'Volver' : 'Go Back'}
             </button>
@@ -857,12 +865,12 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
             : `${dueWithinHour} due within the hour · ${dueTomorrow} due tomorrow`;
 
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#71717a', maxWidth: '450px', width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', maxWidth: '450px', width: '100%' }}>
               <div style={{ fontSize: '4.5rem', marginBottom: '24px' }}>🎉</div>
-              <h3 style={{ fontSize: '1.6rem', color: '#ffffff', marginBottom: '4px', fontWeight: 800 }}>
+              <h3 style={{ fontSize: '1.6rem', color: 'var(--text-main)', marginBottom: '4px', fontWeight: 800 }}>
                 {lang === 'es' ? '¡Sesión Completada!' : 'Session Completed!'}
               </h3>
-              <p style={{ fontSize: '0.9rem', marginBottom: '28px', textAlign: 'center', color: '#a1a1aa', fontWeight: 500 }}>
+              <p style={{ fontSize: '0.9rem', marginBottom: '28px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 500 }}>
                 {streakText}
               </p>
 
@@ -875,70 +883,70 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
               }}>
                 {/* Reviews */}
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
                   borderRadius: '12px',
                   padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: '#a1a1aa', letterSpacing: '0.04em' }}>
+                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
                     {lang === 'es' ? 'Repasos' : 'Reviews'}
                   </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#ffffff', marginTop: '6px' }}>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-main)', marginTop: '6px' }}>
                     {totalReviews}
                   </div>
                 </div>
 
                 {/* New Cards */}
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
                   borderRadius: '12px',
                   padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: '#a1a1aa', letterSpacing: '0.04em' }}>
+                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
                     {lang === 'es' ? 'Tarjetas Nuevas' : 'New Cards'}
                   </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#60a5fa', marginTop: '6px' }}>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--srs-new)', marginTop: '6px' }}>
                     {newCardsLearned}
                   </div>
                 </div>
 
                 {/* Pass Rate */}
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
                   borderRadius: '12px',
                   padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: '#a1a1aa', letterSpacing: '0.04em' }}>
+                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
                     {lang === 'es' ? 'Aciertos' : 'Pass Rate'}
                   </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#4ade80', marginTop: '6px' }}>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--srs-review)', marginTop: '6px' }}>
                     {passRate}%
                   </div>
                 </div>
 
                 {/* Time Spent */}
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
                   borderRadius: '12px',
                   padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: '#a1a1aa', letterSpacing: '0.04em' }}>
+                  <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
                     {lang === 'es' ? 'Tiempo' : 'Time Spent'}
                   </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#fb923c', marginTop: '6px' }}>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--srs-learn)', marginTop: '6px' }}>
                     {formatTimeSpent(timerSeconds)}
                   </div>
                 </div>
               </div>
 
-              <div style={{ color: '#71717a', fontSize: '0.78rem', textAlign: 'center', marginBottom: '28px', display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 500 }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textAlign: 'center', marginBottom: '28px', display: 'flex', flexDirection: 'column', gap: '4px', fontWeight: 500 }}>
                 <span>{distributionText}</span>
                 {pendingCards.length > 0 && (
                   <span>{lang === 'es' ? `${pendingCards.length} paso${pendingCards.length === 1 ? '' : 's'} de aprendizaje se guardaron para más tarde.` : `${pendingCards.length} learning step${pendingCards.length === 1 ? '' : 's'} scheduled for later.`}</span>
@@ -950,16 +958,16 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                 <button 
                   type="button" 
                   onClick={initSession} 
-                  style={{ flex: 1, padding: '12px 24px', background: 'rgba(255,255,255,0.04)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                  style={{ flex: 1, padding: '12px 24px', background: 'var(--surface-soft)', color: 'var(--text-main)', border: '1px solid var(--border-light)', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'var(--surface-soft)'}
                 >
                   {lang === 'es' ? 'Estudiar más' : 'Study More'}
                 </button>
                 <button 
                   type="button" 
                   onClick={onClose} 
-                  style={{ flex: 1, padding: '12px 28px', background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
+                  style={{ flex: 1, padding: '12px 28px', background: 'var(--primary)', color: 'var(--srs-on-primary)', border: 'none', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
                   onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
                   onMouseLeave={e => e.currentTarget.style.filter = 'none'}
                 >
@@ -969,24 +977,10 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
             </div>
           );
         })() : (
-          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '720px', margin: '0 auto' }}>
+          <div className="srs-rv-stage">
 
-            {/* Card content, plain on the background - no boxed container, like Anki's own reviewer.
-                No scroll of its own: the outer Content Area div already scrolls the whole card. */}
-            <div style={{
-              padding: 'clamp(10px, 3vw, 18px) 4px',
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative'
-            }}>
-              {/* Card Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', color: '#71717a', fontSize: '0.74rem' }}>
-                <span style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1rem' }}>Review</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>#{currentIndex + 1}</span>
-                  <span style={{ cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.02)' }}>•••</span>
-                </div>
-              </div>
+            <div className={`srs-rv-card${showAnswer ? ' is-answer' : ''}`} onClick={() => { if (!showAnswer && !loadingEntry) setShowAnswer(true); }}>
+              <span className={`srs-rv-kind is-${currentCardKind}`}>{currentCardKindLabel}</span>
 
               {loadingEntry ? (
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -995,11 +989,12 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: showAnswer ? 'flex-start' : 'center' }}>
                   {/* Spelling Area */}
+                  {(showAnswer || frontMode === 'word' || (frontMode === 'sentence' && !srsCardData?.sentence)) && (
                   <div style={{ textAlign: 'center', marginBottom: showAnswer ? '20px' : '0' }}>
                     {showAnswer && currentEntry?.reading && (
                       <div style={{ 
                         fontSize: fontSizeMode === 'S' ? '1rem' : (fontSizeMode === 'M' ? '1.3rem' : '1.7rem'), 
-                        color: '#a1a1aa', 
+                        color: 'var(--text-muted)', 
                         fontWeight: 500, 
                         marginBottom: '8px', 
                         fontFamily: 'var(--font-japanese)' 
@@ -1014,7 +1009,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                         ? (fontSizeMode === 'S' ? '2.2rem' : (fontSizeMode === 'M' ? '2.8rem' : '3.6rem'))
                         : (fontSizeMode === 'S' ? '3.2rem' : (fontSizeMode === 'M' ? '4.2rem' : '5.4rem'))}, calc((min(100vw, 720px) - 150px) / ${Math.max(1, Array.from(displayWord || '').length)}))`,
                       fontWeight: 800,
-                      color: '#ffffff',
+                      color: 'var(--text-main)',
                       letterSpacing: '0.01em',
                       display: 'flex',
                       alignItems: 'center',
@@ -1026,24 +1021,28 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                       lineHeight: 1.2
                     }}>
                       <span style={{ whiteSpace: 'nowrap', minWidth: 0 }}>{displayWord}</span>
+                      {showAudioButton && (
                       <button
                         type="button"
-                        onClick={() => playWordTts(displayWord, currentEntry?.reading)}
-                        style={{ flexShrink: 0, background: '#18181b', border: '1px solid #27272a', borderRadius: '50%', width: '38px', height: '38px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', color: '#38bdf8', transition: 'all 0.15s' }}
+                        onClick={(e) => { e.stopPropagation(); playWordTts(displayWord, currentEntry?.reading); }}
+                        aria-label={lang === 'es' ? 'Escuchar la palabra' : 'Play word audio'}
+                        style={{ flexShrink: 0, background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: '50%', width: '38px', height: '38px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', color: 'var(--srs-new)', transition: 'all 0.15s' }}
                       >
                         <Volume2 size={18} />
                       </button>
+                      )}
                     </h2>
                   </div>
+                  )}
 
-                  {showAnswer && <div style={{ borderBottom: '1px solid #18181b', width: '100%', marginBottom: '20px', marginTop: '10px' }}></div>}
+                  {showAnswer && <div style={{ borderBottom: '1px solid var(--border-light)', width: '100%', marginBottom: '20px', marginTop: '10px' }}></div>}
 
                   {showAnswer ? (
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
                       {currentEntry?.partsOfSpeech && currentEntry.partsOfSpeech.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {currentEntry.partsOfSpeech.filter((pos: string) => pos !== 'Yomitan').map((pos: string, i: number) => (
-                            <span key={i} style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', color: '#f59e0b', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                            <span key={i} style={{ background: 'var(--yoru-gold-soft, rgba(242, 200, 102, 0.13))', border: 'none', color: 'var(--primary)', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                               {pos}
                             </span>
                           ))}
@@ -1051,7 +1050,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                       )}
 
                       <div style={{ 
-                        color: '#e4e4e7', 
+                        color: 'var(--text-main)', 
                         fontSize: fontSizeMode === 'S' ? '0.85rem' : (fontSizeMode === 'M' ? '0.98rem' : '1.15rem'), 
                         lineHeight: '1.6' 
                       }}>
@@ -1067,7 +1066,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                             })}
                           </ol>
                         ) : (
-                          <p style={{ color: '#71717a', fontStyle: 'italic', fontSize: '0.85rem' }}>
+                          <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>
                             {lang === 'es' ? 'Sin traducción' : 'No translation available'}
                           </p>
                         )}
@@ -1081,8 +1080,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                       {/* Context sentence */}
                       {srsCardData?.sentence && (
                         <div style={{ 
-                          background: '#18181b', 
-                          border: '1px solid #27272a', 
+                          background: 'var(--surface-soft)', 
+                          border: '1px solid var(--border-light)', 
                           borderRadius: '10px', 
                           padding: '14px 18px', 
                           marginTop: '8px', 
@@ -1092,26 +1091,50 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                           <p style={{ 
                             margin: 0, 
                             fontSize: fontSizeMode === 'S' ? '0.88rem' : (fontSizeMode === 'M' ? '1.02rem' : '1.18rem'), 
-                            color: '#ffffff', 
+                            color: 'var(--text-main)', 
                             fontFamily: 'var(--font-japanese)', 
                             lineHeight: '1.6' 
                           }}>
-                            {srsCardData.sentence}
+                            {sentenceParts ? <>{sentenceParts[0]}<mark className="srs-rv-mark">{sentenceParts[1]}</mark>{sentenceParts[2]}</> : srsCardData.sentence}
                           </p>
                           {srsCardData.source && (
-                            <div style={{ fontSize: '0.74rem', color: '#71717a', marginTop: '6px', fontWeight: 600 }}>
-                              Source: <span style={{ color: '#a1a1aa' }}>{srsCardData.source}</span>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '6px', fontWeight: 600 }}>
+                              {srsCardData.source}
                             </div>
                           )}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div style={{ textAlign: 'center', color: '#71717a', fontSize: '0.95rem' }}>
-                      {window.matchMedia?.('(pointer: coarse)').matches
-                        ? (lang === 'es' ? 'Toca para mostrar' : 'Tap to reveal')
-                        : (lang === 'es' ? 'Clic o Espacio para mostrar' : 'Click or press Space to reveal')}
-                    </div>
+                    frontMode === 'audio' ? (
+                      <div className="srs-rv-listen">
+                        <button
+                          type="button"
+                          className={`srs-rv-listen-btn${isTtsPlaying ? ' is-playing' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); playWordTts(displayWord, srsCardData?.reading); }}
+                          aria-label={lang === 'es' ? 'Escuchar otra vez' : 'Play again'}
+                        >
+                          <Volume2 size={34} />
+                        </button>
+                        <span>{lang === 'es' ? 'Escucha la palabra y recuerda qué significa' : 'Listen to the word and recall its meaning'}</span>
+                      </div>
+                    ) : frontMode === 'sentence' && srsCardData?.sentence ? (
+                      <div className="srs-rv-listen">
+                        <p className="srs-rv-front-sentence is-main">
+                          {sentenceParts ? <>{sentenceParts[0]}<mark className="srs-rv-mark">{sentenceParts[1]}</mark>{sentenceParts[2]}</> : srsCardData.sentence}
+                        </p>
+                        {showAudioButton && (
+                          <button
+                            type="button"
+                            className="srs-rv-icon-btn"
+                            onClick={(e) => { e.stopPropagation(); playWordTts(displayWord, srsCardData?.reading); }}
+                            aria-label={lang === 'es' ? 'Escuchar la palabra' : 'Play word audio'}
+                          >
+                            <Volume2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    ) : null
                   )}
                 </div>
               )}
@@ -1119,233 +1142,71 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
 
             {/* Bottom Actions Area */}
             {showAnswer ? (
-              <div style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* 4 Grading Buttons */}
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  
-                  {/* Again */}
-                  <button
-                    type="button"
-                    onClick={() => submitGrade(1)}
-                    style={{
-                      flex: 1,
-                      padding: '12px 6px',
-                      background: 'rgba(239, 68, 68, 0.04)',
-                      border: '2px solid #ef4444',
-                      borderRadius: '10px',
-                      color: '#f87171',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.04)'}
-                  >
-                    <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.again}</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Again</div>
-                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>1</div>}
-                  </button>
-
-                  {/* Hard */}
-                  <button
-                    type="button"
-                    onClick={() => submitGrade(2)}
-                    style={{
-                      flex: 1,
-                      padding: '12px 6px',
-                      background: 'rgba(249, 115, 22, 0.04)',
-                      border: '2px solid #f97316',
-                      borderRadius: '10px',
-                      color: '#fb923c',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(249, 115, 22, 0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(249, 115, 22, 0.04)'}
-                  >
-                    <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.hard}</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Hard</div>
-                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>2</div>}
-                  </button>
-
-                  {/* Good */}
-                  <button
-                    type="button"
-                    onClick={() => submitGrade(3)}
-                    style={{
-                      flex: 1,
-                      padding: '12px 6px',
-                      background: 'rgba(34, 197, 94, 0.04)',
-                      border: '2px solid #22c55e',
-                      borderRadius: '10px',
-                      color: '#4ade80',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.04)'}
-                  >
-                    <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.good}</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Good</div>
-                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>3</div>}
-                  </button>
-
-                  {/* Easy */}
-                  <button
-                    type="button"
-                    onClick={() => submitGrade(4)}
-                    style={{
-                      flex: 1,
-                      padding: '12px 6px',
-                      background: 'rgba(59, 130, 246, 0.04)',
-                      border: '2px solid #3b82f6',
-                      borderRadius: '10px',
-                      color: '#60a5fa',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.04)'}
-                  >
-                    <div style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 700 }}>{intervals.easy}</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, margin: '2px 0' }}>Easy</div>
-                    {showKeyHints && <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>4</div>}
-                  </button>
+              <div className="srs-rv-actions">
+                <div className="srs-rv-grades">
+                  {([
+                    [1, 'again', lang === 'es' ? 'Otra vez' : 'Again', intervals.again],
+                    [2, 'hard', lang === 'es' ? 'Difícil' : 'Hard', intervals.hard],
+                    [3, 'good', lang === 'es' ? 'Bien' : 'Good', intervals.good],
+                    [4, 'easy', lang === 'es' ? 'Fácil' : 'Easy', intervals.easy],
+                  ] as const).map(([grade, key, label, interval]) => (
+                    <button key={key} type="button" className={`srs-rv-grade is-${key}`} onClick={() => submitGrade(grade)}>
+                      <span className="srs-rv-grade-label">{label}</span>
+                      <span className="srs-rv-grade-interval">{interval}</span>
+                      {showKeyHints && <span className="srs-rv-key">{grade}</span>}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Utility Buttons row */}
-                <div className="srs-utility-row" style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={handleToggleBlacklist}
-                    style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#ffffff', padding: '8px 18px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Ban size={13} style={{ color: '#ef4444' }} />
-                    <span>Blacklist</span>
-                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>B</span>}
+                <div className="srs-rv-utility">
+                  <button type="button" onClick={handleUndo} disabled={historyStack.length === 0}>
+                    <Undo2 size={14} />
+                    <span>{lang === 'es' ? 'Deshacer' : 'Undo'}</span>
+                    {showKeyHints && <span className="srs-rv-key">Z</span>}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={handleToggleMaster}
-                    style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#ffffff', padding: '8px 18px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Star size={13} style={{ color: '#f59e0b' }} />
-                    <span>Master</span>
-                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>M</span>}
+                  <button type="button" onClick={handleToggleMaster}>
+                    <Star size={14} />
+                    <span>{lang === 'es' ? 'Ya la sé' : 'Mastered'}</span>
+                    {showKeyHints && <span className="srs-rv-key">M</span>}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={handleUndo}
-                    disabled={historyStack.length === 0}
-                    style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: historyStack.length > 0 ? '#ffffff' : '#71717a', padding: '8px 18px', fontSize: '0.78rem', fontWeight: 700, cursor: historyStack.length > 0 ? 'pointer' : 'not-allowed', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: historyStack.length > 0 ? 1 : 0.5 }}
-                  >
-                    <Undo2 size={13} />
-                    <span>Undo</span>
-                    {showKeyHints && <span style={{ opacity: 0.5, fontSize: '0.66rem', border: '1px solid #27272a', padding: '1px 4px', borderRadius: '3px' }}>Z</span>}
+                  <button type="button" onClick={handleToggleBlacklist}>
+                    <Ban size={14} />
+                    <span>{lang === 'es' ? 'Ignorar' : 'Blacklist'}</span>
+                    {showKeyHints && <span className="srs-rv-key">B</span>}
                   </button>
-
                 </div>
               </div>
             ) : (
-              <div style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'center' }}>
-                
-                {/* Undo Z button */}
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={historyStack.length === 0}
-                  style={{ background: 'transparent', border: 'none', color: historyStack.length > 0 ? '#a1a1aa' : '#3f3f46', fontSize: '0.78rem', fontWeight: 650, cursor: historyStack.length > 0 ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', transition: 'all 0.15s' }}
-                >
-                  <Undo2 size={13} />
-                  <span>{showKeyHints ? 'Undo Z' : 'Undo'}</span>
+              <div className="srs-rv-actions">
+                <button type="button" className="srs-rv-show" onClick={() => setShowAnswer(true)}>
+                  <span>{lang === 'es' ? 'Mostrar respuesta' : 'Show answer'}</span>
+                  {showKeyHints && <span className="srs-rv-key">{lang === 'es' ? 'Espacio' : 'Space'}</span>}
                 </button>
-
-                {/* Show Answer button */}
-                <button
-                  type="button"
-                  onClick={() => setShowAnswer(true)}
-                  style={{
-                    width: '100%',
-                    padding: '16px',
-                    background: '#18181b',
-                    border: '1px solid #27272a',
-                    borderRadius: '12px',
-                    color: '#ffffff',
-                    fontSize: '1rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: '12px',
-                    transition: 'all 0.15s'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#27272a'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#18181b'}
-                >
-                  <span>Show Answer</span>
-                  {showKeyHints && <span style={{ fontSize: '0.74rem', background: '#27272a', color: '#a1a1aa', padding: '2px 8px', borderRadius: '4px' }}>Space</span>}
-                </button>
+                <div className="srs-rv-utility">
+                  <button type="button" onClick={handleUndo} disabled={historyStack.length === 0}>
+                    <Undo2 size={14} />
+                    <span>{lang === 'es' ? 'Deshacer' : 'Undo'}</span>
+                    {showKeyHints && <span className="srs-rv-key">Z</span>}
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Bottom Footer Options */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginTop: '24px', paddingBottom: '10px' }}>
-              
-              {/* Font Size Selector S M L */}
-              <div style={{ display: 'flex', background: '#18181b', border: '1px solid #27272a', borderRadius: '20px', padding: '2px' }}>
+            {/* Text size */}
+            <div className="srs-rv-footer">
+              <div className="srs-rv-size" role="group" aria-label={lang === 'es' ? 'Tamaño del texto' : 'Text size'}>
                 {(['S', 'M', 'L'] as const).map(mode => (
                   <button
                     key={mode}
                     type="button"
+                    className={fontSizeMode === mode ? 'is-active' : ''}
                     onClick={() => setFontSizeMode(mode)}
-                    style={{
-                      background: fontSizeMode === mode ? '#3f3f46' : 'transparent',
-                      border: 'none',
-                      borderRadius: '50%',
-                      width: '28px',
-                      height: '28px',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      fontSize: '0.74rem',
-                      fontWeight: 800,
-                      color: fontSizeMode === mode ? '#ffffff' : '#71717a',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s'
-                    }}
+                    aria-pressed={fontSizeMode === mode}
                   >
                     {mode}
                   </button>
                 ))}
               </div>
-
-              {/* Layouts toggle */}
-              <button
-                type="button"
-                style={{ background: 'transparent', border: 'none', color: '#71717a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Columns size={16} />
-              </button>
-
-              <button
-                type="button"
-                style={{ background: 'transparent', border: 'none', color: '#71717a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Settings size={16} />
-              </button>
-
-              <button
-                type="button"
-                style={{ background: 'transparent', border: 'none', color: '#71717a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ChevronDown size={16} />
-              </button>
             </div>
 
           </div>

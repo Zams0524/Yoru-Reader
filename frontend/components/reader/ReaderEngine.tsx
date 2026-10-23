@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } f
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isPhoneUI } from '../../utils/platform';
+import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
 export interface Chapter {
@@ -96,6 +97,18 @@ export function countJapaneseChars(text: string): number {
   return matches ? matches.length : 0;
 }
 
+/** Pictures uncovered with a tap while "Hide images" is on (by src), for this session. */
+const revealedSpoilers = new Set<string>();
+
+/** A tap on a covered picture uncovers it (and does nothing else). */
+function revealSpoiler(target: HTMLElement | null): boolean {
+  const img = target?.closest?.('img.yoru-book-img');
+  if (!(img instanceof HTMLImageElement) || img.classList.contains('is-revealed') || !img.closest('.reader-hide-images')) return false;
+  img.classList.add('is-revealed');
+  revealedSpoilers.add(img.getAttribute('src') || '');
+  return true;
+}
+
 function escapeHtmlAttribute(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -141,7 +154,7 @@ function renderSectionContent(
 
     if (line.startsWith('{img:') && line.endsWith('}')) {
       const src = line.substring(5, line.length - 1);
-      const html = `<img index="${paragraphId}" characumm="${charAccum}" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`;
+      const html = `<img class="yoru-book-img" index="${paragraphId}" characumm="${charAccum}" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`;
       paragraphId++;
       return html;
     }
@@ -149,7 +162,7 @@ function renderSectionContent(
     const sanitized = sanitizeJapaneseText(line);
     const processed = sanitized.replace(
       /\{img:([^{}]+)\}/gi,
-      (_match, src) => `<img src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`,
+      (_match, src) => `<img class="yoru-book-img" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`,
     );
     const plainText = line
       .replace(/\{img:[^{}]*\}/gi, '')
@@ -208,6 +221,22 @@ export async function prepareLineWords(line: string): Promise<void> {
 }
 
 /**
+ * A chapter's name as the reader shows it: untitled chapters are named in the app's language, and
+ * so are the Spanish names the importer (fileImport.ts) stores for them ("Capítulo 3", "Portada").
+ */
+export function chapterDisplayTitle(title: string | undefined, chapterIdx: number, appLanguage?: string): string {
+  let lang = appLanguage || 'en';
+  if (!appLanguage) {
+    try { lang = localStorage.getItem('app_language') || 'en'; } catch { /* no storage */ }
+  }
+  const chapterWord = t('chapter', lang);
+  if (!title) return `${chapterWord} ${chapterIdx + 1}`;
+  if (lang !== 'en') return title;
+  if (title === 'Portada') return 'Cover';
+  return title.replace(/^Capítulo (\d+)$/, `${chapterWord} $1`);
+}
+
+/**
  * Splits the book into sections of about 3000 characters (chapter boundaries kept) and numbers
  * its paragraphs the way renderSectionContent does (the `index` attribute of each block).
  */
@@ -260,7 +289,7 @@ export function computeSections(book: Book): Section[] {
       if (sectionCharCount >= 3000) {
         resultSections.push({
           id: `chapter-${chapterIdx}-${subSectionIdx}`,
-          title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+          title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
           chapterIndex: chapterIdx,
           startOffset: sectionStartOffset,
           endOffset: lineEndOffset,
@@ -284,7 +313,7 @@ export function computeSections(book: Book): Section[] {
     if (sectionHasContent || resultSections.length === 0) {
       resultSections.push({
         id: `chapter-${chapterIdx}-${subSectionIdx}`,
-        title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+        title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
         chapterIndex: chapterIdx,
         startOffset: sectionStartOffset,
         endOffset: chapterContent.length,
@@ -1107,6 +1136,7 @@ function ReaderEngineComponent({
       // TAP ZONES (Short touch without drag)
       if (deltaTime < 350 && absX < 15 && absY < 15) {
         const target = e.target as HTMLElement;
+        if (revealSpoiler(target)) return;
         // Don't trigger page turn if tapping a word, ruby or interactive element
         if (target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button, .dict-popup')) {
           return;
@@ -1274,8 +1304,17 @@ function ReaderEngineComponent({
     });
   }, [currentHtml, jitenEnabled, paginated, sections, currSection]);
 
+  // Pictures already uncovered stay uncovered when their section is drawn again.
+  useEffect(() => {
+    if (revealedSpoilers.size === 0) return;
+    contentRef.current?.querySelectorAll('img.yoru-book-img').forEach((img) => {
+      if (revealedSpoilers.has(img.getAttribute('src') || '')) img.classList.add('is-revealed');
+    });
+  }, [currentHtml]);
+
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    if (revealSpoiler(target)) return;
     const onWord = !!target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button');
     // After a touch, touchend already turned the page or toggled the bars: the emulated click only opens words.
     if (Date.now() - lastTouchEndRef.current < 800) {
@@ -1315,7 +1354,7 @@ function ReaderEngineComponent({
       ref={containerRef}
       style={{ ...containerStyle, ...maxWidthStyle }}
       onClick={handleContentClick}
-      className={`reader-engine-container book-content ${vertical ? 'book-content--writing-vertical-rl' : 'book-content--writing-horizontal-tb'}`}
+      className={`reader-engine-container book-content ${vertical ? 'book-content--writing-vertical-rl' : 'book-content--writing-horizontal-tb'}${readerSettings.hideImages ? ' reader-hide-images' : ''}`}
     >
       {/* In-App Reader Brightness Overlay (Yoru Feature) */}
       {typeof readerSettings.readerBrightness === 'number' && readerSettings.readerBrightness < 100 && (
@@ -1354,6 +1393,7 @@ export const ReaderEngine = React.memo(ReaderEngineComponent, (prevProps, nextPr
     prevProps.readerSettings.fontWeight === nextProps.readerSettings.fontWeight &&
     prevProps.readerSettings.textAlign === nextProps.readerSettings.textAlign &&
     prevProps.readerSettings.hyphenation === nextProps.readerSettings.hyphenation &&
+    prevProps.readerSettings.hideImages === nextProps.readerSettings.hideImages &&
     prevProps.readerSettings.fontFamily === nextProps.readerSettings.fontFamily &&
     prevProps.readerSettings.verticalPadding === nextProps.readerSettings.verticalPadding &&
     prevProps.readerSettings.horizontalPadding === nextProps.readerSettings.horizontalPadding &&
