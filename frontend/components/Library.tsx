@@ -307,8 +307,8 @@ const Library = React.memo(function Library({
       setIsSidebarOpen(false);
     }
     
-    // 2. Right Display Settings Drawer (Option Q)
-    if (diffX < -70 && touchStartX.current > window.innerWidth - 60 && !isDisplaySettingsOpen) {
+    // 2. Right Display Settings Drawer (Option Q); on phones these options live in the ⋮ menu
+    if (diffX < -70 && touchStartX.current > window.innerWidth - 60 && !isDisplaySettingsOpen && window.innerWidth > 768) {
       setIsDisplaySettingsOpen(true);
     }
     if (diffX > 70 && isDisplaySettingsOpen) {
@@ -7402,7 +7402,10 @@ const Library = React.memo(function Library({
             { key: 'status', label: lang === 'es' ? 'Estado' : 'Status', value: showCardStatus, onChange: setShowCardStatus },
           ]}
           onSelectBooks={() => { if (!selectMode) toggleSelectMode(); }}
-          onMoreOptions={() => setIsDisplaySettingsOpen(true)}
+          coverFit={coverFit}
+          onCoverFit={setCoverFit}
+          cardWidth={cardWidth}
+          onCardWidth={setCardWidth}
           onClose={() => setIsLibraryMenuOpen(false)}
         />
       )}

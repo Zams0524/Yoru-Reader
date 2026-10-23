@@ -642,7 +642,8 @@ textarea:focus-visible,
   }
 
   .books-grid {
-    grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+    /* Follows the card size option; the default 160px gives the usual 138px. */
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-width, 160px) * 0.8625), 1fr));
     gap: 16px 12px;
   }
 
@@ -2850,9 +2851,28 @@ textarea:focus-visible,
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* On phones, sorting, grouping and card details are in the ⋮ menu; the panel keeps the rest. */
+.library-menu-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(236, 236, 242, 0.6);
+}
+
+.library-menu-slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  accent-color: #ffd54a;
+  cursor: pointer;
+}
+
+/* On phones every library display option is in the ⋮ menu, so the side panel is not used. */
 @media (max-width: 768px) {
-  .display-settings-drawer .drawer-section--in-menu {
+  .display-settings-drawer {
     display: none !important;
   }
 }

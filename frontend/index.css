@@ -5898,7 +5898,8 @@ rt {
 
 @media (max-width: 480px) {
   .books-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    /* Follows the card size option; the default 160px gives the usual 130px. */
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-width, 160px) * 0.8125), 1fr)) !important;
     gap: 1.25rem 0.75rem !important;
   }
   
