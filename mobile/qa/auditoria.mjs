@@ -447,7 +447,7 @@ function cmdPaso(opts) {
 
 export function readPlanSteps(planText) {
   const steps = [];
-  for (const line of planText.split('\n')) {
+  for (const line of planText.split(/\r?\n/)) {
     const m = line.match(/^- \[[ x]\] \*\*([A-Z]+-\d+)\*\* (.*)$/);
     if (m) steps.push({ id: m[1], texto: m[2] });
   }
