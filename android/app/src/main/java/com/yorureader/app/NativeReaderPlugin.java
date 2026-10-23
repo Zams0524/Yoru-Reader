@@ -977,11 +977,19 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     @Override
     public void onSized(int width, int height) {
+        // The keyboard (search) only shrinks the view for a moment: keep the layout, so the page
+        // count and place stay as they were when it closes.
+        if (viewWidth == width && pendingOpen == null && keyboardShown()) return;
         boolean changed = viewWidth != 0 && (viewWidth != width || viewHeight != height);
         viewWidth = width;
         viewHeight = height;
         if (pendingOpen != null) runPendingOpen();
         else if (changed && config != null) applySettings(new JSObject(), null);
+    }
+
+    private boolean keyboardShown() {
+        WindowInsetsCompat insets = view == null ? null : ViewCompat.getRootWindowInsets(view);
+        return insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
     }
 
     @Override
