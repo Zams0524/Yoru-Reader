@@ -114,6 +114,13 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     /** Pictures (block ordinals) uncovered with a tap while images are hidden; kept per book. */
     private final java.util.Set<Integer> revealedPictures = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     private String revealedBook;
+    /**
+     * Place the last relayout kept (engine thread), and the page it landed on. Relayouts in a row
+     * without a page turn keep this place instead of the new page's first letter, which lies
+     * before it: otherwise every size change and back would drift a page or two backwards.
+     */
+    private String layoutAnchor;
+    private int layoutAnchorPage = -1;
     /** Covered picture pages: page -> [ordinal, left, top, right, bottom] (engine thread writes, main thread reads). */
     private final Map<Integer, float[]> coveredPictures = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -577,6 +584,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             cache.clear();
             pageLetters.clear();
             coveredPictures.clear();
+            layoutAnchor = null;
+            layoutAnchorPage = -1;
             pictures = loadPictures(book.getParentFile());
             config = c;
             String layout = layoutKey(c);
@@ -892,12 +901,15 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
      * it. The blur is the picture shrunk to a few dozen pixels and stretched back.
      */
     private void drawCoveredPicture(Canvas canvas, Bitmap image, Rect box, Config c) {
-        int smallW = Math.max(1, box.width() / 40), smallH = Math.max(1, box.height() / 40);
+        // Down in two steps and up in two: bilinear scaling smooths each step, so the result is a
+        // soft blur instead of a mosaic.
         Bitmap mid = Bitmap.createScaledBitmap(image, Math.max(1, box.width() / 8), Math.max(1, box.height() / 8), true);
-        Bitmap small = Bitmap.createScaledBitmap(mid, smallW, smallH, true);
+        Bitmap small = Bitmap.createScaledBitmap(mid, Math.max(1, box.width() / 40), Math.max(1, box.height() / 40), true);
         mid.recycle();
-        canvas.drawBitmap(small, null, box, new Paint(Paint.FILTER_BITMAP_FLAG));
+        Bitmap soft = Bitmap.createScaledBitmap(small, Math.max(1, box.width() / 6), Math.max(1, box.height() / 6), true);
         small.recycle();
+        canvas.drawBitmap(soft, null, box, new Paint(Paint.FILTER_BITMAP_FLAG));
+        soft.recycle();
         Paint veil = new Paint();
         veil.setColor(0x8C000000);
         canvas.drawRect(box, veil);
@@ -1569,12 +1581,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineHandler.post(() -> {
             if (gen != generation) return;
             try {
-                String xpath = pageXPath(page);
+                String xpath = layoutAnchor != null && layoutAnchorPage == page ? layoutAnchor : pageXPath(page);
                 config = next;
                 EraEngine.Response r = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(next, true));
                 enginePages = r.intAt(0, enginePages);
                 engineLayout = layoutKey(next);
                 int target = clampPage(xpath.isEmpty() ? page : pageByXPath(xpath, page));
+                layoutAnchor = xpath.isEmpty() ? null : xpath;
+                layoutAnchorPage = target;
                 synchronized (cache) {
                     cache.clear();
                     pageLetters.clear();
