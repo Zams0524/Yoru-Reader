@@ -39,19 +39,28 @@ export async function lookupWord(word: string, reading: string = ''): Promise<Di
   const cacheKey = `${searchWord}\u0000${searchReading}`;
 
   let entry: DictionaryEntry | null = null;
+  const fromYomitan = (match: any): DictionaryEntry => ({
+    ...match,
+    definitions: match.fullDefinitions || match.definitions
+  });
+  // Local search still running after the timeout (a dictionary being installed keeps the database busy).
+  let slowYomitan: Promise<any> | null = null;
 
   // 2. Prioritize Yomitan DB (IndexedDB) first, so user's installed dictionaries (Spanish, etc.) take precedence!
   // We use a 1.5-second timeout to prevent any IndexedDB locks/upgrades from hanging the UI
   try {
     const yomitanPromise = searchYomitanDB(searchWord, searchReading);
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
+    let timedOut = false;
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => { timedOut = true; resolve(null); }, 1500));
     
     const yomitanMatch = await Promise.race([yomitanPromise, timeoutPromise]) as any;
     if (yomitanMatch) {
-      entry = {
-        ...yomitanMatch,
-        definitions: yomitanMatch.fullDefinitions || yomitanMatch.definitions
-      };
+      entry = fromYomitan(yomitanMatch);
+    } else if (timedOut) {
+      slowYomitan = yomitanPromise.catch((err) => {
+        console.error('Yomitan DB search error:', err);
+        return null;
+      });
     }
   } catch (err) {
     console.error('Yomitan DB search error:', err);
@@ -134,6 +143,12 @@ export async function lookupWord(word: string, reading: string = ''): Promise<Di
         entry = jitenEntry;
       }
     }
+  }
+
+  // Nothing online either: wait for the local search instead of saying the word is not there.
+  if (!entry && slowYomitan) {
+    const lateMatch = await Promise.race([slowYomitan, new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))]);
+    if (lateMatch) entry = fromYomitan(lateMatch);
   }
 
   // Fallback if nothing is found at all
