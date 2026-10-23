@@ -1,5 +1,7 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, Check, ListChecks, SlidersHorizontal } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, ListChecks, RotateCcw } from 'lucide-react';
+
+const DEFAULT_CARD_WIDTH = 160;
 
 interface DetailToggle {
   key: string;
@@ -17,17 +19,21 @@ interface Props {
   groupBy: string;
   onGroupBy: (value: string) => void;
   details: DetailToggle[];
+  coverFit: string;
+  onCoverFit: (value: string) => void;
+  cardWidth: number;
+  onCardWidth: (value: number) => void;
   onSelectBooks: () => void;
-  onMoreOptions: () => void;
   onClose: () => void;
 }
 
 /**
- * Library "⋮" menu on phones, ReadEra-style: sort, group, what the cards show, select books,
- * and a link to the advanced view options (card size, cover fit).
+ * Library "⋮" menu on phones, ReadEra-style: select books, sort, group, what the cards show,
+ * cover fit and card size. On phones it replaces the display settings panel entirely.
  */
 export default function LibraryMoreMenu({
-  lang, sortBy, onSortBy, sortDirection, onSortDirection, groupBy, onGroupBy, details, onSelectBooks, onMoreOptions, onClose,
+  lang, sortBy, onSortBy, sortDirection, onSortDirection, groupBy, onGroupBy, details,
+  coverFit, onCoverFit, cardWidth, onCardWidth, onSelectBooks, onClose,
 }: Props) {
   const es = lang === 'es';
   const sortOptions = [
@@ -42,6 +48,10 @@ export default function LibraryMoreMenu({
     { value: 'none', label: es ? 'Ninguno' : 'None' },
     { value: 'series', label: es ? 'Serie' : 'Series' },
     { value: 'author', label: es ? 'Autor' : 'Author' },
+  ];
+  const coverFitOptions = [
+    { value: 'cover', label: es ? 'Rellenar' : 'Fill' },
+    { value: 'contain', label: es ? 'Ajustar' : 'Fit' },
   ];
   const ascending = sortDirection === 'asc';
 
@@ -89,10 +99,38 @@ export default function LibraryMoreMenu({
           </button>
         ))}
 
-        <div className="library-menu-divider" />
-        <button type="button" role="menuitem" className="library-menu-item" onClick={() => { onClose(); onMoreOptions(); }}>
-          <span className="library-menu-item-label"><SlidersHorizontal size={18} />{es ? 'Más opciones de vista…' : 'More view options…'}</span>
-        </button>
+        <div className="library-menu-section-head"><span>{es ? 'Imagen de portada' : 'Cover image'}</span></div>
+        <div className="library-menu-segments" role="radiogroup" aria-label={es ? 'Imagen de portada' : 'Cover image'}>
+          {coverFitOptions.map((option) => (
+            <button key={option.value} type="button" role="radio" aria-checked={coverFit === option.value} className={coverFit === option.value ? 'active' : ''} onClick={() => onCoverFit(option.value)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="library-menu-section-head">
+          <span>{es ? 'Tamaño de tarjeta' : 'Card size'}</span>
+          {cardWidth !== DEFAULT_CARD_WIDTH && (
+            <button type="button" className="library-menu-direction" onClick={() => onCardWidth(DEFAULT_CARD_WIDTH)}>
+              <RotateCcw size={14} />
+              {es ? 'Restablecer' : 'Reset'}
+            </button>
+          )}
+        </div>
+        <div className="library-menu-slider">
+          <span>{es ? 'Pequeño' : 'Small'}</span>
+          <input
+            type="range"
+            min={120}
+            max={240}
+            step={8}
+            value={cardWidth}
+            onChange={(e) => onCardWidth(parseInt(e.target.value, 10))}
+            aria-label={es ? 'Tamaño de tarjeta' : 'Card size'}
+            aria-valuetext={`${cardWidth} px`}
+          />
+          <span>{es ? 'Grande' : 'Large'}</span>
+        </div>
       </div>
     </>
   );
