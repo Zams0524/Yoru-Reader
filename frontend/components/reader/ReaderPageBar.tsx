@@ -14,6 +14,7 @@ interface Props {
 }
 
 const FALLBACK_CHARS_PER_PAGE = 450;
+const TAP_SLOP_PX = 12;
 
 /**
  * ReadEra-style bottom bar: "page X of N" and a slider over the whole book with chapter ticks.
@@ -60,10 +61,22 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
     ? [...sections].reverse().find((section) => section.startChars <= dragValue)
     : null;
 
+  // A tap on the track moves a range input's thumb there: only a drag seeks. The tap that shows
+  // the bars lands on the slider (bottom centre) and jumped to the middle of the book.
+  const pressXRef = useRef<number | null>(null);
+  const tapRef = useRef(false);
+  const press = (x: number) => { pressXRef.current = x; tapRef.current = false; };
   const commit = () => {
     if (dragValue === null) return;
-    onSeek(Math.max(0, Math.min(totalChars, Math.round(dragValue))));
     setDragValue(null);
+    if (!tapRef.current) onSeek(Math.max(0, Math.min(totalChars, Math.round(dragValue))));
+  };
+  // pointerup and touchend both end a touch: the first one decides whether it was a tap.
+  const release = (x: number | undefined) => {
+    const pressX = pressXRef.current;
+    pressXRef.current = null;
+    if (pressX !== null && x !== undefined) tapRef.current = Math.abs(x - pressX) < TAP_SLOP_PX;
+    commit();
   };
 
   if (!visible || totalChars <= 0) return null;
@@ -86,9 +99,16 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
           value={shownChars}
           aria-label={es ? 'Posición en el libro' : 'Position in the book'}
           aria-valuetext={es ? `Página ${pageAt(shownChars)} de ${totalPages}` : `Page ${pageAt(shownChars)} of ${totalPages}`}
-          onChange={(e) => setDragValue(Number(e.target.value))}
-          onPointerUp={commit}
-          onTouchEnd={commit}
+          onChange={(e) => {
+            // A tap's value can arrive after it ended.
+            if (pressXRef.current === null && tapRef.current) return;
+            setDragValue(Number(e.target.value));
+          }}
+          onPointerDown={(e) => press(e.clientX)}
+          onTouchStart={(e) => { if (pressXRef.current === null) press(e.touches[0]?.clientX ?? 0); }}
+          onPointerUp={(e) => release(e.clientX)}
+          onTouchEnd={(e) => release(e.changedTouches[0]?.clientX)}
+          onKeyDown={() => { tapRef.current = false; }}
           onKeyUp={commit}
           onBlur={commit}
         />
