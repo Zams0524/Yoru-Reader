@@ -178,6 +178,11 @@ export default function ReaderSettingsPopover({
             checked={!disableCss}
             onChange={(value) => onSettingChange('disableCss', !value)}
           />
+          <SwitchRow
+            label={es ? 'Ocultar imágenes (spoilers)' : 'Hide images (spoilers)'}
+            checked={!!settings.hideImages}
+            onChange={(value) => onSettingChange('hideImages', value)}
+          />
           {nativeAvailable && (
             <SwitchRow
               label={es ? 'Motor nativo (beta)' : 'Native engine (beta)'}
