@@ -1827,7 +1827,11 @@ export default function Reader({
 
   const handleSrsReview = (word: string, grade: number, preview?: any) => {
     const currentCard = db.getSrsCard(word);
-    const intervals = preview ? { repeats: preview } : calculateSrsIntervals(currentCard);
+    // A preview from the popup only carries the scheduled repeats; the readable labels
+    // (again/hard/good/easy) come from the same card, so reuse the memoized intervals.
+    const intervals = preview
+      ? { ...(preview === selectedSrsIntervals.repeats ? selectedSrsIntervals : calculateSrsIntervals(currentCard)), repeats: preview }
+      : calculateSrsIntervals(currentCard);
     const updatedCard = { 
       ...currentCard,
       ...(intervals.repeats as any)[grade] 
