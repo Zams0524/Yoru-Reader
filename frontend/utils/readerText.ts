@@ -67,8 +67,8 @@ export function offsetInBlock(block: Element, node: Node, offset: number): numbe
 export function normalizeForSearch(text: string): string {
   return text
     .replace(/[ァ-ヶ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60))
-    .replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-    .replace(/　/g, ' ')
+    .replace(/[\uFF01-\uFF5E]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+    .replace(/\u3000/g, ' ')
     .toLowerCase();
 }
 
