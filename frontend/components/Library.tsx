@@ -5647,7 +5647,7 @@ const Library = React.memo(function Library({
         {srsSubTab === 'stats' && (
           <>
             {/* 2-Column Layout: Hoy + Pronóstico */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
               
               {/* Column 1: Hoy */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '180px' }}>
@@ -5861,42 +5861,32 @@ const Library = React.memo(function Library({
 
               return (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', overflow: 'hidden' }}>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.01)' }}>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Palabra' : 'Word'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Mazo' : 'Deck'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Calificación' : 'Grade'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Intervalo' : 'Interval'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Fecha' : 'Date'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {history.map((entry: any, idx: number) => {
-                          const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
-                          const relativeTime = (() => {
-                            const diff = Date.now() - new Date(entry.timestamp).getTime();
-                            const mins = Math.floor(diff / 60000);
-                            const hours = Math.floor(mins / 60);
-                            if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
-                            if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
-                            if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
-                            return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
-                          })();
-                          return (
-                            <tr key={idx} style={{ borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                              <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '0.95rem' }}>{displayWord}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>{entry.deckName}</td>
-                              <td style={{ padding: '12px 16px' }}>{getGradeBadge(entry.grade)}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 650 }}>{entry.interval}d</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>{relativeTime}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  {history.map((entry: any, idx: number) => {
+                    const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
+                    const relativeTime = (() => {
+                      const diff = Date.now() - new Date(entry.timestamp).getTime();
+                      const mins = Math.floor(diff / 60000);
+                      const hours = Math.floor(mins / 60);
+                      if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
+                      if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
+                      if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
+                      return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
+                    })();
+                    // One row per review: word and grade on top, deck · interval · date below.
+                    return (
+                      <div key={idx} style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px', borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <span style={{ fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '1rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayWord}</span>
+                          <span style={{ flexShrink: 0 }}>{getGradeBadge(entry.grade)}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {entry.deckName && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{entry.deckName}</span>}
+                          <span style={{ whiteSpace: 'nowrap' }}>{lang === 'es' ? 'Intervalo' : 'Interval'} {entry.interval}d</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{relativeTime}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -6157,6 +6147,20 @@ const Library = React.memo(function Library({
         statusText = lang === 'es' ? 'Ignorado' : 'Ignored';
         statusClass = 'ignored';
       }
+      // A word still being learned shows its SRS card state, so it matches History and Stats.
+      const card = srsData[word];
+      if (status === 'learning' && card) {
+        if (isNewSrsCard(card)) {
+          statusText = lang === 'es' ? 'Nueva' : 'New';
+          statusClass = 'new';
+        } else if (card.state === 2) {
+          statusText = lang === 'es' ? 'Repaso' : 'Review';
+          statusClass = 'known';
+        } else if (card.state === 3) {
+          statusText = lang === 'es' ? 'Reaprendiendo' : 'Relearning';
+          statusClass = 'learning';
+        }
+      }
       return { word, status, statusText, statusClass };
     });
 
@@ -6258,6 +6262,13 @@ const Library = React.memo(function Library({
             {lang === 'es' ? 'Mis Tarjetas' : 'My Cards'}
             <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500 }}>({countAll})</span>
           </h2>
+          {allSrsCards.length !== countAll && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {lang === 'es'
+                ? `${countAll} palabras guardadas · ${allSrsCards.length} con tarjeta de repaso`
+                : `${countAll} saved words · ${allSrsCards.length} with a review card`}
+            </div>
+          )}
         </div>
 
         {/* Jiten Filter Pills Row */}
