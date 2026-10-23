@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } f
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isPhoneUI } from '../../utils/platform';
+import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
 export interface Chapter {
@@ -216,6 +217,17 @@ export function computeSections(book: Book): Section[] {
   let paragraphId = 0;
   let charAccum = 0;
   const resultSections: Section[] = [];
+  // Untitled chapters are named in the app's language. The importer (fileImport.ts) stores
+  // Spanish names for them ("Capítulo 3", "Portada"); those are translated here too.
+  let lang = 'en';
+  try { lang = localStorage.getItem('app_language') || 'en'; } catch { /* no storage */ }
+  const chapterWord = t('chapter', lang);
+  const titleOf = (title: string | undefined, chapterIdx: number) => {
+    if (!title) return `${chapterWord} ${chapterIdx + 1}`;
+    if (lang !== 'en') return title;
+    if (title === 'Portada') return 'Cover';
+    return title.replace(/^Capítulo (\d+)$/, `${chapterWord} $1`);
+  };
 
   book.chapters.forEach((chapter, chapterIdx) => {
     const chapterContent = chapter.content || '';
@@ -260,7 +272,7 @@ export function computeSections(book: Book): Section[] {
       if (sectionCharCount >= 3000) {
         resultSections.push({
           id: `chapter-${chapterIdx}-${subSectionIdx}`,
-          title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+          title: subSectionIdx === 0 || !chapter.title ? titleOf(chapter.title, chapterIdx) : `${titleOf(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
           chapterIndex: chapterIdx,
           startOffset: sectionStartOffset,
           endOffset: lineEndOffset,
@@ -284,7 +296,7 @@ export function computeSections(book: Book): Section[] {
     if (sectionHasContent || resultSections.length === 0) {
       resultSections.push({
         id: `chapter-${chapterIdx}-${subSectionIdx}`,
-        title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+        title: subSectionIdx === 0 || !chapter.title ? titleOf(chapter.title, chapterIdx) : `${titleOf(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
         chapterIndex: chapterIdx,
         startOffset: sectionStartOffset,
         endOffset: chapterContent.length,
