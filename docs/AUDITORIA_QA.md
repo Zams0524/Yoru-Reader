@@ -38,6 +38,8 @@ La lanza el hilo de auditoría que Nix asigne. Nix le asigna también el teléfo
   comprobarlo en ARR-03 antes de dar por buena la build.
 - Los libros que importe la auditoría llevan el prefijo `QA-` en el título o archivo. Solo esos se pueden mover o
   borrar en las pruebas, y borrarlos requiere el ok de Nix.
+- Si una prueba cambia un dato real sin querer (por ejemplo el estado de un libro del usuario), se anota en el
+  informe y se devuelve a su valor con el ok de Nix. Los ajustes que se prueben se dejan como estaban.
 
 ## 3. Severidad
 
@@ -53,7 +55,11 @@ La lanza el hilo de auditoría que Nix asigne. Nix le asigna también el teléfo
 1. **Build**: compilar el APK de la rama a auditar con `build-apk.ps1` subiendo antes `versionCode` por encima del
    instalado (preguntar a Nix el número; no reutilizar uno ya usado en otro hilo).
 2. **Teléfono**: pedirlo a Nix, conectarlo por USB y comprobar `adb devices`. Pantalla desbloqueada, brillo fijo, sin
-   ahorro de batería.
+   ahorro de batería. `inicio` activa «no apagar la pantalla con USB» (`svc power stayon usb`) y `fin` lo quita. Si
+   el teléfono tiene PIN o huella, alguien debe estar cerca para desbloquearlo en TTS-07 (la auditoría nunca
+   introduce códigos); si no hay nadie, saltar TTS-07.
+   **Actualizaciones automáticas (OTA)**: si están activadas en el teléfono, puede bajar una OTA a mitad de la
+   auditoría y mezclar dos interfaces. Anotarlo como riesgo en el informe (no cambiar el ajuste sin ok de Nix).
 3. **Material de prueba** (en el teléfono, carpeta Descargas o la que use el importador):
    - `QA-vertical.epub`: japonés vertical con furigana e imágenes (sirve cualquier novela con ruby).
    - `QA-horizontal.epub`: japonés horizontal.
@@ -123,7 +129,7 @@ Formato: `- [ ] **ID** Qué hacer → qué sería un error`. El modo guiado lee 
 ### ARR · Arranque, actualización y navegación
 
 - [ ] **ARR-01** Arranque en frío (lo mide `inicio`) → error si pasa de 4 s, hay pantalla blanca/negra más de 1 s o aparece la pantalla roja de ErrorBoundary.
-- [ ] **ARR-02** Ajustes › Acerca de: comprobar versión y versionCode → error si no coinciden con la build instalada.
+- [ ] **ARR-02** Versión: `inicio` la lee con `dumpsys`; «Ajustes › Acerca de / Diagnóstico» solo aparece con el perfil «Zams» → error si la versión o el versionCode no son los de la build auditada.
 - [ ] **ARR-03** Revisar en el informe si hay OTA guardada (`files/web-bundles`) → error si la interfaz que se ve no es la de la build auditada.
 - [ ] **ARR-04** Ir a segundo plano 60 s y volver → error si se pierde la pestaña, el libro abierto o la posición.
 - [ ] **ARR-05** Botón atrás del sistema desde cada pestaña, ajuste, modal y menú abierto → error si no cierra lo de arriba primero, si sale de la app sin querer o si queda una capa fantasma.
@@ -211,7 +217,11 @@ Formato: `- [ ] **ID** Qué hacer → qué sería un error`. El modo guiado lee 
 
 ## 7. Qué busca la herramienta en logcat
 
-Además de todo lo que la app escribe en nivel `E`/`W`, el informe resalta:
+Además de todo lo que la app escribe en nivel `E`/`W`, el informe resalta lo de la tabla. Ojo: la app escribe
+poco en logcat (Capacitor tiene `loggingBehavior: none`), así que un logcat limpio **no** prueba que no haya errores
+de JavaScript: esos salen de `yoru_runtime_issues` (los últimos 20 que guarda `main.tsx`). `inicio` amplía el búfer
+de logcat a 16 MB para no perder líneas.
+
 
 | Patrón | Qué indica |
 |---|---|

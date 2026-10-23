@@ -387,7 +387,10 @@ function cmdInicio(opts) {
   };
 
   // Recording logcat in the background; the process id lets `fin` stop it.
+  adb.run(['logcat', '-G', '16M'], { allowFail: true });
   adb.run(['logcat', '-c'], { allowFail: true });
+  // Keeps the screen on while plugged in (undone by `fin`); the audit never types a lock code.
+  adb.shell('svc power stayon usb', { allowFail: true });
   const logFd = fs.openSync(path.join(runDir, 'logcat.txt'), 'a');
   const child = spawn(adb.bin, ['-s', adb.serial, 'logcat', '-v', 'threadtime'], { detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true });
   child.unref();
@@ -506,6 +509,7 @@ function cmdFin() {
   const adb = makeAdb(session.serial);
   recordStep(adb, runDir, { id: 'FIN', nota: 'estado final' });
   stopLogcat(session.logcatPid);
+  adb.shell('svc power stayon false', { allowFail: true });
 
   const crash = adb.shell(`run-as ${PKG} cat files/yoru-last-crash.txt`, { allowFail: true });
   const extras = { crash: /Yoru Reader Android crash/.test(crash) ? crash.trim() : null, jsIssues: [] };
