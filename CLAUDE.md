@@ -8,6 +8,7 @@ Git: `gh` autenticado como Zams0524 con scope `workflow`. Commits con `Zams0524@
 Licencia: **GPL-2.0-or-later** (cambió de MIT en 1.4.0 al incorporar el motor nativo Android OpenReadEra).
 
 Lee también: `docs/PROJECT_GUIDELINES.md`, `docs/YORU_READER_ENGINEERING_PROMPT.md`.
+Antes de un PR de integración o de versión: auditoría QA con el teléfono, ver `docs/AUDITORIA_QA.md` (`node mobile/qa/auditoria.mjs`).
 
 ## Archivos clave
 - `frontend/components/Library.tsx`: casi toda la UI (barra superior móvil ~6744, barra inferior ~7714, ajustes `renderSettingsTab` ~3486).
