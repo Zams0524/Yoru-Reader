@@ -5982,7 +5982,9 @@ const Library = React.memo(function Library({
               <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {lang === 'es' ? 'Parámetros del Algoritmo FSRS-6' : 'FSRS-6 Algorithm Parameters'}
               </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Two columns on wide screens; on a phone each field gets the full width so the
+                  number and its label are not squeezed by the slider. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '6px' }}>
                     {lang === 'es' ? 'Retención solicitada (FSRS)' : 'Requested retention (FSRS)'}
