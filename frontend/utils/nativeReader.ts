@@ -30,6 +30,8 @@ export interface NativeReaderSettings {
   spoilerLabel?: string;
   /** The export's line-end padding (LINE_END_RESERVE_EM): the plugin shrinks that margin by as much. APK 1.4.5+. */
   lineEndReserve?: number;
+  /** CSS px kept free at the bottom of the screen (the read-aloud player). APK 1.4.6+; older ones ignore it. */
+  bottomReserve?: number;
 }
 
 /** A tap on a letter: its engine xpath, block and box on screen (CSS px). */

@@ -51,9 +51,11 @@ interface Props {
   readAloudIdle?: boolean;
   /** UI language ('es', 'en'): texts the plugin draws on the page. */
   lang?: string;
+  /** CSS px at the bottom of the screen the page leaves free (the read-aloud player covers them). */
+  bottomReserve?: number;
 }
 
-function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], lang?: string): NativeReaderSettings {
+function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], lang?: string, bottomReserve = 0): NativeReaderSettings {
   return {
     vertical: settings.vertical,
     fontSize: settings.fontSize,
@@ -70,6 +72,7 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], 
     hideImages: !!settings.hideImages,
     spoilerLabel: lang === 'es' ? 'Imagen oculta · toca para verla' : 'Hidden image · tap to show',
     lineEndReserve: LINE_END_RESERVE_EM,
+    bottomReserve: Math.round(bottomReserve),
     underlines: [],
   };
 }
@@ -154,11 +157,12 @@ export default function NativeReaderHost({
   onError,
   readAloudIdle = true,
   lang,
+  bottomReserve = 0,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
   const sections = useMemo(() => computeSections(book), [book]);
   const showFurigana = readerSettings.showFurigana !== false;
-  const settings = nativeSettings(readerSettings, colors, lang);
+  const settings = nativeSettings(readerSettings, colors, lang, bottomReserve);
 
   // Word states. The book's words are analysed once (kept in IndexedDB, so later opens take
   // milliseconds; the first one shows its progress), and the book opens with its colours and

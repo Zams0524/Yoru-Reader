@@ -420,6 +420,8 @@ export default function Reader({
 
   const engineApiRef = useRef<ReaderEngineApi | null>(null);
   const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
+  // Height the read-aloud player takes at the bottom: the native page leaves it free while it is open.
+  const [readAloudReach, setReadAloudReach] = useState(0);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2360,6 +2362,7 @@ export default function Reader({
           onSettings={() => setIsVoiceSettingsOpen(true)}
           raised={isHeaderVisible}
           autoHide={readAloud.status === 'playing' && !isHeaderVisible}
+          onReach={setReadAloudReach}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
         />
       )}
@@ -2397,6 +2400,7 @@ export default function Reader({
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
+          bottomReserve={isReadAloudOpen ? readAloudReach : 0}
         />
       ) : (
         <ReaderEngine

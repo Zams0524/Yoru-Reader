@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Moon, Pause, Play, Settings, SkipBack, SkipForward, X } from 'lucide-react';
 import { READ_ALOUD_RATES, type ReadAloudStatus } from './useReadAloud';
 
@@ -23,14 +23,25 @@ interface Props {
    * hidden); tapping the page brings the bars back, and the player with them.
    */
   autoHide?: boolean;
+  /** CSS px from the bottom of the screen up to the top of the player in its low place (the page keeps them free). */
+  onReach?: (px: number) => void;
 }
 
 const AUTO_HIDE_MS = 4000;
+/** How much higher .read-aloud-bar.is-raised sits (110px - 18px in the CSS). */
+const RAISE_PX = 92;
 
 export default function ReadAloudBar({
-  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false, autoHide = false,
+  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false, autoHide = false, onReach,
 }: Props) {
   const es = lang === 'es';
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !onReach) return;
+    const bottom = parseFloat(getComputedStyle(bar).bottom) - (raised ? RAISE_PX : 0);
+    if (Number.isFinite(bottom)) onReach(bottom + bar.offsetHeight + 6);
+  }, [onReach, raised]);
   const [, setNow] = useState(Date.now());
   const [hidden, setHidden] = useState(false);
   // Bumped by every touch on the bar: the hide countdown starts again.
@@ -68,6 +79,7 @@ export default function ReadAloudBar({
 
   return (
     <div
+      ref={barRef}
       className={`read-aloud-bar${raised ? " is-raised" : ""}${hidden ? " is-hidden" : ""}`}
       onPointerDown={() => setTouched((n) => n + 1)}
       aria-hidden={hidden || undefined}
