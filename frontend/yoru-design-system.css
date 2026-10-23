@@ -4973,6 +4973,13 @@ html.platform-android .reader-engine-content {
   background: var(--bg-app);
   color: var(--text-main);
   font-family: var(--font-ui);
+  /* The card is tappable (tap to reveal), so the WebView flashed its grey tap highlight over
+     the whole card whenever any button inside it was pressed. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.srs-rv button:active {
+  opacity: 0.8;
 }
 
 .srs-rv-top {
