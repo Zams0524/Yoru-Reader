@@ -55,7 +55,9 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
     heatmap: lang === 'es' ? 'Mapa de calor' : 'Heatmap',
     heatmapDesc: lang === 'es' ? 'Tiempo de lectura diario a lo largo de la ventana seleccionada.' : 'Daily reading time across the selected window.',
     recentSessions: lang === 'es' ? 'Sesiones recientes' : 'Recent sessions',
-    noSessions: lang === 'es' ? 'Aún no hay sesiones registradas. ¡Comienza a leer un libro!' : 'No sessions yet. Start reading a book!',
+    noSessions: lang === 'es'
+      ? 'Aún no hay sesiones registradas. En el lector, abre «Sesión de lectura» y pulsa «Iniciar sesión» para medir tu lectura.'
+      : 'No sessions yet. In the reader, open "Reading session" and tap "Start session" to track your reading.',
     byBook: lang === 'es' ? 'Por libro' : 'By book',
     bookTotalsDesc: lang === 'es' ? 'Los totales de cada libro aparecerán aquí.' : 'Book totals appear after you finish or pause sessions.',
     shown: lang === 'es' ? 'mostrados' : 'shown',
