@@ -1150,6 +1150,26 @@ export async function importAllDictionaryData({ dictionaries, terms, frequencies
 /**
  * Migra los nombres de los diccionarios de inglés para agregar "(English)" de forma retrocompatible.
  */
+/**
+ * Until 1.4.5 the bundled English JMdict was cut to its first 100 000 rows (no 名前, 猫, 天気…).
+ * Replaces that copy with the current bundled one; a JMdict the user imported is left alone.
+ */
+export async function upgradeTruncatedEnglishJmdict(): Promise<void> {
+  const installed = await getInstalledDictionaries();
+  const old = installed.find(dictionary =>
+    dictionary.revision === 'JMdict.2026-08-29' && /^JMdict( \(English\))? \[/.test(dictionary.title || ''));
+  if (!old) return;
+  const db = await getDB();
+  const rows = await new Promise<number>((resolve) => {
+    const request = db.transaction(STORE_TERMS, 'readonly').objectStore(STORE_TERMS).index('dictionary').count(IDBKeyRange.only(old.title));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(-1);
+  });
+  if (rows !== 100000) return;
+  await deleteDictionary(old.title);
+  await installBundledDictionary('JMdict_english.zip', 'en');
+}
+
 export async function migrateEnglishDictName(): Promise<void> {
   const db = await getDB();
   try {

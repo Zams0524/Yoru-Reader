@@ -276,11 +276,13 @@ export default function App() {
         console.log("[App] Running background yomitan database maintenance...");
         const {
           migrateEnglishDictName,
+          upgradeTruncatedEnglishJmdict,
           migrateDictFlags,
           cleanOrphanedEntries,
           ensureDefaultDictionaries
         } = await import('./utils/yomitanDB');
         await migrateEnglishDictName();
+        await upgradeTruncatedEnglishJmdict();
         await migrateDictFlags();
         // This full-store sweep can walk millions of dictionary rows. Android
         // manages dictionary records through explicit install/delete actions,
