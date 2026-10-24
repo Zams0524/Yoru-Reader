@@ -10,6 +10,7 @@ import {
   Search,
   MoreVertical,
   StickyNote,
+  Bookmark,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -50,6 +51,9 @@ interface ReaderNavbarProps {
   onToggleReadAloud?: () => void;
   onOpenSearch?: () => void;
   onOpenNotes?: () => void;
+  /** The page on screen has a bookmark (ribbon), and the button that sets or removes it. */
+  isPageBookmarked?: boolean;
+  onTogglePageBookmark?: () => void;
 }
 
 /**
@@ -77,6 +81,8 @@ export default function ReaderNavbar({
   onToggleReadAloud,
   onOpenSearch,
   onOpenNotes,
+  isPageBookmarked = false,
+  onTogglePageBookmark,
 }: ReaderNavbarProps) {
   const es = lang === 'es';
   const [menuOpen, setMenuOpen] = useState(false);
@@ -134,6 +140,19 @@ export default function ReaderNavbar({
           {onOpenSearch && (
             <button type="button" className="reader-topbar-btn" onClick={onOpenSearch} title={es ? 'Buscar en el libro' : 'Search in book'} aria-label={es ? 'Buscar en el libro' : 'Search in book'}>
               <Search size={21} />
+            </button>
+          )}
+          {onTogglePageBookmark && (
+            <button
+              type="button"
+              className={`reader-topbar-btn${isPageBookmarked ? ' is-active' : ''}`}
+              onClick={onTogglePageBookmark}
+              title={isPageBookmarked ? (es ? 'Quitar marcador de esta página' : 'Remove page bookmark') : (es ? 'Marcar esta página' : 'Bookmark this page')}
+              aria-label={isPageBookmarked ? (es ? 'Quitar marcador de esta página' : 'Remove page bookmark') : (es ? 'Marcar esta página' : 'Bookmark this page')}
+              aria-pressed={isPageBookmarked}
+              style={isPageBookmarked ? { color: colors.accent } : undefined}
+            >
+              <Bookmark size={21} fill={isPageBookmarked ? 'currentColor' : 'none'} />
             </button>
           )}
           <button type="button" className="reader-topbar-btn" onClick={onToggleToc} title={es ? 'Capítulos' : 'Chapters'} aria-label={es ? 'Capítulos' : 'Chapters'}>

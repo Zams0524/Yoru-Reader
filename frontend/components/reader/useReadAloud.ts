@@ -66,6 +66,24 @@ function firstVisibleSentence(content: HTMLElement, sentences: Sentence[]): numb
   return 0;
 }
 
+/**
+ * The sentence holding a character of a paragraph (a text selection), cut to start at that
+ * character so reading begins where the selection does, like ReadEra; -1 if it is not rendered.
+ */
+function sentenceAt(content: HTMLElement, sentences: Sentence[], paragraphId: number, offset: number): number {
+  const blocks = blocksOf(content);
+  const ordinal = blocks.findIndex((block) => block.matches('p.chapter-content') && block.getAttribute('index') === String(paragraphId));
+  if (ordinal < 0) return -1;
+  const index = sentences.findIndex((s) => s.ordinal === ordinal && s.end > offset);
+  if (index < 0) return sentences.findIndex((s) => s.ordinal > ordinal);
+  const sentence = sentences[index];
+  if (offset > sentence.start) {
+    const text = blockText(blocks[ordinal]).slice(offset, sentence.end).trim();
+    if (SPEAKABLE.test(text)) sentences[index] = { ...sentence, start: sentence.end - text.length, text };
+  }
+  return index;
+}
+
 function setHighlight(range: Range | null) {
   setNamedHighlight(HIGHLIGHT_NAME, range);
 }
@@ -180,11 +198,13 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     }
   }, [apiRef, onError]);
 
-  const start = useCallback(() => {
+  /** from: a character of a paragraph (the selected text) to start at, instead of the page on screen. */
+  const start = useCallback((from?: { paragraphId: number; offset: number }) => {
     const content = apiRef.current?.getContent();
     if (!content) return;
     sentencesRef.current = collectSentences(content);
-    void run(firstVisibleSentence(content, sentencesRef.current));
+    const chosen = from ? sentenceAt(content, sentencesRef.current, from.paragraphId, from.offset) : -1;
+    void run(chosen >= 0 ? chosen : firstVisibleSentence(content, sentencesRef.current));
   }, [apiRef, run]);
 
   const pause = useCallback(() => {

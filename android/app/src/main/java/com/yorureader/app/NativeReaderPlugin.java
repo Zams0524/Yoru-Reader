@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Handler;
@@ -125,6 +126,31 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private int layoutAnchorPage = -1;
     /** Covered picture pages: page -> [ordinal, left, top, right, bottom] (engine thread writes, main thread reads). */
     private final Map<Integer, float[]> coveredPictures = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Saved highlights of the book (setMarks), drawn into the page bitmaps. */
+    private volatile List<Mark> marks = new ArrayList<>();
+
+    // Text selection (long press) on the page on screen, main thread. Letter indices of `letters`.
+    private int selAnchor = -1, selStart = -1, selEnd = -1, selPage = -1;
+    /** The selection changed by dragging since the long press (a plain long press selects the word). */
+    private boolean selDragged;
+    /** The web UI was told about the selection (it shows its toolbar), so it must hear when it goes. */
+    private boolean selShown;
+    private static final int SELECTION_COLOR = 0x5C4F9DFF;
+    private static final int SELECTION_HANDLE_COLOR = 0xFF4F9DFF;
+
+    /** A saved highlight: block, character offset in its text without furigana, that text, ARGB colour. */
+    private static final class Mark {
+        final int ordinal, offset, color;
+        final String text;
+        final boolean note;
+        Mark(int ordinal, int offset, String text, int color, boolean note) {
+            this.ordinal = ordinal;
+            this.offset = offset;
+            this.text = text;
+            this.color = color;
+            this.note = note;
+        }
+    }
 
     /** Letter boxes of one page in view px (left, top, right, bottom), in the engine's hitbox order. */
     private static final class PageLetters {
@@ -526,8 +552,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         String xpath = call.getString("xpath", "");
         int ordinal = call.getInt("ordinal", -1);
         String innerPath = call.getString("innerPath", "");
+        JSArray markList = call.getArray("marks", null);
+        if (markList != null) marks = parseMarks(markList);
         main.post(() -> {
             final int gen = ++generation;
+            dropSelection();
             ensureView();
             Config base = Config.from(settings, null);
             view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.kindleTaps, base.brightness);
@@ -838,15 +867,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 if (cache.containsKey(p)) continue;
             }
             try {
-                Bitmap bitmap = drawPicturePage(p, c);
-                if (bitmap == null) {
-                    byte[] pixels = engine.renderPage(p, c.width, c.height);
-                    if (pixels == null) continue;
-                    bitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
-                    bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
-                    if (!c.underlines.isEmpty()) drawUnderlines(bitmap, lettersOf(p), c);
-                }
-                bitmap.prepareToDraw();
+                Bitmap bitmap = drawPage(p, c);
+                if (bitmap == null) continue;
                 synchronized (cache) {
                     cache.put(p, bitmap);
                 }
@@ -863,6 +885,131 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             coveredPictures.keySet().removeIf(p -> p < page - 2 || p > page + 3);
         }
         main.post(() -> { if (gen == generation) publish(); });
+    }
+
+    /** The bitmap of a page with its underlines and highlights, or null (engine thread). */
+    private Bitmap drawPage(int p, Config c) throws IOException {
+        Bitmap bitmap = drawPicturePage(p, c);
+        if (bitmap == null) {
+            byte[] pixels = engine.renderPage(p, c.width, c.height);
+            if (pixels == null) return null;
+            bitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
+            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
+            if (!c.underlines.isEmpty()) drawUnderlines(bitmap, lettersOf(p), c);
+            if (!marks.isEmpty()) drawMarks(bitmap, p, c);
+        }
+        bitmap.prepareToDraw();
+        return bitmap;
+    }
+
+    private static List<Mark> parseMarks(JSArray list) {
+        List<Mark> parsed = new ArrayList<>();
+        for (int i = 0; i < list.length(); i++) {
+            org.json.JSONObject m = list.optJSONObject(i);
+            if (m == null) continue;
+            String text = m.optString("text", "");
+            if (text.trim().isEmpty()) continue;
+            parsed.add(new Mark(m.optInt("ordinal", -1), Math.max(0, m.optInt("offset", 0)), text,
+                (int) m.optLong("color", 0x66FACC15L), m.optBoolean("note", false)));
+        }
+        return parsed;
+    }
+
+    /**
+     * Paints the saved highlights of the page's blocks over its text. Each one is found by its
+     * text among the page's letters (nearest to where counting puts it), like the read-aloud
+     * sentence: counting blocks and characters alone drifts with empty blocks and furigana.
+     */
+    private void drawMarks(Bitmap bitmap, int page, Config c) throws IOException {
+        PageLetters letters = lettersOf(page);
+        if (letters.texts.length == 0) return;
+        int first = ordinalOf(pageXPath(page));
+        if (first < 0) return;
+        int blocks = 0;
+        for (String t : letters.texts) if ("\n".equals(t)) blocks++;
+        float typical = typicalLetterArea(letters);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float radius = 3 * c.density;
+        for (Mark m : marks) {
+            int relative = m.ordinal - first;
+            if (relative < 0 || relative > blocks + 1) continue;
+            int[] range = findSentence(letters, typical, m.text, countedStart(letters, typical, relative, m.offset));
+            if (range == null) continue;
+            List<RectF> boxes = lineBoxes(letters, baseLetters(letters, typical, range[0], range[1]), c.vertical, 1f * c.density);
+            if (boxes.isEmpty()) continue;
+            paint.setColor(m.color);
+            for (RectF r : boxes) canvas.drawRoundRect(r, radius, radius, paint);
+            if (m.note) {
+                // A dot after the highlight: it has a note.
+                RectF last = boxes.get(boxes.size() - 1);
+                paint.setColor(0xFF000000 | (m.color & 0xFFFFFF));
+                float dot = 3.5f * c.density;
+                if (c.vertical) canvas.drawCircle(last.centerX(), last.bottom + dot * 1.6f, dot, paint);
+                else canvas.drawCircle(last.right + dot * 1.6f, last.top + dot, dot, paint);
+            }
+        }
+    }
+
+    /** Base letters (no furigana, no paragraph ends) from first to last. */
+    private static List<Integer> baseLetters(PageLetters letters, float typical, int first, int last) {
+        List<Integer> picked = new ArrayList<>();
+        for (int j = Math.max(0, first); j <= last && j < letters.texts.length; j++) {
+            if (isBaseLetter(letters, j, typical)) picked.add(j);
+        }
+        return picked;
+    }
+
+    /** Boxes of the letters, one per line (column in vertical text), grown by pad. */
+    private static List<RectF> lineBoxes(PageLetters letters, List<Integer> picked, boolean vertical, float pad) {
+        List<RectF> boxes = new ArrayList<>();
+        RectF line = null;
+        for (int i : picked) {
+            RectF r = new RectF(letters.boxes[i * 4] - pad, letters.boxes[i * 4 + 1] - pad, letters.boxes[i * 4 + 2] + pad, letters.boxes[i * 4 + 3] + pad);
+            boolean sameLine = line != null && (vertical
+                ? Math.min(line.right, r.right) - Math.max(line.left, r.left) > r.width() / 2
+                : Math.min(line.bottom, r.bottom) - Math.max(line.top, r.top) > r.height() / 2);
+            if (sameLine) line.union(r);
+            else {
+                line = r;
+                boxes.add(line);
+            }
+        }
+        return boxes;
+    }
+
+    /**
+     * The saved highlights changed (marks: [{ ordinal, offset, text, color, note }]): the pages
+     * kept around are drawn again, the one on screen first, and swapped in as they are ready.
+     */
+    @PluginMethod
+    public void setMarks(PluginCall call) {
+        marks = parseMarks(call.getArray("marks", new JSArray()));
+        final int gen = generation;
+        engineHandler.post(() -> {
+            if (gen != generation || config == null) return;
+            List<Integer> pages;
+            synchronized (cache) {
+                pages = new ArrayList<>(cache.keySet());
+            }
+            final int page = current;
+            pages.sort((a, b) -> Math.abs(a - page) - Math.abs(b - page));
+            for (int p : pages) {
+                if (gen != generation) return;
+                try {
+                    Bitmap bitmap = drawPage(p, config);
+                    if (bitmap == null) continue;
+                    synchronized (cache) {
+                        cache.put(p, bitmap);
+                    }
+                } catch (IOException e) {
+                    engineFailed(gen, e);
+                    return;
+                }
+                main.post(() -> { if (gen == generation) publish(); });
+            }
+        });
+        call.resolve();
     }
 
     /**
@@ -1018,6 +1165,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     public void onTurned(int direction) {
         current = Math.max(0, Math.min(pageCount - 1, current + direction));
         view.setHighlight(new ArrayList<>(), 0);
+        clearSelectionAndNotify();
         publish();
         final int gen = generation, page = current, seq = ++turnSeq;
         engineHandler.post(() -> {
@@ -1317,6 +1465,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             notifyListeners("tap", event);
             return;
         }
+        // A tap anywhere on the page ends a text selection (and does nothing else).
+        if (selStart >= 0) {
+            clearSelectionAndNotify();
+            return;
+        }
         if (revealPictureAt(x, y)) return;
         int letter = letterAt(x, y);
         if (letter >= 0) {
@@ -1360,6 +1513,232 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             } catch (IOException e) {
                 engineFailed(gen, e);
             }
+        });
+    }
+
+    // ── Text selection (long press) ──
+
+    @Override
+    public boolean onLongPress(float x, float y) {
+        if (popupOpen || view == null) return false;
+        int letter = letterAt(x, y);
+        PageLetters page = letters;
+        if (letter < 0 || page == null) return false;
+        view.setHighlight(new ArrayList<>(), 0);
+        if (selShown) {
+            selShown = false;
+            notifyListeners("selectionCleared", new JSObject());
+        }
+        selPage = page.page;
+        selAnchor = selStart = selEnd = letter;
+        selDragged = false;
+        drawSelection();
+        return true;
+    }
+
+    @Override
+    public void onSelectionDrag(float x, float y, int handle) {
+        PageLetters page = letters;
+        if (selStart < 0 || page == null || page.page != selPage) return;
+        int target = nearestLetterInBlock(page, x, y, selAnchor);
+        if (target < 0) return;
+        int start = selStart, end = selEnd;
+        if (handle == 0) {
+            start = Math.min(selAnchor, target);
+            end = Math.max(selAnchor, target);
+        } else if (handle == 1) {
+            start = Math.min(target, selEnd);
+            end = Math.max(target, selEnd);
+        } else {
+            start = Math.min(selStart, target);
+            end = Math.max(selStart, target);
+        }
+        if (start == selStart && end == selEnd) return;
+        // The toolbar hides while the selection moves; it comes back where the finger is lifted.
+        if (selShown) {
+            selShown = false;
+            notifyListeners("selectionCleared", new JSObject());
+        }
+        selStart = start;
+        selEnd = end;
+        selDragged = true;
+        drawSelection();
+    }
+
+    @Override
+    public void onSelectionDragEnd() {
+        if (selStart < 0) return;
+        emitSelection(!selDragged);
+    }
+
+    /** The letter nearest to the point among the base letters of the anchor's block (a selection stays in one paragraph). */
+    private int nearestLetterInBlock(PageLetters page, float x, float y, int anchor) {
+        if (anchor < 0 || anchor >= page.texts.length) return -1;
+        float typical = typicalLetterArea(page);
+        int from = anchor, to = anchor;
+        while (from > 0 && !"\n".equals(page.texts[from - 1])) from--;
+        while (to < page.texts.length - 1 && !"\n".equals(page.texts[to + 1])) to++;
+        int best = -1;
+        double bestDistance = Double.MAX_VALUE;
+        for (int i = from; i <= to; i++) {
+            if (!isBaseLetter(page, i, typical)) continue;
+            float l = page.boxes[i * 4], t = page.boxes[i * 4 + 1], r = page.boxes[i * 4 + 2], b = page.boxes[i * 4 + 3];
+            // Distance to the box (0 inside it).
+            float dx = Math.max(0, Math.max(l - x, x - r)), dy = Math.max(0, Math.max(t - y, y - b));
+            double distance = Math.hypot(dx, dy);
+            if (distance < bestDistance) {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private void drawSelection() {
+        PageLetters page = letters;
+        if (view == null) return;
+        if (selStart < 0 || page == null || page.page != selPage) {
+            view.setSelection(new ArrayList<>(), null, null, 0, 0);
+            return;
+        }
+        float density = getContext().getResources().getDisplayMetrics().density;
+        boolean vertical = config != null && config.vertical;
+        List<Integer> picked = baseLetters(page, typicalLetterArea(page), selStart, selEnd);
+        if (picked.isEmpty()) picked.add(selStart);
+        List<RectF> boxes = lineBoxes(page, picked, vertical, 1f * density);
+        int a = picked.get(0), z = picked.get(picked.size() - 1);
+        PointF start = vertical
+            ? new PointF((page.boxes[a * 4] + page.boxes[a * 4 + 2]) / 2, page.boxes[a * 4 + 1])
+            : new PointF(page.boxes[a * 4], page.boxes[a * 4 + 3]);
+        PointF end = vertical
+            ? new PointF((page.boxes[z * 4] + page.boxes[z * 4 + 2]) / 2, page.boxes[z * 4 + 3])
+            : new PointF(page.boxes[z * 4 + 2], page.boxes[z * 4 + 3]);
+        view.setSelection(boxes, start, end, SELECTION_COLOR, SELECTION_HANDLE_COLOR);
+    }
+
+    /** Forgets the selection without telling the web UI (main thread). */
+    private void dropSelection() {
+        selAnchor = selStart = selEnd = selPage = -1;
+        selShown = false;
+        if (view != null) view.setSelection(new ArrayList<>(), null, null, 0, 0);
+    }
+
+    private void clearSelectionAndNotify() {
+        boolean shown = selShown || selStart >= 0;
+        dropSelection();
+        if (shown) notifyListeners("selectionCleared", new JSObject());
+    }
+
+    /**
+     * Tells the web UI about the selection: the engine xpaths of its first and last letters (the
+     * web side turns them into the paragraph and offsets of a highlight), its text without
+     * furigana and its box on screen (CSS px). expandable: a long press without dragging, which
+     * the web side widens to the whole word (selectLetters).
+     */
+    private void emitSelection(boolean expandable) {
+        PageLetters page = letters;
+        if (page == null || page.page != selPage || selStart < 0) return;
+        float density = getContext().getResources().getDisplayMetrics().density;
+        float typical = typicalLetterArea(page);
+        List<Integer> picked = baseLetters(page, typical, selStart, selEnd);
+        if (picked.isEmpty()) return;
+        final int first = picked.get(0), last = picked.get(picked.size() - 1);
+        StringBuilder text = new StringBuilder();
+        float l = Float.MAX_VALUE, t = Float.MAX_VALUE, r = -Float.MAX_VALUE, b = -Float.MAX_VALUE;
+        for (int i : picked) {
+            text.append(page.texts[i]);
+            l = Math.min(l, page.boxes[i * 4]);
+            t = Math.min(t, page.boxes[i * 4 + 1]);
+            r = Math.max(r, page.boxes[i * 4 + 2]);
+            b = Math.max(b, page.boxes[i * 4 + 3]);
+        }
+        JSObject event = new JSObject();
+        event.put("page", page.page);
+        event.put("startIndex", first);
+        event.put("endIndex", last);
+        event.put("startLetter", page.texts[first]);
+        event.put("endLetter", page.texts[last]);
+        event.put("text", text.toString());
+        event.put("expandable", expandable);
+        event.put("left", l / density);
+        event.put("top", t / density);
+        event.put("right", r / density);
+        event.put("bottom", b / density);
+        final int gen = generation, start = selStart, end = selEnd;
+        engineHandler.post(() -> {
+            if (gen != generation) return;
+            try {
+                String startXPath = xpathOfLetter(page.page, first);
+                String endXPath = last == first ? startXPath : xpathOfLetter(page.page, last);
+                if (startXPath.isEmpty()) return;
+                event.put("startXpath", startXPath);
+                event.put("endXpath", endXPath);
+                event.put("ordinal", ordinalOf(startXPath));
+                event.put("endOrdinal", ordinalOf(endXPath));
+                main.post(() -> {
+                    // Dropped if the selection changed or went meanwhile.
+                    if (gen != generation || selStart != start || selEnd != end || selPage != page.page) return;
+                    selShown = true;
+                    notifyListeners("selection", event);
+                });
+            } catch (IOException e) {
+                engineFailed(gen, e);
+            }
+        });
+    }
+
+    private String xpathOfLetter(int page, int index) throws IOException {
+        List<EraEngine.Item> req = new ArrayList<>();
+        req.add(EraEngine.Item.str(page + ":" + index));
+        EraEngine.Response r = engine.request(EraEngine.CMD_REQ_XPATH_BY_RECT_ID, req);
+        String xpath = r.result == 0 ? r.stringAt(0) : "";
+        return xpath.equals("-") ? "" : xpath;
+    }
+
+    /**
+     * Sets the selection to a letter of the page with `before` base letters before it and `after`
+     * after it (the web side's word around a long-pressed letter) and reports it again.
+     */
+    @PluginMethod
+    public void selectLetters(PluginCall call) {
+        int page = call.getInt("page", -1);
+        int index = call.getInt("index", -1);
+        int before = Math.max(0, call.getInt("before", 0));
+        int after = Math.max(0, call.getInt("after", 0));
+        main.post(() -> {
+            PageLetters letters = this.letters;
+            if (letters == null || letters.page != page || page != selPage || index < 0 || index >= letters.texts.length) {
+                call.resolve();
+                return;
+            }
+            float typical = typicalLetterArea(letters);
+            int start = index, end = index;
+            for (int i = index - 1, n = 0; i >= 0 && n < before; i--) {
+                if ("\n".equals(letters.texts[i])) break;
+                if (!isBaseLetter(letters, i, typical)) continue;
+                start = i;
+                n++;
+            }
+            for (int i = index + 1, n = 0; i < letters.texts.length && n < after; i++) {
+                if ("\n".equals(letters.texts[i])) break;
+                if (!isBaseLetter(letters, i, typical)) continue;
+                end = i;
+                n++;
+            }
+            selStart = start;
+            selEnd = end;
+            drawSelection();
+            emitSelection(false);
+            call.resolve();
+        });
+    }
+
+    /** Ends the selection (the web UI acted on it or dismissed its toolbar). */
+    @PluginMethod
+    public void clearSelection(PluginCall call) {
+        main.post(() -> {
+            dropSelection();
+            call.resolve();
         });
     }
 
@@ -1663,6 +2042,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                     current = to;
                     // As a turn does: a highlight belongs to the page it was drawn on.
                     if (view != null) view.setHighlight(new ArrayList<>(), 0);
+                    clearSelectionAndNotify();
                     publish();
                 });
                 showPage(gen, to);
@@ -1724,6 +2104,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             generation++;
             pendingOpen = null;
             popupOpen = false;
+            dropSelection();
             letters = null;
             pageCount = 0;
             current = 0;

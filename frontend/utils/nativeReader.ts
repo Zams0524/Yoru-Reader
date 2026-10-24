@@ -48,6 +48,38 @@ export interface NativeWordHit {
   bottom: number;
 }
 
+/**
+ * A text selection made with a long press (APK 1.4.7+): engine xpaths of its first and last
+ * letters, its text without furigana and its box on screen (CSS px). expandable: a long press
+ * without dragging (one letter), which the web side widens to the word with selectLetters.
+ */
+export interface NativeSelection {
+  page: number;
+  startIndex: number;
+  endIndex: number;
+  startLetter: string;
+  endLetter: string;
+  text: string;
+  expandable: boolean;
+  startXpath: string;
+  endXpath: string;
+  ordinal: number;
+  endOrdinal: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** A saved highlight for the plugin to paint: block, offset in its text without furigana, that text, ARGB colour. */
+export interface NativeMark {
+  ordinal: number;
+  offset: number;
+  text: string;
+  color: number;
+  note?: boolean;
+}
+
 export interface NativePosition {
   page: number;
   pages: number;
@@ -69,7 +101,8 @@ interface NativeReaderPlugin {
   writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean; images?: Record<string, number> }): Promise<{ reused?: string[] } | void>;
   writeBookImage(options: { key: string; name: string; data: string }): Promise<void>;
   /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
-  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string }): Promise<NativePosition>;
+  /** marks (APK 1.4.7+): the saved highlights, painted from the first page on. */
+  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string; marks?: NativeMark[] }): Promise<NativePosition>;
   setSettings(options: { settings: Partial<NativeReaderSettings> }): Promise<void>;
   /** innerPath (with ordinal, APK 1.4.4+): a place inside that block; already on its page, nothing happens. */
   goTo(options: { ordinal?: number; page?: number; innerPath?: string }): Promise<void>;
@@ -82,12 +115,20 @@ interface NativeReaderPlugin {
   /** Clears any word or sentence highlight on the page. */
   clearHighlight(): Promise<void>;
   close(): Promise<void>;
+  /** The saved highlights changed (APK 1.4.7+; older APKs reject it). */
+  setMarks(options: { marks: NativeMark[] }): Promise<void>;
+  /** Selects a letter with `before`/`after` base letters around it (the word of a long press). APK 1.4.7+. */
+  selectLetters(options: { page: number; index: number; before: number; after: number }): Promise<void>;
+  /** Ends the text selection on the page. APK 1.4.7+. */
+  clearSelection(): Promise<void>;
   /** One line in the device log (APK 157+; the WebView's console is off in release builds). */
   log(options: { message: string }): Promise<void>;
   addListener(event: 'pageChanged', listener: (position: NativePosition) => void): Promise<PluginListenerHandle>;
   addListener(event: 'tap', listener: (point: { x: number; y: number; closePopup?: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'word', listener: (hit: NativeWordHit) => void): Promise<PluginListenerHandle>;
   addListener(event: 'error', listener: (error: { message: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'selection', listener: (selection: NativeSelection) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'selectionCleared', listener: () => void): Promise<PluginListenerHandle>;
 }
 
 export const NativeReader = registerPlugin<NativeReaderPlugin>('NativeReader');
@@ -160,6 +201,45 @@ function lineChars(line: string): number {
     .replace(/[｀`]/g, '、')
     .replace(/[゜°]/g, '。');
   return countJapaneseChars(plainText);
+}
+
+/**
+ * Characters before each paragraph, as the page bar and progress count them (the
+ * `paragraphChars` of the export, without exporting): where bookmarks sit on the page bar.
+ */
+export function bookParagraphChars(book: Pick<Book, 'chapters'>): number[] {
+  const chars: number[] = [];
+  let paragraphId = 0;
+  let charAccum = 0;
+  for (const chapter of book.chapters || []) {
+    for (const line of (chapter.content || '').split(/\r?\n/)) {
+      if (/^\{h[123]:/.test(line) && line.endsWith('}')) continue;
+      chars[paragraphId] = charAccum;
+      if (line.trim() && !(line.startsWith('{img:') && line.endsWith('}'))) charAccum += lineChars(line);
+      paragraphId++;
+    }
+  }
+  chars[paragraphId] = charAccum;
+  return chars;
+}
+
+/** Text of a paragraph without furigana or images (a bookmark's preview), '' if there is none. */
+export function bookParagraphText(book: Book, paragraph: number): string {
+  let paragraphId = 0;
+  for (const chapter of book.chapters || []) {
+    for (const line of (chapter.content || '').split(/\r?\n/)) {
+      if (/^\{h[123]:/.test(line) && line.endsWith('}')) continue;
+      if (paragraphId === paragraph) {
+        return line
+          .replace(/\{img:[^{}]*\}/gi, '')
+          .replace(/\{([^|{}]+)\|[^{}]*\}/g, '$1')
+          .replace(/《[^》]*》/g, '')
+          .trim();
+      }
+      paragraphId++;
+    }
+  }
+  return '';
 }
 
 /**
@@ -349,6 +429,17 @@ function blockElement(blockHtml: string): HTMLElement {
 const isFurigana = (node: Node) => !!(node.parentElement && node.parentElement.closest('rt, rp'));
 
 /** Text nodes of an element in reading order, without furigana (<rt>/<rp>). */
+/** Block of a paragraph's own text: like blockOfParagraph, but past the heading that shares its index. */
+export function textBlockOfParagraph(exported: NativeBookExport, paragraph: number): number {
+  let ordinal = blockOfParagraph(exported, paragraph);
+  while (
+    ordinal + 1 < exported.blockParagraph.length
+    && exported.blockParagraph[ordinal + 1] === paragraph
+    && /^\{h[123]:/.test(exported.blockLines[ordinal] || '')
+  ) ordinal++;
+  return ordinal;
+}
+
 export function baseTextNodes(root: Node): Text[] {
   const nodes: Text[] = [];
   const walker = (root.ownerDocument || document).createTreeWalker(root, NodeFilter.SHOW_TEXT);
