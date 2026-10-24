@@ -4971,6 +4971,9 @@ const Library = React.memo(function Library({
       paused?: boolean;
     }> = {};
     let totalDueCount = 0;
+    // New cards that are due but held back by a daily limit, so the dashboard can say why
+    // freshly mined cards are not showing up instead of claiming everything is done.
+    let newHeldByLimit = 0;
     
     const todayStr = localDate(now);
     const history = db.getSrsHistory();
@@ -5068,6 +5071,8 @@ const Library = React.memo(function Library({
               totalDueCount++;
               newCardsRemainingToday--;
               deckNewLeft[deckName]--;
+            } else {
+              newHeldByLimit++;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
@@ -5572,6 +5577,13 @@ const Library = React.memo(function Library({
                   ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
                   : (lang === 'es' ? 'Estás al día' : 'All caught up')}
               </button>
+              {newHeldByLimit > 0 && (
+                <p className="srs-today-limit-note">
+                  {lang === 'es'
+                    ? `${newHeldByLimit} ${newHeldByLimit === 1 ? 'tarjeta nueva espera' : 'tarjetas nuevas esperan'} a mañana por el límite diario de nuevas. Puedes subirlo en Ajustes o en los ajustes del mazo.`
+                    : `${newHeldByLimit} new ${newHeldByLimit === 1 ? 'card is' : 'cards are'} waiting for tomorrow because of the daily new-card limit. You can raise it in Settings or in the deck's settings.`}
+                </p>
+              )}
             </section>
 
             {/* Deck List (Mazos) */}
