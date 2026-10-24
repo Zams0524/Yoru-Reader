@@ -19,6 +19,8 @@ type ProfileData = {
   wordStatuses?: Record<string, string> | null;
   wordStatusTimes?: Record<string, string> | null;
   srsData?: Record<string, any> | null;
+  /** When each removed SRS card was removed, by key (db.getSrsRemovals). */
+  srsRemovals?: Record<string, string> | null;
 };
 
 export interface MergeResult {
@@ -85,17 +87,42 @@ function cardTime(card: any): number {
   return Math.max(time(card?.lastReview), time(card?.last_review));
 }
 
-function mergeSrs(local: Record<string, any> | null | undefined, cloud: Record<string, any> | null | undefined, preferCloud: boolean) {
-  if (!local) return cloud ?? null;
-  if (!cloud) return local;
-  const result: Record<string, any> = { ...cloud, ...local };
-  for (const key of Object.keys(cloud)) {
-    if (!(key in local)) continue;
-    const localTime = cardTime(local[key]);
-    const cloudTime = cardTime(cloud[key]);
-    if (cloudTime > localTime || (cloudTime === localTime && preferCloud)) result[key] = cloud[key];
+// When a card was last put in place, to weigh against its removal on another device: its last
+// review, its Anki import (cards last reviewed long ago but imported after the removal), or for a
+// card never reviewed, its creation, which is when a new card falls due.
+function cardSavedTime(card: any): number {
+  const created = !cardTime(card) && !card?.state ? Math.max(time(card?.due), time(card?.dueDate)) : 0;
+  return Math.max(cardTime(card), time(card?.importedAt), created);
+}
+
+function mergeSrs(local: ProfileData, cloud: ProfileData, preferCloud: boolean) {
+  const removals: Record<string, string> = { ...(cloud.srsRemovals || {}) };
+  for (const [key, at] of Object.entries(local.srsRemovals || {})) {
+    if (time(at) > time(removals[key])) removals[key] = at;
   }
-  return result;
+  let srsData: Record<string, any> | null;
+  const l = local.srsData;
+  const c = cloud.srsData;
+  if (!l) srsData = c ? { ...c } : null;
+  else if (!c) srsData = { ...l };
+  else {
+    srsData = { ...c, ...l };
+    for (const key of Object.keys(c)) {
+      if (!(key in l)) continue;
+      const localTime = cardTime(l[key]);
+      const cloudTime = cardTime(c[key]);
+      if (cloudTime > localTime || (cloudTime === localTime && preferCloud)) srsData[key] = c[key];
+    }
+  }
+  // A card removed on one device after it was last saved on the other stays removed; a card
+  // saved again after its removal is kept and the removal is forgotten.
+  for (const [key, at] of Object.entries(removals)) {
+    const card = srsData?.[key];
+    if (!card) continue;
+    if (time(at) >= cardSavedTime(card)) delete srsData![key];
+    else delete removals[key];
+  }
+  return { srsData, srsRemovals: Object.keys(removals).length ? removals : null };
 }
 
 // Word by word, the side that changed the word last wins, including removing its status.
@@ -158,7 +185,7 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
       books: mergeBooks(l.books, c.books),
       settings: l.settings ?? c.settings ?? null,
       ...mergeStatuses(l, c, preferCloud),
-      srsData: mergeSrs(l.srsData, c.srsData, preferCloud),
+      ...mergeSrs(l, c, preferCloud),
     };
   }
 
@@ -176,7 +203,8 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
       const s = side.profileData?.[id] || {};
       const m = profileData[id];
       return !sameJson(s.books, m.books) || !sameJson(s.wordStatuses, m.wordStatuses)
-        || !sameJson(s.wordStatusTimes, m.wordStatusTimes) || !sameJson(s.srsData, m.srsData);
+        || !sameJson(s.wordStatusTimes, m.wordStatusTimes) || !sameJson(s.srsData, m.srsData)
+        || !sameJson(s.srsRemovals, m.srsRemovals);
     });
 
   return { merged, localChanged: differs(local), cloudChanged: differs(cloud) };

@@ -6,7 +6,7 @@ import { useConfirm } from './ConfirmModal';
 import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils/yomitanDB';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { isPhoneUI } from '../utils/platform';
-import { planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
+import { findReplacedAnkiCards, planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
 import type { ApkgStep } from '../utils/apkgImport';
 import { srsWordOfKey } from '../utils/srsCardKeys';
 
@@ -409,15 +409,20 @@ export default function VocabularyModal({
       : `Anki: ${ankiCardCount} cards. In Yoru: ${c.total} cards (${c.new} new, ${c.learning} learning, ${c.relearning} relearning, ${c.young} young, ${c.mature} mature${c.suspended ? `; ${c.suspended} suspended` : ''}). History: ${plan.reviewCount} reviews over ${days} days.${skipped ? ` ${skipped} cards have no usable text and are skipped.` : ''}`;
   };
 
-  /** Saves an import plan: its cards, their words as "learning", and the review history. */
-  const commitAnkiImport = (plan: AnkiImportPlan) => {
+  /**
+   * Saves an import plan: its cards, their words as "learning", and the review history. `replaced`
+   * are earlier cards the import takes the place of (findReplacedAnkiCards), removed in the same save.
+   */
+  const commitAnkiImport = (plan: AnkiImportPlan, replaced: string[] = []) => {
     const updated = { ...db.getWordStatuses() };
     Object.keys(plan.cards).forEach((key) => {
       // 'known' would hide the word from the reader and exclude it from SRS review: imported
       // Anki cards still need both, regardless of how mature they are in Anki.
       updated[srsWordOfKey(key)] = 'learning';
     });
-    db.saveSrsCardsBatch(plan.cards);
+    const entries: Record<string, any> = {};
+    replaced.forEach((key) => { entries[key] = null; });
+    db.saveSrsCardsBatch({ ...entries, ...plan.cards });
     db.saveWordStatuses(updated);
     db.mergeImportedSrsReviewDays(plan.reviewDays);
     loadVocabStats();
@@ -587,9 +592,7 @@ export default function VocabularyModal({
             cancelText: lang === 'es' ? 'Conservar anteriores' : 'Keep previous'
           });
           if (replacePrevious) {
-            const reconciledSrsData = { ...db.getSrsData() };
-            staleDeckEntries.forEach(([word]) => { delete reconciledSrsData[word]; });
-            db.saveSrsData(reconciledSrsData);
+            db.saveSrsCardsBatch(Object.fromEntries(staleDeckEntries.map(([word]) => [word, null])));
             removedStaleCount = staleDeckEntries.length;
           }
         }
@@ -712,19 +715,32 @@ export default function VocabularyModal({
         return;
       }
 
-      const plan = planAnkiImport({ ...collected, crtSeconds, existing: db.getSrsData() });
+      const existing = db.getSrsData();
+      const plan = planAnkiImport({ ...collected, crtSeconds, existing });
+      // The file is the whole deck: earlier cards of its decks that it does not bring back would
+      // stay on top of it and the deck would no longer match Anki, so they are replaced.
+      const replaced = findReplacedAnkiCards(plan, [...collected.cards, ...collected.sentenceCards], existing,
+        (name) => db.cleanVolumeNumber(name.replace(/\x1f/g, '::')).toLowerCase());
+      const replacedNote = replaced.length
+        ? (lang === 'es'
+          ? ` Se quitarán ${replaced.length} tarjetas de importaciones anteriores de este mazo que no están en el archivo.`
+          : ` ${replaced.length} cards from earlier imports of this deck that are not in the file will be removed.`)
+        : '';
       const ok = await showConfirm({
         title: lang === 'es' ? '¿Importar mazo?' : 'Import deck?',
-        message: `${describeAnkiImport(plan, cards.length, collected.skipped)} ${lang === 'es' ? '¿Deseas continuar?' : 'Continue?'}`,
+        message: `${describeAnkiImport(plan, cards.length, collected.skipped)}${replacedNote} ${lang === 'es' ? '¿Deseas continuar?' : 'Continue?'}`,
         type: 'info',
         confirmText: lang === 'es' ? 'Importar' : 'Import'
       });
 
       if (ok) {
-        commitAnkiImport(plan);
+        commitAnkiImport(plan, replaced);
+        const removedNote = replaced.length
+          ? (lang === 'es' ? ` Se quitaron ${replaced.length} tarjetas anteriores.` : ` Removed ${replaced.length} earlier cards.`)
+          : '';
         await showConfirm({
           title: lang === 'es' ? 'Completado' : 'Success',
-          message: `${lang === 'es' ? 'Importación terminada.' : 'Import finished.'} ${describeAnkiImport(plan, cards.length, collected.skipped)}`,
+          message: `${lang === 'es' ? 'Importación terminada.' : 'Import finished.'} ${describeAnkiImport(plan, cards.length, collected.skipped)}${removedNote}`,
           type: 'info',
           confirmText: 'OK',
           cancelText: ''

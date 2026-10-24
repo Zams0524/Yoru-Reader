@@ -161,6 +161,8 @@ export function buildSrsCardFromAnki(card: AnkiImportCard, crtSeconds: number | 
     word: card.word,
     ankiCardId: card.cardId,
     ankiNoteId: card.noteId,
+    // Newer than any removal of this key on another device, so a sync keeps the card.
+    importedAt: now.toISOString(),
   };
   if (card.reading) data.reading = card.reading;
 
@@ -310,4 +312,31 @@ export function planAnkiImport(options: {
   const reviewDays = summarizeAnkiReviewsByDay(historyEntries);
   const reviewCount = Object.values(reviewDays).reduce((sum, day) => sum + day.total, 0);
   return { cards, reviewDays, reviewCount, counts: countSrsStates(Object.values(cards)) };
+}
+
+/**
+ * Cards already in Yoru that a whole-deck import replaces but does not bring back: copies of the
+ * same Anki cards under another key, and cards from the imported decks that are not in the file
+ * (earlier imports keyed by word, words taken from sentences, cards since deleted in Anki). Left in
+ * place they add to the deck's totals and due counts, so the deck no longer matches Anki.
+ * `deckKey` normalizes a deck name the way stored card sources are (Anki writes subdecks with ::).
+ */
+export function findReplacedAnkiCards(
+  plan: AnkiImportPlan,
+  importedCards: AnkiImportCard[],
+  existing: Record<string, any>,
+  deckKey: (name: string) => string,
+): string[] {
+  const cardIds = new Set(importedCards.map((card) => card.cardId).filter((id): id is number => Number.isFinite(id)));
+  const decks = new Set(importedCards.map((card) => deckKey(card.deck)).filter(Boolean));
+  const inImportedDeck = (source: unknown) => {
+    if (typeof source !== 'string' || !source) return false;
+    const key = deckKey(source);
+    for (const deck of decks) if (key === deck || key.startsWith(`${deck}::`)) return true;
+    return false;
+  };
+  return Object.entries(existing)
+    .filter(([key, card]) => !key.startsWith('_deck_') && card && !(key in plan.cards)
+      && (cardIds.has(card.ankiCardId) || inImportedDeck(card.source)))
+    .map(([key]) => key);
 }

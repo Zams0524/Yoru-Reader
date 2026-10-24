@@ -67,6 +67,7 @@ export interface Profile {
 }
 
 const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';
+const SRS_REMOVALS_KEY = 'yoru_srs_removals';
 
 const STORAGE_KEYS = {
   BOOKS: 'migaku_reader_books',
@@ -890,6 +891,38 @@ export const db = {
     const srsData = this.getSrsData();
     this._applySrsCardEntry(srsData, word, cardData);
     this.saveSrsData(srsData);
+    this._recordSrsRemovals({ [word]: cardData });
+  },
+
+  /**
+   * When each removed SRS card was removed, by key. Drive sync keeps cards from both devices, so
+   * without this a card removed here would come back from the other device's copy.
+   */
+  getSrsRemovals(): Record<string, string> {
+    try {
+      const raw = localStorage.getItem(this._getKey(SRS_REMOVALS_KEY));
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  },
+
+  /** Notes the removal time of keys saved as null, and forgets it for keys saved with a card. */
+  _recordSrsRemovals(entries: Record<string, any>) {
+    const removals = this.getSrsRemovals();
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const key of Object.keys(entries)) {
+      if (key.startsWith('_deck_')) continue;
+      if (!entries[key]) {
+        removals[key] = now;
+        changed = true;
+      } else if (key in removals) {
+        delete removals[key];
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(this._getKey(SRS_REMOVALS_KEY), JSON.stringify(removals));
   },
 
   /**
@@ -903,6 +936,7 @@ export const db = {
       this._applySrsCardEntry(srsData, word, entries[word]);
     }
     this.saveSrsData(srsData);
+    this._recordSrsRemovals(entries);
   },
 
   // --- Export/Import Database for Cloud/Google Drive Sync ---
@@ -940,13 +974,16 @@ export const db = {
       const srsKey = `yoru_reader_srs_data_${p.id}`;
       const srsRaw = localStorage.getItem(srsKey);
       const srsData = srsRaw ? JSON.parse(srsRaw) : null;
+      const removalsRaw = localStorage.getItem(`${SRS_REMOVALS_KEY}_${p.id}`);
+      const srsRemovals = removalsRaw ? JSON.parse(removalsRaw) : null;
 
       dbExport.profileData[p.id] = {
         books,
         settings,
         wordStatuses,
         wordStatusTimes,
-        srsData
+        srsData,
+        srsRemovals
       };
     }
 
@@ -988,6 +1025,9 @@ export const db = {
           const srsKey = `yoru_reader_srs_data_${p.id}`;
           localStorage.setItem(srsKey, JSON.stringify(pData.srsData));
         if (srsDataCache?.storageKey === srsKey) srsDataCache = null;
+        }
+        if (pData.srsRemovals) {
+          localStorage.setItem(`${SRS_REMOVALS_KEY}_${p.id}`, JSON.stringify(pData.srsRemovals));
         }
       }
     }
