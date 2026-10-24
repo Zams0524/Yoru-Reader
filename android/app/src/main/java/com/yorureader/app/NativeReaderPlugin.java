@@ -155,6 +155,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
          * instead of being cut by the page margin.
          */
         float lineEndReserve;
+        /** CSS px at the bottom of the screen kept free of text (the read-aloud player sits there). */
+        float bottomReserve;
         List<Underline> underlines = new ArrayList<>();
         int width, height;           // view size in px
         Insets insets = Insets.NONE;  // system bars and cutout, px
@@ -177,6 +179,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.hideImages = s.optBoolean("hideImages", base != null && base.hideImages);
             c.spoilerLabel = s.optString("spoilerLabel", base != null ? base.spoilerLabel : "");
             c.lineEndReserve = Math.max(0f, Math.min(3f, (float) s.optDouble("lineEndReserve", base != null ? base.lineEndReserve : 0)));
+            c.bottomReserve = Math.max(0f, Math.min(400f, (float) s.optDouble("bottomReserve", base != null ? base.bottomReserve : 0)));
             JSONArray lines = s.optJSONArray("underlines");
             if (lines == null) {
                 if (base != null) c.underlines = base.underlines;
@@ -758,6 +761,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int hp = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f));
         int top = vp + c.insets.top, bottom = vp + c.insets.bottom;
         int left = hp + c.insets.left, right = hp + c.insets.right;
+        // The read-aloud player covers the bottom of the screen: the text stops above it.
+        bottom = Math.max(bottom, Math.round(c.bottomReserve * c.density));
         // The line ends at the bottom of the screen in vertical text, at the right in horizontal.
         int reserve = Math.round(c.lineEndReserve * c.fontSize * c.density);
         if (c.vertical) bottom = Math.max(0, bottom - reserve);
@@ -802,7 +807,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         return c.vertical + "|" + c.width + "x" + c.height + "|" + c.density + "|" + c.insets
             + "|" + c.fontSize + "|" + c.lineHeight + "|" + c.verticalPadding + "|" + c.horizontalPadding
             + "|" + c.fontFamily + "|" + c.textAlign + "|" + c.textColor + "|" + c.backgroundColor
-            + "|" + c.lineEndReserve;
+            + "|" + c.lineEndReserve + "|" + c.bottomReserve;
     }
 
     /**
