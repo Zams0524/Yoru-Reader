@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isPhoneUI } from '../../utils/platform';
@@ -31,6 +31,34 @@ export interface Section {
   startChars: number;
   charCount?: number;
   isFromToc?: boolean;
+}
+
+/** Text nodes of an element in reading order, without furigana (<rt>/<rp>). */
+function baseTextNodes(root: Element): Text[] {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.parentElement?.closest('rt, rp')) nodes.push(node as Text);
+  }
+  return nodes;
+}
+
+type ReadingAnchor = { section: number; paragraph: string; offset: number };
+const anchorKey = (bookId: string) => `yoru_reader_anchor_${bookId}`;
+
+function loadAnchor(bookId?: string): ReadingAnchor | null {
+  if (!bookId) return null;
+  try {
+    const value = JSON.parse(localStorage.getItem(anchorKey(bookId)) || 'null');
+    return value && typeof value.paragraph === 'string' && Number.isFinite(value.section) && Number.isFinite(value.offset) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAnchor(bookId: string | undefined, anchor: ReadingAnchor) {
+  if (!bookId) return;
+  try { localStorage.setItem(anchorKey(bookId), JSON.stringify(anchor)); } catch { /* no storage */ }
 }
 
 export interface CharsUpdatePayload {
@@ -503,6 +531,56 @@ function ReaderEngineComponent({
     }
   }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight]);
 
+  // Reading position kept across relayouts (font size, margins, window size): the first character
+  // on the page, as a paragraph and an offset into its text without furigana. Keeping the page
+  // number instead shows other text once the pages hold more or fewer characters.
+  const anchorRef = useRef<ReadingAnchor | null>(null);
+  // The saved progress is a paragraph: when it began on the page before, reopening the book
+  // showed that page. The anchor saved with it gives the exact page (see the reopening effect).
+  const openingAnchorRef = useRef<ReadingAnchor | null>(loadAnchor(book.id));
+  // Set while the page shown comes from the anchor: the anchor stays the same until the reader
+  // moves, so several relayouts in a row do not drift back a page each time.
+  const holdAnchorRef = useRef(false);
+
+  const captureAnchor = useCallback((content: HTMLElement, box: DOMRect, element: Element) => {
+    if (holdAnchorRef.current) return;
+    const paragraph = element.getAttribute('index');
+    if (paragraph === null) return;
+    const onY = content.scrollWidth <= content.clientWidth + 2 && content.scrollHeight > content.clientHeight + 2;
+    // Text on an earlier page: above (pages on Y), to the right (vertical text) or to the left.
+    const isBefore = (r: DOMRect) => onY
+      ? r.bottom <= box.top + 1
+      : vertical ? r.left >= box.right - 1 : r.right <= box.left + 1;
+    const range = document.createRange();
+    let offset = 0;
+    for (const node of baseTextNodes(element)) {
+      const length = node.data.length;
+      range.selectNodeContents(node);
+      const rects = range.getClientRects();
+      const last = rects[rects.length - 1];
+      if (!last || isBefore(last)) {
+        offset += length;
+        continue;
+      }
+      // First character of this node that is not on an earlier page.
+      let lo = 0;
+      let hi = length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        range.setStart(node, mid);
+        range.setEnd(node, mid + 1);
+        const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+        if (isBefore(rect)) lo = mid + 1;
+        else hi = mid;
+      }
+      anchorRef.current = { section: currSection, paragraph, offset: offset + lo };
+      saveAnchor(book.id, anchorRef.current);
+      return;
+    }
+    anchorRef.current = { section: currSection, paragraph, offset: 0 };
+    saveAnchor(book.id, anchorRef.current);
+  }, [vertical, currSection, book.id]);
+
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
     const content = contentRef.current;
@@ -521,7 +599,10 @@ function ReaderEngineComponent({
 
       // Stop at first visible element
       if (box) {
-        if (onPage(pTags[i])) break;
+        if (onPage(pTags[i])) {
+          captureAnchor(content, box, pTags[i]);
+          break;
+        }
         continue;
       }
       const rect = pTags[i].getBoundingClientRect();
@@ -533,7 +614,7 @@ function ReaderEngineComponent({
     if (onCharsUpdate) {
       onCharsUpdate({ currChars, totalChars, lastIndex, currSection });
     }
-  }, [paginated, vertical, totalChars, currSection, onCharsUpdate]);
+  }, [paginated, vertical, totalChars, currSection, onCharsUpdate, captureAnchor]);
 
   // Calculate total pages in current section
   // Vertical text: columns stack downwards, so its pages run on the Y axis. Horizontal text: on X.
@@ -640,6 +721,7 @@ function ReaderEngineComponent({
   const flipPage = useCallback((multiplier: number, fromLeft?: number) => {
     const content = contentRef.current;
     if (!content) return;
+    holdAnchorRef.current = false;
     onPageTurnRef.current?.();
 
     if (paginated) {
@@ -702,6 +784,7 @@ function ReaderEngineComponent({
   // Jump directly to section
   const goToSection = useCallback((sectionIdx: number) => {
     if (sectionIdx < 0 || sectionIdx >= sections.length) return;
+    holdAnchorRef.current = false;
     setCurrSection(sectionIdx);
     setPageIndex(0);
     const content = contentRef.current;
@@ -718,14 +801,16 @@ function ReaderEngineComponent({
     }
   }, [targetSection, goToSection]);
 
-  const revealRange = useCallback((range: Range) => {
+  // force: work out the page even when the range is on screen (after a relayout the content can
+  // sit between two pages).
+  const showRange = useCallback((range: Range, force = false) => {
     const content = contentRef.current;
     if (!content) return;
     const rect = range.getClientRects()[0] || range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return;
     const box = content.getBoundingClientRect();
     const visible = rect.left >= box.left - 1 && rect.right <= box.right + 1 && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1;
-    if (visible) return;
+    if (visible && !force) return;
 
     // Some engines lay vertical-rl columns out downwards: then the pages scroll on the Y axis.
     const pagesOnYAxis = paginated
@@ -755,6 +840,42 @@ function ReaderEngineComponent({
       updateChars();
     }
   }, [paginated, vertical, getMaxPages, applyPagePosition, updateChars]);
+
+  const revealRange = useCallback((range: Range) => {
+    holdAnchorRef.current = false;
+    showRange(range);
+  }, [showRange]);
+
+  // Puts the anchored character back on screen after a relayout. Returns false without an anchor
+  // for the open section.
+  const restoreAnchor = useCallback(() => {
+    const anchor = anchorRef.current;
+    const content = contentRef.current;
+    if (!paginated || !anchor || anchor.section !== currSection || !content) return false;
+    const element = content.querySelector(`[index="${anchor.paragraph}"]`);
+    if (!element) return false;
+    let rest = anchor.offset;
+    for (const node of baseTextNodes(element)) {
+      if (rest < node.data.length) {
+        const range = document.createRange();
+        range.setStart(node, rest);
+        range.setEnd(node, rest + 1);
+        holdAnchorRef.current = true;
+        showRange(range, true);
+        return true;
+      }
+      rest -= node.data.length;
+    }
+    return false;
+  }, [paginated, currSection, showRange]);
+
+  // Font size, line spacing, margins, font or page height changed: stay on the same text.
+  const layoutStyleRef = useRef(contentStyle);
+  useLayoutEffect(() => {
+    if (layoutStyleRef.current === contentStyle) return;
+    layoutStyleRef.current = contentStyle;
+    restoreAnchor();
+  }, [contentStyle, restoreAnchor]);
 
   const showElement = (element: Element) => {
     if (!paginated) {
@@ -791,12 +912,27 @@ function ReaderEngineComponent({
   // After a section change requested by goToParagraph, show the paragraph once it is rendered.
   useEffect(() => {
     const paragraphId = pendingParagraphRef.current;
-    if (paragraphId === null) return;
+    if (paragraphId === null) {
+      // Only the paragraph the book reopens at can use the saved anchor.
+      openingAnchorRef.current = null;
+      return;
+    }
     // After the section-change reset (which scrolls to the start) has run.
     const timer = window.setTimeout(() => {
       pendingParagraphRef.current = null;
+      const openingAnchor = openingAnchorRef.current;
+      openingAnchorRef.current = null;
       const element = contentRef.current?.querySelector(`[index="${paragraphId}"]`);
       if (!element) return;
+      if (openingAnchor && openingAnchor.section === currSection && openingAnchor.paragraph === String(paragraphId)) {
+        anchorRef.current = openingAnchor;
+        if (restoreAnchor()) {
+          // From here the page shown is the reader's choice: anchor its first character.
+          holdAnchorRef.current = false;
+          updateChars();
+          return;
+        }
+      }
       showElement(element);
       updateChars();
     }, 60);
@@ -1209,7 +1345,8 @@ function ReaderEngineComponent({
     const container = containerRef.current;
     if (!container) return;
 
-    const handleResize = () => {
+    // resized: the window changed size (not the effect re-running after a page turn).
+    const handleResize = (resized = false) => {
       container.style.setProperty('--reader-height', `${window.innerHeight}px`);
       container.style.setProperty('--reader-width', `${window.innerWidth}px`);
       container.style.setProperty(
@@ -1223,21 +1360,24 @@ function ReaderEngineComponent({
 
       // A page-turn slide is already taking the content to this page; let it finish.
       if (paginated && slideAnimationRef.current === null) {
-        applyPagePosition(pageIndex);
+        // After a resize the same page number holds other text: show the anchored text instead.
+        // While the anchor holds, the page shown already comes from it.
+        if (resized ? !restoreAnchor() : !holdAnchorRef.current) applyPagePosition(pageIndex);
       }
     };
+    const onWindowResize = () => handleResize(true);
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', onWindowResize);
     handleResize();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', onWindowResize);
       container.style.removeProperty('--reader-height');
       container.style.removeProperty('--reader-width');
       container.style.removeProperty('--reader-image-height');
       container.style.removeProperty('--reader-image-width');
     };
-  }, [verticalPadding, horizontalPadding, paginated, pageIndex, applyPagePosition]);
+  }, [verticalPadding, horizontalPadding, paginated, pageIndex, applyPagePosition, restoreAnchor]);
 
   // Jiten parser (when the user saved a Jiten API key and there is no reader extension).
   const [jitenEnabled, setJitenEnabled] = useState(() => isJitenParserEnabled());

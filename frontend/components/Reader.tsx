@@ -398,6 +398,8 @@ export default function Reader({
 
   const [selectedWord, setSelectedWord] = useState<any | null>(null);
   const [dictEntry, setDictEntry] = useState<any | null>(null);
+  const dictEntryRef = useRef<any | null>(null);
+  dictEntryRef.current = dictEntry;
   const [dictLoading, setDictLoading] = useState(false);
   const [ankiCardExists, setAnkiCardExists] = useState(false);
   const [srsCard, setSrsCard] = useState<any | null>(null);
@@ -630,7 +632,8 @@ export default function Reader({
       reading = parts[1];
     }
     
-    if (selectedWord && selectedWord.basicForm === word && selectedWord.reading === reading) {
+    // Same word again: keep the popup, unless the lookup found nothing (a retry may find it).
+    if (selectedWord && selectedWord.basicForm === word && selectedWord.reading === reading && !dictEntryRef.current?.isFallback) {
       return;
     }
     
