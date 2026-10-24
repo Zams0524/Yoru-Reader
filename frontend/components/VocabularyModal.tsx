@@ -6,7 +6,7 @@ import { useConfirm } from './ConfirmModal';
 import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils/yomitanDB';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { isPhoneUI } from '../utils/platform';
-import { findReplacedAnkiCards, planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
+import { chooseAnkiWordField, findReplacedAnkiCards, planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
 import type { ApkgStep } from '../utils/apkgImport';
 import { srsWordOfKey } from '../utils/srsCardKeys';
 
@@ -480,14 +480,7 @@ export default function VocabularyModal({
 
       setProgressMsg(lang === 'es' ? 'Procesando y extrayendo vocabulario...' : 'Processing and extracting vocabulary...');
       const allFieldNames = Array.from(new Set(infoData.result.flatMap(card => Object.keys(card.fields || {}))));
-      const recommendedWordField = preferredAnkiField(allFieldNames, ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression']);
-      const hasDedicatedVocabularyField = allFieldNames.some(name => /vocabulary|word|kanji/i.test(name));
-      const selectedLooksLikeSentenceField = /sentence|example|context|cloze|expression/i.test(wordField);
-      const shouldMigrateOldDefault = ankiSettings.importWordFieldManual !== true && hasDedicatedVocabularyField && selectedLooksLikeSentenceField;
-      const effectiveWordField = allFieldNames.includes(wordField)
-        && !shouldMigrateOldDefault
-        ? wordField
-        : recommendedWordField;
+      const effectiveWordField = chooseAnkiWordField(allFieldNames, wordField, ankiSettings.importWordFieldManual === true);
       const fallbackFieldNames = [
         effectiveWordField,
         ...['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression'].map(name =>
@@ -667,8 +660,9 @@ export default function VocabularyModal({
       const readingField = ankiSettings.importReadingField || '';
       const parseWords = ankiSettings.importParseWords !== false;
       const allFieldNames = Array.from(new Set(cards.flatMap((c) => Object.keys(c.fields))));
-      const recommendedWordField = preferredAnkiField(allFieldNames, ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression']);
-      const effectiveWordField = allFieldNames.includes(wordField) ? wordField : recommendedWordField;
+      // The word field set for the AnkiConnect deck is for another deck: only keep it if it
+      // does not look like a sentence field, as "Expression" (the old default) does.
+      const effectiveWordField = chooseAnkiWordField(allFieldNames, wordField, false);
       const fallbackFieldNames = [
         effectiveWordField,
         ...['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression'].map((name) =>
