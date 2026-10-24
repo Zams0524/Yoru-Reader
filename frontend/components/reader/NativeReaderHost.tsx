@@ -6,6 +6,7 @@ import { getLocalWordStyleConfig } from '../../utils/parserSettingsStore';
 import { analyseBookWords, engineWordCss, renderBookWords, type BookWords } from '../../utils/nativeReaderWords';
 import { isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
+import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
 import { computeSections, jitenTextOfLine, prepareLineWords, renderLineWords, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
 import {
   NativeReader,
@@ -18,12 +19,46 @@ import {
   loadNativePosition,
   saveNativePosition,
   type NativeBookExport,
+  type NativeMark,
   type NativePosition,
+  type NativeSelection,
   type NativeReaderSettings,
   type NativeWordHit,
+  textBlockOfParagraph,
   textOffsetToInnerPath,
   xpathToTextOffset,
 } from '../../utils/nativeReader';
+
+/** A long-press selection on the native page, in the terms the reader's toolbar and highlights use. */
+export interface NativeTextSelection {
+  paragraphId: number;
+  /** Offsets in the paragraph's text without furigana; null for a heading (no highlight there). */
+  offsets: { start: number; end: number } | null;
+  visibleText: string | null;
+  text: string;
+  /** Box of the selection on screen, CSS px. */
+  rect: { left: number; top: number; right: number; bottom: number };
+}
+
+/** Start of the occurrence of needle (whitespace between its letters allowed) nearest to hint, and its end. */
+function findNear(text: string, needle: string, hint: number): { start: number; end: number } | null {
+  const letters = Array.from(needle.replace(/\s+/g, ''));
+  if (!letters.length) return null;
+  const pattern = new RegExp(letters.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'), 'g');
+  let best: { start: number; end: number } | null = null;
+  for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+    if (!best || Math.abs(m.index - hint) < Math.abs(best.start - hint)) best = { start: m.index, end: m.index + m[0].length };
+    pattern.lastIndex = m.index + 1;
+  }
+  return best;
+}
+
+/** Text of an exported block without furigana. */
+function blockPlainText(blockHtml: string): string {
+  const holder = document.createElement('div');
+  holder.innerHTML = `<p>${blockHtml}</p>`;
+  return baseTextNodes(holder).map((t) => t.data).join('');
+}
 
 interface Props {
   apiRef?: React.MutableRefObject<ReaderEngineApi | null>;
@@ -53,6 +88,10 @@ interface Props {
   lang?: string;
   /** CSS px at the bottom of the screen the page leaves free (the read-aloud player covers them). */
   bottomReserve?: number;
+  /** The book's highlights: painted on the pages. */
+  highlights?: BookHighlight[];
+  /** A long press selected text (null: the selection ended). */
+  onSelection?: (selection: NativeTextSelection | null) => void;
 }
 
 function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], lang?: string, bottomReserve = 0): NativeReaderSettings {
@@ -158,6 +197,8 @@ export default function NativeReaderHost({
   readAloudIdle = true,
   lang,
   bottomReserve = 0,
+  highlights,
+  onSelection,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
   // The app replaces the book object when it saves details about it (vocabulary stats, status):
@@ -312,8 +353,24 @@ export default function NativeReaderHost({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exported, ready, currentSection]);
   const lookupRef = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onCharsUpdate, onTap, onWordTap, onPageTurn, onError });
-  callbacks.current = { onCharsUpdate, onTap, onWordTap, onPageTurn, onError };
+  const callbacks = useRef({ onCharsUpdate, onTap, onWordTap, onPageTurn, onError, onSelection });
+  callbacks.current = { onCharsUpdate, onTap, onWordTap, onPageTurn, onError, onSelection };
+
+  // Saved highlights, for the plugin to paint into the pages: block, offset and text, colour at
+  // 40 % (ARGB). Sent with the open and again whenever they change.
+  const marks = useMemo<NativeMark[]>(() => (highlights || []).map((item) => {
+    const swatch = HIGHLIGHT_COLORS.find((c) => c.id === item.color)?.swatch || '#facc15';
+    return {
+      ordinal: textBlockOfParagraph(exported, item.paragraphId),
+      offset: item.start,
+      text: item.text,
+      color: ((0x66 << 24) | cssColorToInt(swatch, 0xfacc15)) >>> 0,
+      note: !!item.note?.trim(),
+    };
+  }), [highlights, exported]);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const sentMarksRef = useRef('');
   const wordStatusesRef = useRef(wordStatuses);
   wordStatusesRef.current = wordStatuses;
 
@@ -413,6 +470,71 @@ export default function NativeReaderHost({
   useEffect(() => { if (ready) void tokenizerReady(); }, [ready]);
   const findWordRef = useRef(findWord);
   findWordRef.current = findWord;
+
+  // Long press: the letters the plugin selected -> paragraph and offsets in its text (the same
+  // ones the WebView reader's highlights use). A long press without dragging selects the word.
+  const handleSelection = async (sel: NativeSelection) => {
+    const open = openedExportRef.current ?? exported;
+    const ordinal = sel.ordinal;
+    const blockHtml = open.blocks[ordinal];
+    const line = open.blockLines[ordinal];
+    if (blockHtml === undefined || line === undefined) return;
+    const plain = blockPlainText(blockHtml);
+    const startGuess = Math.max(0, xpathToTextOffset(blockHtml, sel.startXpath));
+    const endGuess = sel.endOrdinal === ordinal ? xpathToTextOffset(blockHtml, sel.endXpath) + 1 : plain.length;
+    // The engine's offsets can be off by a few characters (whitespace): trust the letters.
+    let range = findNear(plain, sel.text, startGuess);
+    if (!range && endGuess > startGuess) range = { start: startGuess, end: Math.min(plain.length, endGuess) };
+    if (!range) return;
+    const heading = /^\{h[123]:/.test(line);
+    if (sel.expandable && !heading) {
+      await Promise.all([tokenizerReady(), prepareLineWords(line)]);
+      const container = lookupRef.current;
+      if (container) {
+        container.innerHTML = `<p class="chapter-content">${renderLineWords(line, wordStatusesRef.current)}</p>`;
+        const texts = baseTextNodes(container);
+        let at = 0;
+        for (const text of texts) {
+          if (range.start < at + text.length) {
+            const span = text.parentElement?.closest('[data-word], [wordId], .jiten-word') as HTMLElement | null;
+            if (span) {
+              let start = -1;
+              let end = -1;
+              let pos = 0;
+              for (const t of texts) {
+                if (span.contains(t)) {
+                  if (start < 0) start = pos;
+                  end = pos + t.length;
+                }
+                pos += t.length;
+              }
+              if (end - start > 1) {
+                // The plugin selects the word and reports it again (not expandable then).
+                const done = await NativeReader.selectLetters({
+                  page: sel.page,
+                  index: sel.startIndex,
+                  before: Math.max(0, range.start - start),
+                  after: Math.max(0, end - range.start - 1),
+                }).then(() => true, () => false);
+                if (done) return;
+              }
+            }
+            break;
+          }
+          at += text.length;
+        }
+      }
+    }
+    callbacks.current.onSelection?.({
+      paragraphId: open.blockParagraph[ordinal] ?? 0,
+      offsets: heading ? null : range,
+      visibleText: heading ? null : plain.slice(range.start, range.end),
+      text: plain.slice(range.start, range.end) || sel.text,
+      rect: { left: sel.left, top: sel.top, right: sel.right, bottom: sel.bottom },
+    });
+  };
+  const handleSelectionRef = useRef(handleSelection);
+  handleSelectionRef.current = handleSelection;
   const appliedSettingsRef = useRef('');
   // One loading screen from the moment the reader mounts until the first page is on screen (the
   // native page fades in over it). It waits a moment so a quick open shows nothing at all.
@@ -444,6 +566,8 @@ export default function NativeReaderHost({
       NativeReader.addListener('tap', ({ closePopup }) => callbacks.current.onTap?.(!!closePopup)),
       NativeReader.addListener('word', (hit) => { void findWordRef.current(hit); }),
       NativeReader.addListener('error', ({ message }) => callbacks.current.onError?.(message)),
+      NativeReader.addListener('selection', (sel) => { void handleSelectionRef.current(sel); }),
+      NativeReader.addListener('selectionCleared', () => callbacks.current.onSelection?.(null)),
     ];
     (async () => {
       try {
@@ -473,7 +597,8 @@ export default function NativeReaderHost({
         } else {
           place = { ordinal: blockOfParagraph(toOpen, paragraph) };
         }
-        const position = await NativeReader.open({ key: toOpen.key, settings: settingsRef.current, ...place });
+        const position = await NativeReader.open({ key: toOpen.key, settings: settingsRef.current, marks: marksRef.current, ...place });
+        sentMarksRef.current = JSON.stringify(marksRef.current);
         openedExportRef.current = toOpen;
         if (cancelled) return;
         appliedSettingsRef.current = JSON.stringify(settingsRef.current);
@@ -612,6 +737,15 @@ export default function NativeReaderHost({
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [ready, readerSettings.volumeKeysNavigation, readerSettings.invertVolumeKeys]);
+
+  // Highlights added, recoloured or removed: the plugin paints the pages again.
+  useEffect(() => {
+    if (!ready) return;
+    const json = JSON.stringify(marks);
+    if (json === sentMarksRef.current) return;
+    sentMarksRef.current = json;
+    void NativeReader.setMarks({ marks }).catch(() => {});
+  }, [ready, marks]);
 
   // Clear the TTS sentence highlight when read-aloud stops.
   useEffect(() => {

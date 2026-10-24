@@ -11,6 +11,8 @@ interface Props {
   accent: string;
   /** Vertical Japanese reads right to left: the book starts at the right end of the slider. */
   rtl?: boolean;
+  /** Character positions of the page bookmarks: a ribbon on the slider for each. */
+  marks?: number[];
 }
 
 const FALLBACK_CHARS_PER_PAGE = 450;
@@ -21,7 +23,7 @@ const TAP_SLOP_PX = 12;
  * Pages are estimated from how many characters fit on a page of the open section, so the count
  * follows the font size and margins.
  */
-export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent, rtl = false }: Props) {
+export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent, rtl = false, marks = [] }: Props) {
   const es = lang === 'es';
   const [dragValue, setDragValue] = useState<number | null>(null);
   const charsPerPageRef = useRef(FALLBACK_CHARS_PER_PAGE);
@@ -91,6 +93,23 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
         <div className="reader-pagebar-ticks" aria-hidden="true">
           {ticks.map((left, index) => <span key={index} style={{ left: `${rtl ? 100 - left : left}%` }} />)}
         </div>
+        {marks.length > 0 && (
+          <div className="reader-pagebar-marks">
+            {marks.map((chars) => {
+              const left = Math.min(100, Math.max(0, (chars / totalChars) * 100));
+              return (
+                <button
+                  key={chars}
+                  type="button"
+                  style={{ left: `${rtl ? 100 - left : left}%` }}
+                  onClick={() => onSeek(chars)}
+                  title={es ? `Marcador · página ${pageAt(chars)}` : `Bookmark · page ${pageAt(chars)}`}
+                  aria-label={es ? `Ir al marcador de la página ${pageAt(chars)}` : `Go to the bookmark on page ${pageAt(chars)}`}
+                />
+              );
+            })}
+          </div>
+        )}
         <input
           type="range"
           min={0}
