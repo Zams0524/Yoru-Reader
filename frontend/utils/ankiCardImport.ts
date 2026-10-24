@@ -340,3 +340,21 @@ export function findReplacedAnkiCards(
       && (cardIds.has(card.ankiCardId) || inImportedDeck(card.source)))
     .map(([key]) => key);
 }
+
+const WORD_FIELD_PREFERENCES = ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression'];
+const fieldKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * The field that holds each card's word. The configured field wins, except where it looks like a
+ * sentence field and the deck has a vocabulary field: there it would split every example sentence
+ * into words (Core 2k/6k keeps its example sentence in "Expression", the old default). `keepManual`
+ * keeps a field the user picked by hand for this deck (AnkiConnect); a file is another deck.
+ */
+export function chooseAnkiWordField(fieldNames: string[], configured: string, keepManual: boolean): string {
+  const byKey = new Map(fieldNames.map((name) => [fieldKey(name), name]));
+  const recommended = WORD_FIELD_PREFERENCES.map((name) => byKey.get(fieldKey(name))).find(Boolean) || fieldNames[0] || '';
+  const hasVocabularyField = fieldNames.some((name) => /vocabulary|word|kanji/i.test(name));
+  const looksLikeSentenceField = /sentence|example|context|cloze|expression/i.test(configured);
+  const replace = !keepManual && hasVocabularyField && looksLikeSentenceField;
+  return fieldNames.includes(configured) && !replace ? configured : recommended;
+}
