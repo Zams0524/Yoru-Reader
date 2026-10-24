@@ -1705,6 +1705,13 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         });
     }
 
+    /** One line from the WebView in the device log (its console is off): the timing of an open. */
+    @PluginMethod
+    public void log(PluginCall call) {
+        Log.i(TAG, call.getString("message", ""));
+        call.resolve();
+    }
+
     /** Hides the reader; the engine stops after ENGINE_IDLE_MS unless the reader opens again. */
     @PluginMethod
     public void close(PluginCall call) {

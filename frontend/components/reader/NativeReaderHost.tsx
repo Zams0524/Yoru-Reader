@@ -138,7 +138,7 @@ function changesSection(
  */
 export default function NativeReaderHost({
   apiRef,
-  book,
+  book: bookProp,
   readerSettings,
   colors,
   rootRef,
@@ -156,6 +156,10 @@ export default function NativeReaderHost({
   lang,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
+  // The app replaces the book object when it saves details about it (vocabulary stats, status):
+  // the same book with the same text is not a new book to analyse, export and open again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const book = useMemo(() => bookProp, [bookProp.id, bookProp.chapters]);
   // How long each step of the first open takes (one line in the log once the page is on screen).
   const openTimingRef = useRef<{ start: number; marks: string[]; logged: boolean }>({ start: performance.now(), marks: [], logged: false });
   const markOpen = (step: string) => {
@@ -269,7 +273,7 @@ export default function NativeReaderHost({
       wordCss: lineHtml ? wordStyle.css : '',
     });
     const timing = openTimingRef.current;
-    if (!timing.logged) timing.marks.push(`export(${Math.round(performance.now() - started)})`);
+    if (!timing.logged) timing.marks.push(`export ${Math.round(performance.now() - started)}`);
     return result;
   }, [book, showFurigana, lineHtml, wordStyle]);
   settings.underlines = lineHtml ? wordStyle.underlines : [];
@@ -472,7 +476,11 @@ export default function NativeReaderHost({
         const timing = openTimingRef.current;
         if (!timing.logged) {
           timing.logged = true;
-          console.info(`[YoruOpen] ${timing.marks.join(', ')}, engine ${Math.round(performance.now() - timing.start)} ms`);
+          const since = (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt;
+          const mounted = typeof since === 'number' ? `mount ${Math.round(timing.start - since)}, ` : '';
+          // The WebView's console does not reach the device log: the plugin writes the line.
+          void NativeReader.log({ message: `open: ${mounted}${timing.marks.join(', ')}, shown ${Math.round(performance.now() - timing.start)} ms` }).catch(() => {});
+          window.dispatchEvent(new Event('yoru-reader-opened'));
         }
       } catch (error) {
         if (!cancelled) callbacks.current.onError?.(error instanceof Error ? error.message : String(error));

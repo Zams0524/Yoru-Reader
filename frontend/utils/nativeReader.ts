@@ -80,6 +80,8 @@ interface NativeReaderPlugin {
   /** Clears any word or sentence highlight on the page. */
   clearHighlight(): Promise<void>;
   close(): Promise<void>;
+  /** One line in the device log (APK 157+; the WebView's console is off in release builds). */
+  log(options: { message: string }): Promise<void>;
   addListener(event: 'pageChanged', listener: (position: NativePosition) => void): Promise<PluginListenerHandle>;
   addListener(event: 'tap', listener: (point: { x: number; y: number; closePopup?: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'word', listener: (hit: NativeWordHit) => void): Promise<PluginListenerHandle>;
