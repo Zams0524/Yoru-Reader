@@ -926,7 +926,12 @@ function ReaderEngineComponent({
       if (!element) return;
       if (openingAnchor && openingAnchor.section === currSection && openingAnchor.paragraph === String(paragraphId)) {
         anchorRef.current = openingAnchor;
-        if (restoreAnchor()) return;
+        if (restoreAnchor()) {
+          // From here the page shown is the reader's choice: anchor its first character.
+          holdAnchorRef.current = false;
+          updateChars();
+          return;
+        }
       }
       showElement(element);
       updateChars();
