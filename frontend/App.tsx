@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import DictionaryInstallToast from './components/DictionaryInstallToast';
 import { Capacitor } from '@capacitor/core';
 const Library = React.lazy(() => import('./components/Library'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
@@ -305,11 +306,13 @@ export default function App() {
         console.log("[App] Running background yomitan database maintenance...");
         const {
           migrateEnglishDictName,
+          upgradeTruncatedEnglishJmdict,
           migrateDictFlags,
           cleanOrphanedEntries,
           ensureDefaultDictionaries
         } = await import('./utils/yomitanDB');
         await migrateEnglishDictName();
+        await upgradeTruncatedEnglishJmdict();
         await migrateDictFlags();
         // This full-store sweep can walk millions of dictionary rows. Android
         // manages dictionary records through explicit install/delete actions,
@@ -320,7 +323,8 @@ export default function App() {
         // Install the bundled lookup and pitch data on first launch. Existing
         // dictionaries and explicit disabled-dictionary preferences are kept.
         try {
-          if (localStorage.getItem('yoru_bundled_dictionary_setup_v1') !== 'done') {
+          // First run: the welcome guide installs them once the language is chosen.
+          if (db.getProfiles().length > 0 && localStorage.getItem('yoru_bundled_dictionary_setup_v1') !== 'done') {
             await ensureDefaultDictionaries(lang === 'es' ? 'es' : 'en');
             localStorage.setItem('yoru_bundled_dictionary_setup_v1', 'done');
           }
@@ -906,6 +910,8 @@ export default function App() {
           />
         )}
       </React.Suspense>
+
+      {profiles.length > 0 && <DictionaryInstallToast lang={lang} />}
 
       {/* Manual Guide Modal */}
       <React.Suspense fallback={null}>

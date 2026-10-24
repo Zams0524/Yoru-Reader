@@ -25,8 +25,8 @@ export default function TutorialGuide({ isOpen, onClose, onImportBook, lang = 'e
   };
   const next = () => (step < total - 1 ? setStep(step + 1) : finish());
   const prev = () => setStep(Math.max(0, step - 1));
-  const swipe = useSwipe(() => { if (!dictionary.installing) next(); }, prev);
-  useArrowKeys(() => { if (!dictionary.installing) next(); }, prev, isOpen);
+  const swipe = useSwipe(() => { next(); }, prev);
+  useArrowKeys(() => { next(); }, prev, isOpen);
 
   if (!isOpen) return null;
 
@@ -71,10 +71,10 @@ export default function TutorialGuide({ isOpen, onClose, onImportBook, lang = 'e
         )}
 
         <div className="guide-bottom">
-          <button type="button" className="guide-primary" onClick={next} disabled={dictionary.installing}>
+          <button type="button" className="guide-primary" onClick={next}>
             {isDoneStep
               ? (es ? 'Empezar' : 'Start')
-              : isDictionaryStep && !dictionary.hasDictionary ? (es ? 'Ahora no' : 'Not now') : (es ? 'Siguiente' : 'Next')}
+              : isDictionaryStep && !dictionary.hasDictionary && !dictionary.installing ? (es ? 'Ahora no' : 'Not now') : (es ? 'Siguiente' : 'Next')}
             {!isDoneStep && <ChevronRight size={18} />}
           </button>
         </div>
