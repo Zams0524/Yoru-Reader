@@ -17,6 +17,7 @@ import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
+import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
@@ -4376,7 +4377,7 @@ const Library = React.memo(function Library({
       if (word.startsWith('_deck_')) {
         const deckName = word.substring(6).trim();
         if (deckName) initDeck(deckName);
-      } else if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      } else if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (deckName) initDeck(deckName);
       }
@@ -4385,7 +4386,7 @@ const Library = React.memo(function Library({
     // 2. Process all cards that are in 'learning' status
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_')) return;
-      if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (!deckName) return;
         initDeck(deckName);
@@ -4680,10 +4681,7 @@ const Library = React.memo(function Library({
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_') || !card) return;
       
-      if (separateSuspended) {
-        const status = statuses[word];
-        if (status === 'ignored' || status === 'known' || status === 'blacklisted') return;
-      }
+      if (separateSuspended && isSrsCardInactive(word, card, statuses)) return;
 
       const state = card.state;
       if (isNewSrsCard(card)) {
@@ -5752,7 +5750,7 @@ const Library = React.memo(function Library({
               {sortedWords.slice(0, visibleVocabCount).map((item, idx) => (
                 <div key={idx} className="note-word-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span className="note-word-text">{item.word}</span>
+                    <span className="note-word-text">{srsWordOfKey(item.word)}</span>
                     <span className={`note-word-status-badge ${item.statusClass}`}>{item.statusText}</span>
                   </div>
                   <div className="note-word-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -5762,7 +5760,7 @@ const Library = React.memo(function Library({
                       onClick={async () => {
                         const ok = await showConfirm({
                           title: lang === 'es' ? '¿Eliminar palabra?' : 'Delete word?',
-                          message: lang === 'es' ? `¿Quieres eliminar "${item.word}" de tu vocabulario?` : `Do you want to delete "${item.word}" from your vocabulary?`,
+                          message: lang === 'es' ? `¿Quieres eliminar "${srsWordOfKey(item.word)}" de tu vocabulario?` : `Do you want to delete "${srsWordOfKey(item.word)}" from your vocabulary?`,
                           type: 'danger',
                           confirmText: lang === 'es' ? 'Eliminar' : 'Delete',
                         });

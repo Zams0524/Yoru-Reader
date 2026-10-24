@@ -10,11 +10,14 @@ import JSZip from 'jszip';
 // @ts-ignore - no type declarations published for this specific build path.
 import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
 import { decompress as zstdDecompress } from 'fzstd';
+import type { AnkiReview } from './ankiCardImport';
 
 export interface ApkgRawCard {
   /** Field name (from the note's model) -> field value. */
   fields: Record<string, string>;
   deckName: string;
+  cardId: number;
+  noteId: number;
   interval: number;
   reps: number;
   lapses: number;
@@ -22,10 +25,24 @@ export interface ApkgRawCard {
   factor: number;
   /** Anki card type: 0 New, 1 Learning, 2 Review, 3 Relearning. */
   type: number;
-  /** New: queue position. Learning/Relearning: next-review time, epoch seconds. Review: days since the collection was created. */
+  /** Anki queue: -1 suspended, -2/-3 buried, 0 new, 1 learning, 2 review, 3 day-learning. */
+  queue: number;
+  /** New: queue position. Learning: next-review time, epoch seconds. Review/day-learning: days since the collection was created. */
   due: number;
-  /** Last-modified time, epoch seconds (used as an approximate last-review time). */
+  /** Last-modified time, epoch seconds. */
   mod: number;
+  /** FSRS memory state Anki stored for the card (cards.data), when the deck uses FSRS. */
+  memory: { stability: number; difficulty: number } | null;
+  /** Last review time stored with that memory state, epoch seconds. */
+  lastReviewSeconds?: number;
+  /** The card's review history (revlog), oldest first. */
+  reviews: AnkiReview[];
+}
+
+export interface ApkgCollection {
+  cards: ApkgRawCard[];
+  /** Collection creation time, epoch seconds: review due dates are day numbers counted from it. */
+  crtSeconds: number | null;
 }
 
 let sqlPromise: Promise<any> | null = null;
@@ -77,8 +94,47 @@ function deckNamesFromTable(db: any): Record<string, string> {
   return out;
 }
 
+/** Parses Anki's per-card `data` JSON for the FSRS memory state (s, d) and last review time (lrt). */
+function parseCardData(raw: unknown): { memory: ApkgRawCard['memory']; lastReviewSeconds?: number } {
+  if (!raw) return { memory: null };
+  try {
+    const data = JSON.parse(String(raw));
+    const stability = Number(data?.s);
+    const difficulty = Number(data?.d);
+    const memory = stability > 0 && difficulty >= 1 ? { stability, difficulty } : null;
+    const lastReviewSeconds = Number(data?.lrt) > 0 ? Number(data.lrt) : undefined;
+    return { memory, lastReviewSeconds };
+  } catch {
+    return { memory: null };
+  }
+}
+
+/** Every revlog entry, grouped by card id. */
+function reviewsByCard(db: any): Map<number, AnkiReview[]> {
+  const out = new Map<number, AnkiReview[]>();
+  let rows: any[] = [];
+  try {
+    rows = db.exec('SELECT id, cid, ease, type, ivl FROM revlog ORDER BY id');
+  } catch {
+    return out;
+  }
+  if (!rows.length) return out;
+  for (const row of rows[0].values) {
+    const [id, cid, ease, type, ivl] = row as [number, number, number, number, number];
+    const list = out.get(cid) || [];
+    list.push({ at: Number(id), rating: Number(ease) || 0, type: Number(type) || 0, ivl: Number(ivl) || 0 });
+    out.set(cid, list);
+  }
+  return out;
+}
+
 /** Reads every note+card pair from an Anki .apkg/.colpkg file, with each note's fields by name. */
 export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
+  return (await parseApkgCollection(file)).cards;
+}
+
+/** Like parseApkgFile, plus each card's review history and the collection's creation time. */
+export async function parseApkgCollection(file: File): Promise<ApkgCollection> {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const bytes = await extractCollectionBytes(zip);
   const SQL = await loadSql();
@@ -98,6 +154,14 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
     db = new SQL.Database(patched);
     let modelsJson = '';
     let decksJson = '';
+    let crtSeconds: number | null = null;
+    try {
+      const crtRows = db.exec('SELECT crt FROM col LIMIT 1');
+      const crt = Number(crtRows[0]?.values?.[0]?.[0]);
+      if (crt > 0) crtSeconds = crt;
+    } catch {
+      // No col.crt: review due dates fall back to last review + interval.
+    }
     try {
       const colRows = db.exec('SELECT models, decks FROM col LIMIT 1');
       if (colRows.length && colRows[0].values.length) {
@@ -135,34 +199,51 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
       deckNames = deckNamesFromTable(db);
     }
 
-    const rows = db.exec(`
-      SELECT n.mid, n.flds, c.did, c.ivl, c.reps, c.lapses, c.factor, c.type, c.due, c.mod
-      FROM cards c JOIN notes n ON n.id = c.nid
-    `);
-    if (!rows.length) return [];
+    // cards.data (FSRS memory state) only exists in newer collections.
+    let rows: any[];
+    try {
+      rows = db.exec(`
+        SELECT n.mid, n.flds, c.did, c.ivl, c.reps, c.lapses, c.factor, c.type, c.due, c.mod, c.id, c.nid, c.queue, c.data
+        FROM cards c JOIN notes n ON n.id = c.nid
+      `);
+    } catch {
+      rows = db.exec(`
+        SELECT n.mid, n.flds, c.did, c.ivl, c.reps, c.lapses, c.factor, c.type, c.due, c.mod, c.id, c.nid, c.queue, NULL
+        FROM cards c JOIN notes n ON n.id = c.nid
+      `);
+    }
+    if (!rows.length) return { cards: [], crtSeconds };
+    const reviews = reviewsByCard(db);
 
     const out: ApkgRawCard[] = [];
     for (const row of rows[0].values) {
-      const [mid, flds, did, ivl, reps, lapses, factor, type, due, mod] = row as [
-        number, string, number, number, number, number, number, number, number, number
+      const [mid, flds, did, ivl, reps, lapses, factor, type, due, mod, id, nid, queue, data] = row as [
+        number, string, number, number, number, number, number, number, number, number, number, number, number, string | null
       ];
       const names = fieldNamesByModel[String(mid)] || [];
       const values = String(flds).split('\x1f');
       const fields: Record<string, string> = {};
       names.forEach((name, i) => { fields[name] = values[i] || ''; });
+      const { memory, lastReviewSeconds } = parseCardData(data);
       out.push({
         fields,
         deckName: deckNames[String(did)] || 'Imported',
+        cardId: Number(id),
+        noteId: Number(nid),
         interval: ivl || 0,
         reps: reps || 0,
         lapses: lapses || 0,
         factor: factor || 2500,
         type: typeof type === 'number' ? type : 0,
+        queue: typeof queue === 'number' ? queue : 0,
         due: due || 0,
         mod: mod || 0,
+        memory,
+        lastReviewSeconds,
+        reviews: reviews.get(Number(id)) || [],
       });
     }
-    return out;
+    return { cards: out, crtSeconds };
   } finally {
     db.close();
   }
