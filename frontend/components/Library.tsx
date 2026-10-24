@@ -4912,6 +4912,7 @@ const Library = React.memo(function Library({
     const statuses = db.getWordStatuses();
     const srsData = db.getSrsData();
     const now = new Date();
+    const LEARN_AHEAD_MS = 20 * 60 * 1000;
     const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const getCardDueDate = (card: any): Date | null => {
       for (const value of [card?.due, card?.dueDate]) {
@@ -5063,7 +5064,10 @@ const Library = React.memo(function Library({
 
         // Count due cards
         const dueDate = getCardDueDate(card);
-        const isDue = !dueDate || dueDate <= now;
+        // Like Anki's 20-minute Learn Ahead Limit: a learning step a few minutes away already
+        // counts, so a card just mined and failed once doesn't leave the deck at "All caught up".
+        const isLearningStep = !isNewCard && (state === 1 || state === 3);
+        const isDue = !dueDate || dueDate.getTime() <= now.getTime() + (isLearningStep ? LEARN_AHEAD_MS : 0);
         if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
             if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
