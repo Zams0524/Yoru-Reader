@@ -1,7 +1,7 @@
 {
   "appVersion": "1.2.8.53",
   "backendVersion": "1.2.8.53",
-  "hotUpdateVersion": "1.2.8.57",
+  "hotUpdateVersion": "1.2.8.58",
   "hotUpdateUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
   "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "windowsUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
@@ -12,8 +12,8 @@
   "nativeCommit": "b16d54e776d8a57ae04b0356ab680c73602383b5",
   "assetHashes": {
     "dist.zip": {
-      "sha256": "00eb3f6d4269244de2b10685147a0b66dd9fa1645dfddd604e512b4f6379975c",
-      "size": 38014235
+      "sha256": "c789a3a837c948aabdd126869437ad02a782d8f83b0ead2ef132159b4cbfdfdf",
+      "size": 38014860
     },
     "Yoru-Reader.Setup.exe": {
       "sha256": "8da1b7abdf16a14f4ebcdb13787f3dfcb173a6393f29a81689dcff13843e86b4",
