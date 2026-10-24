@@ -74,12 +74,14 @@ function setHighlight(range: Range | null) {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Waits until the reader shows a different first block (the next section has been rendered). */
+// Looks before each wait: in the background (screen off) timers can be slowed to one a minute,
+// and the native reader has the next section ready at once.
 async function waitForNewSection(api: ReaderEngineApi, previousFirst: Element | undefined) {
   for (let waited = 0; waited < 3000; waited += 50) {
-    await sleep(50);
     const content = api.getContent();
     const first = content ? blocksOf(content)[0] : undefined;
     if (first && first !== previousFirst) return;
+    await sleep(50);
   }
 }
 
@@ -88,6 +90,19 @@ interface Options {
   voice?: string;
   onError?: (message: string) => void;
 }
+
+/** Where the voice is in the section being read: for the player in the notification. */
+export interface ReadAloudPosition {
+  index: number;
+  total: number;
+  /** The sentence being read. */
+  text: string;
+  /** Characters of the section before this sentence, and in all of it (to estimate times). */
+  charsBefore: number;
+  charsTotal: number;
+}
+
+const EMPTY_POSITION: ReadAloudPosition = { index: 0, total: 0, text: '', charsBefore: 0, charsTotal: 0 };
 
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const RATE_STORAGE = 'yoru_read_aloud_rate';
@@ -102,9 +117,17 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     try { return localStorage.getItem(VOICE_STORAGE) || ''; } catch { return ''; }
   });
   const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
-  const [position, setPosition] = useState({ index: 0, total: 0 });
+  const [position, setPosition] = useState<ReadAloudPosition>(EMPTY_POSITION);
 
   const sentencesRef = useRef<Sentence[]>([]);
+  // Characters before each sentence of sentencesRef (and the total at the end).
+  const charsBeforeRef = useRef<number[]>([0]);
+  const setSentences = (list: Sentence[]) => {
+    sentencesRef.current = list;
+    const before = [0];
+    for (const sentence of list) before.push(before[before.length - 1] + sentence.text.length);
+    charsBeforeRef.current = before;
+  };
   const indexRef = useRef(0);
   const runRef = useRef(0);
   const handleRef = useRef<SpeechHandle | null>(null);
@@ -137,14 +160,21 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
         if (!apiRef.current?.goToNextSection()) break;
         await waitForNewSection(apiRef.current!, previousFirst);
         if (runId !== runRef.current) return;
-        sentencesRef.current = collectSentences(apiRef.current!.getContent()!);
+        setSentences(collectSentences(apiRef.current!.getContent()!));
         index = 0;
         sentence = sentencesRef.current[0];
         if (!sentence) continue;
       }
 
       indexRef.current = index;
-      setPosition({ index, total: sentencesRef.current.length });
+      const charsBefore = charsBeforeRef.current;
+      setPosition({
+        index,
+        total: sentencesRef.current.length,
+        text: sentence.text,
+        charsBefore: charsBefore[index] ?? 0,
+        charsTotal: charsBefore[charsBefore.length - 1] ?? 0,
+      });
       const range = rangeFor(content, sentence);
       setHighlight(range);
       if (range) apiRef.current?.revealRange(range);
@@ -183,7 +213,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   const start = useCallback(() => {
     const content = apiRef.current?.getContent();
     if (!content) return;
-    sentencesRef.current = collectSentences(content);
+    setSentences(collectSentences(content));
     void run(firstVisibleSentence(content, sentencesRef.current));
   }, [apiRef, run]);
 
@@ -197,7 +227,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     const content = apiRef.current?.getContent();
     if (!content) return;
     // The section may have been re-rendered (word marks, Jiten): sentences are found again by position.
-    if (sentencesRef.current.length === 0) sentencesRef.current = collectSentences(content);
+    if (sentencesRef.current.length === 0) setSentences(collectSentences(content));
     void run(indexRef.current);
   }, [apiRef, run]);
 
@@ -211,6 +241,14 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
 
   const skip = useCallback((delta: number) => {
     void restartAt(Math.max(0, indexRef.current + delta));
+  }, [restartAt]);
+
+  /** Goes to the sentence that starts closest after `chars` characters into the section (the player's bar). */
+  const seekToChars = useCallback((chars: number) => {
+    const before = charsBeforeRef.current;
+    let index = 0;
+    while (index + 1 < sentencesRef.current.length && before[index + 1] <= chars) index++;
+    void restartAt(index);
   }, [restartAt]);
 
   const stop = useCallback(() => {
@@ -247,5 +285,5 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     setHighlight(null);
   }, []);
 
-  return { status, rate, voice: chosenVoice, position, sleepEndsAt, start, pause, resume, skip, stop, setRate, setVoice, setSleepMinutes };
+  return { status, rate, voice: chosenVoice, position, sleepEndsAt, start, pause, resume, skip, seekToChars, stop, setRate, setVoice, setSleepMinutes };
 }

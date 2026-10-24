@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
+import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -22,6 +22,7 @@ import { isPhoneUI } from '../utils/platform';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
+import { ensureNotificationPermission, getNotificationPermission, hasYoruNotifications, notificationSettings, YoruNotifications } from '../utils/yoruNotifications';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -50,6 +51,8 @@ interface LibraryProps {
   onSaveSettings: (...args: any[]) => any;
   wordStatuses?: Record<string, string>;
   initialTab?: string;
+  /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
+  navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
 
 const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
@@ -111,7 +114,8 @@ const Library = React.memo(function Library({
   settings = {},
   onSaveSettings,
   wordStatuses = {},
-  initialTab
+  initialTab,
+  navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
   const fileInputRef = useRef(null);
@@ -407,6 +411,27 @@ const Library = React.memo(function Library({
   const [installedDicts, setInstalledDicts] = useState([]);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
+  // Android: whether Yoru may post notifications, shown in Settings → Notifications.
+  const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null);
+  useEffect(() => {
+    if (!hasYoruNotifications() || activeSettingsSection !== 'sec-notifications') return;
+    const refresh = () => { void getNotificationPermission().then(setNotificationPermission); };
+    refresh();
+    // Coming back from Android's settings.
+    document.addEventListener('visibilitychange', refresh);
+    return () => document.removeEventListener('visibilitychange', refresh);
+  }, [activeSettingsSection]);
+
+  // A tapped notification asks for the SRS or the updates section.
+  useEffect(() => {
+    if (!navigateTo) return;
+    setActiveTab(navigateTo.tab);
+    if (navigateTo.section) {
+      setActiveSettingsSection(navigateTo.section);
+      setSettingsSearchQuery('');
+      if (isMobile) setMobileSettingsSectionOpen(true);
+    }
+  }, [navigateTo?.nonce]);
   const [activeMenuBookId, setActiveMenuBookId] = useState(null);
   const [menuOpenLeft, setMenuOpenLeft] = useState(false); // true = dropdown opens to the left of trigger
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null); // phones: the menu floats above the page
@@ -2825,6 +2850,7 @@ const Library = React.memo(function Library({
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
                   {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
+                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
                   {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
                 </div>
               </div>
@@ -3602,6 +3628,105 @@ const Library = React.memo(function Library({
               </div>
             </div>
           )}
+
+          {/* Card: Notificaciones (Android) */}
+          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (() => {
+            const es = lang === 'es';
+            const options = notificationSettings(settings);
+            const setOption = (key: string, value: boolean | number) => {
+              onSaveSettings({ ...settings, [key]: value });
+              if (value === true) {
+                void ensureNotificationPermission(true).then(() => getNotificationPermission()).then(setNotificationPermission);
+              }
+            };
+            const renderToggle = (key: string, checked: boolean, label: string, hint: string) => (
+              <div className="settings-row-control" key={key}>
+                <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>{label}</span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>{hint}</span>
+                </span>
+                <label className="migaku-switch">
+                  <input type="checkbox" checked={checked} onChange={(e) => setOption(key, e.target.checked)} />
+                  <span className="migaku-switch-slider"></span>
+                </label>
+              </div>
+            );
+            const groupTitle = (text: string) => (
+              <div style={{ fontSize: '0.72rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-dark)', margin: '16px 0 4px' }}>{text}</div>
+            );
+            return (
+              <div id="sec-notifications" className="settings-section-card">
+                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bell size={18} style={{ color: 'var(--primary)' }} />
+                  <span>{es ? 'Notificaciones' : 'Notifications'}</span>
+                </h3>
+                <p className="settings-card-desc">{es
+                  ? 'Cada grupo también se puede silenciar desde los ajustes de notificaciones de Android.'
+                  : 'Each group can also be silenced from Android\'s notification settings.'}</p>
+
+                {notificationPermission && notificationPermission !== 'granted' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', margin: '12px 0 4px', borderRadius: '10px', background: 'var(--yoru-gold-soft, rgba(242,200,102,0.13))' }}>
+                    <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-main)' }}>{es
+                      ? 'Android tiene apagadas las notificaciones de Yoru. El reproductor de lectura sigue funcionando, pero los avisos no.'
+                      : 'Android has Yoru\'s notifications off. The read-aloud player still works, the notices don\'t.'}</span>
+                    <button
+                      type="button"
+                      className="yoru-btn yoru-btn-primary"
+                      style={{ flexShrink: 0, padding: '6px 12px', fontSize: '0.8rem' }}
+                      onClick={async () => {
+                        if (notificationPermission === 'prompt' && await ensureNotificationPermission(true)) {
+                          setNotificationPermission('granted');
+                        } else {
+                          void YoruNotifications.openNotificationSettings().catch(() => {});
+                        }
+                      }}
+                    >{es ? 'Activar' : 'Turn on'}</button>
+                  </div>
+                )}
+
+                {groupTitle(es ? 'Lectura en voz alta' : 'Read aloud')}
+                {renderToggle('notifyReadAloudBackground', options.readAloudBackground,
+                  es ? 'Seguir leyendo fuera de la app' : 'Keep reading outside the app',
+                  es ? 'Con el reproductor en la notificación y la pantalla de bloqueo' : 'With the player in the notification and on the lock screen')}
+                {renderToggle('notifyReadAloudSentence', options.readAloudSentence,
+                  es ? 'Mostrar la oración actual' : 'Show the current sentence',
+                  es ? 'Si lo apagas, se ve el título del libro' : 'When off, the book title is shown')}
+
+                {groupTitle(es ? 'Repaso' : 'Reviews')}
+                {renderToggle('notifySrsDaily', options.srsDaily,
+                  es ? 'Avisar del nuevo día de repaso' : 'Notify when a new review day starts',
+                  es ? 'Solo si hay tarjetas pendientes; sin sonido' : 'Only when cards are due; silent')}
+                {options.srsDaily && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span className="settings-label-text">{es ? 'Hora del aviso' : 'Reminder time'}</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        {String(options.srsHour).padStart(2, '0')}:00
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="23"
+                      step="1"
+                      value={options.srsHour}
+                      onChange={(e) => setOption('notifySrsHour', parseInt(e.target.value, 10))}
+                      aria-label={es ? 'Hora del aviso de repaso' : 'Review reminder time'}
+                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                    />
+                  </div>
+                )}
+
+                {groupTitle(es ? 'Actualizaciones' : 'Updates')}
+                {renderToggle('notifyAppUpdates', options.appUpdates,
+                  es ? 'Avisar de versiones nuevas' : 'Notify about new versions',
+                  es ? 'Se buscan una vez al día' : 'Checked once a day')}
+                {renderToggle('notifyOtaUpdates', options.otaUpdates,
+                  es ? 'Avisar de mejoras automáticas' : 'Notify about automatic improvements',
+                  es ? 'Se instalan solas igualmente' : 'They install themselves anyway')}
+              </div>
+            );
+          })()}
 
           {/* Card: Día de lectura */}
           {matchesSearch('reading day dia lectura start hours limites horas nocturno') && (settingsSearchQuery || activeSettingsSection === 'sec-reading-day') && (

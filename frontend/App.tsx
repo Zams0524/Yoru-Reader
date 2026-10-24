@@ -11,6 +11,7 @@ import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
+import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
 
 const isNewerAppVersion = (remoteVersion: string, localVersion: string) => {
   if (!remoteVersion || !localVersion) return false;
@@ -125,6 +126,38 @@ export default function App() {
   const [readyUpdateKind, setReadyUpdateKind] = useState<string | null>(null);
 
   const { showConfirm, confirmModal } = useConfirm();
+
+  // Android notifications. The SRS reminder is worked out again when the app opens, when it is
+  // left (after reviewing) and shortly after settings change; update notices follow the settings.
+  const [libraryNav, setLibraryNav] = useState<{ tab: string; section?: string; nonce: number } | null>(null);
+  const notificationSettingsRef = useRef(settings);
+  notificationSettingsRef.current = settings;
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    void configureUpdateNotices(settings);
+    const timer = window.setTimeout(() => { void refreshSrsReminders(notificationSettingsRef.current); }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [settings]);
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    const onVisibility = () => { void refreshSrsReminders(notificationSettingsRef.current); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  // A tapped notification opens the SRS or the updates section.
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    const go = (action: LaunchAction | null) => {
+      if (action !== 'srs' && action !== 'updates') return;
+      const target = action === 'srs' ? { tab: 'srs' } : { tab: 'settings', section: 'sec-updates' };
+      setActiveBook(null);
+      setLibraryTab(target.tab);
+      setLibraryNav({ ...target, nonce: Date.now() });
+    };
+    void YoruNotifications.getLaunchAction().then(({ action }) => go(action)).catch(() => {});
+    const listener = YoruNotifications.addListener('launchAction', ({ action }) => go(action));
+    return () => { void listener.then((handle) => handle.remove()); };
+  }, []);
 
   const uniqueWordsCacheRef = useRef<Record<string, BookVocabCache>>({});
   const vocabCacheInFlightRef = useRef(new Set<string>());
@@ -909,6 +942,7 @@ export default function App() {
           onSaveSettings={handleSaveSettings}
           wordStatuses={wordStatuses}
           initialTab={libraryTab}
+          navigateTo={libraryNav}
           />
         )}
       </React.Suspense>

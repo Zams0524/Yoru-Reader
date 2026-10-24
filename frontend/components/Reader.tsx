@@ -32,6 +32,7 @@ import {
 } from '../utils/highlights';
 import { blockText, offsetInBlock, rangeForOffsets, setNamedHighlight } from '../utils/readerText';
 import { useReadAloud } from './reader/useReadAloud';
+import { useReadAloudPlayer } from './reader/useReadAloudPlayer';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
 import ReaderSettings from './reader/ReaderSettings';
@@ -459,6 +460,8 @@ export default function Reader({
     }, 3500);
   }, []);
 
+  // The last read-aloud error, for the player in the notification (cleared when the voice goes on).
+  const [readAloudError, setReadAloudError] = useState('');
   const readAloud = useReadAloud({
     apiRef: engineApiRef,
     voice: settings.audioVoiceOption,
@@ -476,7 +479,22 @@ export default function Reader({
           : (es ? 'No hay voz japonesa en este equipo. Elige Nanami o Keita en los ajustes de voz.' : 'No Japanese voice on this computer. Pick Nanami or Keita in the voice settings.');
       }
       showToast(message, 'error');
+      setReadAloudError(message);
     },
+  });
+  useEffect(() => {
+    if (readAloud.status === 'playing') setReadAloudError('');
+  }, [readAloud.status]);
+  useReadAloudPlayer({
+    readAloud,
+    open: isReadAloudOpen,
+    book,
+    chapter: engineApiRef.current?.getSections()[currentProgress.currSection]?.title || '',
+    settings,
+    lang,
+    error: readAloudError,
+    onClose: () => { readAloud.stop(); setIsReadAloudOpen(false); },
+    onReturn: (message) => showToast(message, 'info'),
   });
 
   const toggleFullscreen = useCallback(() => {
