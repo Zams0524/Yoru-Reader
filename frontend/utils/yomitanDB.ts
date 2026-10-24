@@ -1,11 +1,15 @@
 import JSZip from 'jszip';
 
 const DB_NAME = 'yoru_yomitan_db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_DICTS = 'dictionaries';
 const STORE_TERMS = 'terms';
 const STORE_FREQS = 'frequencies';
 const STORE_PITCHES = 'pitches';
+// Frequencies and pitch accent imported since 1.4.6: one record per (dictionary, kind, partition, bank)
+// holding { term: [payload…] }, instead of one IndexedDB row per word (see importYomitanZip).
+const STORE_META = 'meta_packs';
+const META_PARTS = 64;
 
 let dbInstance: IDBDatabase | null = null;
 type DictionaryProgress = (message: string, percent: number) => void;
@@ -122,7 +126,67 @@ export async function getDB(): Promise<IDBDatabase> {
         pitchStore.createIndex('term', 'term', { unique: false });
         pitchStore.createIndex('dictionary', 'dictionary', { unique: false });
       }
+
+      if (!db.objectStoreNames.contains(STORE_META)) {
+        const metaStore = db.createObjectStore(STORE_META, { keyPath: 'key' });
+        metaStore.createIndex('part', 'part', { unique: false });
+        metaStore.createIndex('dictionary', 'dictionary', { unique: false });
+      }
     };
+  });
+}
+
+type MetaKind = 'freq' | 'pitch';
+
+/** Partition of a word in the packed meta store (FNV-1a hash). */
+function metaPart(term: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < term.length; i++) {
+    hash ^= term.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % META_PARTS;
+}
+
+const metaPartKey = (dictionary: string, kind: MetaKind, term: string) => `${dictionary}\u0000${kind}\u0000${metaPart(term)}`;
+
+/** Payloads of `word` in the packed meta store, for each of `dictionaries`. */
+async function readPackedMeta(kind: MetaKind, word: string, dictionaries: string[]): Promise<{ dictionary: string; payload: any[] }[]> {
+  const db = await getDB();
+  if (!db.objectStoreNames.contains(STORE_META) || dictionaries.length === 0) return [];
+  return new Promise((resolve) => {
+    const found: { dictionary: string; payload: any[] }[] = [];
+    const tx = db.transaction(STORE_META, 'readonly');
+    const index = tx.objectStore(STORE_META).index('part');
+    for (const dictionary of dictionaries) {
+      const request = index.getAll(IDBKeyRange.only(metaPartKey(dictionary, kind, word)));
+      request.onsuccess = () => {
+        for (const pack of request.result || []) {
+          for (const payload of pack.entries?.[word] || []) found.push({ dictionary, payload });
+        }
+      };
+    }
+    tx.oncomplete = () => resolve(found);
+    tx.onerror = () => resolve(found);
+    tx.onabort = () => resolve(found);
+  });
+}
+
+/** Deletes every record of `title` from an object store through its 'dictionary' index. */
+function deleteByDictionary(db: IDBDatabase, storeName: string, title: string): Promise<void> {
+  if (!db.objectStoreNames.contains(storeName)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const request = tx.objectStore(storeName).index('dictionary').openCursor(IDBKeyRange.only(title));
+    request.onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -138,6 +202,11 @@ export async function getInstalledDictionaries(): Promise<any[]> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+/** True while a bundled dictionary is being imported in this session. */
+export function isBundledInstallRunning(): boolean {
+  return bundledInstallTasks.size > 0;
 }
 
 /** Instala un recurso Yomitan empaquetado con la app, compartiendo trabajos simultáneos. */
@@ -192,32 +261,10 @@ export function installBundledDictionary(
   return task.promise.finally(() => listeners.delete(onProgress));
 }
 
-/** Deja listo un diccionario de términos en el idioma de la app y el pitch accent. */
+/** Deja listo el paquete recomendado (diccionario, frecuencia y acento tonal) en el idioma de la app. */
 export async function ensureDefaultDictionaries(lang: 'es' | 'en' = 'en'): Promise<void> {
-  const pitchPattern = /pitch|アクセント/i;
-  const frequencyPattern = /frequen|frecuencia|frequency|meta|Netflix|YouTube|novels|anime|visual novel/i;
-  const isTermDictionary = (dictionary: any) => {
-    if (dictionary.hasTerms === true) return true;
-    if (dictionary.hasTerms === false || dictionary.hasFreqs === true) return false;
-    return !pitchPattern.test(dictionary.title || '') && !frequencyPattern.test(dictionary.title || '');
-  };
-
-  let installed = await getInstalledDictionaries();
-  const interruptedImports = installed.filter(dictionary => dictionary.importState === 'installing');
-  for (const dictionary of interruptedImports) {
-    await deleteDictionary(dictionary.title);
-  }
-  if (interruptedImports.length > 0) installed = await getInstalledDictionaries();
-
-  if (!installed.some(isTermDictionary)) {
-    const assetName = lang === 'es' ? 'JMdict_spanish.zip' : 'JMdict_english.zip';
-    await installBundledDictionary(assetName, lang);
-    installed = await getInstalledDictionaries();
-  }
-
-  if (!installed.some(dictionary => pitchPattern.test(dictionary.title || ''))) {
-    await installBundledDictionary('pitch-accent-japanese.zip', lang);
-  }
+  const { installRecommendedPack } = await import('./dictionaryPack');
+  await installRecommendedPack(lang);
 }
 
 /**
@@ -246,7 +293,13 @@ export async function migrateDictFlags(): Promise<void> {
         req.onerror = () => resolve(false);
       });
 
-      const hasFreqs = await new Promise<boolean>((resolve) => {
+      const hasPackedMeta = !db.objectStoreNames.contains(STORE_META) ? false : await new Promise<boolean>((resolve) => {
+        const req = db.transaction(STORE_META, 'readonly').objectStore(STORE_META).index('dictionary').count(IDBKeyRange.only(dict.title));
+        req.onsuccess = () => resolve(req.result > 0);
+        req.onerror = () => resolve(false);
+      });
+
+      const hasFreqs = hasPackedMeta || await new Promise<boolean>((resolve) => {
         const tx = db.transaction(STORE_FREQS, 'readonly');
         const idx = tx.objectStore(STORE_FREQS).index('dictionary');
         const req = idx.openCursor(IDBKeyRange.only(dict.title));
@@ -325,6 +378,21 @@ export async function cleanOrphanedEntries(): Promise<void> {
       });
     }
 
+    if (db.objectStoreNames.contains(STORE_META)) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_META, 'readwrite');
+        const req = tx.objectStore(STORE_META).openCursor();
+        req.onsuccess = (e: any) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            if (!knownTitles.has(cursor.value.dictionary)) cursor.delete();
+            cursor.continue();
+          } else resolve();
+        };
+        req.onerror = reject;
+      });
+    }
+
     console.log('[yomitanDB] Orphaned entries cleaned. Active dicts:', [...knownTitles]);
   } catch (err) {
     console.warn('cleanOrphanedEntries failed:', err);
@@ -385,7 +453,10 @@ export async function deleteDictionary(title: string): Promise<void> {
     request.onerror = reject;
   });
 
-  // 4. Borrar todos los registros de pitch
+  // 4. Frecuencias y acento tonal empaquetados
+  await deleteByDictionary(db, STORE_META, title);
+
+  // 5. Borrar todos los registros de pitch
   if (db.objectStoreNames.contains(STORE_PITCHES)) {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_PITCHES, 'readwrite');
@@ -537,133 +608,76 @@ export async function importYomitanZip(file: File, onProgress: (msg: string, per
       }
     }
 
-    // --- 2. Parallel Extraction & Fast Chunked Write for Frequencies/Pitch ---
+    // --- 2. Frequencies and pitch accent, packed ---
+    // One record per (bank, partition) holding { term: [payload…] } instead of one row per word:
+    // a 300 000-word list is ~2 000 writes. Row-per-word imports took ~30 s per list.
     if (metaFiles.length > 0) {
-      onProgress(isEs ? 'Extrayendo frecuencias...' : 'Extracting frequencies and pitch...', 80);
-      
-      // Read only a few banks at once. Parsing every JSON bank with Promise.all
-      // kept the whole expanded archive in memory and left the UI frozen at 80%.
-      const META_BANK_BATCH = 3;
-      const WRITE_META_CHUNK = 5000;
-      const metaFileSizes = metaFiles.map(filename => {
-        const file = zip!.file(filename) as any;
-        return Math.max(1, Number(file?._data?.uncompressedSize) || 1);
-      });
-      const totalMetaBytes = metaFileSizes.reduce((sum, size) => sum + size, 0);
-      let completedMetaBytes = 0;
-      let lastMetaProgress = 79;
-      const reportMetaProgress = (message: string, percent: number) => {
-        lastMetaProgress = Math.max(lastMetaProgress, Math.min(99, Math.floor(percent)));
-        onProgress(message, lastMetaProgress);
-      };
-
-      for (let start = 0; start < metaFiles.length; start += META_BANK_BATCH) {
-        const batchFiles = metaFiles.slice(start, start + META_BANK_BATCH);
-        const batchOffsets: number[] = [];
-        let bytesBeforeInBatch = 0;
-        for (let i = 0; i < batchFiles.length; i++) {
-          batchOffsets.push(bytesBeforeInBatch);
-          bytesBeforeInBatch += metaFileSizes[start + i];
-        }
-        const batchBytes = bytesBeforeInBatch;
-
-        const parsedBanks = await Promise.all(batchFiles.map(async (filename, batchIndex) => {
-          const zf = zip!.file(filename);
-          if (!zf) return [];
-          const absoluteBank = start + batchIndex + 1;
-          const fileSize = metaFileSizes[start + batchIndex];
-          const bankOffset = batchOffsets[batchIndex];
-          const text = await zf.async('string', metadata => {
-            const progressBytes = completedMetaBytes + bankOffset + fileSize * ((metadata as any).percent || 0) / 100;
-            const percent = 80 + 9 * (progressBytes / totalMetaBytes);
-            reportMetaProgress(
-              isEs
-                ? `Extrayendo banco ${absoluteBank}/${metaFiles.length} (${Math.floor((metadata as any).percent || 0)}%)...`
-                : `Extracting bank ${absoluteBank}/${metaFiles.length} (${Math.floor((metadata as any).percent || 0)}%)...`,
-              percent
-            );
-          });
-          return JSON.parse(text);
-        }));
-
-        const freqItems: any[] = [];
-        const pitchItems: any[] = [];
-        for (const metaArray of parsedBanks) {
-          for (const metaData of metaArray) {
-            if (!Array.isArray(metaData)) continue;
-            const term = metaData[0];
-            const type = metaData[1];
-
-            if (type === 'freq') {
-              const freqVal = metaData.length === 3 ? metaData[2] : metaData.length === 4 ? metaData[3] : null;
-              let value = 0;
-              let displayValue = '';
-              if (typeof freqVal === 'number') {
-                value = freqVal;
-                displayValue = '#' + freqVal;
-              } else if (typeof freqVal === 'string') {
-                const parsed = parseInt(freqVal, 10);
-                value = Number.isNaN(parsed) ? 0 : parsed;
-                displayValue = freqVal;
-              } else if (freqVal && typeof freqVal === 'object') {
-                if (typeof freqVal.value === 'number') {
-                  value = freqVal.value;
-                  displayValue = '#' + value;
-                } else if (typeof freqVal.frequency === 'number') {
-                  value = freqVal.frequency;
-                  displayValue = '#' + value;
-                }
-                if (freqVal.displayValue) displayValue = freqVal.displayValue;
-              }
-              freqItems.push({ dictionary: dictTitle, term, value, displayValue });
-            } else if (type === 'pitch') {
-              const pitchData = metaData[2];
-              if (pitchData && typeof pitchData === 'object') {
-                pitchItems.push({
-                  dictionary: dictTitle,
-                  term,
-                  reading: pitchData.reading || '',
-                  pitches: pitchData.pitches || []
-                });
+      onProgress(isEs ? 'Extrayendo frecuencias...' : 'Extracting frequencies and pitch...', 75);
+      for (let bankIndex = 0; bankIndex < metaFiles.length; bankIndex++) {
+        const metaFile = zip.file(metaFiles[bankIndex]);
+        if (!metaFile) continue;
+        const bank = JSON.parse(await metaFile.async('string'));
+        const packs = new Map<string, { key: string; part: string; dictionary: string; kind: MetaKind; entries: Record<string, any[]> }>();
+        for (const metaData of bank) {
+          if (!Array.isArray(metaData)) continue;
+          const term = metaData[0];
+          const type = metaData[1];
+          let kind: MetaKind;
+          let payload: any[];
+          if (type === 'freq') {
+            const freqVal = metaData.length === 3 ? metaData[2] : metaData.length === 4 ? metaData[3] : null;
+            let value = 0;
+            let displayValue = '';
+            if (typeof freqVal === 'number') {
+              value = freqVal;
+              displayValue = '#' + freqVal;
+            } else if (typeof freqVal === 'string') {
+              const parsed = parseInt(freqVal, 10);
+              value = Number.isNaN(parsed) ? 0 : parsed;
+              displayValue = freqVal;
+            } else if (freqVal && typeof freqVal === 'object') {
+              const inner = freqVal.frequency !== undefined ? freqVal.frequency : freqVal;
+              if (typeof inner === 'number') {
+                value = inner;
+                displayValue = '#' + inner;
+              } else if (inner && typeof inner === 'object') {
+                if (typeof inner.value === 'number') value = inner.value;
+                displayValue = inner.displayValue || '#' + value;
               }
             }
+            kind = 'freq';
+            payload = [value, displayValue];
+          } else if (type === 'pitch') {
+            const pitchData = metaData[2];
+            if (!pitchData || typeof pitchData !== 'object') continue;
+            kind = 'pitch';
+            payload = [pitchData.reading || '', pitchData.pitches || []];
+          } else {
+            continue;
           }
+          const part = metaPartKey(dictTitle, kind, term);
+          let pack = packs.get(part);
+          if (!pack) {
+            pack = { key: `${part}\u0000${bankIndex}`, part, dictionary: dictTitle, kind, entries: {} };
+            packs.set(part, pack);
+          }
+          (pack.entries[term] ||= []).push(payload);
+          totalProcessed++;
         }
-
-        // Store each bank batch in bounded transactions so large corpora don't
-        // monopolize IndexedDB or make the UI appear stuck.
-        const totalBatchItems = freqItems.length + pitchItems.length;
-        let writtenBatchItems = 0;
-        for (let offset = 0; offset < Math.max(freqItems.length, pitchItems.length); offset += WRITE_META_CHUNK) {
-          const freqChunk = freqItems.slice(offset, offset + WRITE_META_CHUNK);
-          const pitchChunk = pitchItems.slice(offset, offset + WRITE_META_CHUNK);
-          await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction([STORE_FREQS, STORE_PITCHES], 'readwrite');
-            const storeFreq = tx.objectStore(STORE_FREQS);
-            const storePitch = tx.objectStore(STORE_PITCHES);
-            for (const item of freqChunk) storeFreq.add(item);
-            for (const item of pitchChunk) storePitch.add(item);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error || new Error('Failed to save dictionary metadata'));
-            tx.onabort = () => reject(tx.error || new Error('Dictionary metadata transaction was aborted'));
-          });
-
-          const written = freqChunk.length + pitchChunk.length;
-          writtenBatchItems += written;
-          totalProcessed += written;
-          const batchFraction = totalBatchItems ? writtenBatchItems / totalBatchItems : 1;
-          const progressBytes = completedMetaBytes + batchBytes * batchFraction;
-          const percent = 90 + 9 * (progressBytes / totalMetaBytes);
-          reportMetaProgress(
-            isEs
-              ? `Guardando ${writtenBatchItems.toLocaleString()} / ${totalBatchItems.toLocaleString()} entradas...`
-              : `Saving ${writtenBatchItems.toLocaleString()} / ${totalBatchItems.toLocaleString()} entries...`,
-            percent
-          );
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-
-        completedMetaBytes += batchBytes;
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_META, 'readwrite');
+          const store = tx.objectStore(STORE_META);
+          packs.forEach(pack => store.put(pack));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error('Failed to save dictionary metadata'));
+          tx.onabort = () => reject(tx.error || new Error('Dictionary metadata transaction was aborted'));
+        });
+        onProgress(
+          isEs
+            ? `Guardados ${bankIndex + 1}/${metaFiles.length} bancos...`
+            : `Saved ${bankIndex + 1}/${metaFiles.length} banks...`,
+          75 + Math.floor(((bankIndex + 1) / metaFiles.length) * 24)
+        );
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
@@ -726,6 +740,11 @@ export async function getFrequenciesForWord(word: string): Promise<any[]> {
     };
     request.onerror = () => resolve();
   });
+
+  const enabledTitles = [...installedTitles].filter(title => !disabledDicts.includes(title));
+  for (const { dictionary, payload } of await readPackedMeta('freq', word, enabledTitles)) {
+    freqs.push({ dictionary, value: payload[0], displayValue: payload[1] });
+  }
   
   if (dictOrder.length > 0) {
     freqs.sort((a, b) => {
@@ -785,6 +804,11 @@ export async function getPitchesForWord(word: string): Promise<any[]> {
     request.onerror = () => resolve();
   });
 
+  const enabledTitles = [...installedTitles].filter(title => !disabledDicts.includes(title));
+  for (const { dictionary, payload } of await readPackedMeta('pitch', word, enabledTitles)) {
+    pitches.push({ dictionary, reading: payload[0], pitches: payload[1] });
+  }
+
   _pitchCache.set(word, pitches);
   return pitches;
 }
@@ -811,157 +835,230 @@ function cleanDefinition(def: any): string {
   return '';
 }
 
+/** Plain text of a structured-content node, leaving out the small "refGlosses" hints. */
+function structuredText(node: any): string {
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(structuredText).join('');
+  if (node && typeof node === 'object') {
+    if (node.data?.content === 'refGlosses') return '';
+    if (node.text) return String(node.text);
+    return node.content !== undefined ? structuredText(node.content) : '';
+  }
+  return '';
+}
+
+/** List items of a structured-content node (each <li> is one gloss or one note). */
+function structuredItems(node: any): string[] {
+  const items: string[] = [];
+  const visit = (current: any) => {
+    if (Array.isArray(current)) { current.forEach(visit); return; }
+    if (!current || typeof current !== 'object') return;
+    if (current.tag === 'li') {
+      const text = structuredText(current).replace(/\s+/g, ' ').trim();
+      if (text) items.push(text);
+      return;
+    }
+    if (current.content !== undefined) visit(current.content);
+  };
+  visit(node);
+  if (items.length === 0) {
+    const text = structuredText(node).replace(/\s+/g, ' ').trim();
+    if (text) items.push(text);
+  }
+  return items;
+}
+
+const NOTE_SECTIONS = new Set(['notes', 'infoGlossary', 'references', 'antonym', 'antonyms', 'sourceLanguages', 'lexicalInformation']);
+
+/**
+ * One dictionary row is one sense. Yomitan JMdict rows keep the glosses, the usage notes and the
+ * cross-references in sections of the same structured content; split them so the popup can show
+ * "five; 5" with the note "伍 is used in legal documents" apart instead of one run-on line.
+ */
+function splitSense(definitions: any[]): { glossary: string; note: string } {
+  const glosses: string[] = [];
+  const notes: string[] = [];
+  for (const definition of definitions || []) {
+    if (typeof definition === 'string') {
+      if (definition.trim()) glosses.push(definition.trim());
+      continue;
+    }
+    const sections: { kind: string; node: any }[] = [];
+    const findSections = (node: any) => {
+      if (Array.isArray(node)) { node.forEach(findSections); return; }
+      if (!node || typeof node !== 'object') return;
+      const kind = node.data?.content;
+      if (typeof kind === 'string') { sections.push({ kind, node }); return; }
+      if (node.content !== undefined) findSections(node.content);
+    };
+    findSections(definition?.content ?? definition);
+    if (sections.length === 0) {
+      const text = cleanDefinition(definition);
+      if (text) glosses.push(text);
+      continue;
+    }
+    for (const { kind, node } of sections) {
+      if (kind === 'glossary') glosses.push(...structuredItems(node));
+      else if (NOTE_SECTIONS.has(kind)) notes.push(...structuredItems(node));
+    }
+  }
+  return { glossary: glosses.join('; '), note: notes.join(' · ') };
+}
+
+// Kuromoji part of speech → JMdict part-of-speech tags.
+const POS_TO_JMDICT: [string, string[]][] = [
+  ['接頭詞', ['pref']],
+  ['助詞', ['prt']],
+  ['助動詞', ['aux', 'aux-v', 'aux-adj']],
+  ['感動詞', ['int']],
+  ['接続詞', ['conj']],
+  ['副詞', ['adv']],
+  ['連体詞', ['adj-pn']],
+];
+
+const toHiragana = (text: string) => text.replace(/[ァ-ヶ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0x60));
+const isKanaOnly = (text: string) => /^[぀-ヿー]+$/.test(text);
+
+type TermRow = { term: string; reading: string; definitions: any[]; tags: string; dictionary: string; score: number };
+
+async function collectTerms(indexName: 'term' | 'reading', key: string, accept: (row: any) => boolean): Promise<TermRow[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const rows: TermRow[] = [];
+    const request = db.transaction(STORE_TERMS, 'readonly').objectStore(STORE_TERMS).index(indexName).openCursor(IDBKeyRange.only(key));
+    request.onsuccess = (e: any) => {
+      const cursor = e.target.result;
+      if (!cursor) { resolve(rows); return; }
+      const val = cursor.value;
+      if (accept(val)) {
+        rows.push({
+          term: val.term,
+          reading: val.reading || '',
+          definitions: val.definitions || [],
+          tags: val.tags || '',
+          dictionary: val.dictionary,
+          score: Number(val.score) || 0
+        });
+      }
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 /**
  * Realiza una búsqueda de palabras en la base de datos IndexedDB usando cursores y proyección
  * para minimizar drásticamente el consumo de RAM.
  * Los resultados se cachean en memoria por sesión para eliminar repetidas consultas IDB por página.
+ *
+ * The result shows one word (term + reading) with its senses; the other words found for the same
+ * text or reading go in `alternatives`, so tapping ご shows 御 and offers 五・語・碁 as chips.
  */
-export async function searchYomitanDB(word: string, reading: string = ''): Promise<any> {
+export async function searchYomitanDB(word: string, reading: string = '', pos: string = ''): Promise<any> {
   // Cache hit
-  const cacheKey = reading ? `${word}|${reading}` : word;
+  const cacheKey = `${word}|${reading}|${pos}`;
   if (_searchCache.has(cacheKey)) return _searchCache.get(cacheKey);
 
-  const db = await getDB();
-  let results: any[] | null = [];
   const { dictOrder, disabledDicts } = getCachedSettings();
   const installedTitles = await getCachedInstalledTitles();
+  // JMdict "forms" rows are tables of spellings (五 ５ 伍 ★ ㊒…), not senses.
+  const accept = (row: any) => installedTitles.has(row.dictionary) && !disabledDicts.includes(row.dictionary)
+    && !String(row.tags || '').split(' ').includes('forms');
 
   try {
-    // 1. Buscar coincidencia de término exacto usando cursores (Consultas selectivas)
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_TERMS, 'readonly');
-      const store = tx.objectStore(STORE_TERMS);
-      const index = store.index('term');
-      const request = index.openCursor(IDBKeyRange.only(word));
-      
-      request.onsuccess = (e: any) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          const val = cursor.value;
-          if (installedTitles.has(val.dictionary) && !disabledDicts.includes(val.dictionary)) {
-            results!.push({
-              term: val.term,
-              reading: val.reading,
-              definitions: val.definitions,
-              tags: val.tags,
-              dictionary: val.dictionary
-            });
-          }
-          cursor.continue();
-        } else {
-          resolve();
-        }
-      };
-      request.onerror = reject;
-    });
-    
-    // 2. Buscar por lectura como fallback si no se encontró término exacto
-    if (reading && results.length === 0) {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_TERMS, 'readonly');
-        const store = tx.objectStore(STORE_TERMS);
-        const index = store.index('reading');
-        const request = index.openCursor(IDBKeyRange.only(reading));
-        
-        request.onsuccess = (e: any) => {
-          const cursor = e.target.result;
-          if (cursor) {
-            const val = cursor.value;
-            if (installedTitles.has(val.dictionary) && !disabledDicts.includes(val.dictionary)) {
-              results!.push({
-                term: val.term,
-                reading: val.reading,
-                definitions: val.definitions,
-                tags: val.tags,
-                dictionary: val.dictionary
-              });
-            }
-            cursor.continue();
-          } else {
-            resolve();
-          }
-        };
-        request.onerror = reject;
-      });
+    const wantedReading = toHiragana(reading || '');
+    let results = await collectTerms('term', word, accept);
+    const byReading = results.length === 0;
+    if (byReading) {
+      const lookupReading = wantedReading || (isKanaOnly(word) ? toHiragana(word) : '');
+      if (lookupReading) results = await collectTerms('reading', lookupReading, accept);
     }
-    
-    const freqs = await getFrequenciesForWord(word);
-    const pitches = await getPitchesForWord(word);
-    
-    if (results.length > 0) {
-      // Sort results by dictionaryOrder
-      if (dictOrder.length > 0) {
-        results.sort((a, b) => {
-          const idxA = dictOrder.indexOf(a.dictionary);
-          const idxB = dictOrder.indexOf(b.dictionary);
-          if (idxA === -1 && idxB === -1) return 0;
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-      }
 
-      const combinedDefs: string[] = [];
-      const fullDefinitions: { dictionary: string; glossary: string; partsOfSpeech?: string[] }[] = [];
-      const tagsSet = new Set<string>();
+    if (results.length > 0) {
+      const wantedPos = POS_TO_JMDICT.find(([prefix]) => pos.startsWith(prefix))?.[1] || [];
+      const dictRank = (dictionary: string) => {
+        const index = dictOrder.indexOf(dictionary);
+        return index === -1 ? dictOrder.length : index;
+      };
+
+      // Group the rows into words (term + reading) and rank the words.
+      const groups = new Map<string, { term: string; reading: string; rank: number; rows: TermRow[] }>();
+      for (const row of results) {
+        const key = `${row.term}\u0000${row.reading}`;
+        let group = groups.get(key);
+        if (!group) {
+          group = { term: row.term, reading: row.reading, rank: -Infinity, rows: [] };
+          groups.set(key, group);
+        }
+        const tags = row.tags.split(' ');
+        let rank = row.score;
+        if (wantedReading && toHiragana(row.reading) === wantedReading) rank += 1e8;
+        // Looking up kana: words usually written in kana (御 → ご) beat kanji homophones (五, 語).
+        if (byReading && tags.includes('uk')) rank += 5e6;
+        // The parser's part of speech (接頭詞 for the ご of ご承諾) picks the right homophone.
+        if (byReading && wantedPos.some(tag => tags.includes(tag))) rank += 1e7;
+        group.rank = Math.max(group.rank, rank);
+        group.rows.push(row);
+      }
+      const ranked = [...groups.values()].sort((a, b) => b.rank - a.rank);
+      const main = ranked[0];
+      main.rows.sort((a, b) => dictRank(a.dictionary) - dictRank(b.dictionary) || b.score - a.score);
 
       // Helpers to classify definitions by language
       const SPA_DIACRITICS = /[áéíóúüñÁÉÍÓÚÜÑ¿¡]/u;
       const SPA_WORDS = /\b(de|del|el|la|los|las|en|un|una|unos|unas|con|por|para|que|es|son|su|sus|se|al|como|más|no|si|lo|le|les|muy|también|pero|cuando|este|esta|estos|estas|fue|ser|hay|ya|porque|aunque|donde|mientras|entre)\b/i;
       const ENG_WORDS = /\b(the|of|to|and|a|in|is|for|on|with|as|by|at|an|be|this|that|from|it|are|or|if|but|after|before|during|while|have|has|had|not|also|can|will|its|was|were|been|one|two|three|four|five|used|made|when|which|who|what|where|how)\b/i;
-
       const isSpanish = (text: string) => SPA_DIACRITICS.test(text) || SPA_WORDS.test(text);
       const isEnglish = (text: string) => !SPA_DIACRITICS.test(text) && ENG_WORDS.test(text) && !SPA_WORDS.test(text);
 
-      results.forEach(res => {
-        let resPos: string[] = [];
-        if (res.tags) {
-          resPos = res.tags.split(' ').filter((t: string) => t.length > 0);
-          resPos.forEach((t: string) => tagsSet.add(t));
+      const fullDefinitions: { dictionary: string; glossary: string; note?: string; partsOfSpeech?: string[] }[] = [];
+      const seen = new Set<string>();
+      const tagsSet = new Set<string>();
+      for (const row of main.rows) {
+        const partsOfSpeech = row.tags.split(' ').filter(tag => tag && !/^\d+$/.test(tag));
+        partsOfSpeech.forEach(tag => tagsSet.add(tag));
+        let definitions = row.definitions;
+        // Imported mixed-language dictionaries: keep the Spanish glosses when there are any.
+        if (definitions.every((d: any) => typeof d === 'string') && definitions.some(isSpanish)) {
+          const spanish = definitions.filter((d: string) => !isEnglish(d));
+          if (spanish.length > 0) definitions = spanish;
         }
+        const { glossary, note } = splitSense(definitions);
+        if (!glossary) continue;
+        const key = `${row.dictionary}\u0000${glossary}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        fullDefinitions.push({ dictionary: row.dictionary || '', glossary, note: note || undefined, partsOfSpeech });
+      }
 
-        const defs = res.definitions.map(cleanDefinition).filter(Boolean);
+      const alternatives: { term: string; reading: string; glossary: string }[] = [];
+      for (const group of ranked.slice(1)) {
+        if (alternatives.length >= 6) break;
+        if (alternatives.some(alt => alt.term === group.term && alt.reading === group.reading)) continue;
+        const first = [...group.rows].sort((a, b) => b.score - a.score)[0];
+        alternatives.push({ term: group.term, reading: group.reading, glossary: splitSense(first.definitions).glossary });
+      }
 
-        // Check if this entry has at least one Spanish definition
-        const hasSpanish = defs.some(isSpanish);
-
-        const targetDefs = hasSpanish 
-          ? defs.filter((d: string) => !isEnglish(d))
-          : defs;
-
-        const finalDefs = targetDefs.length > 0 ? targetDefs : defs;
-
-        finalDefs.forEach((d: string) => {
-          combinedDefs.push(d);
-          fullDefinitions.push({
-            dictionary: res.dictionary || '', // the popup names it in the app's language
-            glossary: d,
-            partsOfSpeech: resPos
-          });
-        });
-      });
-      
+      const [freqs, pitches] = await Promise.all([getFrequenciesForWord(main.term), getPitchesForWord(main.term)]);
       const posTags = [...tagsSet].slice(0, 3);
       const finalResult = {
-        word: results[0].term,
-        reading: results[0].reading || reading,
-        definitions: combinedDefs.slice(0, 5), // Limit definitions returned to UI to save RAM
-        fullDefinitions: fullDefinitions.slice(0, 5),
-        partsOfSpeech: posTags.length > 0 ? posTags : [],
+        word: main.term,
+        reading: main.reading || reading,
+        definitions: fullDefinitions.map(d => d.glossary).slice(0, 8),
+        fullDefinitions: fullDefinitions.slice(0, 8),
+        partsOfSpeech: posTags,
+        alternatives,
         frequencies: freqs,
         pitches: pitches,
         isFromYomitan: true
       };
-      
-      results.length = 0; 
-      results = null;
-      tagsSet.clear();
 
       // Guardar en caché para futuras páginas
       _searchCache.set(cacheKey, finalResult);
       return finalResult;
     }
-    
+
+    const [freqs, pitches] = await Promise.all([getFrequenciesForWord(word), getPitchesForWord(word)]);
     if (freqs.length > 0 || pitches.length > 0) {
       const finalResult = {
         word,
@@ -969,18 +1066,15 @@ export async function searchYomitanDB(word: string, reading: string = ''): Promi
         definitions: [],
         fullDefinitions: [],
         partsOfSpeech: [],
+        alternatives: [],
         frequencies: freqs,
         pitches: pitches,
         isFromYomitan: true
       };
-      results.length = 0;
-      results = null;
       _searchCache.set(cacheKey, finalResult);
       return finalResult;
     }
-    
-    results.length = 0;
-    results = null;
+
     _searchCache.set(cacheKey, null);
     return null;
   } catch (err) {
@@ -1079,12 +1173,58 @@ export async function exportDictionaryDataToZip(zip: JSZip, onProgress: (msg: st
     });
     
     zip.file('frequencies_info.json', JSON.stringify({ chunkCount: freqChunkCount, totalCount: totalFreqsExported }));
+
+    // Packed frequencies and pitch accent (imports since 1.4.6), 100 records per file.
+    if (db.objectStoreNames.contains(STORE_META)) {
+      let packChunk: any[] = [];
+      let packChunkCount = 0;
+      await new Promise<void>((resolve, reject) => {
+        const request = db.transaction(STORE_META, 'readonly').objectStore(STORE_META).openCursor();
+        request.onsuccess = (event: any) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            packChunk.push(cursor.value);
+            if (packChunk.length >= 100) {
+              zip.file(`meta_packs_chunk_${packChunkCount++}.json`, JSON.stringify(packChunk));
+              packChunk = [];
+            }
+            cursor.continue();
+          } else {
+            if (packChunk.length > 0) zip.file(`meta_packs_chunk_${packChunkCount++}.json`, JSON.stringify(packChunk));
+            resolve();
+          }
+        };
+        request.onerror = reject;
+      });
+      zip.file('meta_packs_info.json', JSON.stringify({ chunkCount: packChunkCount }));
+    }
     
     return dictionaries;
   } catch (err) {
     console.error('Error exporting dictionary to zip:', err);
     throw err;
   }
+}
+
+/** Restores the packed frequency/pitch records of a backup (see exportDictionaryDataToZip). */
+export async function importMetaPacksFromZip(zip: JSZip): Promise<void> {
+  const info = zip.file('meta_packs_info.json');
+  if (!info) return;
+  const { chunkCount } = JSON.parse(await info.async('text'));
+  const db = await getDB();
+  for (let c = 0; c < chunkCount; c++) {
+    const chunk = zip.file(`meta_packs_chunk_${c}.json`);
+    if (!chunk) continue;
+    const records = JSON.parse(await chunk.async('text'));
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_META, 'readwrite');
+      const store = tx.objectStore(STORE_META);
+      records.forEach((record: any) => store.put(record));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  clearYomitanCache();
 }
 
 interface ImportDictionaryDataParams {
@@ -1238,29 +1378,44 @@ export async function migrateEnglishDictName(): Promise<void> {
 
 export async function getTopWordsFromFrequencyDict(dictName: string, maxRank: number): Promise<string[]> {
   const db = await getDB();
-  return new Promise((resolve, reject) => {
+  const words = new Set<string>();
+  const inRange = (value: any) => {
+    const rank = Number(value);
+    return !isNaN(rank) && rank > 0 && rank <= maxRank;
+  };
+  await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_FREQS, 'readonly');
-    const store = tx.objectStore(STORE_FREQS);
-    const index = store.index('dictionary');
-    const request = index.openCursor(IDBKeyRange.only(dictName));
-    const words = new Set<string>();
-    
+    const request = tx.objectStore(STORE_FREQS).index('dictionary').openCursor(IDBKeyRange.only(dictName));
     request.onsuccess = (e: any) => {
       const cursor = e.target.result;
       if (cursor) {
-        const val = cursor.value;
-        const rank = Number(val.value);
-        if (!isNaN(rank) && rank > 0 && rank <= maxRank) {
-          if (val.term) words.add(val.term);
-        }
+        if (inRange(cursor.value.value) && cursor.value.term) words.add(cursor.value.term);
         cursor.continue();
       } else {
-        resolve([...words]);
+        resolve();
       }
     };
-    
-    request.onerror = (e: any) => {
-      reject(e.target.error || new Error('Failed to query frequencies'));
-    };
+    request.onerror = (e: any) => reject(e.target.error || new Error('Failed to query frequencies'));
   });
+  if (db.objectStoreNames.contains(STORE_META)) {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_META, 'readonly');
+      const request = tx.objectStore(STORE_META).index('dictionary').openCursor(IDBKeyRange.only(dictName));
+      request.onsuccess = (e: any) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          if (cursor.value.kind === 'freq') {
+            for (const [term, payloads] of Object.entries(cursor.value.entries || {})) {
+              if ((payloads as any[]).some(payload => inRange(payload[0]))) words.add(term);
+            }
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+      request.onerror = (e: any) => reject(e.target.error || new Error('Failed to query frequencies'));
+    });
+  }
+  return [...words];
 }
