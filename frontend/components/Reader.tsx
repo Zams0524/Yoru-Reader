@@ -3007,22 +3007,28 @@ export default function Reader({
                           source: trimmed
                         };
                         
-                        const card = updatedSrs[selectedWord.basicForm] || {
+                        // A word that is not being learned yet may still carry an old card (imported
+                        // from Anki, marked known, or removed from a deck) with a due date weeks away.
+                        // Mining it again must start a fresh card due now, or it never shows up today.
+                        const nowIso = new Date().toISOString();
+                        const existingCard = updatedSrs[selectedWord.basicForm];
+                        const card = existingCard && isLearning ? existingCard : {
                           word: selectedWord.basicForm,
                           reading: wordData.reading,
                           sentence: wordData.sentence,
                           state: 0,
-                          dueDate: new Date().toISOString(),
-                          due: new Date().toISOString()
+                          dueDate: nowIso,
+                          due: nowIso
                         };
                         card.source = trimmed;
                         updatedSrs[selectedWord.basicForm] = card;
-                        
+
                         db.saveSrsData(updatedSrs);
                         setSrsCard(card);
                         onSetWordStatus(selectedWord.basicForm, 'learning', wordData);
                         setDeckSelectorWord(null);
                         setNewDeckInput('');
+                        showToast(lang === 'es' ? `Añadida al mazo «${trimmed}»` : `Added to deck "${trimmed}"`, 'success');
                       };
 
                       const handleDeleteDeck = (e: React.MouseEvent, deckName: string) => {
@@ -3178,6 +3184,9 @@ export default function Reader({
                             <button
                               type="button"
                               onClick={() => {
+                                // Drop the card too: otherwise it stays counted in its deck.
+                                db.saveSrsCard(selectedWord.basicForm, null);
+                                setSrsCard(null);
                                 onSetWordStatus(selectedWord.basicForm, 'new');
                                 setDeckSelectorWord(null);
                               }}

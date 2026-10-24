@@ -4805,6 +4805,13 @@ html.platform-android .reader-engine-content {
   cursor: default;
 }
 
+.srs-today-limit-note {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 .srs-deck-list {
   display: flex;
   flex-direction: column;

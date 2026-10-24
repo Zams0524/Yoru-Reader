@@ -4912,6 +4912,7 @@ const Library = React.memo(function Library({
     const statuses = db.getWordStatuses();
     const srsData = db.getSrsData();
     const now = new Date();
+    const LEARN_AHEAD_MS = 20 * 60 * 1000;
     const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const getCardDueDate = (card: any): Date | null => {
       for (const value of [card?.due, card?.dueDate]) {
@@ -4971,6 +4972,9 @@ const Library = React.memo(function Library({
       paused?: boolean;
     }> = {};
     let totalDueCount = 0;
+    // New cards that are due but held back by a daily limit, so the dashboard can say why
+    // freshly mined cards are not showing up instead of claiming everything is done.
+    let newHeldByLimit = 0;
     
     const todayStr = localDate(now);
     const history = db.getSrsHistory();
@@ -5060,7 +5064,10 @@ const Library = React.memo(function Library({
 
         // Count due cards
         const dueDate = getCardDueDate(card);
-        const isDue = !dueDate || dueDate <= now;
+        // Like Anki's 20-minute Learn Ahead Limit: a learning step a few minutes away already
+        // counts, so a card just mined and failed once doesn't leave the deck at "All caught up".
+        const isLearningStep = !isNewCard && (state === 1 || state === 3);
+        const isDue = !dueDate || dueDate.getTime() <= now.getTime() + (isLearningStep ? LEARN_AHEAD_MS : 0);
         if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
             if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
@@ -5068,6 +5075,8 @@ const Library = React.memo(function Library({
               totalDueCount++;
               newCardsRemainingToday--;
               deckNewLeft[deckName]--;
+            } else {
+              newHeldByLimit++;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
@@ -5572,6 +5581,13 @@ const Library = React.memo(function Library({
                   ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
                   : (lang === 'es' ? 'Estás al día' : 'All caught up')}
               </button>
+              {newHeldByLimit > 0 && (
+                <p className="srs-today-limit-note">
+                  {lang === 'es'
+                    ? `${newHeldByLimit} ${newHeldByLimit === 1 ? 'tarjeta nueva espera' : 'tarjetas nuevas esperan'} a mañana por el límite diario de nuevas. Puedes subirlo en Ajustes o en los ajustes del mazo.`
+                    : `${newHeldByLimit} new ${newHeldByLimit === 1 ? 'card is' : 'cards are'} waiting for tomorrow because of the daily new-card limit. You can raise it in Settings or in the deck's settings.`}
+                </p>
+              )}
             </section>
 
             {/* Deck List (Mazos) */}
