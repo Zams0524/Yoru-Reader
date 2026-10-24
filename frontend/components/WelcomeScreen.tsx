@@ -184,6 +184,9 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
               }
             }
           }
+
+          const { importMetaPacksFromZip } = await import('../utils/yomitanDB');
+          await importMetaPacksFromZip(zip);
         }
 
         showToast(lang === 'es' ? '✅ Copia de seguridad restaurada con éxito. Reiniciando...' : '✅ Backup restored successfully. Restarting...', 'success');
@@ -329,10 +332,10 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
   const dictionary = useDictionaryInstall(guideLang);
   const goNext = () => setStep((value) => Math.min(lastGuideStep + 1, value + 1));
   const goPrev = () => setStep((value) => Math.max(0, value - 1));
-  const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep && !dictionary.installing) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
+  const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
   const es = lang === 'es';
   useArrowKeys(
-    () => { if (step <= lastGuideStep && !dictionary.installing) goNext(); },
+    () => { if (step <= lastGuideStep) goNext(); },
     () => { if (step > 0 && step <= lastGuideStep) goPrev(); },
     step <= lastGuideStep,
   );
@@ -384,15 +387,15 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
               <SlideView slide={slides[step - 1]} />
             ) : (
               <div className="guide-slide">
-                <h2 className="guide-title">{dictionary.hasDictionary ? (es ? 'Diccionario listo' : 'Dictionary ready') : (es ? 'Instala el diccionario' : 'Install the dictionary')}</h2>
+                <h2 className="guide-title">{dictionary.complete ? (es ? 'Diccionario listo' : 'Dictionary ready') : (es ? 'Instala el diccionario' : 'Install the dictionary')}</h2>
                 <DictionaryStep lang={guideLang} state={dictionary} />
               </div>
             )}
             <div className="guide-bottom">
-              <button type="button" className="guide-primary" onClick={goNext} disabled={dictionary.installing}>
+              <button type="button" className="guide-primary" onClick={goNext}>
                 {step < lastGuideStep
                   ? (es ? 'Siguiente' : 'Next')
-                  : dictionary.hasDictionary ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
+                  : dictionary.hasDictionary || dictionary.installing ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
                 <ChevronRight size={18} />
               </button>
             </div>

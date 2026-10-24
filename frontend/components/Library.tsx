@@ -2,11 +2,12 @@
 import { createPortal } from 'react-dom';
 import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
+import DictionarySettings from './settings/DictionarySettings';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
+import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
@@ -402,16 +403,6 @@ const Library = React.memo(function Library({
 
   // Yomitan DB states
   const [installedDicts, setInstalledDicts] = useState([]);
-  const [dictImportProgress, setDictImportProgress] = useState(0);
-  const [dictImportMsg, setDictImportMsg] = useState('');
-  const [isImportingDict, setIsImportingDict] = useState(false);
-  const [dictImportSuccess, setDictImportSuccess] = useState(false);
-  const [freqImportProgress, setFreqImportProgress] = useState(0);
-  const [freqImportMsg, setFreqImportMsg] = useState('');
-  const [isImportingFreq, setIsImportingFreq] = useState(false);
-  const [freqImportSuccess, setFreqImportSuccess] = useState(false);
-  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<false | 'dict' | 'freq'>(false);
-  const [installingBundledAsset, setInstallingBundledAsset] = useState(null);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
   const [activeMenuBookId, setActiveMenuBookId] = useState(null);
@@ -546,580 +537,6 @@ const Library = React.memo(function Library({
     } catch (e) {
       console.error(e);
     }
-  };
-
-  const handleYomitanUpload = async (e, isFreq = false) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const setMsg = isFreq ? setFreqImportMsg : setDictImportMsg;
-    const setProg = isFreq ? setFreqImportProgress : setDictImportProgress;
-    const setIsImporting = isFreq ? setIsImportingFreq : setIsImportingDict;
-    const setSuccess = isFreq ? setFreqImportSuccess : setDictImportSuccess;
-
-    setIsImporting(true);
-    setSuccess(false);
-    setProg(0);
-    setMsg('Iniciando...');
-    try {
-      await importYomitanZip(file, (msg, prog) => {
-        setMsg(msg);
-        setProg(prog);
-      }, lang === 'es' ? 'es' : 'en');
-
-      // Show success state briefly, then hide bar and reload in background
-      setSuccess(true);
-      setMsg('¡Instalado correctamente!');
-      setProg(100);
-      setTimeout(() => {
-        setIsImporting(false);
-        setSuccess(false);
-        setProg(0);
-        setMsg('');
-        loadInstalledDicts();
-      }, 1500);
-    } catch (err) {
-      setMsg('Error: ' + err.message);
-      setIsImporting(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleDeleteDict = async (title) => {
-    const ok = await showConfirm({
-      title: lang === 'es' ? '¿Eliminar diccionario?' : 'Delete dictionary?',
-      message: lang === 'es' ? `¿Seguro que quieres borrar el diccionario "${title}"?` : `Are you sure you want to delete the dictionary "${title}"?`,
-      type: 'danger',
-      confirmText: lang === 'es' ? 'Borrar' : 'Delete',
-    });
-    if (ok) {
-      // Immediately remove from state so the UI updates instantly
-      setInstalledDicts(prev => prev.filter(d => d.title !== title));
-      try {
-        await deleteDictionary(title);
-      } catch (err) {
-        console.error('Error deleting dictionary:', err);
-        // Reload on error to restore correct state
-        await loadInstalledDicts();
-      }
-    }
-  };
-
-  const handleToggleDict = (title) => {
-    const disabled = settings.disabledDictionaries || [];
-    let newDisabled;
-    if (disabled.includes(title)) {
-      newDisabled = disabled.filter(t => t !== title);
-    } else {
-      newDisabled = [...disabled, title];
-    }
-    onSaveSettings({
-      ...settings,
-      disabledDictionaries: newDisabled
-    });
-  };
-
-  const [draggingIdx, setDraggingIdx] = useState(null);
-  const [draggingCategory, setDraggingCategory] = useState(null);
-
-  const handleDragStart = (e, index, category) => {
-    setDraggingIdx(index);
-    setDraggingCategory(category);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e, targetIdx, category) => {
-    e.preventDefault();
-    if (draggingIdx === null || draggingCategory !== category || draggingIdx === targetIdx) return;
-    
-    const isFreq = category === 'freq';
-    const categoryDicts = installedDicts.filter(d => isFreq ? isFreqDict(d) : isTermDict(d));
-    const otherDicts = installedDicts.filter(d => isFreq ? isTermDict(d) : isFreqDict(d));
-    
-    const reordered = [...categoryDicts];
-    const [removed] = reordered.splice(draggingIdx, 1);
-    reordered.splice(targetIdx, 0, removed);
-    
-    const newAll = [];
-    let catCounter = 0;
-    let otherCounter = 0;
-    
-    installedDicts.forEach(d => {
-      if (isFreq ? isFreqDict(d) : isTermDict(d)) {
-        newAll.push(reordered[catCounter++]);
-      } else {
-        newAll.push(otherDicts[otherCounter++]);
-      }
-    });
-    
-    setInstalledDicts(newAll);
-    
-    onSaveSettings({
-      ...settings,
-      dictionaryOrder: newAll.map(d => d.title)
-    });
-    
-    setDraggingIdx(targetIdx);
-  };
-
-  const handleDragEnd = () => {
-    setDraggingIdx(null);
-    setDraggingCategory(null);
-  };
-
-  const handleInstallBundledDict = async (assetName, isFreq = false) => {
-    const setMsg = isFreq ? setFreqImportMsg : setDictImportMsg;
-    const setProg = isFreq ? setFreqImportProgress : setDictImportProgress;
-    const setIsImporting = isFreq ? setIsImportingFreq : setIsImportingDict;
-    const setSuccess = isFreq ? setFreqImportSuccess : setDictImportSuccess;
-
-    setInstallingBundledAsset(assetName);
-    setIsImporting(true);
-    setSuccess(false);
-    setMsg(lang === 'es' ? 'Cargando archivo integrado...' : 'Loading bundled file...');
-    setProg(0);
-    
-    try {
-      setProg(5);
-      setMsg(lang === 'es' ? 'Instalando diccionario integrado...' : 'Installing bundled dictionary...');
-      await installBundledDictionary(assetName, lang === 'es' ? 'es' : 'en', (msg, prog) => {
-        setMsg(msg);
-        setProg(prog);
-      });
-      
-      // Show success, then hide bar and reload dicts
-      setSuccess(true);
-      setMsg(lang === 'es' ? '¡Instalado correctamente!' : 'Installed successfully!');
-      setProg(100);
-      setIsLibraryModalOpen(false);
-      // Reload dicts immediately so they appear in the list right away
-      await loadInstalledDicts();
-      setTimeout(() => {
-        setIsImporting(false);
-        setSuccess(false);
-        setProg(0);
-        setMsg('');
-        setInstallingBundledAsset(null);
-      }, 1500);
-    } catch (err) {
-      alert((lang === 'es' ? 'Error instalando diccionario: ' : 'Dictionary install failed: ') + err.message);
-      setIsImporting(false);
-      setInstallingBundledAsset(null);
-    }
-  };
-
-  const renderDictList = (isFreq) => {
-    const list = installedDicts.filter(d => isFreq ? isFreqDict(d) : isTermDict(d));
-    if (list.length === 0) {
-      return (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px', border: '1px dashed var(--border-light)', borderRadius: '8px', fontSize: '0.85rem' }}>
-          {lang === 'es' ? 'Ningún elemento instalado' : 'No items installed'}
-        </div>
-      );
-    }
-    
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {list.map((dict, idx) => {
-          const isDisabled = settings.disabledDictionaries?.includes(dict.title);
-          const isDragging = draggingCategory === (isFreq ? 'freq' : 'term') && draggingIdx === idx;
-          
-          return (
-            <div 
-              key={dict.title}
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx, isFreq ? 'freq' : 'term')}
-              onDragOver={(e) => handleDragOver(e, idx, isFreq ? 'freq' : 'term')}
-              onDragEnd={handleDragEnd}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: isDragging ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-card)',
-                border: isDragging ? '1px dashed #6366f1' : '1px solid var(--border-light)',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                cursor: 'grab',
-                opacity: isDragging ? 0.6 : 1,
-                transition: 'background 0.2s, border 0.2s'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                <div style={{ color: 'var(--text-muted)', cursor: 'grab', display: 'flex', alignItems: 'center' }}>
-                  <ArrowUpDown size={16} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {dict.title}
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {dict.description || (lang === 'es' ? 'Sin descripción disponible.' : 'No description available.')}
-                  </div>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px' }}>
-                <button 
-                  onClick={() => handleToggleDict(dict.title)}
-                  style={{
-                    background: isDisabled ? 'var(--bg-card-hover)' : '#8b5cf6',
-                    border: isDisabled ? '1px solid var(--border-light)' : 'none',
-                    color: isDisabled ? 'var(--text-muted)' : '#fff',
-                    borderRadius: '16px',
-                    minWidth: '32px',
-                    height: '32px',
-                    padding: '0 10px',
-                    gap: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    marginRight: '8px',
-                    transition: 'all 0.2s'
-                  }}
-                  title={isDisabled ? (lang === 'es' ? 'Activar diccionario' : 'Enable dictionary') : (lang === 'es' ? 'Desactivar diccionario' : 'Disable dictionary')}
-                  aria-label={isDisabled ? (lang === 'es' ? 'Activar diccionario' : 'Enable dictionary') : (lang === 'es' ? 'Desactivar diccionario' : 'Disable dictionary')}
-                >
-                  <BookOpen size={14} />
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{isDisabled ? (lang === 'es' ? 'Inactivo' : 'Off') : (lang === 'es' ? 'Activo' : 'On')}</span>
-                </button>
-                
-                <button 
-                  onClick={() => handleDeleteDict(dict.title)}
-                  style={{
-                    background: 'var(--bg-card-hover)',
-                    border: '1px solid var(--border-light)',
-                    color: '#ef4444',
-                    borderRadius: '50%',
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  title={lang === 'es' ? 'Eliminar' : 'Delete'}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderActions = (isFreq) => {
-    const isImporting = isFreq ? isImportingFreq : isImportingDict;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => setIsLibraryModalOpen(isFreq ? 'freq' : 'dict')}
-          style={{
-            background: 'linear-gradient(135deg, #ff5e62, #ff9966)',
-            border: 'none',
-            borderRadius: '9999px',
-            color: '#fff',
-            padding: '8px 20px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            boxShadow: '0 4px 6px -1px rgba(255, 94, 98, 0.2)',
-            transition: 'all 0.2s'
-          }}
-        >
-          <span>{lang === 'es' ? 'Instalar desde nuestra biblioteca' : 'Install from our library'}</span>
-        </button>
-
-        <label 
-          style={{
-            background: '#8b5cf6',
-            border: 'none',
-            borderRadius: '9999px',
-            color: '#fff',
-            padding: '8px 20px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            cursor: isImporting ? 'not-allowed' : 'pointer',
-            opacity: isImporting ? 0.6 : 1,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            transition: 'all 0.2s'
-          }}
-        >
-          <span>{lang === 'es' ? 'Instalar desde archivo' : 'Install from file'}</span>
-          <input 
-            type="file" 
-            accept=".zip"
-            onChange={(e) => handleYomitanUpload(e, isFreq)}
-            disabled={isImporting}
-            style={{ display: 'none' }}
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={() => alert(lang === 'es' ? 'Puedes importar aquí un paquete de diccionario (.zip) que ya tengas en tu equipo.' : 'You can import a dictionary package (.zip) already stored on your device.')}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: 'none',
-            borderRadius: '50%',
-            width: '32px',
-            height: '32px',
-            color: 'rgba(255,255,255,0.6)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            marginLeft: 'auto',
-            transition: 'all 0.2s'
-          }}
-        >
-          <Info size={16} />
-        </button>
-      </div>
-    );
-  };
-
-  const renderLibraryModal = () => {
-    const showDicts = isLibraryModalOpen === 'dict';
-    const showFreqs = isLibraryModalOpen === 'freq';
-
-    const presetDicts = [
-      {
-        title: 'JMdict (Español)',
-        matchTitle: 'JMdict (Spanish)',
-        desc: lang === 'es' ? 'Diccionario integrado de japonés a español.' : 'Bundled Japanese to Spanish dictionary.',
-        asset: 'JMdict_spanish.zip'
-      },
-      {
-        title: 'JMdict (English)',
-        matchTitle: 'JMdict [',
-        desc: lang === 'es' ? 'Diccionario integrado de japonés a inglés.' : 'Bundled Japanese to English dictionary.',
-        asset: 'JMdict_english.zip'
-      }
-    ];
-
-    const presetFreqs = [
-      {
-        title: 'Netflix Frecuencias',
-        matchTitle: 'Netflix',
-        desc: 'Frecuencia basada en diálogos y subtítulos de Netflix Japón.',
-        asset: 'frequency-netflix.zip'
-      },
-      {
-        title: 'Jiten (Anime) Frecuencias',
-        matchTitle: 'Jiten (Anime)',
-        desc: 'Frecuencia de vocabulario usado en anime.',
-        asset: 'frequency-jiten-anime.zip'
-      },
-      {
-        title: 'Novelas Frecuencias',
-        matchTitle: 'Novels',
-        desc: 'Frecuencia de vocabulario en novelas literarias y ligeras.',
-        asset: 'frequency-novels.zip'
-      },
-      {
-        title: 'Novelas Visuales (VN) Frecuencias',
-        matchTitle: 'VN Freq',
-        desc: 'Frecuencia de términos de novelas visuales japonesas.',
-        asset: 'frequency-visual-novels.zip'
-      },
-      {
-        title: 'YouTube Frecuencias',
-        matchTitle: 'Youtube',
-        desc: 'Frecuencias de diálogos de vlogs y videos populares de YouTube Japón.',
-        asset: 'frequency-youtube.zip'
-      },
-      {
-        title: 'Acento tonal japonés',
-        matchTitle: 'アクセント辞典',
-        desc: lang === 'es' ? 'Datos locales de acento tonal para mostrar sus gráficos en el popup.' : 'Local pitch accent data used by the reading popup.',
-        asset: 'pitch-accent-japanese.zip'
-      }
-    ];
-
-    return (
-      <div 
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setIsLibraryModalOpen(false);
-        }}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 99999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}
-      >
-        <div style={{
-          background: '#121214',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '12px',
-          width: '540px',
-          maxWidth: '100%',
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-          overflow: 'hidden'
-        }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
-              {lang === 'es' ? 'Biblioteca de Recursos' : 'Resource Library'}
-            </h3>
-            <button 
-              onClick={() => setIsLibraryModalOpen(false)}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            {/* Dictionaries Section */}
-            {showDicts && (
-              <div>
-                <h4 style={{ color: '#8b5cf6', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', marginTop: 0 }}>
-                  {lang === 'es' ? '📖 Diccionarios de Traducción' : '📖 Translation Dictionaries'}
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 0, marginBottom: '12px', lineHeight: '1.4' }}>
-                  {lang === 'es'
-                    ? 'Los archivos ya vienen dentro de la app y funcionan sin conexión. Pulsa «Añadir» para importarlos a tu biblioteca local.'
-                    : 'The files are already included in the app and work offline. Select “Add” to import them into your local library.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {presetDicts.map(d => {
-                    const isInstalling = installingBundledAsset === d.asset;
-                    const isInstalled = installedDicts.some(installed => installed.title.toLowerCase().startsWith(d.matchTitle.toLowerCase()));
-
-                    return (
-                      <div key={d.title} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>{d.title}</div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '3px' }}>{d.desc}</div>
-                        </div>
-                        <button
-                          disabled={isImportingDict || isInstalled}
-                          onClick={() => handleInstallBundledDict(d.asset, false)}
-                          style={{
-                            background: isInstalling 
-                              ? 'rgba(255,255,255,0.1)' 
-                              : isInstalled 
-                                ? 'rgba(52, 211, 153, 0.15)' 
-                                : 'var(--primary)',
-                            color: isInstalled ? '#34d399' : '#fff',
-                            border: isInstalled ? '1px solid rgba(52, 211, 153, 0.3)' : 'none',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            cursor: isInstalled 
-                              ? 'default' 
-                              : isImportingDict 
-                                ? 'not-allowed' 
-                                : 'pointer',
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isInstalling
-                            ? (lang === 'es' ? `${dictImportProgress}%` : `${dictImportProgress}%`)
-                            : isInstalled 
-                              ? (lang === 'es' ? '✓ Instalado' : '✓ Installed') 
-                              : (lang === 'es' ? 'Añadir' : 'Add')}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Frequencies Section */}
-            {showFreqs && (
-              <div>
-                <h4 style={{ color: '#ff9966', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', marginTop: 0 }}>
-                  {lang === 'es' ? '📊 Listas de Palabras Frecuentes' : '📊 Frequency Word Lists'}
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 0, marginBottom: '12px', lineHeight: '1.4' }}>
-                  {lang === 'es' 
-                    ? 'Estas listas vienen incluidas con la aplicación. Instala solo las que quieras usar.'
-                    : 'These lists are bundled with the app. Install only the ones you want to use.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {presetFreqs.map(d => {
-                    const isInstalling = installingBundledAsset === d.asset;
-                    const isInstalled = installedDicts.some(installed => installed.title.toLowerCase().startsWith(d.matchTitle.toLowerCase()));
-
-                    return (
-                      <div key={d.title} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>{d.title}</div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '3px' }}>{d.desc}</div>
-                        </div>
-                        <button
-                          disabled={isImportingFreq || isInstalled}
-                          onClick={() => handleInstallBundledDict(d.asset, true)}
-                          style={{
-                            background: isInstalling 
-                              ? 'rgba(255,255,255,0.1)' 
-                              : isInstalled 
-                                ? 'rgba(52, 211, 153, 0.15)' 
-                                : 'var(--primary)',
-                            color: isInstalled ? '#34d399' : '#fff',
-                            border: isInstalled ? '1px solid rgba(52, 211, 153, 0.3)' : 'none',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            cursor: isInstalled 
-                              ? 'default' 
-                              : isImportingFreq 
-                                ? 'not-allowed' 
-                                : 'pointer',
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isInstalling
-                            ? `${freqImportProgress}%`
-                            : isInstalled 
-                              ? (lang === 'es' ? '✓ Instalado' : '✓ Installed') 
-                              : (lang === 'es' ? 'Añadir' : 'Add')}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      </div>
-    );
   };
 
   // Synchronize CSS variable for card width and cover fit
@@ -1471,6 +888,9 @@ const Library = React.memo(function Library({
           }
         }
       }
+
+      const { importMetaPacksFromZip } = await import('../utils/yomitanDB');
+      await importMetaPacksFromZip(zip);
 
       markCloudSynced();
 
@@ -4491,90 +3911,20 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Dictionaries */}
-          {matchesSearch('diccionario dictionary offline jmdict frecuencia meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
+          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
             <div id="sec-dicts" style={{ display: 'flex', flexDirection: 'column', gap: '28px', width: '100%' }}>
-              
-              {/* Card 1: Dictionaries */}
               <div className="settings-section-card">
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                   <span>{lang === 'es' ? 'Diccionarios' : 'Dictionaries'}</span>
                 </h3>
                 <p className="settings-card-desc">
-                  {lang === 'es' 
-                    ? 'Los diccionarios son útiles para buscar el significado de las palabras y añadirlas a tus tarjetas de estudio. Arrastra y suelta los elementos de la siguiente lista para cambiar el orden de aparición de tus diccionarios en los resultados de búsqueda.'
-                    : 'Dictionaries are useful for looking up word meanings and adding them to your study cards. Drag and drop the items in the list below to change the order in which your dictionaries appear in search results.'}
-                </p>
-                
-                {isImportingDict && (
-                  <div style={{ margin: '16px 0', background: dictImportSuccess ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: dictImportSuccess ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent', transition: 'all 0.3s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: dictImportSuccess ? '#4ade80' : 'var(--text-muted)' }}>
-                      <span>{dictImportSuccess ? '✓ ' : ''}{dictImportMsg}</span>
-                      <span>{dictImportProgress}%</span>
-                    </div>
-                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${dictImportProgress}%`, height: '100%', background: dictImportSuccess ? '#4ade80' : 'var(--primary)', transition: 'width 0.2s, background 0.3s' }}></div>
-                    </div>
-                    {!dictImportSuccess && (
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center', lineHeight: '1.3' }}>
-                        {lang === 'es' 
-                          ? '⏳ Esto puede tardar de 1 a 2 minutos para diccionarios grandes. Por favor, no cierres la aplicación.' 
-                          : '⏳ This may take 1-2 minutes for large dictionaries. Please do not close the application.'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ marginTop: '16px' }}>
-                  {renderDictList(false)}
-                </div>
-
-                {renderActions(false)}
-              </div>
-
-              {/* Card 2: Frequencies */}
-              <div className="settings-section-card">
-                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ListChecks size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Listas de palabras frecuentes' : 'Frequency Word Lists'}</span>
-                </h3>
-                <p className="settings-card-desc">
                   {lang === 'es'
-                    ? 'Asignamos a las palabras puntuaciones de 1 a 5 estrellas para mostrar con qué frecuencia se utilizan en diferentes contextos.'
-                    : 'We assign words 1 to 5 star ratings to show how frequently they are used in different contexts.'}
+                    ? 'Lo que ves al tocar una palabra: significados, cuánto se usa y su acento tonal. Todo funciona sin conexión.'
+                    : 'What you see when you tap a word: meanings, how common it is and its pitch accent. Everything works offline.'}
                 </p>
-                <div style={{ background: 'rgba(99, 102, 241, 0.05)', borderLeft: '3px solid #8b5cf6', padding: '10px 14px', borderRadius: '4px', margin: '12px 0', fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', lineHeight: '1.4' }}>
-                  <strong>{lang === 'es' ? 'Nota:' : 'Note:'}</strong> {lang === 'es' 
-                    ? 'utilizamos la lista de palabras frecuentes más importante para las estadísticas de la página y para resaltar palabras en las oraciones recomendadas.'
-                    : 'we use the most important frequency list for page statistics and to highlight words in recommended sentences.'}
-                </div>
-
-                {isImportingFreq && (
-                  <div style={{ margin: '16px 0', background: freqImportSuccess ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: freqImportSuccess ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent', transition: 'all 0.3s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: freqImportSuccess ? '#4ade80' : 'var(--text-muted)' }}>
-                      <span>{freqImportSuccess ? '✓ ' : ''}{freqImportMsg}</span>
-                      <span>{freqImportProgress}%</span>
-                    </div>
-                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${freqImportProgress}%`, height: '100%', background: freqImportSuccess ? '#4ade80' : 'var(--primary)', transition: 'width 0.2s, background 0.3s' }}></div>
-                    </div>
-                    {!freqImportSuccess && (
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center', lineHeight: '1.3' }}>
-                        {lang === 'es' 
-                          ? '⏳ Esto puede tardar un momento. Por favor, no cierres la aplicación.' 
-                          : '⏳ This may take a moment. Please do not close the application.'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ marginTop: '16px' }}>
-                  {renderDictList(true)}
-                </div>
-
-                {renderActions(true)}
+                <DictionarySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} confirm={showConfirm} />
               </div>
-
             </div>
           )}
 
@@ -4912,6 +4262,7 @@ const Library = React.memo(function Library({
     const statuses = db.getWordStatuses();
     const srsData = db.getSrsData();
     const now = new Date();
+    const LEARN_AHEAD_MS = 20 * 60 * 1000;
     const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const getCardDueDate = (card: any): Date | null => {
       for (const value of [card?.due, card?.dueDate]) {
@@ -4971,6 +4322,9 @@ const Library = React.memo(function Library({
       paused?: boolean;
     }> = {};
     let totalDueCount = 0;
+    // New cards that are due but held back by a daily limit, so the dashboard can say why
+    // freshly mined cards are not showing up instead of claiming everything is done.
+    let newHeldByLimit = 0;
     
     const todayStr = localDate(now);
     const history = db.getSrsHistory();
@@ -5060,7 +4414,10 @@ const Library = React.memo(function Library({
 
         // Count due cards
         const dueDate = getCardDueDate(card);
-        const isDue = !dueDate || dueDate <= now;
+        // Like Anki's 20-minute Learn Ahead Limit: a learning step a few minutes away already
+        // counts, so a card just mined and failed once doesn't leave the deck at "All caught up".
+        const isLearningStep = !isNewCard && (state === 1 || state === 3);
+        const isDue = !dueDate || dueDate.getTime() <= now.getTime() + (isLearningStep ? LEARN_AHEAD_MS : 0);
         if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
             if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
@@ -5068,6 +4425,8 @@ const Library = React.memo(function Library({
               totalDueCount++;
               newCardsRemainingToday--;
               deckNewLeft[deckName]--;
+            } else {
+              newHeldByLimit++;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
@@ -5572,6 +4931,13 @@ const Library = React.memo(function Library({
                   ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
                   : (lang === 'es' ? 'Estás al día' : 'All caught up')}
               </button>
+              {newHeldByLimit > 0 && (
+                <p className="srs-today-limit-note">
+                  {lang === 'es'
+                    ? `${newHeldByLimit} ${newHeldByLimit === 1 ? 'tarjeta nueva espera' : 'tarjetas nuevas esperan'} a mañana por el límite diario de nuevas. Puedes subirlo en Ajustes o en los ajustes del mazo.`
+                    : `${newHeldByLimit} new ${newHeldByLimit === 1 ? 'card is' : 'cards are'} waiting for tomorrow because of the daily new-card limit. You can raise it in Settings or in the deck's settings.`}
+                </p>
+              )}
             </section>
 
             {/* Deck List (Mazos) */}
@@ -8147,7 +7513,6 @@ const Library = React.memo(function Library({
       />
 
       {/* Direct Dictionary Resource Library Modal */}
-      {isLibraryModalOpen && renderLibraryModal()}
 
       {/* Custom Toast Notification Styled with App Theme */}
       {toast.show && (

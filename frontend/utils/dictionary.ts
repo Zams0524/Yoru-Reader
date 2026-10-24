@@ -23,7 +23,7 @@ export interface DictionaryDefinition {
 const JITEN_CACHE = new Map<string, DictionaryEntry>();
 
 // Look up a word (first in local database, then on Jiten.moe API via CORS proxy)
-export async function lookupWord(word: string, reading: string = ''): Promise<DictionaryEntry | null> {
+export async function lookupWord(word: string, reading: string = '', pos: string = ''): Promise<DictionaryEntry | null> {
   // 1. Clean the word: remove trailing particles or spaces
   const cleanWord = word.trim();
   if (!cleanWord) return null;
@@ -43,7 +43,7 @@ export async function lookupWord(word: string, reading: string = ''): Promise<Di
   // 2. Prioritize Yomitan DB (IndexedDB) first, so user's installed dictionaries (Spanish, etc.) take precedence!
   // We use a 1.5-second timeout to prevent any IndexedDB locks/upgrades from hanging the UI
   try {
-    const yomitanPromise = searchYomitanDB(searchWord, searchReading);
+    const yomitanPromise = searchYomitanDB(searchWord, searchReading, pos);
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
     
     const yomitanMatch = await Promise.race([yomitanPromise, timeoutPromise]) as any;

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, Download, Headphones, Hand, Loader2, MousePointer2, Volume2, Zap } from 'lucide-react';
-import { getInstalledDictionaries, installBundledDictionary } from '../../utils/yomitanDB';
+import { getInstalledDictionaries } from '../../utils/yomitanDB';
+import { getPackProgress, installRecommendedPack, packItems, packStatus, subscribePackProgress, type PackItemId, type PackProgress } from '../../utils/dictionaryPack';
 import { isPhoneUI } from '../../utils/platform';
 
 /**
@@ -163,20 +164,15 @@ export function featureSlides(lang: Lang, phone: boolean = isPhoneUI()): GuideSl
 // ── Dictionary install ─────────────────────────────────────────────────
 
 export function useDictionaryInstall(lang: Lang) {
-  const [hasDictionary, setHasDictionary] = useState<boolean | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState<Record<PackItemId, boolean> | null>(null);
+  const [progress, setProgress] = useState<PackProgress>(getPackProgress);
   const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
     try {
-      const list = await getInstalledDictionaries();
-      setHasDictionary((list || []).some((dictionary: any) =>
-        dictionary.hasTerms === true ||
-        (dictionary.hasTerms === undefined && !dictionary.hasFreqs && !/frequency|frequen|frecuencia|pitch|アクセント|meta/i.test(dictionary.title || ''))));
+      setStatus(packStatus(await getInstalledDictionaries()));
     } catch {
-      setHasDictionary(false);
+      setStatus({ dictionary: false, frequency: false, pitch: false });
     }
   }, []);
 
@@ -184,53 +180,65 @@ export function useDictionaryInstall(lang: Lang) {
     void refresh();
     const onChange = () => { void refresh(); };
     window.addEventListener('yoru-dictionaries-changed', onChange);
-    return () => window.removeEventListener('yoru-dictionaries-changed', onChange);
+    const unsubscribe = subscribePackProgress(setProgress);
+    return () => {
+      window.removeEventListener('yoru-dictionaries-changed', onChange);
+      unsubscribe();
+    };
   }, [refresh]);
 
-  const install = useCallback(async () => {
-    const es = lang === 'es';
-    setInstalling(true);
+  // Runs in the background: the guide can move on while the app-wide toast shows the progress.
+  const install = useCallback(() => {
     setError('');
-    setProgress(5);
-    setMessage(tr(lang, 'Preparando el diccionario…', 'Preparing the dictionary…'));
-    try {
-      await installBundledDictionary(es ? 'JMdict_spanish.zip' : 'JMdict_english.zip', es ? 'es' : 'en', (msg, value) => {
-        setMessage(msg);
-        setProgress(10 + Math.round(value * 0.9));
-      });
-      setProgress(100);
-      setHasDictionary(true);
-    } catch (err: any) {
-      setError(err?.message || 'Error');
-    } finally {
-      setInstalling(false);
-    }
-  }, [lang]);
+    installRecommendedPack(lang)
+      .then(refresh)
+      .catch((err: any) => setError(err?.message || 'Error'));
+  }, [lang, refresh]);
 
-  return { hasDictionary, installing, progress, message, error, install };
+  const hasDictionary = status === null ? null : status.dictionary;
+  const complete = status !== null && status.dictionary && status.frequency && status.pitch;
+  return { status, hasDictionary, complete, installing: progress.running, progress, error, install };
 }
 
 export function DictionaryStep({ lang, state }: { lang: Lang; state: ReturnType<typeof useDictionaryInstall> }) {
-  const { hasDictionary, installing, progress, message, error, install } = state;
+  const { status, complete, installing, progress, error, install } = state;
+  const items = packItems(lang);
   return (
     <div className="guide-dictionary">
-      <div className="guide-dictionary-icon">{hasDictionary ? <Check size={30} /> : <Download size={30} />}</div>
+      <div className="guide-dictionary-icon">{complete ? <Check size={30} /> : <Download size={30} />}</div>
       <p className="guide-dictionary-text">
-        {hasDictionary
-          ? tr(lang, 'El diccionario JMdict ya está instalado. Al tocar una palabra verás su significado.', 'The JMdict dictionary is installed. Tap a word to see its meaning.')
+        {complete
+          ? tr(lang, 'Todo listo. Toca una palabra al leer y verás qué significa y cuánto se usa.', 'All set. Tap a word while reading to see what it means and how common it is.')
           : tr(lang,
-            'Yoru incluye el diccionario JMdict (japonés → español o inglés). Instálalo para ver significados al tocar palabras. Tarda menos de un minuto y no necesita internet.',
-            'Yoru bundles the JMdict dictionary (Japanese → English or Spanish). Install it to see meanings when you tap words. It takes under a minute and needs no internet.')}
+            'Yoru trae todo lo necesario dentro de la app. Se instala una vez, funciona sin conexión y puedes seguir mientras termina.',
+            'Yoru ships everything inside the app. It installs once, works offline, and you can keep going while it finishes.')}
       </p>
-      {!hasDictionary && (
-        <button type="button" className="guide-primary" onClick={() => void install()} disabled={installing || hasDictionary === null}>
-          {installing ? <><Loader2 size={18} className="guide-spin" /> {progress}%</> : tr(lang, 'Instalar diccionario', 'Install dictionary')}
-        </button>
+      <ul className="guide-pack-list">
+        {items.map((item, index) => {
+          const ready = !!status?.[item.id];
+          const active = installing && !ready && progress.label === item.label;
+          return (
+            <li key={item.id}>
+              <span className={`guide-pack-check${ready ? ' ready' : ''}`}>
+                {ready ? <Check size={12} /> : active ? <Loader2 size={12} className="guide-spin" /> : index + 1}
+              </span>
+              {item.label}
+            </li>
+          );
+        })}
+      </ul>
+      {!complete && !installing && (
+        <>
+          <button type="button" className="guide-primary" onClick={install} disabled={status === null}>
+            {tr(lang, 'Instalar todo', 'Install everything')}
+          </button>
+          <span className="guide-pack-size">{tr(lang, '≈ 10 MB · sin internet', '≈ 10 MB · no internet needed')}</span>
+        </>
       )}
       {installing && (
         <div className="guide-progress" aria-live="polite">
-          <div className="guide-progress-track"><div style={{ width: `${progress}%` }} /></div>
-          <span>{message}</span>
+          <div className="guide-progress-track"><div style={{ width: `${progress.percent}%` }} /></div>
+          <span>{tr(lang, `Instalando ${progress.step} de ${progress.total}… puedes continuar.`, `Installing ${progress.step} of ${progress.total}… you can continue.`)}</span>
         </div>
       )}
       {error && <p className="guide-error">{tr(lang, 'No se pudo instalar: ', 'Could not install: ')}{error}</p>}
