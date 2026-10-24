@@ -255,15 +255,17 @@ export default function NativeReaderHost({
     return () => { cancelled = true; window.clearTimeout(showProgress); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book]);
-  const lineHtml = useMemo(
-    () => (words ? renderBookWords(words, exportStatuses, parserSettings.furiganaOnNew) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, exportStatuses, parserSettings, jitenRevision],
-  );
   const wordStyle = useMemo(
     () => engineWordCss(getLocalWordStyleConfig(), settings.textColor, settings.backgroundColor),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [parserSettings, settings.textColor, settings.backgroundColor],
+  );
+  // Which states need a span; the set only changes with the word styles.
+  const styledKey = Array.from(wordStyle.styled).sort().join(',');
+  const lineHtml = useMemo(
+    () => (words ? renderBookWords(words, exportStatuses, parserSettings.furiganaOnNew, wordStyle.styled) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [words, exportStatuses, parserSettings, jitenRevision, styledKey],
   );
   const exported = useMemo(() => {
     const started = performance.now();

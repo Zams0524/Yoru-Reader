@@ -235,11 +235,16 @@ function toEngineMarkup(html: string, holder: HTMLElement): string {
  * Engine markup of every line with words, by line text, as the WebView reader marks them: state
  * from wordStatuses (dictionary form first), furigana on new words when that setting is on, and
  * Jiten's rendering for the lines it has parsed. Inline {img:} chunks are left for the export.
+ *
+ * The engine's open costs about as much as the elements it has to lay out, so with `styled` (the
+ * states that have a rule in engineWordCss) words whose state looks like plain text get no span,
+ * and words next to each other in the same state share one.
  */
 export function renderBookWords(
   words: BookWords,
   statuses: Record<string, string>,
   furiganaOnNew: boolean,
+  styled?: ReadonlySet<string>,
 ): Map<string, string> {
   const holder = document.createElement('div');
   const jiten = isJitenParserEnabled();
@@ -251,18 +256,52 @@ export function renderBookWords(
       continue;
     }
     let html = '';
+    if (!styled) {
+      for (const piece of pieces) {
+        if (typeof piece === 'string') {
+          html += piece;
+          continue;
+        }
+        const state = stateOfStatus(statuses[piece.b] || statuses[piece.s]);
+        const inner = piece.ruby
+          || (furiganaOnNew && state === 'new' && furiganaFromReading(piece.s, piece.r))
+          || escapeText(piece.s);
+        html += `<span class="w-${state}">${inner}</span>`;
+      }
+      lines.set(line, classRuby(html));
+      continue;
+    }
+    let open: string | null = null;
+    const close = () => {
+      if (open) html += '</span>';
+      open = null;
+    };
     for (const piece of pieces) {
       if (typeof piece === 'string') {
+        close();
         html += piece;
         continue;
       }
       const state = stateOfStatus(statuses[piece.b] || statuses[piece.s]);
-      const inner = piece.ruby
+      let inner = piece.ruby
         || (furiganaOnNew && state === 'new' && furiganaFromReading(piece.s, piece.r))
         || escapeText(piece.s);
-      html += `<span class="w-${state}">${inner}</span>`;
+      if (!styled.has(state)) {
+        close();
+        html += inner;
+        continue;
+      }
+      // Each ruby carries the class itself (see classRuby), wherever it sits in the shared span.
+      inner = inner.replace(/<ruby>/g, `<ruby class="w-${state}">`);
+      if (open !== state) {
+        close();
+        html += `<span class="w-${state}">`;
+        open = state;
+      }
+      html += inner;
     }
-    lines.set(line, classRuby(html));
+    close();
+    lines.set(line, html);
   }
   return lines;
 }
@@ -320,8 +359,9 @@ const ENGINE_STATES = ['new', 'young', 'mature', 'due', 'blacklisted'];
  * differs from the page (or from its own background) by an invisible step, and the plugin finds
  * those words in the page pixels and draws the underline with its colour, thickness and style.
  */
-export function engineWordCss(config: WordStyleThemeConfig, textColor: number, backgroundColor: number): { css: string; underlines: EngineUnderline[] } {
+export function engineWordCss(config: WordStyleThemeConfig, textColor: number, backgroundColor: number): { css: string; underlines: EngineUnderline[]; styled: Set<string> } {
   const rules: string[] = [];
+  const styled = new Set<string>();
   const underlines: EngineUnderline[] = [];
   ENGINE_STATES.forEach((state, index) => {
     const effects: WordEffect[] = config?.states?.[state]?.effects || [];
@@ -353,7 +393,10 @@ export function engineWordCss(config: WordStyleThemeConfig, textColor: number, b
     if (color === null && background !== null) color = textColor;
     if (color !== null) css.push(`color:${hexOf(color)}`);
     if (background !== null) css.push(`background-color:${hexOf(background)}`);
-    if (css.length) rules.push(`.w-${state}{${css.join(';')}}`);
+    if (css.length) {
+      rules.push(`.w-${state}{${css.join(';')}}`);
+      styled.add(state);
+    }
   });
-  return { css: rules.join(''), underlines };
+  return { css: rules.join(''), underlines, styled };
 }
