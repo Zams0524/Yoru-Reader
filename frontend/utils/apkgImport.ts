@@ -47,7 +47,7 @@ export interface ApkgCollection {
 
 let sqlPromise: Promise<any> | null = null;
 function loadSql(): Promise<any> {
-  if (!sqlPromise) sqlPromise = initSqlJs();
+  if (!sqlPromise) sqlPromise = initSqlJs().catch((err: unknown) => { sqlPromise = null; throw err; });
   return sqlPromise;
 }
 
@@ -66,6 +66,113 @@ async function extractCollectionBytes(zip: JSZip): Promise<Uint8Array> {
 
 const COLLECTION_NAMES = ['collection.anki21b', 'collection.anki21', 'collection.anki2'];
 
+/** Which step of reading an .apkg is running, for the progress line and timeout errors. */
+export type ApkgStep = 'reading' | 'decompressing' | 'opening' | 'cards' | 'history';
+
+export class ApkgStepError extends Error {
+  constructor(public step: ApkgStep, message: string) {
+    super(message);
+  }
+}
+
+/** Rejects when `promise` takes longer than `ms`, so a stuck read fails visibly instead of spinning forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, step: ApkgStep): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ApkgStepError(step, `timeout:${step}`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+/** Lets the WebView paint the progress line before the next synchronous step. */
+const nextFrame = () => new Promise<void>((resolve) => setTimeout(resolve, 30));
+
+/** Inflates a zip entry's raw bytes: stored as-is (method 0) or deflated (method 8). */
+async function inflateEntry(method: number, raw: Uint8Array): Promise<Uint8Array | null> {
+  if (method === 0) return raw;
+  if (method !== 8 || typeof DecompressionStream === 'undefined') return null;
+  const stream = new Blob([raw as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * Reads the collection database from the start of the file, entry by entry, and stops as soon
+ * as it has it. Anki writes the collection first and the media after it, so a 300 MB deck only
+ * needs its first few MB read, and nothing has to seek: Android hands the WebView picked files
+ * through a content provider, where reading the end of a big file can fail or take very long.
+ * Returns null when the zip doesn't record sizes in its local headers (then the central
+ * directory is read instead).
+ */
+async function readCollectionFromStart(file: Blob): Promise<{ name: string; bytes: Uint8Array } | null> {
+  if (typeof file.stream !== 'function') return null;
+  const reader = file.stream().getReader();
+  const chunks: Uint8Array[] = [];
+  let buffered = 0;
+  let buf = new Uint8Array(0);
+  let done = false;
+  // Makes sure at least `n` bytes are buffered; false at the end of the file.
+  const ensure = async (n: number) => {
+    while (buf.length + buffered < n && !done) {
+      const next = await reader.read();
+      if (next.done) { done = true; break; }
+      chunks.push(next.value);
+      buffered += next.value.length;
+    }
+    if (chunks.length) {
+      const merged = new Uint8Array(buf.length + buffered);
+      merged.set(buf, 0);
+      let at = buf.length;
+      for (const chunk of chunks) { merged.set(chunk, at); at += chunk.length; }
+      buf = merged;
+      chunks.length = 0;
+      buffered = 0;
+    }
+    return buf.length >= n;
+  };
+  const found: Record<string, Uint8Array> = {};
+  const decoder = new TextDecoder();
+  try {
+    for (;;) {
+      if (!(await ensure(30))) break;
+      const view = new DataView(buf.buffer, buf.byteOffset, buf.length);
+      if (view.getUint32(0, true) !== 0x04034b50) break;
+      const flags = view.getUint16(6, true);
+      const method = view.getUint16(8, true);
+      const compressedSize = view.getUint32(18, true);
+      const nameLen = view.getUint16(26, true);
+      const extraLen = view.getUint16(28, true);
+      if (!(await ensure(30 + nameLen + extraLen))) break;
+      const name = decoder.decode(buf.subarray(30, 30 + nameLen));
+      // Media comes after the collection: nothing more to look for.
+      if (/^\d+$/.test(name) || name === 'media') break;
+      // Sizes only in a trailing data descriptor, or zip64: can't skip ahead without them.
+      if (((flags & 0x08) && compressedSize === 0) || compressedSize === 0xffffffff) return null;
+      const dataStart = 30 + nameLen + extraLen;
+      if (!(await ensure(dataStart + compressedSize))) break;
+      if (COLLECTION_NAMES.includes(name)) {
+        const bytes = await inflateEntry(method, buf.slice(dataStart, dataStart + compressedSize));
+        if (!bytes) return null;
+        found[name] = bytes;
+        if (name === COLLECTION_NAMES[0]) break;
+      }
+      let next = dataStart + compressedSize;
+      if (flags & 0x08) {
+        // Data descriptor after the data: 12 or 16 bytes (with its optional signature).
+        if (!(await ensure(next + 4))) break;
+        next += new DataView(buf.buffer, buf.byteOffset, buf.length).getUint32(next, true) === 0x08074b50 ? 16 : 12;
+      }
+      if (!(await ensure(next))) break;
+      buf = buf.slice(next);
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  const name = COLLECTION_NAMES.find((n) => found[n]);
+  return name ? { name, bytes: found[name] } : null;
+}
+
 /**
  * Reads just the collection database out of the .apkg zip, slicing the file instead of loading
  * it whole. A deck with audio and images (e.g. Core 2k/6k) can be hundreds of MB, which a phone's
@@ -73,7 +180,7 @@ const COLLECTION_NAMES = ['collection.anki21b', 'collection.anki21', 'collection
  * the zip can't be read this way, so the caller falls back to JSZip.
  */
 async function readCollectionFromBlob(file: Blob): Promise<{ name: string; bytes: Uint8Array } | null> {
-  if (typeof file.slice !== 'function' || typeof DecompressionStream === 'undefined') return null;
+  if (typeof file.slice !== 'function') return null;
   const read = async (start: number, end: number) => new DataView(await file.slice(start, end).arrayBuffer());
 
   // End of central directory record: in the last 22 bytes + up to 64 KB of comment.
@@ -133,24 +240,41 @@ async function readCollectionFromBlob(file: Blob): Promise<{ name: string; bytes
   const local = await read(entry.localOffset, entry.localOffset + 30);
   if (local.getUint32(0, true) !== 0x04034b50) return null;
   const dataStart = entry.localOffset + 30 + local.getUint16(26, true) + local.getUint16(28, true);
-  const compressed = file.slice(dataStart, dataStart + entry.compressedSize);
-  if (entry.method === 0) return { name, bytes: new Uint8Array(await compressed.arrayBuffer()) };
-  if (entry.method !== 8) return null;
-  const stream = compressed.stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return { name, bytes: new Uint8Array(await new Response(stream).arrayBuffer()) };
+  const raw = new Uint8Array(await file.slice(dataStart, dataStart + entry.compressedSize).arrayBuffer());
+  const bytes = await inflateEntry(entry.method, raw);
+  return bytes ? { name, bytes } : null;
 }
 
 /** The collection database from an .apkg/.colpkg file, zstd-decompressed when needed. */
-async function readCollectionBytes(file: File): Promise<Uint8Array> {
+/** Above this size the whole-file fallback (JSZip) is not tried: a phone can't hold it in memory. */
+const WHOLE_FILE_LIMIT = 150 * 1024 * 1024;
+
+async function readCollectionBytes(file: File, onStep: (step: ApkgStep) => void): Promise<Uint8Array> {
   let direct: { name: string; bytes: Uint8Array } | null = null;
-  try {
-    direct = await readCollectionFromBlob(file);
-  } catch (err) {
-    console.warn('Reading the Anki collection by slices failed, loading the whole file instead:', err);
+  for (const [label, read] of [
+    ['from the start', readCollectionFromStart],
+    ['by the central directory', readCollectionFromBlob],
+  ] as const) {
+    try {
+      direct = await withTimeout(read(file), 120000, 'reading');
+    } catch (err) {
+      console.warn(`Reading the Anki collection ${label} failed:`, err);
+    }
+    if (direct) break;
   }
-  if (direct) return direct.name === 'collection.anki21b' ? zstdDecompress(direct.bytes) : direct.bytes;
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  return extractCollectionBytes(zip);
+  if (!direct && file.size > WHOLE_FILE_LIMIT) {
+    throw new Error('apkg-unreadable');
+  }
+  if (direct) {
+    if (direct.name !== 'collection.anki21b') return direct.bytes;
+    onStep('decompressing');
+    await nextFrame();
+    return zstdDecompress(direct.bytes);
+  }
+  const zip = await withTimeout(file.arrayBuffer().then((buf) => JSZip.loadAsync(buf)), 180000, 'reading');
+  onStep('decompressing');
+  await nextFrame();
+  return withTimeout(extractCollectionBytes(zip), 120000, 'decompressing');
 }
 
 /**
@@ -223,9 +347,13 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
 }
 
 /** Like parseApkgFile, plus each card's review history and the collection's creation time. */
-export async function parseApkgCollection(file: File): Promise<ApkgCollection> {
-  const bytes = await readCollectionBytes(file);
-  const SQL = await loadSql();
+export async function parseApkgCollection(file: File, onStep: (step: ApkgStep) => void = () => {}): Promise<ApkgCollection> {
+  onStep('reading');
+  await nextFrame();
+  const bytes = await readCollectionBytes(file, onStep);
+  onStep('opening');
+  await nextFrame();
+  const SQL = await withTimeout(loadSql(), 60000, 'opening');
   let db = new SQL.Database(bytes);
   try {
     // Modern Anki declares several columns (e.g. fields.name) with a custom "unicase" collation,
@@ -287,6 +415,8 @@ export async function parseApkgCollection(file: File): Promise<ApkgCollection> {
       deckNames = deckNamesFromTable(db);
     }
 
+    onStep('cards');
+    await nextFrame();
     // cards.data (FSRS memory state) only exists in newer collections.
     let rows: any[];
     try {
@@ -301,6 +431,8 @@ export async function parseApkgCollection(file: File): Promise<ApkgCollection> {
       `);
     }
     if (!rows.length) return { cards: [], crtSeconds };
+    onStep('history');
+    await nextFrame();
     const reviews = reviewsByCard(db);
 
     const out: ApkgRawCard[] = [];

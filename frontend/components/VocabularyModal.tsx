@@ -7,6 +7,7 @@ import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { isPhoneUI } from '../utils/platform';
 import { planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
+import type { ApkgStep } from '../utils/apkgImport';
 import { srsWordOfKey } from '../utils/srsCardKeys';
 
 type AnkiFieldValue = string | { value?: unknown } | null | undefined;
@@ -624,8 +625,28 @@ export default function VocabularyModal({
     setIsLoading(true);
     setProgressMsg(lang === 'es' ? 'Leyendo el archivo de Anki...' : 'Reading the Anki file...');
     try {
-      const { parseApkgCollection } = await import('../utils/apkgImport');
-      const { cards, crtSeconds } = await parseApkgCollection(file);
+      const sizeMb = file.size ? ` (${Math.max(1, Math.round(file.size / 1048576))} MB)` : '';
+      const stepLabels: Record<ApkgStep, string> = lang === 'es'
+        ? { reading: `Leyendo el archivo de Anki${sizeMb}...`, decompressing: 'Descomprimiendo la colección...', opening: 'Abriendo la colección...', cards: 'Leyendo las tarjetas...', history: 'Leyendo el historial de repasos...' }
+        : { reading: `Reading the Anki file${sizeMb}...`, decompressing: 'Decompressing the collection...', opening: 'Opening the collection...', cards: 'Reading the cards...', history: 'Reading the review history...' };
+      const { parseApkgCollection, ApkgStepError } = await import('../utils/apkgImport');
+      let parsed: Awaited<ReturnType<typeof parseApkgCollection>>;
+      try {
+        parsed = await parseApkgCollection(file, (step) => setProgressMsg(stepLabels[step]));
+      } catch (err) {
+        if (err instanceof Error && err.message === 'apkg-unreadable') {
+          throw new Error(lang === 'es'
+            ? 'No se pudo leer la colección dentro del archivo. Vuelve a exportar el mazo desde Anki como "Paquete de mazo de Anki (.apkg)" e inténtalo de nuevo.'
+            : 'The collection inside the file could not be read. Export the deck again from Anki as an "Anki Deck Package (.apkg)" and try again.');
+        }
+        if (err instanceof ApkgStepError) {
+          throw new Error(lang === 'es'
+            ? `La importación se detuvo en el paso "${stepLabels[err.step]}" porque tardó demasiado. Si elegiste el archivo desde Google Drive u otra nube, descárgalo primero al teléfono y elígelo desde Descargas.`
+            : `The import stopped at "${stepLabels[err.step]}" because it took too long. If you picked the file from Google Drive or another cloud, download it to the phone first and pick it from Downloads.`);
+        }
+        throw err;
+      }
+      const { cards, crtSeconds } = parsed;
       if (cards.length === 0) {
         await showConfirm({
           title: lang === 'es' ? 'Sin tarjetas' : 'No cards found',
