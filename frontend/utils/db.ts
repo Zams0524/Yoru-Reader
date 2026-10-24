@@ -825,7 +825,7 @@ export const db = {
       // Migrate legacy SM-2 card to FSRS-6 in-memory
       const ease = card.ease ?? 2.5;
       const interval = card.interval ?? 0;
-      const reps = card.repetitions ?? 0;
+      const reps = card.reps ?? card.repetitions ?? 0;
       
       const stability = interval > 0 ? interval : 2.3; // Default Good stability
       const difficulty = Math.max(1, Math.min(10, 5.0 + (2.5 - ease) * 3));
@@ -1088,6 +1088,33 @@ export const db = {
       localStorage.setItem(this._getKey('yoru_reader_srs_history'), JSON.stringify(history));
     } catch (e) {
       console.error('Error saving SRS history:', e);
+    }
+  },
+
+  /**
+   * Adds review history from another app (an Anki import) to the daily counters behind the
+   * activity heatmap, streak and daily limits. Each day keeps the larger count, so importing the
+   * same history again does not double it.
+   */
+  mergeImportedSrsReviewDays(days: Record<string, { total: number; reviews: number; newWords: string[] }>) {
+    try {
+      const daily = this.getSrsDailyReviews();
+      const dailyStats = this.getSrsDailyReviewStats();
+      for (const [ymd, day] of Object.entries(days)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+        daily[ymd] = Math.max(Number(daily[ymd]) || 0, day.total);
+        const stats = dailyStats[ymd] && typeof dailyStats[ymd] === 'object' && !Array.isArray(dailyStats[ymd])
+          ? dailyStats[ymd]
+          : { reviews: 0, newWords: [] };
+        dailyStats[ymd] = {
+          reviews: Math.max(Number(stats.reviews) || 0, day.reviews),
+          newWords: Array.from(new Set([...(Array.isArray(stats.newWords) ? stats.newWords : []), ...day.newWords])),
+        };
+      }
+      localStorage.setItem(this._getKey('yoru_reader_srs_daily_reviews'), JSON.stringify(daily));
+      localStorage.setItem(this._getKey('yoru_reader_srs_daily_review_stats'), JSON.stringify(dailyStats));
+    } catch (e) {
+      console.error('Error importing SRS review history:', e);
     }
   },
 

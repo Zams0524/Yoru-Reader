@@ -17,6 +17,8 @@ import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
+import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
+import { isPhoneUI } from '../utils/platform';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
@@ -2845,7 +2847,7 @@ const Library = React.memo(function Library({
                   <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
                 </div>
                 <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect')}
+                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
                   {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
                   {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
@@ -3863,9 +3865,13 @@ const Library = React.memo(function Library({
                 <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
               </h3>
               <p className="settings-card-desc">
-                {lang === 'es'
-                  ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
-                  : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.'}
+                {isPhoneUI()
+                  ? (lang === 'es'
+                    ? 'Importa, exporta y gestiona tus palabras. Importa mazos de Anki (.apkg), JPDB, listas de palabras o listas de frecuencia.'
+                    : 'Import, export and manage your words. Import Anki decks (.apkg), JPDB, word lists or frequency lists.')
+                  : (lang === 'es'
+                    ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
+                    : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.')}
               </p>
               <button 
                 type="button" 
@@ -4376,7 +4382,7 @@ const Library = React.memo(function Library({
       if (word.startsWith('_deck_')) {
         const deckName = word.substring(6).trim();
         if (deckName) initDeck(deckName);
-      } else if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      } else if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (deckName) initDeck(deckName);
       }
@@ -4385,7 +4391,7 @@ const Library = React.memo(function Library({
     // 2. Process all cards that are in 'learning' status
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_')) return;
-      if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (!deckName) return;
         initDeck(deckName);
@@ -4680,10 +4686,7 @@ const Library = React.memo(function Library({
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_') || !card) return;
       
-      if (separateSuspended) {
-        const status = statuses[word];
-        if (status === 'ignored' || status === 'known' || status === 'blacklisted') return;
-      }
+      if (separateSuspended && isSrsCardInactive(word, card, statuses)) return;
 
       const state = card.state;
       if (isNewSrsCard(card)) {
@@ -5752,7 +5755,7 @@ const Library = React.memo(function Library({
               {sortedWords.slice(0, visibleVocabCount).map((item, idx) => (
                 <div key={idx} className="note-word-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span className="note-word-text">{item.word}</span>
+                    <span className="note-word-text">{srsWordOfKey(item.word)}</span>
                     <span className={`note-word-status-badge ${item.statusClass}`}>{item.statusText}</span>
                   </div>
                   <div className="note-word-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -5762,7 +5765,7 @@ const Library = React.memo(function Library({
                       onClick={async () => {
                         const ok = await showConfirm({
                           title: lang === 'es' ? '¿Eliminar palabra?' : 'Delete word?',
-                          message: lang === 'es' ? `¿Quieres eliminar "${item.word}" de tu vocabulario?` : `Do you want to delete "${item.word}" from your vocabulary?`,
+                          message: lang === 'es' ? `¿Quieres eliminar "${srsWordOfKey(item.word)}" de tu vocabulario?` : `Do you want to delete "${srsWordOfKey(item.word)}" from your vocabulary?`,
                           type: 'danger',
                           confirmText: lang === 'es' ? 'Eliminar' : 'Delete',
                         });

@@ -173,7 +173,8 @@ export function ConfirmModal({
           justifyContent: 'flex-end',
           marginTop: '20px',
         }}>
-          <button
+          {/* cancelText: '' means a plain notice with only the confirm button. */}
+          {cancelText !== '' && <button
             onClick={onCancel}
             style={{
               padding: '8px 20px',
@@ -191,7 +192,7 @@ export function ConfirmModal({
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888899'; }}
           >
             {cancelText || 'Cancelar'}
-          </button>
+          </button>}
           <button
             onClick={onConfirm}
             style={{

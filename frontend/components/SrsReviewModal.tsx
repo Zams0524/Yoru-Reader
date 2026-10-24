@@ -9,6 +9,7 @@ import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 import { isPhoneUI } from '../utils/platform';
 import { getDeckLimitsLeft, getDeckName, getDeckOptions } from '../utils/srsDeckOptions';
+import { isSrsCardInactive } from '../utils/srsCardKeys';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -304,7 +305,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
     let dueTomorrow = 0;
     
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-      if (word.startsWith('_deck_') || !card || ['known', 'ignored', 'blacklisted'].includes(statuses[word])) return;
+      if (word.startsWith('_deck_') || !card || isSrsCardInactive(word, card, statuses)) return;
       if (filterDeck && (card.source || 'Yoru Reader') !== filterDeck) return;
       const dueValue = card.dueDate || card.due;
       if (!dueValue) return;
@@ -391,8 +392,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
 
     // Include due learning words and imported cards in the current profile.
     let learningWords = Array.from(new Set([
-      ...Object.keys(statuses).filter(w => statuses[w] === 'learning'),
-      ...Object.keys(srsData).filter(w => !w.startsWith('_deck_') && !['known', 'ignored', 'blacklisted'].includes(statuses[w])),
+      ...Object.keys(statuses).filter(w => statuses[w] === 'learning' && !srsData[w]?.suspended),
+      ...Object.keys(srsData).filter(w => !w.startsWith('_deck_') && !isSrsCardInactive(w, srsData[w], statuses)),
     ]));
     
     if (filterDeck) {
@@ -487,10 +488,18 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       };
       dueLearning.sort((a, b) => getDueTimestamp(a) - getDueTimestamp(b));
       dueReviews.sort((a, b) => getDueTimestamp(a) - getDueTimestamp(b));
+      // Cards imported from Anki keep Anki's new-card order (their queue position); the rest
+      // are shuffled as before.
+      const newPosition = (word: string) => Number(srsData[word]?.newPosition);
+      const positionedNew = dueNew.filter(word => Number.isFinite(newPosition(word)))
+        .sort((a, b) => newPosition(a) - newPosition(b));
+      const otherNew = shuffle(dueNew.filter(word => !Number.isFinite(newPosition(word))));
+      const pickedNew = takePerDeck([...positionedNew, ...otherNew], perDeck.newLeft).slice(0, newCardsLeftToday);
       finalDue = [
         ...dueLearning,
         ...takePerDeck(dueReviews, perDeck.reviewsLeft).slice(0, reviewsLeftToday),
-        ...shuffle(takePerDeck(shuffle(dueNew), perDeck.newLeft).slice(0, newCardsLeftToday)),
+        ...pickedNew.filter(word => Number.isFinite(newPosition(word))),
+        ...shuffle(pickedNew.filter(word => !Number.isFinite(newPosition(word)))),
       ];
     }
 

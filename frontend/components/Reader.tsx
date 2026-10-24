@@ -37,6 +37,7 @@ import ReaderSidebar from './reader/ReaderSidebar';
 import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
+import { isPhoneUI } from '../utils/platform';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
@@ -1171,7 +1172,8 @@ export default function Reader({
 
   const checkAnkiCardExists = async (word: string) => {
     setAnkiCardExists(false);
-    if (!word) return;
+    // AnkiConnect needs Anki on the same computer: never on a phone.
+    if (!word || isPhoneUI()) return;
 
     const savedV2 = localStorage.getItem('anki_settings_v2');
     const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
@@ -1261,6 +1263,7 @@ export default function Reader({
   };
 
   const handleMineToAnki = async () => {
+    if (isPhoneUI()) return;
     if (!selectedWord) return;
 
     const uploadMediaToAnki = async (host: string, filename: string, base64Data: string) => {
@@ -3224,7 +3227,7 @@ export default function Reader({
                   >
                     {es ? 'Ignorar' : 'Ignore'}
                   </button>
-                  <button
+                  {!isPhoneUI() && <button
                     type="button"
                     onClick={ankiCardExists ? handleOpenInAnki : handleMineToAnki}
                     title={ankiCardExists ? (es ? 'Ver en Anki' : 'View in Anki') : (es ? 'Añadir a Anki' : 'Add to Anki')}
@@ -3232,7 +3235,7 @@ export default function Reader({
                   >
                     {ankiCardExists ? <ExternalLink size={11} /> : <Plus size={11} />}
                     Anki
-                  </button>
+                  </button>}
                 </div>
 
                     {deckSelectorWord === selectedWord.basicForm && (() => {
