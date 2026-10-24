@@ -24,6 +24,8 @@ interface BookmarkItem {
   sectionName?: string;
   content?: string;
   text?: string;
+  /** Set with the page button (a ribbon on the page), not from a text selection. */
+  page?: boolean;
 }
 
 interface ReadingSessionState {
@@ -50,6 +52,8 @@ interface ReaderSidebarProps {
   bookmarks: BookmarkItem[];
   onToggleBookmark?: (bm: BookmarkItem) => void;
   onGoToBookmark?: (bm: BookmarkItem) => void;
+  /** Where a bookmark is, e.g. "Capítulo 3 · pág. 120". */
+  describeBookmark?: (bm: BookmarkItem) => string;
   readingSession: ReadingSessionState;
   onToggleSession: () => void;
   colors: ReaderColors;
@@ -72,6 +76,8 @@ export default function ReaderSidebar({
   onGoToSection,
   bookmarks,
   onGoToBookmark,
+  onToggleBookmark,
+  describeBookmark,
   readingSession,
   onToggleSession,
   colors,
@@ -180,6 +186,8 @@ export default function ReaderSidebar({
             <BookmarksContent
               bookmarks={bookmarks}
               onGoToBookmark={onGoToBookmark}
+              onRemove={onToggleBookmark}
+              describe={describeBookmark}
               onClose={onClose}
               colors={colors}
               lang={lang}
@@ -256,29 +264,35 @@ function TocContent({ sections, currSection, onGoToSection, onClose, colors, lan
 interface BookmarksContentProps {
   bookmarks: BookmarkItem[];
   onGoToBookmark?: (bm: BookmarkItem) => void;
+  onRemove?: (bm: BookmarkItem) => void;
+  describe?: (bm: BookmarkItem) => string;
   onClose: () => void;
   colors: ReaderColors;
   lang: string;
 }
 
-function BookmarksContent({ bookmarks, onGoToBookmark, onClose, colors, lang }: BookmarksContentProps) {
+function BookmarksContent({ bookmarks, onGoToBookmark, onRemove, describe, onClose, colors, lang }: BookmarksContentProps) {
   if (!bookmarks || bookmarks.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '40px 16px', color: colors.textMuted, fontSize: '0.85rem' }}>
         <BookmarkIcon size={32} style={{ opacity: 0.3, marginBottom: '12px' }} />
         <p>{lang === 'es' ? 'No hay marcadores guardados' : 'No bookmarks saved'}</p>
         <p style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '8px' }}>
-          {lang === 'es' ? 'Selecciona texto para crear un marcador' : 'Select text to create a bookmark'}
+          {lang === 'es'
+            ? 'Toca el marcador de la barra superior para marcar la página, o mantén pulsado el texto y elige el marcador.'
+            : 'Tap the bookmark in the top bar to mark the page, or long-press text and pick the bookmark.'}
         </p>
       </div>
     );
   }
 
+  // In reading order, like the page bar shows them.
+  const ordered = [...bookmarks].sort((a, b) => a.paragraphId - b.paragraphId);
   return (
     <div>
-      {bookmarks.map((bm, idx) => (
+      {ordered.map((bm, idx) => (
         <div
-          key={idx}
+          key={`${bm.paragraphId}-${idx}`}
           onClick={() => {
             if (onGoToBookmark) onGoToBookmark(bm);
             onClose();
@@ -297,8 +311,21 @@ function BookmarksContent({ bookmarks, onGoToBookmark, onClose, colors, lang }: 
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
           onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
         >
-          <div style={{ fontSize: '0.7rem', opacity: 0.5, marginBottom: '4px' }}>
-            {lang === 'es' ? `Marcador ${idx + 1}` : `Bookmark ${idx + 1}`}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', marginBottom: '4px' }}>
+            <span style={{ opacity: 0.5, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {describe?.(bm) || (lang === 'es' ? `Marcador ${idx + 1}` : `Bookmark ${idx + 1}`)}
+            </span>
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemove(bm); }}
+                aria-label={lang === 'es' ? 'Quitar marcador' : 'Remove bookmark'}
+                title={lang === 'es' ? 'Quitar marcador' : 'Remove bookmark'}
+                style={{ border: 'none', background: 'none', color: colors.textMuted, cursor: 'pointer', padding: '2px', display: 'flex' }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
           <div style={{
             overflow: 'hidden',

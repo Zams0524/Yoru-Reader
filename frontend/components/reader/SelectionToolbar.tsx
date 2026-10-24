@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, Bookmark, StickyNote } from 'lucide-react';
+import { Copy, Bookmark, StickyNote, Volume2 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, type HighlightColor } from '../../utils/highlights';
 
 interface ReaderColors {
@@ -14,20 +14,24 @@ interface ReaderColors {
 
 interface SelectionToolbarProps {
   visible: boolean;
-  position: { x: number; y: number } | null;
+  /** x: centre of the selection, y: its top; bottom (optional): its bottom, to go below it when there is no room above. */
+  position: { x: number; y: number; bottom?: number } | null;
   selectedText: string;
   onCopy: () => void;
   onBookmark: () => void;
   onHighlight?: (color: HighlightColor) => void;
   onNote?: () => void;
+  /** Read aloud from the selection. */
+  onReadAloud?: () => void;
   colors: ReaderColors;
   lang: string;
 }
 
-const TOOLBAR_HALF_WIDTH = 170;
+const TOOLBAR_HALF_WIDTH = 180;
 
 /**
- * SelectionToolbar — floating toolbar on text selection: highlight colours, note, copy, bookmark.
+ * SelectionToolbar — floating toolbar on text selection: highlight colours, note, copy, bookmark,
+ * read aloud from here.
  */
 export default function SelectionToolbar({
   visible,
@@ -36,6 +40,7 @@ export default function SelectionToolbar({
   onBookmark,
   onHighlight,
   onNote,
+  onReadAloud,
   colors,
   lang,
 }: SelectionToolbarProps) {
@@ -64,7 +69,9 @@ export default function SelectionToolbar({
 
   // Keep the bar on screen, above the selection when there is room, below it otherwise.
   const x = Math.min(Math.max(position.x, TOOLBAR_HALF_WIDTH + 8), window.innerWidth - TOOLBAR_HALF_WIDTH - 8);
-  const top = position.y - 56 < 60 ? position.y + 34 : position.y - 56;
+  // A tall selection (vertical text, several lines) goes below its bottom, or inside it near its top.
+  const below = position.bottom !== undefined ? position.bottom + 12 : position.y + 34;
+  const top = position.y - 56 >= 60 ? position.y - 56 : below + 48 < window.innerHeight - 8 ? below : Math.max(8, position.y + 8);
 
   return (
     <div
@@ -124,6 +131,11 @@ export default function SelectionToolbar({
       <button type="button" style={btnStyle} onClick={onBookmark} aria-label={es ? 'Marcador' : 'Bookmark'} title={es ? 'Marcador' : 'Bookmark'} {...hover}>
         <Bookmark size={14} />
       </button>
+      {onReadAloud && (
+        <button type="button" style={btnStyle} onClick={onReadAloud} aria-label={es ? 'Leer en voz alta desde aquí' : 'Read aloud from here'} title={es ? 'Leer desde aquí' : 'Read from here'} {...hover}>
+          <Volume2 size={14} />
+        </button>
+      )}
     </div>
   );
 }

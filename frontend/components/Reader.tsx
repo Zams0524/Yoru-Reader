@@ -15,8 +15,8 @@ import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
 import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reader/ReaderEngine';
-import NativeReaderHost from './reader/NativeReaderHost';
-import { isNativeReaderAvailable } from '../utils/nativeReader';
+import NativeReaderHost, { type NativeTextSelection } from './reader/NativeReaderHost';
+import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
@@ -839,12 +839,45 @@ export default function Reader({
     };
   }, [handleSelection, triggerWordLookup]);
 
+  // A selection made on the native page (long press) is not a DOM selection: the plugin draws it.
+  const nativeSelectionRef = useRef(false);
+  /** Ends the text selection, in the WebView or on the native page, and hides its toolbar. */
+  const endSelection = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    if (nativeSelectionRef.current) {
+      nativeSelectionRef.current = false;
+      void NativeReader.clearSelection().catch(() => {});
+    }
+    setSelection(null);
+  }, []);
+
+  const handleNativeSelection = useCallback((sel: NativeTextSelection | null) => {
+    if (!sel) {
+      if (nativeSelectionRef.current) {
+        nativeSelectionRef.current = false;
+        setSelection(null);
+      }
+      return;
+    }
+    nativeSelectionRef.current = true;
+    setSelectedWord(null);
+    setSelection({
+      visible: true,
+      native: true,
+      rect: { x: (sel.rect.left + sel.rect.right) / 2, y: sel.rect.top, bottom: sel.rect.bottom },
+      paragraphId: sel.paragraphId,
+      text: sel.text,
+      offsets: sel.offsets,
+      visibleText: sel.visibleText,
+    });
+  }, []);
+
   const handleCopyText = useCallback(() => {
     if (!selection) return;
     navigator.clipboard.writeText(selection.text);
     showToast(lang === 'es' ? 'Texto copiado al portapapeles' : 'Text copied to clipboard', 'success');
-    window.getSelection()?.removeAllRanges();
-  }, [selection, lang]);
+    endSelection();
+  }, [selection, lang, endSelection]);
 
   const handleToggleBookmark = useCallback((paragraphId: number, content: string) => {
     let next;
@@ -859,6 +892,39 @@ export default function Reader({
     setBookmarks(next);
     db.saveBookBookmarks(book.id, next);
   }, [bookmarks, book.id, lang]);
+
+  // ── Page bookmarks (ReadEra-style ribbons) ──
+  // A page is bookmarked when a bookmark sits on the paragraph at its top (the one progress keeps).
+  const pageParagraph = currentProgress.lastIndex;
+  const isPageBookmarked = bookmarks.some((b) => b.paragraphId === pageParagraph);
+  const handleTogglePageBookmark = useCallback(() => {
+    const exists = bookmarks.some((b) => b.paragraphId === pageParagraph);
+    const next = exists
+      ? bookmarks.filter((b) => b.paragraphId !== pageParagraph)
+      : [...bookmarks, { paragraphId: pageParagraph, content: bookParagraphText(book, pageParagraph).slice(0, 120), page: true, createdAt: new Date().toISOString() }];
+    showToast(exists ? (lang === 'es' ? 'Marcador eliminado' : 'Bookmark removed') : (lang === 'es' ? 'Página marcada' : 'Page bookmarked'), 'success');
+    setBookmarks(next);
+    db.saveBookBookmarks(book.id, next);
+  }, [bookmarks, pageParagraph, book, lang, showToast]);
+  const handleRemoveBookmark = useCallback((bm: { paragraphId: number }) => {
+    const next = bookmarks.filter((b) => b.paragraphId !== bm.paragraphId);
+    setBookmarks(next);
+    db.saveBookBookmarks(book.id, next);
+  }, [bookmarks, book.id]);
+  // Where each bookmark is on the page bar (characters before its paragraph).
+  const bookChapters = book.chapters;
+  const paragraphChars = useMemo(() => bookParagraphChars({ chapters: bookChapters }), [bookChapters]);
+  const bookmarkMarks = useMemo(() => Array.from(new Set(
+    bookmarks.map((b) => paragraphChars[b.paragraphId]).filter((chars): chars is number => Number.isFinite(chars)),
+  )), [bookmarks, paragraphChars]);
+  const describeBookmark = useCallback((bm: { paragraphId: number }) => {
+    const sections = engineApiRef.current?.getSections() || [];
+    const section = sections.find((s) => bm.paragraphId >= s.startParagraphId && bm.paragraphId <= s.lastIndex);
+    const percent = currentProgress.totalChars > 0 && Number.isFinite(paragraphChars[bm.paragraphId])
+      ? ` · ${Math.floor((paragraphChars[bm.paragraphId] / currentProgress.totalChars) * 100)} %`
+      : '';
+    return `${section?.title || (lang === 'es' ? 'Marcador' : 'Bookmark')}${percent}`;
+  }, [paragraphChars, currentProgress.totalChars, lang]);
 
   // ── Highlights & notes ──
   const [highlights, setHighlights] = useState<BookHighlight[]>(() => (book as any).highlights || []);
@@ -892,16 +958,33 @@ export default function Reader({
     const item = highlightFromSelection(color);
     if (!item) return;
     saveHighlights(withHighlight(highlights, item));
-    window.getSelection()?.removeAllRanges();
+    endSelection();
     showToast(lang === 'es' ? 'Subrayado guardado' : 'Highlight saved', 'success');
-  }, [highlightFromSelection, saveHighlights, withHighlight, highlights, lang, showToast]);
+  }, [highlightFromSelection, saveHighlights, withHighlight, highlights, lang, showToast, endSelection]);
 
   const handleNoteSelection = useCallback(() => {
     const item = highlightFromSelection('yellow');
     if (!item) return;
-    window.getSelection()?.removeAllRanges();
-    setNoteDraft({ highlight: item, isNew: true });
-  }, [highlightFromSelection]);
+    endSelection();
+    // Selecting inside a saved highlight edits its note (a long press on it, on the phone).
+    const existing = highlights.find((h) => h.paragraphId === item.paragraphId && h.start < item.end && item.start < h.end);
+    if (existing) setNoteDraft({ highlight: existing, isNew: false });
+    else setNoteDraft({ highlight: item, isNew: true });
+  }, [highlightFromSelection, endSelection, highlights]);
+
+  /** Reads aloud from the selected text instead of from the top of the page (like ReadEra). */
+  const handleReadFromSelection = useCallback(() => {
+    if (!selection) return;
+    const from = { paragraphId: selection.paragraphId, offset: selection.offsets?.start ?? 0 };
+    endSelection();
+    setIsReadAloudOpen(true);
+    if (readAloud.status === 'idle') readAloud.start(from);
+    else {
+      // The native reader builds what it reads from the page on screen once reading is idle.
+      readAloud.stop();
+      window.setTimeout(() => readAloud.start(from), 150);
+    }
+  }, [selection, endSelection, readAloud]);
 
   // Draw saved highlights on whatever paragraphs are rendered; redraw when the page content changes.
   useEffect(() => {
@@ -960,20 +1043,21 @@ export default function Reader({
   const handleBookmarkSelection = useCallback(() => {
     if (!selection) return;
     handleToggleBookmark(selection.paragraphId, selection.text);
-    window.getSelection()?.removeAllRanges();
-  }, [selection, handleToggleBookmark]);
+    endSelection();
+  }, [selection, handleToggleBookmark, endSelection]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
       const selectionObj = window.getSelection();
       if (!selectionObj || selectionObj.isCollapsed || !selectionObj.rangeCount) {
-        setSelection(null);
+        // The native page's selection is not in the DOM: an empty DOM selection says nothing about it.
+        if (!nativeSelectionRef.current) setSelection(null);
         return;
       }
       
       const text = selectionObj.toString().trim();
       if (!text) {
-        setSelection(null);
+        if (!nativeSelectionRef.current) setSelection(null);
         return;
       }
 
@@ -2299,6 +2383,8 @@ export default function Reader({
         onToggleReadingSpeed={handleToggleReadingMeasurement}
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenNotes={() => setSidebarMode('notes')}
+        isPageBookmarked={isPageBookmarked}
+        onTogglePageBookmark={handleTogglePageBookmark}
         bookAuthor={book?.author || ''}
         sectionTitle={engineApiRef.current?.getSections()[currentProgress.currSection]?.title || ''}
         isReadingAloud={isReadAloudOpen}
@@ -2391,7 +2477,19 @@ export default function Reader({
         lang={lang}
         accent={colors.accent}
         rtl={readerSettings.vertical}
+        marks={bookmarkMarks}
       />
+
+      {isPageBookmarked && !isHeaderVisible && (
+        <button
+          type="button"
+          className="reader-page-ribbon"
+          style={{ '--ribbon-color': colors.accent } as React.CSSProperties}
+          onClick={handleTogglePageBookmark}
+          aria-label={lang === 'es' ? 'Quitar marcador de esta página' : 'Remove page bookmark'}
+          title={lang === 'es' ? 'Quitar marcador de esta página' : 'Remove page bookmark'}
+        />
+      )}
 
       {isReadAloudOpen && (
         <ReadAloudBar
@@ -2448,6 +2546,8 @@ export default function Reader({
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
           bottomReserve={isReadAloudOpen ? readAloudReach.low : 0}
+          highlights={highlights}
+          onSelection={handleNativeSelection}
         />
       ) : (
         <ReaderEngine
@@ -2787,6 +2887,7 @@ export default function Reader({
           onBookmark={handleBookmarkSelection}
           onHighlight={selection.offsets ? handleHighlightSelection : undefined}
           onNote={selection.offsets ? handleNoteSelection : undefined}
+          onReadAloud={handleReadFromSelection}
           colors={colors}
           lang={lang}
         />
@@ -2894,6 +2995,8 @@ export default function Reader({
           }}
           bookmarks={bookmarks}
           onGoToBookmark={(bm: any) => goToParagraphAnywhere(bm.paragraphId)}
+          onToggleBookmark={handleRemoveBookmark}
+          describeBookmark={describeBookmark}
           onModeChange={setSidebarMode}
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}

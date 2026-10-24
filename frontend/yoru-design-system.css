@@ -2609,6 +2609,57 @@ textarea:focus-visible,
   background: color-mix(in srgb, var(--pagebar-accent, #ffd54a) 55%, transparent);
 }
 
+/* Page bookmarks on the slider: a small ribbon each, a tap goes there. */
+.reader-pagebar-marks {
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  top: -12px;
+  height: 16px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.reader-pagebar-marks button {
+  position: absolute;
+  top: 0;
+  width: 24px;
+  height: 18px;
+  margin-left: -12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.reader-pagebar-marks button::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  width: 10px;
+  height: 14px;
+  background: var(--pagebar-accent, #ffd54a);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+}
+
+/* Ribbon in the corner of a bookmarked page (the bars hide it; their button shows the state). */
+.reader-page-ribbon {
+  position: fixed;
+  top: 0;
+  right: 14px;
+  z-index: 9990;
+  width: 16px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: var(--ribbon-color, #ffd54a);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+  opacity: 0.9;
+  cursor: pointer;
+}
+
 .reader-pagebar-track input[type="range"] {
   position: relative;
   width: 100%;
