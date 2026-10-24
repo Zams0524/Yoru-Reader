@@ -49,16 +49,20 @@ const ENGINE_PAGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDo
 interface PitchAccentGraphProps {
   reading: string;
   position: number;
+  // Small line without mora labels, next to the reading in the popup.
+  compact?: boolean;
 }
 
 // Beautiful Interactive SVG Pitch Accent Graph
-function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
+function PitchAccentGraph({ reading, position, compact = false }: PitchAccentGraphProps) {
   const morae = getPitchMorae(reading);
   if (morae.length === 0) return null;
 
-  const nodeSpacing = 30;
-  const height = 50;
-  const padding = 12;
+  const nodeSpacing = compact ? 13 : 30;
+  const height = compact ? 20 : 50;
+  const padding = compact ? 5 : 12;
+  const highY = compact ? 5 : 12;
+  const lowY = compact ? 15 : 28;
   const width = morae.length * nodeSpacing + padding * 2;
 
   const getLevel = (idx: number) => {
@@ -77,7 +81,7 @@ function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
   const points = morae.map((mora, idx) => {
     const x = padding + idx * nodeSpacing;
     const level = getLevel(idx);
-    const y = level === 1 ? 12 : 28; // High node at 12, Low node at 28
+    const y = level === 1 ? highY : lowY;
     return { x, y, mora, idx, level };
   });
 
@@ -85,8 +89,22 @@ function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
   if (position > 0 && position <= morae.length) {
     const lastHighPoint = points[position - 1];
     const nextX = lastHighPoint.x + nodeSpacing / 2;
-    const dropY = 28; // Drop to low level (28)
+    const dropY = lowY;
     dropLine = { x1: lastHighPoint.x, y1: lastHighPoint.y, x2: nextX, y2: dropY };
+  }
+
+  if (compact) {
+    return (
+      <svg width={width} height={height} style={{ overflow: 'visible', flexShrink: 0 }} aria-label={`${reading} [${position}]`}>
+        {points.slice(1).map((pt, idx) => (
+          <line key={`line-${idx}`} x1={points[idx].x} y1={points[idx].y} x2={pt.x} y2={pt.y} stroke="#38bdf8" strokeWidth="1.5" />
+        ))}
+        {dropLine && <line x1={dropLine.x1} y1={dropLine.y1} x2={dropLine.x2} y2={dropLine.y2} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="2 2" />}
+        {points.map(pt => (
+          <circle key={`node-${pt.idx}`} cx={pt.x} cy={pt.y} r="2.5" fill={pt.level === 1 ? '#38bdf8' : '#1e293b'} stroke="#38bdf8" strokeWidth="1.2" />
+        ))}
+      </svg>
+    );
   }
 
   return (
@@ -713,8 +731,8 @@ export default function Reader({
       const available = wordInUpperHalf
         ? window.innerHeight - safeBottom - popupPos.targetBottom - gap - margin
         : popupPos.targetTop - safeTop - gap - margin;
-      // About a third of the screen, so most of the page (and the highlighted word) stays in view.
-      const maxHeight = Math.max(150, Math.min(Math.round(window.innerHeight * 0.34), available));
+      // Under a third of the screen, so most of the page (and the highlighted word) stays in view.
+      const maxHeight = Math.max(140, Math.min(Math.round(window.innerHeight * 0.28), available));
       const top = wordInUpperHalf ? window.innerHeight - safeBottom - margin : safeTop + margin;
       setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
       setPopupPos(current => current.x === margin && current.y === top && current.anchorBottom === wordInUpperHalf
@@ -2906,7 +2924,7 @@ export default function Reader({
             background: colors.popoverBg,
             border: `1px solid ${colors.border}`,
             borderRadius: '16px',
-            padding: window.innerWidth < 768 ? '10px 14px' : '14px',
+            padding: window.innerWidth < 768 ? '8px 12px' : '14px',
             boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
             display: 'flex',
             flexDirection: 'column',
@@ -2928,7 +2946,9 @@ export default function Reader({
             const headReading = (!dictLoading && dictEntry?.isFromYomitan && dictEntry?.reading) || selectedWord.reading;
             const badges = dictLoading ? [] : frequencyBadges(dictEntry?.frequencies, lang);
             const senses: any[] = !dictLoading && dictEntry?.definitions ? dictEntry.definitions : [];
-            const visibleSenses = showAllSenses ? senses : senses.slice(0, 3);
+            const phone = window.innerWidth < 768;
+            const senseLimit = phone ? 2 : 3;
+            const visibleSenses = showAllSenses ? senses : senses.slice(0, senseLimit);
             const alternatives: any[] = !dictLoading && dictEntry?.alternatives ? dictEntry.alternatives : [];
             // Only the pitch of the reading shown (御 has お, ご, おん… and the popup shows ご).
             const hira = (text: string) => (text || '').replace(/[\u30a1-\u30f6]/g, char => String.fromCharCode(char.charCodeAt(0) - 0x60));
@@ -2949,24 +2969,25 @@ export default function Reader({
             let previousDictionary = '';
 
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {window.innerWidth < 768 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: phone ? '6px' : '8px' }}>
+                {phone && (
                   <div aria-hidden="true" style={{ width: '34px', height: '4px', borderRadius: '2px', background: colors.border || 'rgba(255,255,255,0.15)', alignSelf: 'center', marginTop: '-2px' }} />
                 )}
 
                 {/* Word, reading and audio */}
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-                  <span style={{ fontSize: window.innerWidth < 768 ? '1.6rem' : '1.75rem', fontWeight: 700, lineHeight: 1.05, color: colors.textMain }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: phone ? '1.35rem' : '1.75rem', fontWeight: 700, lineHeight: 1.05, color: colors.textMain }}>
                     {headword}
                   </span>
                   {headReading && headReading !== headword && (
-                    <span style={{ fontSize: '0.92rem', color: colors.textMuted, lineHeight: 1.4 }}>{headReading}</span>
+                    <span style={{ fontSize: '0.88rem', color: colors.textMuted, lineHeight: 1.4 }}>{headReading}</span>
                   )}
+                  {accent && <PitchAccentGraph compact reading={accent.reading || selectedWord.reading} position={accent.position} />}
                   <button
                     type="button"
                     onClick={playSelectedWordAudio}
                     style={{
-                      marginLeft: 'auto', width: '32px', height: '32px', flexShrink: 0, borderRadius: '50%',
+                      marginLeft: 'auto', width: '30px', height: '30px', flexShrink: 0, borderRadius: '50%',
                       background: 'transparent', border: `1px solid ${colors.border || 'rgba(255,255,255,0.1)'}`,
                       color: colors.textMuted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}
@@ -3000,8 +3021,6 @@ export default function Reader({
                   </div>
                 )}
 
-                {accent && <PitchAccentGraph reading={accent.reading || selectedWord.reading} position={accent.position} />}
-
                 {/* Senses */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {dictLoading ? (
@@ -3024,7 +3043,7 @@ export default function Reader({
                             {dictionary.replace(/\s*\[[^\]]*\]$/, '')}
                           </div>
                         )}
-                        <div style={{ display: 'flex', gap: '8px', fontSize: '0.88rem', lineHeight: 1.4, color: colors.textMain }}>
+                        <div style={{ display: 'flex', gap: '8px', fontSize: phone ? '0.84rem' : '0.88rem', lineHeight: 1.35, color: colors.textMain }}>
                           {senses.length > 1 && <span style={{ color: colors.textMuted, fontSize: '0.72rem', minWidth: '12px', paddingTop: '2px' }}>{idx + 1}</span>}
                           <div style={{ minWidth: 0 }}>
                             <span dangerouslySetInnerHTML={{ __html: sanitizeDictionaryHtml(glossary) }} />
@@ -3035,13 +3054,13 @@ export default function Reader({
                       </React.Fragment>
                     );
                   })}
-                  {senses.length > 3 && (
+                  {senses.length > senseLimit && (
                     <button
                       type="button"
                       onClick={() => setShowAllSenses(value => !value)}
                       style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#f2c866', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
                     >
-                      {showAllSenses ? (es ? 'Ver menos' : 'Show less') : (es ? `Ver más (${senses.length - 3})` : `Show more (${senses.length - 3})`)}
+                      {showAllSenses ? (es ? 'Ver menos' : 'Show less') : (es ? `Ver más (${senses.length - senseLimit})` : `Show more (${senses.length - senseLimit})`)}
                     </button>
                   )}
                 </div>
