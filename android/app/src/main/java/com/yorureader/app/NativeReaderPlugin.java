@@ -102,6 +102,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private File engineBook;
     private String engineLayout;
     private static final long ENGINE_IDLE_MS = 5 * 60 * 1000;
+    /** The first page of a fresh open fades in over the WebView's loading screen. */
+    private static final long FADE_IN_MS = 180;
     private final Runnable stopIdleEngine = () -> {
         engine.stop();
         engineBook = null;
@@ -527,11 +529,14 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             Config base = Config.from(settings, null);
             view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.kindleTaps, base.brightness);
             // A reload (new word states) keeps the page, the holes and the popup state until the
-            // new pages are ready; a fresh open starts blank.
+            // new pages are ready; a fresh open starts transparent, so the WebView's loading screen
+            // shows through until the first page fades in.
             if (view.getVisibility() != View.VISIBLE) {
                 view.setPages(null, null, null);
                 view.setHoles(new ArrayList<>());
                 popupOpen = false;
+                view.animate().cancel();
+                view.setAlpha(0f);
             }
             view.setVisibility(View.VISIBLE);
             pageCount = 0;
@@ -647,6 +652,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 pageCount = pages;
                 current = startPage;
                 publish();
+                if (view.getAlpha() < 1f) view.animate().alpha(1f).setDuration(FADE_IN_MS).withLayer().start();
                 call.resolve(positionResult(startPage, pages, startXPath));
             });
         } catch (Throwable e) {
@@ -1711,6 +1717,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             current = 0;
             if (view != null) {
                 view.setPages(null, null, null);
+                view.animate().cancel();
+                view.setAlpha(1f);
                 view.setVisibility(View.GONE);
             }
             engineHandler.post(() -> {

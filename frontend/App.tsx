@@ -79,6 +79,18 @@ export default function App() {
   const [books, setBooks] = useState<any[]>([]);
   const [activeBook, setActiveBook] = useState<any | null>(null);
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
+  // The reader's code loads while the library sits idle, so opening the first book does not wait
+  // for it ("Loading reader..." before the book's own loading screen).
+  useEffect(() => {
+    const preload = () => { void import('./components/Reader').catch(() => {}); };
+    const idle = (window as any).requestIdleCallback as ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    if (idle) {
+      const handle = idle(preload, { timeout: 4000 });
+      return () => (window as any).cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(preload, 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [libraryTab, setLibraryTab] = useState('library');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();

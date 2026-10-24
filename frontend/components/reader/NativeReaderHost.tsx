@@ -156,6 +156,12 @@ export default function NativeReaderHost({
   lang,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
+  // How long each step of the first open takes (one line in the log once the page is on screen).
+  const openTimingRef = useRef<{ start: number; marks: string[]; logged: boolean }>({ start: performance.now(), marks: [], logged: false });
+  const markOpen = (step: string) => {
+    const timing = openTimingRef.current;
+    if (!timing.logged) timing.marks.push(`${step} ${Math.round(performance.now() - timing.start)}`);
+  };
   const sections = useMemo(() => computeSections(book), [book]);
   const showFurigana = readerSettings.showFurigana !== false;
   const settings = nativeSettings(readerSettings, colors, lang);
@@ -173,17 +179,16 @@ export default function NativeReaderHost({
   }, []);
   const [jitenRevision, setJitenRevision] = useState(0);
   useEffect(() => onJitenChange(() => setJitenRevision((revision) => revision + 1)), []);
-  // Marking words in the popup changes states one by one: export once they settle. The states
-  // also arrive a moment after the reader mounts: the first open waits for them (statusesReady)
-  // instead of opening with every word "new" and reloading.
+  // Marking words in the popup changes states one by one: export once they settle. On Android the
+  // states are read synchronously when the profile loads, long before a book opens, so the first
+  // open takes them as they are (an empty list is a profile without states, not one still loading).
   const [exportStatuses, setExportStatuses] = useState(wordStatuses);
   const [statusesReady, setStatusesReady] = useState(false);
-  // States already there when the reader mounts (loaded before) need no wait.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setExportStatuses(wordStatuses);
       setStatusesReady(true);
-    }, statusesReady ? 700 : Object.keys(wordStatuses).length > 0 ? 0 : 400);
+    }, statusesReady ? 700 : 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wordStatuses]);
@@ -229,6 +234,7 @@ export default function NativeReaderHost({
       }
       opened = true;
       window.clearTimeout(showProgress);
+      markOpen('words');
       setWords(latest);
       setWordsSettled(true);
       setAnalysisProgress(null);
@@ -255,11 +261,17 @@ export default function NativeReaderHost({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [parserSettings, settings.textColor, settings.backgroundColor],
   );
-  const exported = useMemo(() => exportBookForNativeReader(book, {
-    showFurigana,
-    lineHtml: lineHtml || undefined,
-    wordCss: lineHtml ? wordStyle.css : '',
-  }), [book, showFurigana, lineHtml, wordStyle]);
+  const exported = useMemo(() => {
+    const started = performance.now();
+    const result = exportBookForNativeReader(book, {
+      showFurigana,
+      lineHtml: lineHtml || undefined,
+      wordCss: lineHtml ? wordStyle.css : '',
+    });
+    const timing = openTimingRef.current;
+    if (!timing.logged) timing.marks.push(`export(${Math.round(performance.now() - started)})`);
+    return result;
+  }, [book, showFurigana, lineHtml, wordStyle]);
   settings.underlines = lineHtml ? wordStyle.underlines : [];
   const [ready, setReady] = useState(false);
   const positionRef = useRef<NativePosition | null>(null);
@@ -331,7 +343,7 @@ export default function NativeReaderHost({
     const line = open.blockLines[hit.ordinal];
     const blockHtml = open.blocks[hit.ordinal];
     if (line === undefined || blockHtml === undefined) return;
-    await Promise.all([tokenizerReady, prepareLineWords(line)]);
+    await Promise.all([tokenizerReady(), prepareLineWords(line)]);
     const container = lookupRef.current;
     if (!container) return;
     let offset = xpathToTextOffset(blockHtml, hit.xpath);
@@ -384,11 +396,27 @@ export default function NativeReaderHost({
   const ttsHighlightColor = useMemo(() => ((0x40 << 24) | cssColorToInt(colors.accent || '#f2c866', 0xf2c866)) >>> 0, [colors.accent]);
   const ttsHighlightColorRef = useRef(ttsHighlightColor);
   ttsHighlightColorRef.current = ttsHighlightColor;
-  // The local parser (Kuromoji) loads once; until then words would be split by script only.
-  const [tokenizerReady] = useState(() => initTokenizer().catch(() => undefined));
+  // The local parser (Kuromoji) loads once; until then words would be split by script only. Taps
+  // need it, the open does not (a book analysed before is read from IndexedDB): building it on the
+  // main thread while the book opens would slow the open, so it starts once the page is on screen.
+  const tokenizerReady = () => initTokenizer().catch(() => undefined);
+  useEffect(() => { if (ready) void tokenizerReady(); }, [ready]);
   const findWordRef = useRef(findWord);
   findWordRef.current = findWord;
   const appliedSettingsRef = useRef('');
+  // One loading screen from the moment the reader mounts until the first page is on screen (the
+  // native page fades in over it). It waits a moment so a quick open shows nothing at all.
+  const es = lang === 'es';
+  const [loaderShown, setLoaderShown] = useState(false);
+  const [loaderGone, setLoaderGone] = useState(false);
+  useEffect(() => {
+    if (ready) {
+      const timer = window.setTimeout(() => setLoaderGone(true), 260);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => setLoaderShown(true), 150);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
   // Leaving the reader closes the engine (a reload keeps it and the page on screen).
   useEffect(() => () => { void NativeReader.close().catch(() => {}); }, []);
 
@@ -409,8 +437,10 @@ export default function NativeReaderHost({
     ];
     (async () => {
       try {
+        markOpen('statuses');
         await ensureNativeBook(toOpen, () => cancelled);
         if (cancelled) return;
+        markOpen('written');
         const paragraph = Number(book.progress?.currentPage) || 0;
         const saved = loadNativePosition(String(book.id));
         // Reloaded here (word states, furigana): the character at the top of the page on screen,
@@ -439,6 +469,11 @@ export default function NativeReaderHost({
         appliedSettingsRef.current = JSON.stringify(settingsRef.current);
         reportRef.current(position);
         setReady(true);
+        const timing = openTimingRef.current;
+        if (!timing.logged) {
+          timing.logged = true;
+          console.info(`[YoruOpen] ${timing.marks.join(', ')}, engine ${Math.round(performance.now() - timing.start)} ms`);
+        }
       } catch (error) {
         if (!cancelled) callbacks.current.onError?.(error instanceof Error ? error.message : String(error));
       }
@@ -733,11 +768,23 @@ export default function NativeReaderHost({
       className="native-reader-page"
       style={{ flex: 1, width: '100%', height: '100%', background: colors.bg, position: 'relative', overflow: 'hidden' }}
     >
-      {!ready && analysisProgress !== null && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: colors.textMain, opacity: 0.8, fontFamily: 'var(--font-ui), sans-serif', fontSize: 15 }}>
-          <div>Preparando el libro…</div>
-          <div style={{ width: 160, height: 4, borderRadius: 2, background: 'rgba(127,127,127,0.25)', overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round(analysisProgress * 100)}%`, height: '100%', background: colors.accent || '#f2c866', transition: 'width 0.2s' }} />
+      {loaderShown && !loaderGone && (
+        <div
+          className={`native-reader-loading${ready ? ' is-done' : ''}`}
+          role="status"
+          aria-live="polite"
+          style={{ color: colors.textMain, '--native-loading-accent': colors.accent || '#f2c866' } as React.CSSProperties}
+        >
+          {book.title && <div className="native-reader-loading-title">{book.title}</div>}
+          <div className="native-reader-loading-track">
+            {analysisProgress !== null
+              ? <div className="native-reader-loading-fill" style={{ width: `${Math.max(4, Math.round(analysisProgress * 100))}%` }} />
+              : <div className="native-reader-loading-fill is-indeterminate" />}
+          </div>
+          <div className="native-reader-loading-label">
+            {analysisProgress !== null
+              ? `${es ? 'Preparando el libro' : 'Preparing the book'}… ${Math.round(analysisProgress * 100)} %`
+              : es ? 'Abriendo el libro…' : 'Opening the book…'}
           </div>
         </div>
       )}
