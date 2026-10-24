@@ -1,8 +1,9 @@
 {
-  "webVersion": "1.2.8.59",
+  "webVersion": "1.2.8.60",
   "nativeVersionCode": 158,
-  "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
-  "sha256": "3e0547b231e5926d5899406632b99c9ae709e4dc20a838f5334dba5097bd0f15",
-  "size": 38014897,
-  "description": "Yoru Reader interface v1.2.8.59"
+  "url": null,
+  "sha256": "ec7a648a2c1a239d09db27557ad6e0880fdccf8109c55230f0c798e3e5bb178f",
+  "size": 38017217,
+  "description": "Yoru Reader interface v1.2.8.60",
+  "blockedReason": "Android native code changed without a versionCode bump; publish a new APK."
 }
