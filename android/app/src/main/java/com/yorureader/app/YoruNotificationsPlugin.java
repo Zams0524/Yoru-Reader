@@ -141,8 +141,9 @@ public class YoruNotificationsPlugin extends Plugin {
         state.sentence = call.getString("sentence", "");
         state.showSentence = Boolean.TRUE.equals(call.getBoolean("showSentence", true));
         state.playing = Boolean.TRUE.equals(call.getBoolean("playing", false));
-        state.positionMs = call.getLong("positionMs", 0L);
-        state.durationMs = call.getLong("durationMs", 0L);
+        // getLong only takes values that arrived as Long; small numbers come as Integer.
+        state.positionMs = call.getData().optLong("positionMs", 0L);
+        state.durationMs = call.getData().optLong("durationMs", 0L);
         state.note = call.getString("note", "");
         Float rate = call.getFloat("rate", 1f);
         state.rate = rate == null ? 1f : rate;

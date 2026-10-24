@@ -100,9 +100,11 @@ export interface ReadAloudPosition {
   /** Characters of the section before this sentence, and in all of it (to estimate times). */
   charsBefore: number;
   charsTotal: number;
+  /** The last chapter heading read in this section ('' until one is read). */
+  heading: string;
 }
 
-const EMPTY_POSITION: ReadAloudPosition = { index: 0, total: 0, text: '', charsBefore: 0, charsTotal: 0 };
+const EMPTY_POSITION: ReadAloudPosition = { index: 0, total: 0, text: '', charsBefore: 0, charsTotal: 0, heading: '' };
 
 export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const RATE_STORAGE = 'yoru_read_aloud_rate';
@@ -122,8 +124,10 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   const sentencesRef = useRef<Sentence[]>([]);
   // Characters before each sentence of sentencesRef (and the total at the end).
   const charsBeforeRef = useRef<number[]>([0]);
+  const headingRef = useRef('');
   const setSentences = (list: Sentence[]) => {
     sentencesRef.current = list;
+    headingRef.current = '';
     const before = [0];
     for (const sentence of list) before.push(before[before.length - 1] + sentence.text.length);
     charsBeforeRef.current = before;
@@ -168,7 +172,10 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
 
       indexRef.current = index;
       const charsBefore = charsBeforeRef.current;
+      const block = blocksOf(content)[sentence.ordinal];
+      if (block && /^H[1-3]$/.test(block.tagName)) headingRef.current = blockText(block).trim();
       setPosition({
+        heading: headingRef.current,
         index,
         total: sentencesRef.current.length,
         text: sentence.text,

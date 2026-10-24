@@ -82,7 +82,8 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
       || (minutesLeft ? (es ? `Se apaga en ${minutesLeft} min` : `Stops in ${minutesLeft} min`) : '');
     const state = {
       bookTitle: book.title || '',
-      chapter,
+      // The heading just read names the chapter better than the reader's "Chapter 9" for untitled ones.
+      chapter: position.heading || chapter,
       sentence: position.text,
       showSentence,
       playing: status === 'playing',
