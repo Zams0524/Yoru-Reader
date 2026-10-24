@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Loader2, MoreVertical, Plus, Trash2, Upload, X } from 'lucide-react';
 import { deleteDictionary, getInstalledDictionaries, importYomitanZip, installBundledDictionary } from '../../utils/yomitanDB';
 import {
-  getPackProgress, installRecommendedPack, isFrequencyDictionary, isPitchDictionary, isTermDictionary,
+  getPackProgress, installRecommendedPack, isFrequencyDictionary, isPitchDictionary,
   packItems, packStatus, subscribePackProgress, type PackProgress
 } from '../../utils/dictionaryPack';
 import type { ConfirmOptions } from '../ConfirmModal';

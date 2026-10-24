@@ -3055,10 +3055,10 @@ export default function Reader({
                         key={`${alt.term}:${alt.reading}`}
                         type="button"
                         onClick={() => void lookupAlternative(alt.term, alt.reading)}
-                        title={alt.glossary}
+                        title={`${alt.term}【${alt.reading}】 ${alt.glossary}`}
                         style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '6px', padding: '2px 8px', color: colors.textMain, fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
                       >
-                        {alt.term}
+                        {alt.term === headword ? alt.reading : alt.term}
                       </button>
                     ))}
                   </div>
