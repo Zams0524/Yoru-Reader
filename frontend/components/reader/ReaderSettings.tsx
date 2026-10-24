@@ -301,7 +301,7 @@ export default function ReaderSettings({
               className={`theme-card ${activeTheme === 'light' ? 'active' : ''}`}
               onClick={() => onSettingChange('theme', 'light')}
             >
-              <div style={{ background: '#ffffff', color: '#121214', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(0,0,0,0.1)' }}>
+              <div style={{ background: '#f4f2ed', color: '#1c1b19', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(0,0,0,0.1)' }}>
                 Aa
               </div>
               <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700 }}>White</div>
@@ -312,7 +312,7 @@ export default function ReaderSettings({
               className={`theme-card ${activeTheme === 'sepia' ? 'active' : ''}`}
               onClick={() => onSettingChange('theme', 'sepia')}
             >
-              <div style={{ background: '#fcfaf2', color: '#5c4b37', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(92, 75, 55, 0.2)' }}>
+              <div style={{ background: '#efe2c6', color: '#4a3826', width: '60px', height: '36px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.95rem', border: '1px solid rgba(92, 75, 55, 0.2)' }}>
                 Aa
               </div>
               <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700 }}>Paper</div>
