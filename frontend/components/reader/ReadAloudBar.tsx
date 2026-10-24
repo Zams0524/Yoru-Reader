@@ -23,8 +23,11 @@ interface Props {
    * hidden); tapping the page brings the bars back, and the player with them.
    */
   autoHide?: boolean;
-  /** CSS px from the bottom of the screen up to the top of the player in its low place (the page keeps them free). */
-  onReach?: (px: number) => void;
+  /**
+   * CSS px from the bottom of the screen up to the top of the player (the page keeps them free):
+   * where it is now, and in its low place (with the reader's bars hidden).
+   */
+  onReach?: (reach: { current: number; low: number }) => void;
 }
 
 const AUTO_HIDE_MS = 4000;
@@ -39,8 +42,10 @@ export default function ReadAloudBar({
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar || !onReach) return;
-    const bottom = parseFloat(getComputedStyle(bar).bottom) - (raised ? RAISE_PX : 0);
-    if (Number.isFinite(bottom)) onReach(bottom + bar.offsetHeight + 6);
+    const bottom = parseFloat(getComputedStyle(bar).bottom);
+    if (!Number.isFinite(bottom)) return;
+    const current = bottom + bar.offsetHeight + 6;
+    onReach({ current, low: current - (raised ? RAISE_PX : 0) });
   }, [onReach, raised]);
   const [, setNow] = useState(Date.now());
   const [hidden, setHidden] = useState(false);

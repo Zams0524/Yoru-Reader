@@ -420,8 +420,10 @@ export default function Reader({
 
   const engineApiRef = useRef<ReaderEngineApi | null>(null);
   const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
-  // Height the read-aloud player takes at the bottom: the native page leaves it free while it is open.
-  const [readAloudReach, setReadAloudReach] = useState(0);
+  // Height the read-aloud player takes at the bottom: the page leaves it free while it is open. The
+  // web reader follows the player up when the bars show; the native page keeps its low place (a
+  // relayout there takes about half a second, and the page bar covers that strip anyway).
+  const [readAloudReach, setReadAloudReach] = useState({ current: 0, low: 0 });
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2400,7 +2402,7 @@ export default function Reader({
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
-          bottomReserve={isReadAloudOpen ? readAloudReach : 0}
+          bottomReserve={isReadAloudOpen ? readAloudReach.low : 0}
         />
       ) : (
         <ReaderEngine
@@ -2415,7 +2417,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
-          bottomReserve={isReadAloudOpen ? readAloudReach : 0}
+          bottomReserve={isReadAloudOpen ? readAloudReach.current : 0}
         />
       )}
 
