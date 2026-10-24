@@ -59,6 +59,22 @@ public class ReadAloudService extends Service {
         float rate = 1f;
         boolean spanish = true;
         Bitmap artwork;
+
+        ReadAloudState copy() {
+            ReadAloudState c = new ReadAloudState();
+            c.bookTitle = bookTitle;
+            c.chapter = chapter;
+            c.sentence = sentence;
+            c.showSentence = showSentence;
+            c.playing = playing;
+            c.positionMs = positionMs;
+            c.durationMs = durationMs;
+            c.note = note;
+            c.rate = rate;
+            c.spanish = spanish;
+            c.artwork = artwork;
+            return c;
+        }
     }
 
     static volatile Listener listener;
@@ -127,6 +143,29 @@ public class ReadAloudService extends Service {
             // Android 12+ refuses to start it from the background; the next start from the app will.
             Log.w(TAG, "Could not start the read-aloud player", error);
         }
+    }
+
+    /** The voice started a sentence (YoruTtsPlugin's queue): shows it without waiting for the page. */
+    static void advance(String sentence, long positionMs, long durationMs) {
+        ReadAloudState current = state;
+        ReadAloudState next = current.copy();
+        next.sentence = sentence == null ? "" : sentence;
+        next.positionMs = positionMs;
+        if (durationMs > 0) next.durationMs = durationMs;
+        next.playing = true;
+        state = next;
+        ReadAloudService running = instance;
+        if (running != null) running.handler.post(running::render);
+    }
+
+    /** The sleep timer ended read-aloud (YoruTtsPlugin's queue). */
+    static void pausedBySleep() {
+        ReadAloudState next = state.copy();
+        next.playing = false;
+        next.note = "";
+        state = next;
+        ReadAloudService running = instance;
+        if (running != null) running.handler.post(running::render);
     }
 
     /** Removes the player (read-aloud stopped or closed in the app). */

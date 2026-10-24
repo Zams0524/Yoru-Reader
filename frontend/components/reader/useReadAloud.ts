@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import type { ReaderEngineApi } from './ReaderEngine';
-import { prefetchSentence, speakSentence, type SpeechHandle } from '../../utils/bookTts';
+import { YoruTts, prefetchSentence, speakSentence, type QueuedSentence, type SpeechHandle } from '../../utils/bookTts';
 import { READER_BLOCK_SELECTOR, blockText, rangeForOffsets, setNamedHighlight } from '../../utils/readerText';
 
 /**
  * Reads the open book aloud sentence by sentence, like ReadEra: highlights the sentence being
  * read (CSS Custom Highlight API, so the page DOM is untouched), turns pages and sections on its
  * own, and supports previous/next sentence, speed and a sleep timer.
+ *
+ * Android: the sentences are handed to the system engine as a queue (YoruTts.speakQueue) instead
+ * of asking for one at a time, because Chromium throttles the page's own timers once the screen is
+ * off or Yoru is in the background — a loop that waited for each sentence to finish fell silent
+ * there. The engine works through the queue on its own and reports each sentence as it starts
+ * (queueSentence), so the highlight, the page and the notification follow even while the page is
+ * not actively running. Desktop and the browser keep the original one-at-a-time loop.
  */
 
 export type ReadAloudStatus = 'idle' | 'playing' | 'paused';
@@ -19,9 +27,15 @@ interface Sentence {
 }
 
 const HIGHLIGHT_NAME = 'yoru-read-aloud';
-const SPEAKABLE = /[぀-ヿ㐀-鿿豈-﫿A-Za-z0-9０-９Ａ-Ｚａ-ｚ]/;
+const SPEAKABLE = /[぀-ヿ㐀-鿿豈-﫿A-Za-z0-9０-９Ａ-Ｚａ-ｚ]/;
 // A sentence ends at 。！？!? (plus closing quotes/brackets) or at the end of the paragraph.
 const SENTENCE = /[^。！？!?…]*(?:[。！？!?]+|…+|$)[」』）)】〉》"’]*/g;
+
+// A rough speed of Japanese speech at 1×, so the system player's progress bar (which counts
+// milliseconds, not sentences) has times to show.
+export const READ_ALOUD_CHARS_PER_SECOND = 7;
+
+const isAndroidNativeTts = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 
 function blocksOf(content: HTMLElement): Element[] {
   return Array.from(content.querySelectorAll(READER_BLOCK_SELECTOR));
@@ -141,15 +155,155 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   const voiceRef = useRef(chosenVoice || voice);
   voiceRef.current = chosenVoice || voice;
   sleepRef.current = sleepEndsAt;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  // True only while a run is actually speaking (not paused, not idle): setRate/setVoice use it to
+  // decide whether to restart the current sentence at once.
+  const playingRef = useRef(false);
+  useEffect(() => { playingRef.current = status === 'playing'; }, [status]);
+
+  /** Shows `sentence` as the one being read: highlight, page-follow and the notification's position. */
+  const revealSentence = (content: HTMLElement, sentence: Sentence, index: number) => {
+    indexRef.current = index;
+    const charsBefore = charsBeforeRef.current;
+    const block = blocksOf(content)[sentence.ordinal];
+    if (block && /^H[1-3]$/.test(block.tagName)) headingRef.current = blockText(block).trim();
+    setPosition({
+      heading: headingRef.current,
+      index,
+      total: sentencesRef.current.length,
+      text: sentence.text,
+      charsBefore: charsBefore[index] ?? 0,
+      charsTotal: charsBefore[charsBefore.length - 1] ?? 0,
+    });
+    const range = rangeFor(content, sentence);
+    setHighlight(range);
+    if (range) apiRef.current?.revealRange(range);
+  };
 
   const stopSpeech = () => {
     const handle = handleRef.current;
     handleRef.current = null;
+    if (isAndroidNativeTts()) return YoruTts.stop().catch(() => undefined);
     return Promise.resolve(handle?.stop());
   };
 
+  // ---- Android: hands a whole batch of sentences to the system engine's queue. ----
+  // Holds, for the feed currently playing, which absolute sentence index each queue item (0, 1, 2…
+  // within that one speakQueue call) stands for. A fresh feed replaces it, so a late event from a
+  // feed that was stopped (its runId no longer matches runRef) is ignored.
+  const androidFeedRef = useRef<{ runId: number; indices: number[] }>({ runId: 0, indices: [] });
+  const runAndroidQueueRef = useRef<(runId: number, startIndex: number) => Promise<void>>(async () => {});
+  runAndroidQueueRef.current = async (runId: number, startIndex: number) => {
+    let index = startIndex;
+    setStatus('playing');
+    let content = apiRef.current?.getContent();
+    if (!content) {
+      if (runId === runRef.current) { setHighlight(null); setStatus('idle'); }
+      return;
+    }
+    let sentence = sentencesRef.current[index];
+    if (!sentence) {
+      // End of what is rendered: go on with the next section, or finish.
+      const previousFirst = blocksOf(content)[0];
+      if (!apiRef.current?.goToNextSection()) {
+        if (runId === runRef.current) { setHighlight(null); setStatus('idle'); }
+        return;
+      }
+      await waitForNewSection(apiRef.current!, previousFirst);
+      if (runId !== runRef.current) return;
+      content = apiRef.current!.getContent()!;
+      setSentences(collectSentences(content));
+      index = 0;
+      sentence = sentencesRef.current[0];
+      if (!sentence) {
+        if (runId === runRef.current) { setHighlight(null); setStatus('idle'); }
+        return;
+      }
+    }
+    if (runId !== runRef.current) return;
+
+    const charsBefore = charsBeforeRef.current;
+    const total = charsBefore[charsBefore.length - 1] ?? 0;
+    const items: QueuedSentence[] = [];
+    const indices: number[] = [];
+    for (let i = index; i < sentencesRef.current.length; i++) {
+      items.push({
+        id: i - index,
+        text: sentencesRef.current[i].text,
+        positionMs: Math.round(((charsBefore[i] ?? 0) / READ_ALOUD_CHARS_PER_SECOND) * 1000),
+        durationMs: Math.round((total / READ_ALOUD_CHARS_PER_SECOND) * 1000),
+      });
+      indices.push(i);
+    }
+    androidFeedRef.current = { runId, indices };
+    // Shown at once, instead of waiting for the engine's onStart for the first sentence.
+    revealSentence(content, sentence, index);
+    try {
+      await YoruTts.speakQueue({ items, replace: true, rate: rateRef.current, voice: voiceRef.current });
+    } catch (error: any) {
+      if (runId !== runRef.current) return;
+      onErrorRef.current?.(String(error?.message || error || 'TTS_ERROR'));
+      runRef.current++;
+      setStatus('paused');
+    }
+  };
+
+  useEffect(() => {
+    if (!isAndroidNativeTts()) return;
+    let removed = false;
+    const handles: Promise<{ remove: () => void }>[] = [
+      YoruTts.addListener('queueSentence', ({ id }) => {
+        const feed = androidFeedRef.current;
+        if (feed.runId !== runRef.current) return;
+        const absolute = feed.indices[id];
+        const content = apiRef.current?.getContent();
+        const sentence = absolute === undefined ? undefined : sentencesRef.current[absolute];
+        if (!content || !sentence) return;
+        revealSentence(content, sentence, absolute);
+      }),
+      YoruTts.addListener('queueDone', () => {
+        const feed = androidFeedRef.current;
+        if (feed.runId !== runRef.current) return;
+        const last = feed.indices[feed.indices.length - 1];
+        void runAndroidQueueRef.current(feed.runId, last === undefined ? 0 : last + 1);
+      }),
+      YoruTts.addListener('queueError', () => {
+        const feed = androidFeedRef.current;
+        if (feed.runId !== runRef.current) return;
+        onErrorRef.current?.('TTS_ERROR');
+        runRef.current++;
+        setStatus('paused');
+      }),
+      YoruTts.addListener('queueSleep', ({ id }) => {
+        const feed = androidFeedRef.current;
+        if (feed.runId !== runRef.current) return;
+        const absolute = feed.indices[id];
+        setSleepEndsAt(null);
+        runRef.current++;
+        setStatus('paused');
+        if (absolute !== undefined) indexRef.current = absolute + 1;
+      }),
+    ];
+    return () => {
+      removed = true;
+      void Promise.all(handles).then((list) => { if (removed) list.forEach((h) => h.remove()); });
+    };
+    // Refers only to refs and stable setState functions: safe to register once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keeps the native sleep timer in step with the one set from the UI.
+  useEffect(() => {
+    if (isAndroidNativeTts()) void YoruTts.setSleep({ at: sleepEndsAt ?? 0 }).catch(() => {});
+  }, [sleepEndsAt]);
+
   const run = useCallback(async (startIndex: number) => {
     const runId = ++runRef.current;
+    if (isAndroidNativeTts()) {
+      await runAndroidQueueRef.current(runId, startIndex);
+      return;
+    }
     let index = startIndex;
     setStatus('playing');
     for (;;) {
@@ -170,21 +324,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
         if (!sentence) continue;
       }
 
-      indexRef.current = index;
-      const charsBefore = charsBeforeRef.current;
-      const block = blocksOf(content)[sentence.ordinal];
-      if (block && /^H[1-3]$/.test(block.tagName)) headingRef.current = blockText(block).trim();
-      setPosition({
-        heading: headingRef.current,
-        index,
-        total: sentencesRef.current.length,
-        text: sentence.text,
-        charsBefore: charsBefore[index] ?? 0,
-        charsTotal: charsBefore[charsBefore.length - 1] ?? 0,
-      });
-      const range = rangeFor(content, sentence);
-      setHighlight(range);
-      if (range) apiRef.current?.revealRange(range);
+      revealSentence(content, sentence, index);
 
       const options = { rate: rateRef.current, voice: voiceRef.current };
       const upcoming = sentencesRef.current[index + 1];
@@ -196,7 +336,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
       } catch (error: any) {
         if (runId !== runRef.current) return;
         const code = String(error?.message || error || '');
-        onError?.(code);
+        onErrorRef.current?.(code);
         runRef.current++;
         setStatus('paused');
         return;
@@ -215,7 +355,8 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
       setHighlight(null);
       setStatus('idle');
     }
-  }, [apiRef, onError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiRef]);
 
   const start = useCallback(() => {
     const content = apiRef.current?.getContent();
@@ -247,7 +388,11 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   }, [run]);
 
   const skip = useCallback((delta: number) => {
-    void restartAt(Math.max(0, indexRef.current + delta));
+    // Set at once, not just once playback catches up: two quick taps (e.g. "previous" twice from
+    // the notification) must go back two sentences, not race each other to the same one.
+    const target = Math.max(0, indexRef.current + delta);
+    indexRef.current = target;
+    void restartAt(target);
   }, [restartAt]);
 
   /** Goes to the sentence that starts closest after `chars` characters into the section (the player's bar). */
@@ -271,7 +416,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     rateRef.current = value;
     try { localStorage.setItem(RATE_STORAGE, String(value)); } catch { /* ignore */ }
     // Apply at once: restart the current sentence at the new speed.
-    if (runRef.current && handleRef.current) void restartAt(indexRef.current);
+    if (playingRef.current) void restartAt(indexRef.current);
   }, [restartAt]);
 
   const setVoice = useCallback((value: string) => {
@@ -279,7 +424,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
     voiceRef.current = value || voice;
     try { localStorage.setItem(VOICE_STORAGE, value); } catch { /* ignore */ }
     // Hear the new voice at once.
-    if (handleRef.current) void restartAt(indexRef.current);
+    if (playingRef.current) void restartAt(indexRef.current);
   }, [restartAt, voice]);
 
   const setSleepMinutes = useCallback((minutes: number | null) => {
@@ -289,6 +434,7 @@ export function useReadAloud({ apiRef, voice, onError }: Options) {
   useEffect(() => () => {
     runRef.current++;
     handleRef.current?.stop();
+    if (isAndroidNativeTts()) void YoruTts.stop().catch(() => {});
     setHighlight(null);
   }, []);
 

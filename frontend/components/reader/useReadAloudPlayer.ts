@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
-import type { ReadAloudPosition, ReadAloudStatus } from './useReadAloud';
+import { READ_ALOUD_CHARS_PER_SECOND, type ReadAloudPosition, type ReadAloudStatus } from './useReadAloud';
 import {
   YoruNotifications,
   ensureNotificationPermission,
@@ -43,8 +43,6 @@ interface Options {
   onReturn: (message: string) => void;
 }
 
-// A rough speed of Japanese speech at 1×, to give the player's bar times (it shows minutes, not sentences).
-const CHARS_PER_SECOND = 7;
 const SLEEP_STEPS: (number | null)[] = [15, 30, 60, null];
 
 export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, lang, error, onClose, onReturn }: Options) {
@@ -87,8 +85,8 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
       sentence: position.text,
       showSentence,
       playing: status === 'playing',
-      positionMs: Math.round((position.charsBefore / CHARS_PER_SECOND) * 1000),
-      durationMs: Math.round((position.charsTotal / CHARS_PER_SECOND) * 1000),
+      positionMs: Math.round((position.charsBefore / READ_ALOUD_CHARS_PER_SECOND) * 1000),
+      durationMs: Math.round((position.charsTotal / READ_ALOUD_CHARS_PER_SECOND) * 1000),
       rate,
       note,
       lang,
@@ -134,7 +132,7 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
           controls.skip(-1);
           break;
         case 'seek':
-          controls.seekToChars((positionMs / 1000) * CHARS_PER_SECOND);
+          controls.seekToChars((positionMs / 1000) * READ_ALOUD_CHARS_PER_SECOND);
           break;
         case 'sleep': {
           // 15 → 30 → 60 min → off, starting over when the timer ran out on its own.
