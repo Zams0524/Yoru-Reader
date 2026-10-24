@@ -18,6 +18,7 @@ import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
 import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
+import { isPhoneUI } from '../utils/platform';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
@@ -2846,7 +2847,7 @@ const Library = React.memo(function Library({
                   <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
                 </div>
                 <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect')}
+                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
                   {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
                   {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
@@ -3864,9 +3865,13 @@ const Library = React.memo(function Library({
                 <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
               </h3>
               <p className="settings-card-desc">
-                {lang === 'es'
-                  ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
-                  : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.'}
+                {isPhoneUI()
+                  ? (lang === 'es'
+                    ? 'Importa, exporta y gestiona tus palabras. Importa mazos de Anki (.apkg), JPDB, listas de palabras o listas de frecuencia.'
+                    : 'Import, export and manage your words. Import Anki decks (.apkg), JPDB, word lists or frequency lists.')
+                  : (lang === 'es'
+                    ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
+                    : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.')}
               </p>
               <button 
                 type="button" 

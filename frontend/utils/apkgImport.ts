@@ -64,6 +64,95 @@ async function extractCollectionBytes(zip: JSZip): Promise<Uint8Array> {
   throw new Error('No se encontró una base de datos de Anki reconocible dentro del archivo (collection.anki2/anki21/anki21b).');
 }
 
+const COLLECTION_NAMES = ['collection.anki21b', 'collection.anki21', 'collection.anki2'];
+
+/**
+ * Reads just the collection database out of the .apkg zip, slicing the file instead of loading
+ * it whole. A deck with audio and images (e.g. Core 2k/6k) can be hundreds of MB, which a phone's
+ * WebView may not hold in memory at once; the collection itself is a few MB. Returns null when
+ * the zip can't be read this way, so the caller falls back to JSZip.
+ */
+async function readCollectionFromBlob(file: Blob): Promise<{ name: string; bytes: Uint8Array } | null> {
+  if (typeof file.slice !== 'function' || typeof DecompressionStream === 'undefined') return null;
+  const read = async (start: number, end: number) => new DataView(await file.slice(start, end).arrayBuffer());
+
+  // End of central directory record: in the last 22 bytes + up to 64 KB of comment.
+  const tailStart = Math.max(0, file.size - 65557);
+  const tail = await read(tailStart, file.size);
+  let eocd = -1;
+  for (let i = tail.byteLength - 22; i >= 0; i--) {
+    if (tail.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  let cdSize = tail.getUint32(eocd + 12, true);
+  let cdOffset = tail.getUint32(eocd + 16, true);
+  if (cdOffset === 0xffffffff || cdSize === 0xffffffff) {
+    // Zip64: the locator just before the EOCD points to the zip64 EOCD record.
+    const locator = eocd - 20;
+    if (locator < 0 || tail.getUint32(locator, true) !== 0x07064b50) return null;
+    const zip64Offset = Number(tail.getBigUint64(locator + 8, true));
+    const zip64 = await read(zip64Offset, zip64Offset + 56);
+    if (zip64.getUint32(0, true) !== 0x06064b50) return null;
+    cdSize = Number(zip64.getBigUint64(40, true));
+    cdOffset = Number(zip64.getBigUint64(48, true));
+  }
+
+  const cd = await read(cdOffset, cdOffset + cdSize);
+  const entries: Record<string, { method: number; compressedSize: number; localOffset: number }> = {};
+  const decoder = new TextDecoder();
+  for (let p = 0; p + 46 <= cd.byteLength && cd.getUint32(p, true) === 0x02014b50;) {
+    const method = cd.getUint16(p + 10, true);
+    let compressedSize = cd.getUint32(p + 20, true);
+    const uncompressedSize = cd.getUint32(p + 24, true);
+    const nameLen = cd.getUint16(p + 28, true);
+    const extraLen = cd.getUint16(p + 30, true);
+    const commentLen = cd.getUint16(p + 32, true);
+    let localOffset = cd.getUint32(p + 42, true);
+    const name = decoder.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nameLen));
+    if (COLLECTION_NAMES.includes(name)) {
+      // Zip64 extra field: 8-byte values for the 32-bit fields set to 0xFFFFFFFF, in this order.
+      for (let x = p + 46 + nameLen; x + 4 <= p + 46 + nameLen + extraLen;) {
+        const id = cd.getUint16(x, true);
+        const size = cd.getUint16(x + 2, true);
+        if (id === 0x0001) {
+          let q = x + 4;
+          if (uncompressedSize === 0xffffffff) q += 8;
+          if (compressedSize === 0xffffffff) { compressedSize = Number(cd.getBigUint64(q, true)); q += 8; }
+          if (localOffset === 0xffffffff) localOffset = Number(cd.getBigUint64(q, true));
+        }
+        x += 4 + size;
+      }
+      entries[name] = { method, compressedSize, localOffset };
+    }
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+
+  const name = COLLECTION_NAMES.find((n) => entries[n]);
+  if (!name) return null;
+  const entry = entries[name];
+  const local = await read(entry.localOffset, entry.localOffset + 30);
+  if (local.getUint32(0, true) !== 0x04034b50) return null;
+  const dataStart = entry.localOffset + 30 + local.getUint16(26, true) + local.getUint16(28, true);
+  const compressed = file.slice(dataStart, dataStart + entry.compressedSize);
+  if (entry.method === 0) return { name, bytes: new Uint8Array(await compressed.arrayBuffer()) };
+  if (entry.method !== 8) return null;
+  const stream = compressed.stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return { name, bytes: new Uint8Array(await new Response(stream).arrayBuffer()) };
+}
+
+/** The collection database from an .apkg/.colpkg file, zstd-decompressed when needed. */
+async function readCollectionBytes(file: File): Promise<Uint8Array> {
+  let direct: { name: string; bytes: Uint8Array } | null = null;
+  try {
+    direct = await readCollectionFromBlob(file);
+  } catch (err) {
+    console.warn('Reading the Anki collection by slices failed, loading the whole file instead:', err);
+  }
+  if (direct) return direct.name === 'collection.anki21b' ? zstdDecompress(direct.bytes) : direct.bytes;
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  return extractCollectionBytes(zip);
+}
+
 /**
  * Field names per notetype ID, in field order. Anki moved this out of the col.models JSON blob
  * into its own relational "fields" table in schema v18 (Anki 2.1.28+); modern Anki leaves
@@ -135,8 +224,7 @@ export async function parseApkgFile(file: File): Promise<ApkgRawCard[]> {
 
 /** Like parseApkgFile, plus each card's review history and the collection's creation time. */
 export async function parseApkgCollection(file: File): Promise<ApkgCollection> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  const bytes = await extractCollectionBytes(zip);
+  const bytes = await readCollectionBytes(file);
   const SQL = await loadSql();
   let db = new SQL.Database(bytes);
   try {

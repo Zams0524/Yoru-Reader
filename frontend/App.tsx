@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DictionaryInstallToast from './components/DictionaryInstallToast';
 import { Capacitor } from '@capacitor/core';
+import { isPhoneUI } from './utils/platform';
 const Library = React.lazy(() => import('./components/Library'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
@@ -664,7 +665,8 @@ export default function App() {
       }
     }
 
-    if (status !== 'known') return;
+    // Syncing the mark to Anki goes through AnkiConnect, which a phone can't reach.
+    if (status !== 'known' || isPhoneUI()) return;
 
     const savedAnki = localStorage.getItem('anki_settings_v2');
     if (!savedAnki) return;

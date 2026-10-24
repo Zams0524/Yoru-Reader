@@ -4,6 +4,7 @@ import { t } from '../utils/i18n';
 import AppAbout from './AppAbout';
 import { useConfirm } from './ConfirmModal';
 import { clearYomitanCache, getInstalledDictionaries } from '../utils/yomitanDB';
+import { isPhoneUI } from '../utils/platform';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const FONT_SIZE_STEPS = [16, 20, 24, 28, 32];
 
@@ -480,7 +481,9 @@ export default function SettingsModal({
       <h4 className="settings-panel-title">{lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management'}</h4>
       <div className="migaku-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
         <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          {lang === 'es' ? 'Configura la conexión con tu cliente de AnkiConnect para minar vocabulario e importar tus palabras desde Anki, JPDB, archivos locales o listas de frecuencia.' : 'Configure connection to AnkiConnect client for vocabulary mining, and import your words from Anki, JPDB, local files, or frequency lists.'}
+          {isPhoneUI()
+            ? (lang === 'es' ? 'Importa tus mazos de Anki (.apkg) con su progreso, o tus palabras desde JPDB, listas de palabras o listas de frecuencia.' : 'Import your Anki decks (.apkg) with their progress, or your words from JPDB, word lists or frequency lists.')
+            : (lang === 'es' ? 'Configura la conexión con tu cliente de AnkiConnect para minar vocabulario e importar tus palabras desde Anki, JPDB, archivos locales o listas de frecuencia.' : 'Configure connection to AnkiConnect client for vocabulary mining, and import your words from Anki, JPDB, local files, or frequency lists.')}
         </span>
         <button
           className="anki-open-settings-btn"

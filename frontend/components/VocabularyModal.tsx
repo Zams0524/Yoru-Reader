@@ -1,10 +1,11 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { X, Database, Upload, Download, RefreshCw, FileText, BarChart3, AlertTriangle } from 'lucide-react';
+import { X, Database, Upload, Download, RefreshCw, FileText, BarChart3, AlertTriangle, ChevronRight, ChevronLeft, Layers, ListOrdered, Archive, Link2 } from 'lucide-react';
 import { db } from '../utils/db';
 import { tokenizeText } from '../utils/japanese';
 import { useConfirm } from './ConfirmModal';
 import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils/yomitanDB';
 import { ankiConnectRequest } from '../utils/ankiConnect';
+import { isPhoneUI } from '../utils/platform';
 import { planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
 import { srsWordOfKey } from '../utils/srsCardKeys';
 
@@ -78,10 +79,12 @@ export default function VocabularyModal({
   isOpen, 
   onClose, 
   initialTab = 'summary', 
-  initialImportMethod = 'anki-connect' 
+  initialImportMethod = ''
 }: VocabularyModalProps) {
+  // AnkiConnect needs Anki running on the same computer, which a phone never has.
+  const ankiConnectAvailable = !isPhoneUI();
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [importMethod, setImportMethod] = useState(initialImportMethod);
+  const [importMethod, setImportMethod] = useState(initialImportMethod === 'anki-connect' && !ankiConnectAvailable ? '' : initialImportMethod);
   
   const { showConfirm, confirmModal } = useConfirm();
   const lang = db.getSettings().appLanguage || 'en';
@@ -1279,40 +1282,68 @@ export default function VocabularyModal({
             {activeTab === 'import' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 
-                {/* Method selector */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '8px' }}>
-                  {[
-                    { id: 'anki-connect', label: 'AnkiConnect' },
-                    { id: 'jpdb', label: 'JPDB' },
-                    { id: 'anki-file', label: lang === 'es' ? 'Archivo' : 'File' },
-                    { id: 'frequency', label: lang === 'es' ? 'Frecuencia' : 'Frequency' },
-                    { id: 'backup', label: lang === 'es' ? 'Copia JSON' : 'Backup JSON' }
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => setImportMethod(m.id)}
-                      style={{
-                        background: importMethod === m.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
-                        border: importMethod === m.id ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '6px',
-                        color: importMethod === m.id ? '#000' : '#fff',
-                        padding: '8px 4px',
-                        fontSize: '0.74rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
+                {/* Method list: one row per way to import; picking one shows only its panel. */}
+                {!importMethod ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[
+                      { id: 'anki-file', icon: Layers, highlight: true,
+                        title: lang === 'es' ? 'Mazo de Anki (.apkg)' : 'Anki deck (.apkg)',
+                        desc: lang === 'es' ? 'Copia tus tarjetas con su progreso, fechas e historial.' : 'Copies your cards with their progress, due dates and history.' },
+                      ...(ankiConnectAvailable ? [{ id: 'anki-connect', icon: Link2, highlight: false,
+                        title: lang === 'es' ? 'Anki abierto (AnkiConnect)' : 'Running Anki (AnkiConnect)',
+                        desc: lang === 'es' ? 'Lee un mazo directamente de Anki en esta computadora.' : 'Reads a deck straight from Anki on this computer.' }] : []),
+                      { id: 'word-list', icon: FileText, highlight: false,
+                        title: lang === 'es' ? 'Lista de palabras' : 'Word list',
+                        desc: lang === 'es' ? 'Archivo .txt o .csv, una palabra por línea.' : 'A .txt or .csv file, one word per line.' },
+                      { id: 'jpdb', icon: Database, highlight: false,
+                        title: 'JPDB',
+                        desc: lang === 'es' ? 'Tu vocabulario de jpdb.io.' : 'Your jpdb.io vocabulary.' },
+                      { id: 'frequency', icon: ListOrdered, highlight: false,
+                        title: lang === 'es' ? 'Lista de frecuencia' : 'Frequency list',
+                        desc: lang === 'es' ? 'Marca como conocidas las palabras más comunes.' : 'Marks the most common words as known.' },
+                      { id: 'backup', icon: Archive, highlight: false,
+                        title: lang === 'es' ? 'Copia de Yoru (JSON)' : 'Yoru backup (JSON)',
+                        desc: lang === 'es' ? 'Restaura una copia de tu vocabulario.' : 'Restores a copy of your vocabulary.' },
+                    ].map(m => {
+                      const Icon = m.icon;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setImportMethod(m.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'left',
+                            padding: '14px', borderRadius: '12px', cursor: 'pointer',
+                            background: m.highlight ? 'rgba(242, 200, 102, 0.08)' : 'var(--bg-card-hover)',
+                            border: m.highlight ? '1px solid var(--primary)' : '1px solid var(--border-light)',
+                            color: 'var(--text-main)'
+                          }}
+                        >
+                          <Icon size={20} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '0.92rem', fontWeight: 700 }}>{m.title}</span>
+                            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>{m.desc}</span>
+                          </span>
+                          <ChevronRight size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setImportMethod(''); setVocabFile(null); }}
+                    style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: '4px 0', color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    <ChevronLeft size={16} />
+                    {lang === 'es' ? 'Otras formas de importar' : 'Other ways to import'}
+                  </button>
+                )}
 
                 {/* Sub-panels */}
                 
                 {/* 2a. AnkiConnect Panel */}
-                {importMethod === 'anki-connect' && (
+                {importMethod === 'anki-connect' && ankiConnectAvailable && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.4', marginBottom: '8px' }}>
                       {lang === 'es' 
@@ -1607,27 +1638,88 @@ export default function VocabularyModal({
                   </div>
                 )}
 
-                {/* 2c. Archivo Panel */}
+                {/* 2c. Anki deck (.apkg) Panel */}
                 {importMethod === 'anki-file' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {lang === 'es' ? 'Importar un mazo de Anki' : 'Import an Anki deck'}
+                    </div>
+                    <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                      <li>{lang === 'es' ? <>En Anki: <b>Archivo › Exportar</b>, formato <b>Paquete de mazo de Anki (.apkg)</b>.</> : <>In Anki: <b>File › Export</b>, format <b>Anki Deck Package (.apkg)</b>.</>}</li>
+                      <li>{lang === 'es' ? <>Marca <b>Incluir información de programación</b> para conservar tu progreso.</> : <>Tick <b>Include scheduling information</b> to keep your progress.</>}</li>
+                      <li>{isPhoneUI()
+                        ? (lang === 'es' ? 'Pasa el archivo a este teléfono y elígelo abajo.' : 'Copy the file to this phone and choose it below.')
+                        : (lang === 'es' ? 'Elige el archivo abajo.' : 'Choose the file below.')}</li>
+                    </ol>
+
+                    <label
+                      className="reset-filter-btn"
+                      style={{
+                        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: isLoading ? 'default' : 'pointer',
+                        padding: '14px', fontSize: '0.92rem', fontWeight: 700,
+                        background: 'var(--primary)', borderColor: 'var(--primary)', color: '#000', opacity: isLoading ? 0.6 : 1
+                      }}
+                    >
+                      <Upload size={16} />
+                      <span>{lang === 'es' ? 'Elegir mazo (.apkg)' : 'Choose deck (.apkg)'}</span>
+                      <input
+                        type="file"
+                        // Android's picker turns accept into MIME types; .apkg has none, so any
+                        // accept list would grey the deck out. The name is checked after picking.
+                        accept={isPhoneUI() ? undefined : '.apkg,.colpkg'}
+                        disabled={isLoading}
+                        style={{ display: 'none' }}
+                        onChange={async e => {
+                          const file = e.target.files?.[0] || null;
+                          e.target.value = '';
+                          if (!file) return;
+                          if (!/\.(apkg|colpkg)$/i.test(file.name)) {
+                            await showConfirm({
+                              title: lang === 'es' ? 'No es un mazo de Anki' : 'Not an Anki deck',
+                              message: lang === 'es'
+                                ? `"${file.name}" no es un archivo .apkg. Expórtalo desde Anki como "Paquete de mazo de Anki".`
+                                : `"${file.name}" is not an .apkg file. Export it from Anki as an "Anki Deck Package".`,
+                              type: 'warning',
+                              confirmText: 'OK',
+                              cancelText: ''
+                            });
+                            return;
+                          }
+                          await handleImportApkgFile(file);
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                      {lang === 'es'
+                        ? 'Antes de guardar verás cuántas tarjetas quedan en cada estado. Si ya importaste este mazo, sus tarjetas se actualizan con el estado de Anki.'
+                        : 'Before saving you will see how many cards end up in each state. If you imported this deck before, its cards are updated to their state in Anki.'}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2c'. Word list Panel (.txt/.csv) */}
+                {importMethod === 'word-list' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
                       {lang === 'es'
-                        ? 'Carga un mazo de Anki exportado (.apkg/.colpkg) para importarlo con su progreso real, sin necesitar Anki abierto. También acepta texto plano (.txt) o delimitado por comas (.csv), leyendo la primera columna de cada línea como una palabra.'
-                        : 'Upload an exported Anki deck (.apkg/.colpkg) to import it with its real progress, without needing Anki open. Also accepts plain text (.txt) or comma-separated (.csv) files, reading the first column of each line as a word.'}
+                        ? 'Texto plano (.txt) o separado por comas (.csv): se lee la primera columna de cada línea como una palabra.'
+                        : 'Plain text (.txt) or comma-separated (.csv): the first column of each line is read as a word.'}
                     </div>
 
                     <label className="reset-filter-btn" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>
                       <Upload size={14} />
-                      <span>{vocabFile ? vocabFile.name : (lang === 'es' ? 'Seleccionar archivo .apkg, .txt o .csv' : 'Select .apkg, .txt or .csv file')}</span>
+                      <span>{vocabFile ? vocabFile.name : (lang === 'es' ? 'Elegir archivo .txt o .csv' : 'Choose a .txt or .csv file')}</span>
                       <input
                         type="file"
-                        accept=".txt,.csv,.apkg,.colpkg"
+                        // Android's picker turns accept into MIME types and greys out the rest.
+                        accept={isPhoneUI() ? undefined : '.txt,.csv'}
                         style={{ display: 'none' }}
                         onChange={e => setVocabFile(e.target.files?.[0] || null)}
                       />
                     </label>
 
-                    {!/\.(apkg|colpkg)$/i.test(vocabFile?.name || '') && (
+                    {(
                       <div className="yomitan-anki-row" style={{ padding: '4px 0' }}>
                         <div className="yomitan-anki-row-left" style={{ paddingRight: '12px' }}>
                           <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff' }}>{lang === 'es' ? 'Analizar y lematizar líneas' : 'Parse and lemmatize lines'}</div>
