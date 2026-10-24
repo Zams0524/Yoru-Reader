@@ -33,6 +33,23 @@ interface BookVocabCache {
   sentenceWordSets: Set<string>[];
 }
 
+/**
+ * Resolves once the reader shows the book's first page ('yoru-reader-opened'), or after timeoutMs.
+ * Analysing the whole book for its vocabulary stats competes with opening it (Kuromoji on the main
+ * thread), so it waits for this.
+ */
+function afterReaderOpened(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      window.removeEventListener('yoru-reader-opened', done);
+      window.clearTimeout(timer);
+      resolve();
+    };
+    const timer = window.setTimeout(done, timeoutMs);
+    window.addEventListener('yoru-reader-opened', done);
+  });
+}
+
 async function buildBookVocabCache(book: any): Promise<BookVocabCache> {
   const { tokenizeText } = await import('./utils/japanese');
   const uniqueWords = new Set<string>();
@@ -79,6 +96,18 @@ export default function App() {
   const [books, setBooks] = useState<any[]>([]);
   const [activeBook, setActiveBook] = useState<any | null>(null);
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
+  // The reader's code loads while the library sits idle, so opening the first book does not wait
+  // for it ("Loading reader..." before the book's own loading screen).
+  useEffect(() => {
+    const preload = () => { void import('./components/Reader').catch(() => {}); };
+    const idle = (window as any).requestIdleCallback as ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    if (idle) {
+      const handle = idle(preload, { timeout: 4000 });
+      return () => (window as any).cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(preload, 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [libraryTab, setLibraryTab] = useState('library');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
@@ -386,7 +415,9 @@ export default function App() {
         if (!cached) {
           if (!vocabCacheInFlightRef.current.has(bookId)) {
             vocabCacheInFlightRef.current.add(bookId);
-            void buildBookVocabCache(activeBook)
+            void afterReaderOpened(5000)
+              .then(() => new Promise((resolve) => window.setTimeout(resolve, 1500)))
+              .then(() => buildBookVocabCache(activeBook))
               .then((bookCache) => {
                 uniqueWordsCacheRef.current[bookId] = bookCache;
                 setVocabCacheRevision((revision) => revision + 1);
@@ -540,6 +571,8 @@ export default function App() {
   }, [activeBook]);
 
   const handleSelectBook = async (book: any) => {
+    // Start of an open, for the timing line the native reader logs.
+    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
     setActiveBook(book);
     await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
     const loadedBooks = await db.getBooks();

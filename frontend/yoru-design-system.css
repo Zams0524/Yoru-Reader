@@ -387,6 +387,85 @@ textarea:focus-visible,
   to { transform: rotate(360deg); }
 }
 
+/* Native reader (Android): one loading screen until the first page fades in over it. */
+.native-reader-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  pointer-events: none;
+  opacity: 1;
+  animation: native-reader-loading-in 0.2s ease-out backwards;
+  transition: opacity 0.22s ease-out;
+}
+
+.native-reader-loading.is-done {
+  opacity: 0;
+}
+
+.native-reader-loading-title {
+  max-width: min(82vw, 420px);
+  overflow: hidden;
+  font-family: var(--font-heading), sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.88;
+}
+
+.native-reader-loading-track {
+  position: relative;
+  width: 168px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.native-reader-loading-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--native-loading-accent);
+  transition: width 0.2s ease-out;
+}
+
+.native-reader-loading-fill.is-indeterminate {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  animation: native-reader-loading-slide 1.1s ease-in-out infinite;
+}
+
+.native-reader-loading-label {
+  font-family: var(--font-ui), sans-serif;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+@keyframes native-reader-loading-in {
+  from { opacity: 0; }
+}
+
+@keyframes native-reader-loading-slide {
+  from { transform: translateX(-105%); }
+  to { transform: translateX(270%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-reader-loading-fill.is-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 /* Shared learning, settings, and dialog surfaces */
 .srs-view-panel,
 .stats-tab-content,
