@@ -33,6 +33,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WebUpdaterPlugin.class);
         registerPlugin(YoruTtsPlugin.class);
         registerPlugin(NativeReaderPlugin.class);
+        registerPlugin(YoruNotificationsPlugin.class);
         super.onCreate(savedInstanceState);
         blendSystemBarsWithApp();
     }

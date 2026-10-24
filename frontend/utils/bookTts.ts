@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 /**
  * Sentence-by-sentence speech for reading a book aloud.
@@ -6,11 +6,28 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
  * Browser: Web Speech. Every call returns a handle whose `done` settles when the sentence ends.
  */
 
+export interface QueuedSentence {
+  /** The item's position within this one feed (speakQueue call), not a global id. */
+  id: number;
+  text: string;
+  positionMs: number;
+  durationMs: number;
+}
+
 interface YoruTtsPlugin {
   speak(options: { text: string; rate?: number; voice?: string }): Promise<void>;
   stop(): Promise<void>;
   getVoices(): Promise<{ voices: { name: string; network: boolean; installed: boolean }[]; engine?: string }>;
   openSettings(): Promise<void>;
+  /**
+   * Reads a batch of sentences one after another on the system engine, without the page having to
+   * ask for each one: keeps the voice going while Android throttles the page's own timers
+   * (screen off, Yoru in the background). `replace` flushes what is playing first.
+   */
+  speakQueue(options: { items: QueuedSentence[]; replace: boolean; rate?: number; voice?: string }): Promise<void>;
+  /** Read aloud stops after the sentence that ends past `at` (epoch ms; 0 turns the timer off). */
+  setSleep(options: { at: number }): Promise<void>;
+  addListener(event: 'queueSentence' | 'queueDone' | 'queueError' | 'queueSleep', listener: (event: { id: number }) => void): Promise<PluginListenerHandle>;
 }
 
 /** The one registration of the plugin (wordAudio uses it too: Capacitor rejects a second one). */
