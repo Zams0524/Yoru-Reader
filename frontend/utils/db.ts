@@ -407,7 +407,10 @@ export const db = {
             secondsRead: 0
           },
           status: 'unread',
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          // Imports that know the series (e.g. from Kavita) keep it, and their tags.
+          ...(book.series ? { series: book.series } : {}),
+          ...(book.tags?.length ? { tags: book.tags } : {})
         };
         books.push(newBook);
         addedCount++;

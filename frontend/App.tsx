@@ -9,6 +9,7 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import { db } from './utils/db';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
+import { queueKavitaProgress } from './utils/kavitaService';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
@@ -620,6 +621,9 @@ export default function App() {
   const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number) => {
     const updatedBooks = await db.updateBookProgress(bookId, currentChapter, currentPage, percent);
     setBooks(updatedBooks);
+    // Books imported from Kavita send their progress back to the server.
+    const title = updatedBooks.find(b => b.id === bookId)?.title;
+    if (title) queueKavitaProgress(title, percent);
   }, []);
 
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
