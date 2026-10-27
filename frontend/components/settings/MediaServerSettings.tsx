@@ -141,8 +141,8 @@ export default function MediaServerSettings({ lang }: Props) {
       {isAndroid && (
         <p className="media-server-hint">
           {es
-            ? 'En el teléfono, «localhost» es el propio teléfono: usa la IP de tu PC en la red de casa (por ejemplo http://192.168.1.20:5000).'
-            : 'On the phone, "localhost" is the phone itself: use your PC\'s home network IP (for example http://192.168.1.20:5000).'}
+            ? 'En el teléfono, «localhost» es el propio teléfono: usa la IP de tu PC en la red de casa (por ejemplo http://192.168.1.196:5000).'
+            : 'On the phone, "localhost" is the phone itself: use your PC\'s home network IP (for example http://192.168.1.196:5000).'}
         </p>
       )}
 
