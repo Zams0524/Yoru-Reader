@@ -44,6 +44,8 @@ interface LibraryProps {
   onSaveSettings: (...args: any[]) => any;
   wordStatuses?: Record<string, string>;
   initialTab?: string;
+  /** Cuando el shell nuevo la monta dentro de su lienzo: sin cabecera ni barra inferior propias. */
+  embedded?: boolean;
 }
 
 const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
@@ -105,7 +107,8 @@ const Library = React.memo(function Library({
   settings = {},
   onSaveSettings,
   wordStatuses = {},
-  initialTab
+  initialTab,
+  embedded = false
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
   const fileInputRef = useRef(null);
@@ -373,6 +376,10 @@ const Library = React.memo(function Library({
   const [isSectionPending, startSectionTransition] = useTransition();
   const [activeTab, setActiveTabState] = useState(initialTab || 'library'); // 'library' | 'statistics' | 'settings' | 'notes' | 'srs'
   const setActiveTab = (tab: string) => startSectionTransition(() => setActiveTabState(tab));
+  // Embebida, la sección la manda el shell: su barra lateral cambia initialTab en cada clic.
+  useEffect(() => {
+    if (embedded && initialTab) setActiveTabState(initialTab);
+  }, [embedded, initialTab]);
   const [selectedDeckFilter, setSelectedDeckFilter] = useState<string | null>(null);
   const [srsSubTab, setSrsSubTab] = useState<'decks' | 'stats' | 'notes' | 'history' | 'settings'>('decks');
   const [isDeckPromptOpen, setIsDeckPromptOpen] = useState(false);
@@ -6522,7 +6529,7 @@ const Library = React.memo(function Library({
 
   return (
     <div 
-      className="library-container"
+      className={`library-container${embedded ? ' is-embedded' : ''}`}
       aria-busy={isSectionPending}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -6562,8 +6569,8 @@ const Library = React.memo(function Library({
         aria-label={lang === 'es' ? 'Importar copia de seguridad' : 'Import backup'}
       />
 
-      {/* 1. Sticky Header — Yoru Cafe style */}
-      {isMobile ? (
+      {/* 1. Sticky Header — Yoru Cafe style (la oculta el shell nuevo, que trae la suya) */}
+      {!embedded && (isMobile ? (
         <header className="mobile-top-app-bar">
           {activeTab === 'settings' ? (
             <button
@@ -6972,7 +6979,7 @@ const Library = React.memo(function Library({
           </div>
         </div>
       </header>
-      )}
+      ))}
 
 
 
@@ -7543,7 +7550,7 @@ const Library = React.memo(function Library({
       {activeTab === 'srs' && renderSrsTab()}
 
       {/* Bottom Navigation Bar for Mobile (hidden during an SRS review, which is full screen and sits below it) */}
-      {isMobile && !isSrsReviewOpen && !isSidebarOpen && (
+      {!embedded && isMobile && !isSrsReviewOpen && !isSidebarOpen && (
         <nav className="bottom-navigation-bar" aria-label={lang === 'es' ? 'Navegación principal' : 'Main navigation'}>
           <button 
             className={`bottom-tab-btn ${activeTab === 'library' ? 'active' : ''}`}

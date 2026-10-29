@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-const Library = React.lazy(() => import('./components/Library'));
+const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
@@ -539,8 +539,13 @@ export default function App() {
     };
   }, [activeBook]);
 
-  const handleSelectBook = async (book: any) => {
-    setActiveBook(book);
+  // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
+  // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
+  const handleSelectBook = async (book: any, startChapter?: number) => {
+    const target = typeof startChapter === 'number'
+      ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
+      : book;
+    setActiveBook(target);
     await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
     const loadedBooks = await db.getBooks();
     setBooks(loadedBooks);
@@ -848,28 +853,30 @@ export default function App() {
             onUpdateBookDetails={handleUpdateBookDetails}
           />
         ) : (
-          <Library 
+          <YoruShell
           books={books}
+          settings={settings}
           onSelectBook={handleSelectBook}
-          onAddBooks={handleAddBooks}
-          onDeleteBook={handleDeleteBook}
-          onBulkDeleteBooks={handleBulkDeleteBooks}
           onUpdateBookDetails={handleUpdateBookDetails}
-          onOpenInfo={(book) => {
+          onOpenInfo={(book: any) => {
             setInfoBook(book);
             setIsInfoOpen(true);
           }}
-          profiles={profiles}
-          activeProfileId={activeProfileId || ''}
-          onSelectProfile={handleSelectProfile}
-          onAddProfile={handleAddProfile}
-          onDeleteProfile={handleDeleteProfile}
-          onUpdateProfile={handleUpdateProfile}
-          onClearDeletedBooks={handleClearDeletedBooks}
-          settings={settings}
-          onSaveSettings={handleSaveSettings}
-          wordStatuses={wordStatuses}
           initialTab={libraryTab}
+          libraryProps={{
+            onAddBooks: handleAddBooks,
+            onDeleteBook: handleDeleteBook,
+            onBulkDeleteBooks: handleBulkDeleteBooks,
+            profiles,
+            activeProfileId: activeProfileId || '',
+            onSelectProfile: handleSelectProfile,
+            onAddProfile: handleAddProfile,
+            onDeleteProfile: handleDeleteProfile,
+            onUpdateProfile: handleUpdateProfile,
+            onClearDeletedBooks: handleClearDeletedBooks,
+            onSaveSettings: handleSaveSettings,
+            wordStatuses,
+          }}
           />
         )}
       </React.Suspense>
