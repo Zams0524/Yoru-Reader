@@ -16,6 +16,12 @@ import {
   testKavitaConnection,
 } from '../frontend/utils/kavitaService';
 import {
+  cueAt,
+  normalizeForMatch,
+  parseAlignment,
+  timeOfText,
+} from '../frontend/utils/readAlongAlignment';
+import {
   audiobookMatchScore,
   chapterAt,
   getAudiobooks,
@@ -127,6 +133,59 @@ async function kavitaTests() {
   check(kavitaChapterForPercent([10, 10, 10], 50) === 1, 'Porcentaje → capítulo: la mitad');
   check(kavitaChapterForPercent([10, 10, 10], 100) === 2, 'Porcentaje → capítulo: el final');
   check(kavitaChapterForPercent([], 50) === 0, 'Porcentaje → capítulo: sin capítulos');
+
+  // ── Alineación texto ↔ audio ──────────────────────────────────────────
+  // Un SRT normal, con coma decimal y números de orden.
+  const srt = [
+    '1',
+    '00:00:01,000 --> 00:00:03,500',
+    '吾輩は猫である。',
+    '',
+    '2',
+    '00:00:03,500 --> 00:00:06,000',
+    '名前はまだ無い。',
+  ].join(String.fromCharCode(10));
+  const parsed = parseAlignment(srt);
+  check(parsed.cues.length === 2, 'Alineación: lee un SRT');
+  check(parsed.cues[0].startMs === 1000 && parsed.cues[0].endMs === 3500, 'Alineación: tiempos en ms');
+  check(parsed.cues[1].index === 1, 'Alineación: los cues se numeran en orden');
+  check(!parsed.incomplete && parsed.longestGapMs === 0, 'Alineación: sin huecos, completa');
+
+  // WebVTT: cabecera, punto decimal y ajustes de posición detrás del tiempo final.
+  const vtt = [
+    'WEBVTT',
+    '',
+    '00:00:02.250 --> 00:00:04.000 line:90%',
+    'ウェブの字幕',
+  ].join(String.fromCharCode(10));
+  const fromVtt = parseAlignment(vtt);
+  check(fromVtt.cues.length === 1 && fromVtt.cues[0].startMs === 2250, 'Alineación: lee un WebVTT');
+
+  // Un bloque roto no tira la alineación entera.
+  const dodgy = ['1', 'no-es-un-tiempo', 'texto suelto', '', '2', '00:00:05,000 --> 00:00:06,000', 'bueno'].join(String.fromCharCode(10));
+  check(parseAlignment(dodgy).cues.length === 1, 'Alineación: un cue roto no tumba el resto');
+
+  // Un hueco largo significa que falta texto por alinear.
+  const gappy = [
+    '1', '00:00:00,000 --> 00:00:01,000', 'principio',
+    '', '2', '00:05:00,000 --> 00:05:01,000', 'mucho después',
+  ].join(String.fromCharCode(10));
+  const withGap = parseAlignment(gappy);
+  check(withGap.longestGapMs === 299_000 && withGap.incomplete, 'Alineación: detecta que falta texto');
+
+  // Qué suena en cada momento.
+  check(cueAt(parsed.cues, 0) === null, 'Alineación: antes del primer cue no hay nada');
+  check(cueAt(parsed.cues, 2000)?.index === 0, 'Alineación: el cue que suena');
+  check(cueAt(parsed.cues, 99_000)?.index === 1, 'Alineación: pasado el final, el último');
+  check(cueAt([], 10) === null, 'Alineación: sin cues no hay nada que sonar');
+
+  // Del texto al audio, tolerando que el EPUB no coincida carácter a carácter.
+  check(timeOfText(parsed.cues, '名前はまだ無い') === 3500, 'Alineación: del texto al momento del audio');
+  check(timeOfText(parsed.cues, 'no está en el libro') === null, 'Alineación: texto que no aparece');
+  check(
+    normalizeForMatch('「吾輩は、猫である。」') === normalizeForMatch('吾輩は猫である'),
+    'Alineación: la puntuación japonesa no estorba al comparar'
+  );
 
   // Downloads: a single EPUB, and a ZIP holding two EPUBs.
   const epub = new JSZip();
