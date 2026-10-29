@@ -1245,3 +1245,47 @@
   max-height: none !important;
   overflow: visible !important;
 }
+
+/* Vistas de servidor: estado vacío y aviso corto */
+.yoru-server-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 55vh;
+  text-align: center;
+  color: var(--text-muted);
+}
+.yoru-server-empty .yoru-empty-note { margin: 0; }
+.yoru-server-toast {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 14px;
+  padding: 11px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+/* El navegador de Kavita, dentro del lienzo: deja de ser un diálogo a pantalla
+   completa y se comporta como una vista más. */
+.media-browser.is-embedded {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: none !important;
+  z-index: auto !important;
+}
+.media-browser.is-embedded .media-browser-header {
+  position: static !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  background: none !important;
+}

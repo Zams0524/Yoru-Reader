@@ -23,6 +23,8 @@ interface Props {
   onClose: () => void;
   onOpenSettings: () => void;
   showToast: (message: string, type?: string) => void;
+  /** Montado en el lienzo del shell: sin marco de diálogo ni botón de cerrar. */
+  embedded?: boolean;
 }
 
 const PAGE_SIZE = 30;
@@ -32,7 +34,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, embedded = false }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -235,11 +237,18 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
   );
 
   return (
-    <div className="media-browser" role="dialog" aria-modal="true" aria-label={es ? 'Explorar Kavita' : 'Explore Kavita'}>
+    <div
+      className={`media-browser${embedded ? ' is-embedded' : ''}`}
+      role={embedded ? undefined : 'dialog'}
+      aria-modal={embedded ? undefined : true}
+      aria-label={es ? 'Explorar Kavita' : 'Explore Kavita'}
+    >
       <header className="media-browser-header">
-        <button type="button" className="media-browser-icon-btn" onClick={() => (openSeries ? setOpenSeries(null) : onClose())} aria-label={es ? 'Volver' : 'Back'}>
-          {openSeries ? <ArrowLeft size={20} /> : <X size={20} />}
-        </button>
+        {(!embedded || openSeries) && (
+          <button type="button" className="media-browser-icon-btn" onClick={() => (openSeries ? setOpenSeries(null) : onClose())} aria-label={es ? 'Volver' : 'Back'}>
+            {openSeries ? <ArrowLeft size={20} /> : <X size={20} />}
+          </button>
+        )}
         <h2>{es ? 'Explorar Kavita' : 'Explore Kavita'}</h2>
         {configured && !openSeries && (
           <div className="media-browser-search">

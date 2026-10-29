@@ -27,8 +27,9 @@ import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import StatsView from './StatsView';
+import { AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { getAudiobookLink } from '../../utils/audiobookshelfService';
-import { OPEN_KAVITA_BROWSER } from '../../utils/kavitaService';
+import { isKavitaConfigured } from '../../utils/kavitaService';
 import {
   authorGroups,
   collectionGroups,
@@ -45,6 +46,7 @@ import {
 const Library = React.lazy(() => import('../Library')) as React.LazyExoticComponent<
   React.ComponentType<Record<string, any>>
 >;
+const KavitaBrowser = React.lazy(() => import('../KavitaBrowser'));
 
 /** Las secciones que el shell dibuja él mismo o delega en la biblioteca antigua. */
 type View =
@@ -57,6 +59,8 @@ type View =
   | 'authors'
   | 'collections'
   | 'listen'
+  | 'kavita'
+  | 'audiobooks'
   | 'shelf'
   | 'group'
   | 'detail';
@@ -123,9 +127,8 @@ export default function YoruShell({
     return (entry?.[0] as View) || 'home';
   });
   const [detailId, setDetailId] = useState<string | null>(null);
-  // «Explorar Kavita» reutiliza el navegador que ya vive en `Library`: el shell le pide
-  // que lo abra por el mismo canal `navigateTo` que usan las notificaciones.
-  const [kavitaNonce, setKavitaNonce] = useState(0);
+  // Aviso corto de las vistas de servidor (importaciones de Kavita, sobre todo).
+  const [serverToast, setServerToast] = useState('');
   const [group, setGroup] = useState<{ kind: 'series' | 'author' | 'collection'; name: string } | null>(null);
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -202,6 +205,13 @@ export default function YoruShell({
     [library]
   );
 
+  // El aviso se va solo: es informativo (p. ej. «Importado»), no un dialogo.
+  useEffect(() => {
+    if (!serverToast) return undefined;
+    const timer = window.setTimeout(() => setServerToast(''), 4000);
+    return () => window.clearTimeout(timer);
+  }, [serverToast]);
+
   const renderCanvas = () => {
     if (embeddedTab) {
       return (
@@ -223,11 +233,7 @@ export default function YoruShell({
               onOpenInfo={onOpenInfo}
               initialTab={embeddedTab}
               embedded
-              navigateTo={
-                kavitaNonce
-                  ? { tab: 'library', section: OPEN_KAVITA_BROWSER, nonce: kavitaNonce }
-                  : libraryProps.navigateTo
-              }
+              navigateTo={libraryProps.navigateTo}
             />
           </React.Suspense>
         </div>
@@ -264,6 +270,36 @@ export default function YoruShell({
           onBack={() => go(groupBackView(group))}
         />
       );
+    }
+
+    if (view === 'kavita') {
+      if (!isKavitaConfigured()) {
+        return <ServerEmptyState kind="kavita" es={es} onOpenSettings={() => go('settings')} />;
+      }
+      return (
+        <React.Suspense
+          fallback={
+            <div className="app-section-loading" role="status" aria-live="polite">
+              <span className="app-section-loading-indicator" />
+              {es ? 'Cargando…' : 'Loading…'}
+            </div>
+          }
+        >
+          <KavitaBrowser
+            lang={es ? 'es' : 'en'}
+            libraryTitles={new Set(library.map((book) => book.title))}
+            onImport={async (parsed: any[]) => { await libraryProps.onAddBooks?.(parsed); }}
+            onClose={() => go('home')}
+            onOpenSettings={() => go('settings')}
+            showToast={(message: string) => setServerToast(message)}
+            embedded
+          />
+        </React.Suspense>
+      );
+    }
+
+    if (view === 'audiobooks') {
+      return <AudiobookshelfView es={es} onOpenSettings={() => go('settings')} />;
     }
 
     if (view === 'statistics') {
@@ -400,17 +436,13 @@ export default function YoruShell({
         {navItem('series', es ? 'Series' : 'Series', Layers, groups.series.length)}
         {navItem('authors', es ? 'Autores' : 'Authors', Users, groups.authors.length)}
         {navItem('collections', es ? 'Colecciones' : 'Collections', Tag, groups.collections.length)}
-        <button
-          type="button"
-          className="yoru-shell-nav-item"
-          onClick={() => {
-            setKavitaNonce((value) => value + 1);
-            go('catalog');
-          }}
-        >
-          <ServerIcon size={18} />
-          <span className="yoru-shell-nav-text">{es ? 'Explorar Kavita' : 'Explore Kavita'}</span>
-        </button>
+      </div>
+
+      {/* Contenido que vive en los servidores de casa, no en la biblioteca local. */}
+      <div className="yoru-shell-nav-section">
+        <div className="yoru-shell-nav-label">{es ? 'Servidores' : 'Servers'}</div>
+        {navItem('kavita', es ? 'Explorar Kavita' : 'Explore Kavita', ServerIcon)}
+        {navItem('audiobooks', es ? 'Audiolibros' : 'Audiobooks', Headphones)}
       </div>
 
       <div className="yoru-shell-nav-section">
@@ -554,7 +586,12 @@ export default function YoruShell({
             onClick={() => setIsDrawerOpen(false)}
           />
         )}
-        <main className="yoru-shell-canvas">{renderCanvas()}</main>
+        <main className="yoru-shell-canvas">
+          {serverToast && (
+            <div className="yoru-server-toast" role="status" aria-live="polite">{serverToast}</div>
+          )}
+          {renderCanvas()}
+        </main>
       </div>
 
       <nav className="yoru-shell-bottom-nav" aria-label={es ? 'Navegación principal' : 'Main navigation'}>

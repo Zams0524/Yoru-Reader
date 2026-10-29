@@ -24,14 +24,19 @@ export const AUDIOBOOKSHELF_DEFAULT_URL = 'http://localhost:13378';
 
 // ── Config ──────────────────────────────────────────────────────────────
 
-export function getAudiobookshelfConfig(): AudiobookshelfConfig | null {
+/**
+ * Como en Kavita: sin nada guardado ya apunta al servidor de casa. Lo que decide si
+ * está listo es `isAudiobookshelfConfigured()`, que exige el token.
+ */
+export function getAudiobookshelfConfig(): AudiobookshelfConfig {
+  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULT_URL, token: '' } as AudiobookshelfConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    if (!raw) return null;
+    if (!raw) return fallback;
     const config = JSON.parse(raw) as AudiobookshelfConfig;
-    return config?.serverUrl ? config : null;
+    return config?.serverUrl ? config : { ...fallback, ...config, serverUrl: AUDIOBOOKSHELF_DEFAULT_URL };
   } catch {
-    return null;
+    return fallback;
   }
 }
 

@@ -31,14 +31,20 @@ export const KAVITA_DEFAULT_URL = 'http://localhost:5000';
 
 // ── Config ──────────────────────────────────────────────────────────────
 
-export function getKavitaConfig(): KavitaConfig | null {
+/**
+ * Nunca devuelve `null`: sin nada guardado, la instalación ya apunta al servidor de
+ * casa, así que no hay que escribir la URL. Lo que decide si está listo para usar es
+ * `isKavitaConfigured()`, que exige además la clave.
+ */
+export function getKavitaConfig(): KavitaConfig {
+  const fallback = { serverUrl: KAVITA_DEFAULT_URL, apiKey: '' } as KavitaConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    if (!raw) return null;
+    if (!raw) return fallback;
     const config = JSON.parse(raw) as KavitaConfig;
-    return config?.serverUrl ? config : null;
+    return config?.serverUrl ? config : { ...fallback, ...config, serverUrl: KAVITA_DEFAULT_URL };
   } catch {
-    return null;
+    return fallback;
   }
 }
 
@@ -219,13 +225,13 @@ export async function getKavitaVolumes(seriesId: number): Promise<KavitaVolume[]
 
 export function kavitaSeriesCoverUrl(seriesId: number): string {
   const config = getKavitaConfig();
-  if (!config) return '';
+  if (!config.apiKey) return '';
   return `${config.serverUrl}/api/Image/series-cover?seriesId=${seriesId}&apiKey=${encodeURIComponent(config.apiKey)}`;
 }
 
 export function kavitaVolumeCoverUrl(volumeId: number): string {
   const config = getKavitaConfig();
-  if (!config) return '';
+  if (!config.apiKey) return '';
   return `${config.serverUrl}/api/Image/volume-cover?volumeId=${volumeId}&apiKey=${encodeURIComponent(config.apiKey)}`;
 }
 
@@ -384,7 +390,7 @@ async function sendKavitaProgress(title: string, percent: number): Promise<void>
   const source = getKavitaSource(title);
   const config = getKavitaConfig();
   // Only to the server the book came from.
-  if (!source || !config || normalizeServerUrl(config.serverUrl) !== normalizeServerUrl(source.serverUrl)) return;
+  if (!source || !config.apiKey || normalizeServerUrl(config.serverUrl) !== normalizeServerUrl(source.serverUrl)) return;
   const pageNum = kavitaPageForPercent(source.pages, percent);
   if (lastSentPage.get(title) === pageNum) return;
   await kavitaRequest('/api/Reader/progress', {
