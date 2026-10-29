@@ -452,7 +452,8 @@ export default function Reader({
   const [readAloudReach, setReadAloudReach] = useState({ current: 0, low: 0 });
   // Audiobookshelf audiobook of this book. It and read aloud share the bottom spot (and the reach
   // above): opening one closes the other.
-  const [isAudiobookOpen, setIsAudiobookOpen] = useState(false);
+  // `__openAudiobook` lo pone la ficha del shell al pulsar «Escuchar audiolibro».
+  const [isAudiobookOpen, setIsAudiobookOpen] = useState(() => Boolean((book as any).__openAudiobook));
   const audiobookAvailable = useMemo(() => isAudiobookshelfConfigured(), []);
   useEffect(() => {
     if (isReadAloudOpen) setIsAudiobookOpen(false);

@@ -4,7 +4,7 @@ import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
-import { isKavitaConfigured } from '../utils/kavitaService';
+import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
@@ -445,6 +445,10 @@ const Library = React.memo(function Library({
   // A tapped notification asks for the SRS or the updates section.
   useEffect(() => {
     if (!navigateTo) return;
+    if (navigateTo.section === OPEN_KAVITA_BROWSER) {
+      setIsKavitaBrowserOpen(true);
+      return;
+    }
     setActiveTab(navigateTo.tab);
     if (navigateTo.section) {
       setActiveSettingsSection(navigateTo.section);

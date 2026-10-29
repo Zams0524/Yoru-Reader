@@ -7,11 +7,13 @@ import {
   CheckCircle2,
   Clock,
   Home,
+  Headphones,
   Layers,
   Library as LibraryIcon,
   Menu,
   Plus,
   Search,
+  Server as ServerIcon,
   Settings,
   Tag,
   User,
@@ -24,6 +26,8 @@ import GlobalSearch from './GlobalSearch';
 import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
+import { getAudiobookLink } from '../../utils/audiobookshelfService';
+import { OPEN_KAVITA_BROWSER } from '../../utils/kavitaService';
 import {
   authorGroups,
   collectionGroups,
@@ -51,6 +55,7 @@ type View =
   | 'series'
   | 'authors'
   | 'collections'
+  | 'listen'
   | 'shelf'
   | 'group'
   | 'detail';
@@ -118,6 +123,9 @@ export default function YoruShell({
     return (entry?.[0] as View) || 'home';
   });
   const [detailId, setDetailId] = useState<string | null>(null);
+  // «Explorar Kavita» reutiliza el navegador que ya vive en `Library`: el shell le pide
+  // que lo abra por el mismo canal `navigateTo` que usan las notificaciones.
+  const [kavitaNonce, setKavitaNonce] = useState(0);
   const [group, setGroup] = useState<{ kind: 'series' | 'author' | 'collection'; name: string } | null>(null);
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -187,6 +195,13 @@ export default function YoruShell({
     return source.find((entry) => entry.key === group.name)?.books ?? [];
   }, [group, groups]);
 
+  // Los libros que tienen un audiolibro vinculado desde el lector. El vínculo lo guarda
+  // `setAudiobookLink` (frontend/utils/audiobookshelfService.ts) por id de libro.
+  const listenable = useMemo(
+    () => library.filter((book) => Boolean(getAudiobookLink(book.id))),
+    [library]
+  );
+
   const renderCanvas = () => {
     if (embeddedTab) {
       return (
@@ -208,6 +223,11 @@ export default function YoruShell({
               onOpenInfo={onOpenInfo}
               initialTab={embeddedTab}
               embedded
+              navigateTo={
+                kavitaNonce
+                  ? { tab: 'library', section: OPEN_KAVITA_BROWSER, nonce: kavitaNonce }
+                  : libraryProps.navigateTo
+              }
             />
           </React.Suspense>
         </div>
@@ -225,6 +245,7 @@ export default function YoruShell({
           es={es}
           onBack={() => go(group ? 'group' : 'home')}
           onRead={(book) => onSelectBook(book)}
+          onListen={(book) => onSelectBook(book, undefined, true)}
           onOpenChapter={(book, chapterIndex) => onSelectBook(book, chapterIndex)}
           onOpenDetail={openDetail}
           onSetStatus={(book, status) => onUpdateBookDetails(book.id, { status })}
@@ -241,6 +262,41 @@ export default function YoruShell({
           es={es}
           onOpenDetail={openDetail}
           onBack={() => go(groupBackView(group))}
+        />
+      );
+    }
+
+    if (view === 'listen') {
+      if (!listenable.length) {
+        return (
+          <div>
+            <div className="yoru-view-head">
+              <div>
+                <h1 className="yoru-view-title">{es ? 'Leer y escuchar' : 'Read and listen'}</h1>
+                <div className="yoru-view-sub">
+                  {es ? 'Ningún libro tiene audiolibro todavía' : 'No book has an audiobook yet'}
+                </div>
+              </div>
+            </div>
+            <p className="yoru-empty-note">
+              {es
+                ? 'Abre un libro, toca ⋮ > Escuchar audiolibro y elige el audiolibro de Audiobookshelf. A partir de ahí aparecerá aquí.'
+                : 'Open a book, tap ⋮ > Listen to audiobook and pick its audiobook in Audiobookshelf. From then on it shows up here.'}
+            </p>
+          </div>
+        );
+      }
+      return (
+        <BookGridView
+          title={es ? 'Leer y escuchar' : 'Read and listen'}
+          subtitle={
+            es
+              ? `${listenable.length} ${listenable.length === 1 ? 'libro con audiolibro' : 'libros con audiolibro'}`
+              : `${listenable.length} ${listenable.length === 1 ? 'book with an audiobook' : 'books with an audiobook'}`
+          }
+          books={listenable}
+          es={es}
+          onOpenDetail={openDetail}
         />
       );
     }
@@ -331,6 +387,8 @@ export default function YoruShell({
         {navItem('catalog', es ? 'Catálogo' : 'Catalog', LibraryIcon, library.length)}
         {navItem('srs', 'Yoru SRS', Zap)}
         {navItem('statistics', es ? 'Estadísticas' : 'Statistics', BarChart3)}
+        {listenable.length > 0
+          && navItem('listen', es ? 'Leer y escuchar' : 'Read and listen', Headphones, listenable.length)}
       </div>
 
       <div className="yoru-shell-nav-section">
@@ -338,6 +396,17 @@ export default function YoruShell({
         {navItem('series', es ? 'Series' : 'Series', Layers, groups.series.length)}
         {navItem('authors', es ? 'Autores' : 'Authors', Users, groups.authors.length)}
         {navItem('collections', es ? 'Colecciones' : 'Collections', Tag, groups.collections.length)}
+        <button
+          type="button"
+          className="yoru-shell-nav-item"
+          onClick={() => {
+            setKavitaNonce((value) => value + 1);
+            go('catalog');
+          }}
+        >
+          <ServerIcon size={18} />
+          <span className="yoru-shell-nav-text">{es ? 'Explorar Kavita' : 'Explore Kavita'}</span>
+        </button>
       </div>
 
       <div className="yoru-shell-nav-section">

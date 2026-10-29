@@ -21,6 +21,12 @@ import { describeServerError, normalizeServerUrl, serverDownload, serverRequest,
 const CONFIG_KEY = 'yoru_kavita_config';
 const SOURCES_KEY = 'yoru_kavita_sources';
 const PLUGIN_NAME = 'YoruReader';
+/**
+ * Sección que el shell pide por `navigateTo` para que `Library` abra su navegador de
+ * Kavita: así «Explorar Kavita» reutiliza el que ya existe en lugar de montar otro.
+ */
+export const OPEN_KAVITA_BROWSER = 'open-kavita-browser';
+
 export const KAVITA_DEFAULT_URL = 'http://localhost:5000';
 
 // ── Config ──────────────────────────────────────────────────────────────

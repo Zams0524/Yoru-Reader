@@ -611,12 +611,14 @@ export default function App() {
 
   // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
   // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
-  const handleSelectBook = async (book: any, startChapter?: number) => {
+  const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
     // Start of an open, for the timing line the native reader logs.
     (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
-    const target = typeof startChapter === 'number'
+    const positioned = typeof startChapter === 'number'
       ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
       : book;
+    // Bandera de apertura, solo en memoria: no se guarda con el libro.
+    const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
     setActiveBook(target);
     await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
     const loadedBooks = await db.getBooks();
