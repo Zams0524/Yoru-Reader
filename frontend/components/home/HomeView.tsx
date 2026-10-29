@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
+import { getCachedServerCatalog, type ServerItem } from '../../utils/serverCatalog';
 import {
   collectionGroups,
   continueReading,
@@ -122,6 +123,8 @@ export default function HomeView({
         moreLabel={es ? 'Ver todo' : 'See all'}
       />
 
+      <ServerRail es={es} />
+
       <BookRail
         title={es ? 'Para ti' : 'For you'}
         books={data.forYou}
@@ -156,5 +159,44 @@ export default function HomeView({
         </Rail>
       )}
     </div>
+  );
+}
+
+/**
+ * Novedades de los servidores de casa. Se pinta de la caché, así que aparece al
+ * instante; si no hay nada cacheado (sin credenciales, o nunca respondieron), no se
+ * pinta y ya está: ni hueco, ni aviso, ni error.
+ */
+function ServerRail({ es }: { es: boolean }) {
+  const [items, setItems] = useState<ServerItem[]>(() => {
+    const cached = getCachedServerCatalog();
+    return [...cached.kavita, ...cached.audiobooks];
+  });
+
+  useEffect(() => {
+    const onUpdate = () => {
+      const cached = getCachedServerCatalog();
+      setItems([...cached.kavita, ...cached.audiobooks]);
+    };
+    window.addEventListener('yoru-server-catalog-updated', onUpdate);
+    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+  }, []);
+
+  if (!items.length) return null;
+
+  return (
+    <Rail title={es ? 'En tus servidores' : 'On your servers'}>
+      {items.map((item) => (
+        <div key={item.id} className="yoru-poster" title={item.title}>
+          <div className="yoru-poster-frame">
+            <img src={item.cover} alt="" loading="lazy" />
+          </div>
+          <span className="yoru-poster-title">{item.title}</span>
+          <span className="yoru-poster-meta">
+            {item.source === 'kavita' ? 'Kavita' : (es ? 'Audiolibro' : 'Audiobook')}
+          </span>
+        </div>
+      ))}
+    </Rail>
   );
 }

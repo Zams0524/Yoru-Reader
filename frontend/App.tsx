@@ -10,6 +10,7 @@ import { db } from './utils/db';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
+import { refreshServerCatalog } from './utils/serverCatalog';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
@@ -904,6 +905,12 @@ export default function App() {
       }, 0);
     }
   };
+
+  // Novedades de los servidores de casa, en segundo plano. No bloquea nada: si no
+  // responden (fuera de casa, modo avión) se queda lo que hubiera en la caché.
+  useEffect(() => {
+    void refreshServerCatalog();
+  }, []);
 
   return (
     <div className="app-container" data-theme={settings.theme}>
