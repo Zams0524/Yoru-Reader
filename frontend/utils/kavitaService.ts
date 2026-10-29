@@ -419,6 +419,22 @@ export function kavitaPercentForPage(pages: number, pageNum: number): number {
   return Math.min(100, Math.max(0, Math.round(percent * 100) / 100));
 }
 
+/**
+ * El progreso que Kavita tiene guardado de ese capitulo, ya traducido a porcentaje
+ * nuestro. Devuelve 0 si no hay nada o si el servidor no contesta: retomar es una
+ * comodidad, no algo por lo que merezca la pena fallar al abrir un libro.
+ */
+export async function getKavitaProgressPercent(chapterId: number, pages: number): Promise<number> {
+  try {
+    const response = await kavitaRequest<any>('/api/Reader/get-progress?chapterId=' + chapterId);
+    const pageNum = Number(response.data?.pageNum);
+    if (!Number.isFinite(pageNum) || pageNum <= 0) return 0;
+    return kavitaPercentForPage(pages, pageNum);
+  } catch {
+    return 0;
+  }
+}
+
 /** El capitulo que contiene ese porcentaje, segun las paginas de cada capitulo. */
 export function kavitaChapterForPercent(chapterPages: number[], percent: number): number {
   const total = chapterPages.reduce((sum, value) => sum + (value > 0 ? value : 0), 0);

@@ -1360,3 +1360,28 @@
 @media (max-width: 900px) {
   .yoru-series-stack { width: 148px; }
 }
+
+/* Distintivo del libro que se lee del servidor sin guardarlo. */
+.reader-temporary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 10px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.reader-temporary-keep {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+}

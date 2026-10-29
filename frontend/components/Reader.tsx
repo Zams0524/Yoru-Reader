@@ -287,6 +287,8 @@ interface ReaderProps {
   onUpdateProgress: (bookId: string, currentChapter: number, currentPage: number, percent: number) => void;
   onIncrementReadingStats: (bookId: string, chars: number, seconds: number) => void;
   onSaveReadingStats?: (title: string, chars: number, seconds: number, sessions?: number) => Promise<void>;
+  /** Guardar en la biblioteca el libro temporal que se esta leyendo. */
+  onKeepTemporary?: () => void;
   wordStatuses: Record<string, string>;
   onSetWordStatus: (word: string, status: string, wordData?: any) => void;
   settings: any;
@@ -300,6 +302,7 @@ export default function Reader({
   onUpdateProgress, 
   onIncrementReadingStats,
   onSaveReadingStats,
+  onKeepTemporary,
   wordStatuses, 
   onSetWordStatus, 
   settings, 
@@ -2426,6 +2429,8 @@ export default function Reader({
             readAloud.start();
           }
         }}
+        isTemporary={Boolean((book as any).isTemporary)}
+        onKeep={onKeepTemporary}
         isAudiobookOpen={isAudiobookOpen}
         onToggleAudiobook={audiobookAvailable ? () => {
           if (!isAudiobookOpen && isReadAloudOpen) {

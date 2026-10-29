@@ -12,6 +12,7 @@ import {
   StickyNote,
   Bookmark,
   BookAudio,
+  Cloud,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -52,6 +53,10 @@ interface ReaderNavbarProps {
   onToggleReadAloud?: () => void;
   /** Audiobook from Audiobookshelf; only when a server is connected. */
   isAudiobookOpen?: boolean;
+  /** El libro se esta leyendo del servidor, sin guardarlo. */
+  isTemporary?: boolean;
+  /** Guardarlo en la biblioteca sin volver a bajarlo. */
+  onKeep?: () => void;
   onToggleAudiobook?: () => void;
   onOpenSearch?: () => void;
   onOpenNotes?: () => void;
@@ -84,6 +89,8 @@ export default function ReaderNavbar({
   isReadingAloud = false,
   onToggleReadAloud,
   isAudiobookOpen = false,
+  isTemporary = false,
+  onKeep,
   onToggleAudiobook,
   onOpenSearch,
   onOpenNotes,
@@ -222,6 +229,17 @@ export default function ReaderNavbar({
 
       <div className="reader-topbar-info">
         <div className="reader-topbar-title">{bookTitle}</div>
+        {isTemporary && (
+          <span className="reader-temporary">
+            <Cloud size={13} aria-hidden="true" />
+            {es ? 'Del servidor' : 'From the server'}
+            {onKeep && (
+              <button type="button" className="reader-temporary-keep" onClick={onKeep}>
+                {es ? 'Descargar' : 'Download'}
+              </button>
+            )}
+          </span>
+        )}
         {bookAuthor && <div className="reader-topbar-sub">{bookAuthor}</div>}
         <div className="reader-topbar-sub">
           {sectionTitle && <span>{es ? 'Sección: ' : 'Section: '}{sectionTitle}</span>}

@@ -661,18 +661,42 @@ export default function App() {
    * es lo que necesita el progreso para subir a Kavita.
    */
   const handleReadTemporary = useCallback(async (kavitaBook: any) => {
-    const { importKavitaBook } = await import('./utils/kavitaService');
+    const { importKavitaBook, getKavitaProgressPercent, kavitaChapterForPercent } = await import('./utils/kavitaService');
     const parsed = await importKavitaBook(kavitaBook);
     const first = parsed[0];
     if (!first) throw new Error('El volumen no trae ningun libro que abrir.');
+    // Se retoma por donde lo dejo el servidor. Si no contesta, se empieza de cero.
+    const percent = await getKavitaProgressPercent(kavitaBook.chapterId, kavitaBook.pages);
+    const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
+    const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
     (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
     setActiveBook({
       ...first,
       id: temporaryBookId(kavitaBook.volumeId),
       isTemporary: true,
       kavitaBook,
-      progress: { currentChapter: 0, currentPage: 0, percent: 0 },
+      parsedBook: first,
+      progress: { currentChapter, currentPage: 0, percent },
     });
+  }, []);
+
+  /**
+   * Convertir en permanente el libro temporal que se esta leyendo, sin volver a
+   * bajarlo: ya esta parseado en memoria. El progreso que llevaba se conserva.
+   */
+  const handleKeepTemporary = useCallback(async () => {
+    const current = activeBookRef.current;
+    if (!current?.isTemporary || !current.parsedBook) return;
+    const saved = await db.addBooks([current.parsedBook]);
+    const stored = saved.find((book: any) => book.title === current.parsedBook.title);
+    setBooks(saved);
+    if (stored) {
+      const percent = current.progress?.percent || 0;
+      if (percent > 0) {
+        await db.updateBookProgress(stored.id, current.progress?.currentChapter || 0, current.progress?.currentPage || 0, percent);
+      }
+      setActiveBook({ ...stored, progress: current.progress });
+    }
   }, []);
 
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
@@ -979,6 +1003,7 @@ export default function App() {
             onUpdateProgress={handleUpdateProgress}
             onIncrementReadingStats={handleIncrementReadingStats}
             onSaveReadingStats={handleSaveReadingStats}
+            onKeepTemporary={handleKeepTemporary}
             wordStatuses={wordStatuses}
             onSetWordStatus={handleSetWordStatus}
             settings={settings}
