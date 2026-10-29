@@ -15,15 +15,18 @@ import {
  * Mismas reglas que el resto del catálogo de servidor: se pintan de la caché, así que
  * aparecen al instante, y una sección sin datos no se pinta ni deja hueco.
  *
- * No hay sección «Popular»: ni Kavita ni Audiobookshelf exponen un ranking de
- * popularidad, y no se fabrica uno con datos locales.
+ * En lugar de «Popular» (que ningún servidor expone como ranking) va «Continuar en el
+ * servidor», que es el `on-deck` de Kavita: lo que ese servidor tiene a medias.
  */
 export default function HomeServerSections({
   es,
   scope,
+  localTitles,
 }: {
   es: boolean;
   scope: 'all' | 'books' | 'audio';
+  /** Títulos que ya están en la biblioteca local, para no repetirlos. */
+  localTitles?: Set<string>;
 }) {
   const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
   const [seed, setSeed] = useState(1);
@@ -37,12 +40,33 @@ export default function HomeServerSections({
   const showBooks = scope !== 'audio';
   const showAudio = scope !== 'books';
 
+  // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
+  const onDeck = useMemo(
+    () => catalog.onDeck.filter((item) => !localTitles || !localTitles.has(item.title)),
+    [catalog.onDeck, localTitles]
+  );
   const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
   const randomAudio = useMemo(() => sample(catalog.audiobooks, 10, seed + 7), [catalog.audiobooks, seed]);
 
   return (
     <>
+      {showBooks && onDeck.length > 0 && (
+        <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'}>
+          {onDeck.map((item) => (
+            <ServerCard key={item.id} item={item} es={es} />
+          ))}
+        </Rail>
+      )}
+
+      {showAudio && catalog.forYouAudio.length > 0 && (
+        <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'}>
+          {catalog.forYouAudio.map((item) => (
+            <ServerCard key={item.id} item={item} es={es} />
+          ))}
+        </Rail>
+      )}
+
       {showBooks && catalog.kavita.length > 0 && (
         <Rail title={es ? 'Series de libros' : 'Book series'}>
           {catalog.kavita.map((item) => (

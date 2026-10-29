@@ -1,7 +1,14 @@
-import { getKavitaLibraries, getKavitaSeries, isKavitaConfigured, kavitaSeriesCoverUrl } from './kavitaService';
+import {
+  getKavitaLibraries,
+  getKavitaOnDeck,
+  getKavitaSeries,
+  isKavitaConfigured,
+  kavitaSeriesCoverUrl,
+} from './kavitaService';
 import {
   absCoverUrl,
   getAudiobookLibraries,
+  getAudiobookPersonalized,
   getAudiobooks,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
@@ -48,9 +55,13 @@ export interface ServerCatalog {
   at: number;
   kavita: ServerItem[];
   audiobooks: ServerItem[];
+  /** Lo que el servidor de Kavita tiene a medias (su propio «seguir leyendo»). */
+  onDeck: ServerItem[];
+  /** Estanterías que Audiobookshelf prepara para el usuario. */
+  forYouAudio: ServerItem[];
 }
 
-const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [] };
+const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [] };
 
 /** El último listado conocido. Nunca lanza: si no hay nada, devuelve vacío. */
 export function getCachedServerCatalog(): ServerCatalog {
@@ -62,6 +73,8 @@ export function getCachedServerCatalog(): ServerCatalog {
       at: Number(parsed?.at) || 0,
       kavita: Array.isArray(parsed?.kavita) ? parsed.kavita : [],
       audiobooks: Array.isArray(parsed?.audiobooks) ? parsed.audiobooks : [],
+      onDeck: Array.isArray(parsed?.onDeck) ? parsed.onDeck : [],
+      forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
     };
   } catch {
     return EMPTY;
@@ -115,6 +128,30 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
   }));
 }
 
+async function fetchOnDeck(): Promise<ServerItem[]> {
+  const series = await withTimeout(getKavitaOnDeck(MAX_ITEMS));
+  return series.map((item) => ({
+    id: 'ondeck-' + item.id,
+    title: item.name,
+    cover: kavitaSeriesCoverUrl(item.id),
+    source: 'kavita' as const,
+  }));
+}
+
+async function fetchForYouAudio(): Promise<ServerItem[]> {
+  const libraries = await withTimeout(getAudiobookLibraries());
+  const first = libraries[0];
+  if (!first) return [];
+  const items = await withTimeout(getAudiobookPersonalized(first.id, 12));
+  return items.map((item) => ({
+    id: 'foryou-' + item.id,
+    title: item.title,
+    cover: absCoverUrl(item.id),
+    source: 'audiobookshelf' as const,
+    author: item.author || undefined,
+  }));
+}
+
 let running = false;
 
 /**
@@ -129,9 +166,11 @@ export async function refreshServerCatalog(): Promise<void> {
 
   running = true;
   try {
-    const [kavita, audiobooks] = await Promise.all([
+    const [kavita, audiobooks, onDeck, forYouAudio] = await Promise.all([
       wantsKavita ? fetchKavita().catch(() => null) : Promise.resolve(null),
       wantsAudiobooks ? fetchAudiobooks().catch(() => null) : Promise.resolve(null),
+      wantsKavita ? fetchOnDeck().catch(() => null) : Promise.resolve(null),
+      wantsAudiobooks ? fetchForYouAudio().catch(() => null) : Promise.resolve(null),
     ]);
 
     // Un servidor caído no borra lo que ya sabíamos del otro.
@@ -141,6 +180,8 @@ export async function refreshServerCatalog(): Promise<void> {
       at: Date.now(),
       kavita: kavita ?? previous.kavita,
       audiobooks: audiobooks ?? previous.audiobooks,
+      onDeck: onDeck ?? previous.onDeck,
+      forYouAudio: forYouAudio ?? previous.forYouAudio,
     });
   } finally {
     running = false;

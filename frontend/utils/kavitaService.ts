@@ -175,6 +175,8 @@ function toSeries(raw: any): KavitaSeries {
     localizedName: raw.localizedName,
     libraryId: raw.libraryId,
     pages: raw.pages,
+    avgHoursToRead: raw.avgHoursToRead,
+    wordCount: raw.wordCount,
     format: raw.format,
   };
 }
@@ -202,6 +204,18 @@ export async function getKavitaSeries(libraryId: number, page = 1, pageSize = 30
   }
   const items = (Array.isArray(response.data) ? response.data : []).map(toSeries);
   return { items, ...readPagination(response.headers, page, items.length) };
+}
+
+/**
+ * Lo que el servidor tiene a medias: su propia lista de «seguir leyendo».
+ * Dato real de Kavita, no una invencion nuestra.
+ */
+export async function getKavitaOnDeck(limit = 20): Promise<KavitaSeries[]> {
+  const response = await kavitaRequest<any[]>('/api/Series/on-deck?PageNumber=1&PageSize=' + limit, {
+    method: 'POST',
+    body: {},
+  });
+  return (Array.isArray(response.data) ? response.data : []).map(toSeries);
 }
 
 export async function searchKavitaSeries(query: string): Promise<KavitaSeries[]> {

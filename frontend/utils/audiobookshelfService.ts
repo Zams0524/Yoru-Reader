@@ -141,6 +141,21 @@ export function toAudiobookItem(raw: any): AudiobookItem {
   };
 }
 
+/**
+ * Las estanterias que el propio servidor prepara para el usuario («para ti»).
+ * Devuelve los items de la primera estanteria que traiga libros.
+ */
+export async function getAudiobookPersonalized(libraryId: string, limit = 12): Promise<AudiobookItem[]> {
+  const shelves = await absRequest<any[]>('/api/libraries/' + libraryId + '/personalized?limit=' + limit);
+  const list = Array.isArray(shelves.data) ? shelves.data : [];
+  for (const shelf of list) {
+    const entities = Array.isArray(shelf?.entities) ? shelf.entities : [];
+    const books = entities.filter((entity: any) => entity?.media);
+    if (books.length) return books.slice(0, limit).map(toAudiobookItem);
+  }
+  return [];
+}
+
 /** One page (0-based) of a library's audiobooks, sorted by title. */
 export async function getAudiobooks(libraryId: string, page = 0, limit = 50): Promise<{ items: AudiobookItem[]; total: number }> {
   const { data } = await absRequest<any>(`/api/libraries/${encodeURIComponent(libraryId)}/items?limit=${limit}&page=${page}&sort=media.metadata.title&minified=1`);

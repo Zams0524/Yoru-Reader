@@ -30,6 +30,9 @@ export interface KavitaSeries {
   localizedName?: string;
   libraryId: number;
   pages?: number;
+  /** Horas estimadas de lectura. Kavita no da el numero de tomos en el listado. */
+  avgHoursToRead?: number;
+  wordCount?: number;
   /** Kavita MangaFormat: 3 = EPUB. */
   format?: number;
 }

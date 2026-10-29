@@ -133,10 +133,14 @@ export default function HomeView({
         moreLabel={es ? 'Ver todo' : 'See all'}
       />
 
-      <HomeServerSections es={es} scope={scope} />
+      <HomeServerSections
+        es={es}
+        scope={scope}
+        localTitles={new Set(books.map((book) => book.title))}
+      />
 
       <BookRail
-        title={es ? 'Para ti' : 'For you'}
+        title={es ? 'Libros para ti' : 'Books for you'}
         books={data.forYou}
         onOpen={onOpenDetail}
       />
