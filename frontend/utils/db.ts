@@ -1,6 +1,18 @@
 import type { BookHighlight } from './highlights';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
+/** Un parte de lectura: un libro, un dia. `listeningTime` puede faltar en los viejos. */
+export interface DailyStatRecord {
+  title: string;
+  /** YYYY-MM-DD en hora local. */
+  dateKey: string;
+  charactersRead?: number;
+  readingTime?: number;
+  listeningTime?: number;
+  sessionsCount?: number;
+  lastStatisticModified?: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -475,7 +487,33 @@ export const db = {
     });
   },
 
-  async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0): Promise<void> {
+  /**
+   * Suma al parte del dia de un libro. `listeningToAdd` va a un campo propio,
+   * `listeningTime`, y nunca se mezcla con `readingTime`: si se sumaran, ya no
+   * se podria saber cuanto se leyo de verdad. Los partes antiguos no lo traen y
+   * cuentan como 0; no se migra nada.
+   */
+  /** Todos los partes diarios guardados, para la vista de estadisticas. */
+  async getReadingStats(): Promise<DailyStatRecord[]> {
+    return new Promise((resolve) => {
+      const request = indexedDB.open('books', 4);
+      request.onerror = () => resolve([]);
+      request.onsuccess = (e: any) => {
+        const dbInstance = e.target.result;
+        if (!dbInstance.objectStoreNames.contains('statistic')) { resolve([]); return; }
+        try {
+          const tx = dbInstance.transaction('statistic', 'readonly');
+          const query = tx.objectStore('statistic').getAll();
+          query.onsuccess = () => resolve((query.result || []) as DailyStatRecord[]);
+          query.onerror = () => resolve([]);
+        } catch {
+          resolve([]);
+        }
+      };
+    });
+  },
+
+  async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0, listeningToAdd = 0): Promise<void> {
     return new Promise((resolve) => {
       const request = indexedDB.open('books', 4);
       request.onupgradeneeded = (e: any) => {
@@ -513,6 +551,7 @@ export const db = {
               if (record) {
                 record.charactersRead = (record.charactersRead || 0) + charsToAdd;
                 record.readingTime = (record.readingTime || 0) + secondsToAdd;
+                record.listeningTime = (record.listeningTime || 0) + listeningToAdd;
                 record.sessionsCount = (record.sessionsCount || 0) + sessionsToAdd;
                 record.lastStatisticModified = Date.now();
                 store.put(record);
@@ -522,6 +561,7 @@ export const db = {
                   dateKey: todayStr,
                   charactersRead: charsToAdd,
                   readingTime: secondsToAdd,
+                  listeningTime: listeningToAdd,
                   sessionsCount: sessionsToAdd,
                   lastStatisticModified: Date.now()
                 });
@@ -545,6 +585,7 @@ export const db = {
           if (record) {
             record.charactersRead = (record.charactersRead || 0) + charsToAdd;
             record.readingTime = (record.readingTime || 0) + secondsToAdd;
+            record.listeningTime = (record.listeningTime || 0) + listeningToAdd;
             record.sessionsCount = (record.sessionsCount || 0) + sessionsToAdd;
             record.lastStatisticModified = Date.now();
             store.put(record);
@@ -554,6 +595,7 @@ export const db = {
               dateKey: todayStr,
               charactersRead: charsToAdd,
               readingTime: secondsToAdd,
+              listeningTime: listeningToAdd,
               sessionsCount: sessionsToAdd,
               lastStatisticModified: Date.now()
             });

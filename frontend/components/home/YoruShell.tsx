@@ -26,6 +26,7 @@ import GlobalSearch from './GlobalSearch';
 import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
+import StatsView from './StatsView';
 import { getAudiobookLink } from '../../utils/audiobookshelfService';
 import { OPEN_KAVITA_BROWSER } from '../../utils/kavitaService';
 import {
@@ -63,7 +64,6 @@ type View =
 /** Las vistas que se renderizan embebiendo `Library` con la pestaña correspondiente. */
 const EMBEDDED_TABS: Partial<Record<View, string>> = {
   catalog: 'library',
-  statistics: 'statistics',
   srs: 'srs',
   settings: 'settings',
 };
@@ -264,6 +264,10 @@ export default function YoruShell({
           onBack={() => go(groupBackView(group))}
         />
       );
+    }
+
+    if (view === 'statistics') {
+      return <StatsView books={books} es={es} />;
     }
 
     if (view === 'listen') {

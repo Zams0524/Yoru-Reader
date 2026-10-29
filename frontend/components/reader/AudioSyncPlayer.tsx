@@ -16,6 +16,7 @@ import {
   updateAudiobookProgress,
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
+import { db } from '../../utils/db';
 
 interface Props {
   book: { id: string; title: string; author?: string };
@@ -111,6 +112,11 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
     if (!current) return;
     const update = { currentTime: timeRef.current, timeListened: Math.round(listenedRef.current), duration: current.duration };
     listenedRef.current = 0;
+    // Lo escuchado tambien cuenta en las estadisticas, en su propio campo.
+    if (update.timeListened > 0) {
+      void db.saveReadingStatsEntry(book.title || '', 0, 0, 0, update.timeListened)
+        .catch((error) => console.warn('[Audiobookshelf] No se pudo apuntar la escucha:', error));
+    }
     try {
       if (close) await closeAudiobookSession(current.id, update);
       else await syncAudiobookSession(current.id, update);
