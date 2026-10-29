@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
-import { getCachedServerCatalog, type ServerItem } from '../../utils/serverCatalog';
+import HomeServerSections from './HomeServerSections';
 import {
   collectionGroups,
   continueReading,
@@ -59,6 +59,16 @@ export default function HomeView({
     { key: 'reading', label: es ? 'Empezados' : 'Started' },
     { key: 'unopened', label: es ? 'Sin abrir' : 'Unopened' },
   ];
+  void chips;
+  void filter;
+
+  // Inicio / Libros / Audiolibros, como la maqueta de referencia: filtran por tipo.
+  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
+  const scopes: { key: 'all' | 'books' | 'audio'; label: string }[] = [
+    { key: 'all', label: es ? 'Inicio' : 'Home' },
+    { key: 'books', label: es ? 'Libros' : 'Books' },
+    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks' },
+  ];
 
   if (books.length === 0) {
     return (
@@ -72,21 +82,21 @@ export default function HomeView({
   return (
     <div>
       <div className="yoru-chip-row" role="tablist" aria-label={es ? 'Filtrar' : 'Filter'}>
-        {chips.map((chip) => (
+        {scopes.map((item) => (
           <button
-            key={chip.key}
+            key={item.key}
             type="button"
             role="tab"
-            aria-selected={filter === chip.key}
-            className={`yoru-chip${filter === chip.key ? ' active' : ''}`}
-            onClick={() => setFilter(chip.key)}
+            aria-selected={scope === item.key}
+            className={`yoru-chip${scope === item.key ? ' active' : ''}`}
+            onClick={() => setScope(item.key)}
           >
-            {chip.label}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {data.continuing.length > 0 && (
+      {scope !== 'audio' && data.continuing.length > 0 && (
         <Rail title={es ? 'Continuar' : 'Continue'}>
           {data.continuing.map((book) => {
             const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
@@ -123,7 +133,7 @@ export default function HomeView({
         moreLabel={es ? 'Ver todo' : 'See all'}
       />
 
-      <ServerRail es={es} />
+      <HomeServerSections es={es} scope={scope} />
 
       <BookRail
         title={es ? 'Para ti' : 'For you'}
@@ -159,44 +169,5 @@ export default function HomeView({
         </Rail>
       )}
     </div>
-  );
-}
-
-/**
- * Novedades de los servidores de casa. Se pinta de la caché, así que aparece al
- * instante; si no hay nada cacheado (sin credenciales, o nunca respondieron), no se
- * pinta y ya está: ni hueco, ni aviso, ni error.
- */
-function ServerRail({ es }: { es: boolean }) {
-  const [items, setItems] = useState<ServerItem[]>(() => {
-    const cached = getCachedServerCatalog();
-    return [...cached.kavita, ...cached.audiobooks];
-  });
-
-  useEffect(() => {
-    const onUpdate = () => {
-      const cached = getCachedServerCatalog();
-      setItems([...cached.kavita, ...cached.audiobooks]);
-    };
-    window.addEventListener('yoru-server-catalog-updated', onUpdate);
-    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
-  }, []);
-
-  if (!items.length) return null;
-
-  return (
-    <Rail title={es ? 'En tus servidores' : 'On your servers'}>
-      {items.map((item) => (
-        <div key={item.id} className="yoru-poster" title={item.title}>
-          <div className="yoru-poster-frame">
-            <img src={item.cover} alt="" loading="lazy" />
-          </div>
-          <span className="yoru-poster-title">{item.title}</span>
-          <span className="yoru-poster-meta">
-            {item.source === 'kavita' ? 'Kavita' : (es ? 'Audiolibro' : 'Audiobook')}
-          </span>
-        </div>
-      ))}
-    </Rail>
   );
 }

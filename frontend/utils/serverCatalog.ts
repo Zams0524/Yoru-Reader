@@ -20,12 +20,26 @@ import {
 
 const CACHE_KEY = 'yoru_server_catalog_v1';
 const TIMEOUT_MS = 2500;
-const MAX_ITEMS = 12;
+// Bastantes para poder sortear «aleatorios» sin volver a pedirlos.
+const MAX_ITEMS = 36;
 
 export interface ServerItem {
   id: string;
   title: string;
   cover: string;
+  source: 'kavita' | 'audiobookshelf';
+  /** Serie a la que pertenece, cuando el servidor la da. */
+  series?: string;
+  author?: string;
+}
+
+/** Una serie del servidor, con los tomos que conocemos de ella. */
+export interface ServerSeries {
+  key: string;
+  title: string;
+  covers: string[];
+  count: number;
+  author?: string;
   source: 'kavita' | 'audiobookshelf';
 }
 
@@ -96,6 +110,8 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
     title: item.title,
     cover: absCoverUrl(item.id),
     source: 'audiobookshelf' as const,
+    series: item.series || undefined,
+    author: item.author || undefined,
   }));
 }
 
@@ -129,4 +145,43 @@ export async function refreshServerCatalog(): Promise<void> {
   } finally {
     running = false;
   }
+}
+
+/**
+ * Series de audiolibros, agrupando por el campo `series` que da Audiobookshelf.
+ * Solo sale lo que el servidor dice: si un audiolibro no trae serie, no se inventa.
+ */
+export function audiobookSeriesOf(items: ServerItem[]): ServerSeries[] {
+  const map = new Map<string, ServerSeries>();
+  for (const item of items) {
+    if (!item.series) continue;
+    const entry = map.get(item.series) || {
+      key: item.series,
+      title: item.series,
+      covers: [],
+      count: 0,
+      author: item.author,
+      source: 'audiobookshelf' as const,
+    };
+    if (entry.covers.length < 4) entry.covers.push(item.cover);
+    entry.count += 1;
+    map.set(item.series, entry);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+/** Una muestra al azar, para los carruseles de «aleatorios». */
+export function sample<T>(items: T[], count: number, seed = 0): T[] {
+  const copy = [...items];
+  // Baraja determinista por semilla: el botón «Actualizar» cambia la semilla.
+  let state = seed || 1;
+  const next = () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(next() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, count);
 }

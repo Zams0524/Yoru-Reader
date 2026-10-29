@@ -1289,3 +1289,74 @@
   padding-right: 0 !important;
   background: none !important;
 }
+
+/* ==========================================================================
+   Tarjetas de contenido de servidor
+   ========================================================================== */
+
+/* Botón de reproducir sobre la portada de un audiolibro, al pasar por encima. */
+.yoru-poster.is-audio .yoru-poster-frame { position: relative; }
+.yoru-poster-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--bg-app);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.yoru-poster.is-audio:hover .yoru-poster-play,
+.yoru-poster.is-audio:focus-within .yoru-poster-play {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Serie: los cantos de los demás tomos asomando detrás de la portada. */
+.yoru-series-stack {
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.yoru-series-stack-frame {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  isolation: isolate;
+}
+.yoru-series-stack-front,
+.yoru-series-stack-back {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+}
+.yoru-series-stack-front { z-index: 3; }
+.yoru-series-stack-back.is-1 {
+  z-index: 2;
+  transform: translateX(7px) scale(0.965);
+  filter: brightness(0.7);
+}
+.yoru-series-stack-back.is-2 {
+  z-index: 1;
+  transform: translateX(14px) scale(0.93);
+  filter: brightness(0.5);
+}
+.yoru-series-stack:hover .yoru-series-stack-back.is-1 { transform: translateX(10px) scale(0.965); }
+.yoru-series-stack:hover .yoru-series-stack-back.is-2 { transform: translateX(20px) scale(0.93); }
+.yoru-series-stack-back { transition: transform 0.18s ease; }
+
+@media (max-width: 900px) {
+  .yoru-series-stack { width: 148px; }
+}

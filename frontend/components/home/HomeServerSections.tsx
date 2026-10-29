@@ -1,0 +1,136 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Play } from 'lucide-react';
+import { Rail } from './primitives';
+import {
+  audiobookSeriesOf,
+  getCachedServerCatalog,
+  sample,
+  type ServerItem,
+  type ServerSeries,
+} from '../../utils/serverCatalog';
+
+/**
+ * Las secciones de Inicio que viven en los servidores de casa.
+ *
+ * Mismas reglas que el resto del catálogo de servidor: se pintan de la caché, así que
+ * aparecen al instante, y una sección sin datos no se pinta ni deja hueco.
+ *
+ * No hay sección «Popular»: ni Kavita ni Audiobookshelf exponen un ranking de
+ * popularidad, y no se fabrica uno con datos locales.
+ */
+export default function HomeServerSections({
+  es,
+  scope,
+}: {
+  es: boolean;
+  scope: 'all' | 'books' | 'audio';
+}) {
+  const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
+  const [seed, setSeed] = useState(1);
+
+  useEffect(() => {
+    const onUpdate = () => setCatalog(getCachedServerCatalog());
+    window.addEventListener('yoru-server-catalog-updated', onUpdate);
+    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+  }, []);
+
+  const showBooks = scope !== 'audio';
+  const showAudio = scope !== 'books';
+
+  const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
+  const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
+  const randomAudio = useMemo(() => sample(catalog.audiobooks, 10, seed + 7), [catalog.audiobooks, seed]);
+
+  return (
+    <>
+      {showBooks && catalog.kavita.length > 0 && (
+        <Rail title={es ? 'Series de libros' : 'Book series'}>
+          {catalog.kavita.map((item) => (
+            <ServerCard key={item.id} item={item} es={es} />
+          ))}
+        </Rail>
+      )}
+
+      {showAudio && audioSeries.length > 0 && (
+        <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'}>
+          {audioSeries.map((series) => (
+            <SeriesStack key={series.key} series={series} es={es} />
+          ))}
+        </Rail>
+      )}
+
+      {showBooks && randomBooks.length > 0 && (
+        <Rail
+          title={es ? 'Libros aleatorios' : 'Random books'}
+          onMore={() => setSeed((value) => value + 1)}
+          moreLabel={es ? 'Actualizar' : 'Shuffle'}
+        >
+          {randomBooks.map((item) => (
+            <ServerCard key={`r-${item.id}`} item={item} es={es} />
+          ))}
+        </Rail>
+      )}
+
+      {showAudio && randomAudio.length > 0 && (
+        <Rail
+          title={es ? 'Audiolibros aleatorios' : 'Random audiobooks'}
+          onMore={() => setSeed((value) => value + 1)}
+          moreLabel={es ? 'Actualizar' : 'Shuffle'}
+        >
+          {randomAudio.map((item) => (
+            <ServerCard key={`ra-${item.id}`} item={item} es={es} />
+          ))}
+        </Rail>
+      )}
+    </>
+  );
+}
+
+function ServerCard({ item, es }: { item: ServerItem; es: boolean }) {
+  const isAudio = item.source === 'audiobookshelf';
+  return (
+    <div className={`yoru-poster${isAudio ? ' is-audio' : ''}`} title={item.title}>
+      <div className="yoru-poster-frame">
+        <img src={item.cover} alt="" loading="lazy" />
+        {isAudio && (
+          <span className="yoru-poster-play" aria-hidden="true">
+            <Play size={18} />
+          </span>
+        )}
+      </div>
+      <span className="yoru-poster-title">{item.title}</span>
+      <span className="yoru-poster-meta">
+        {item.author || (isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}
+      </span>
+    </div>
+  );
+}
+
+/** Tarjeta de serie: los cantos de los demás tomos asomando detrás de la portada. */
+function SeriesStack({ series, es }: { series: ServerSeries; es: boolean }) {
+  const backs = series.covers.slice(1, 3);
+  return (
+    <div className="yoru-series-stack" title={series.title}>
+      <div className="yoru-series-stack-frame">
+        {backs.map((cover, index) => (
+          <img
+            key={`${cover}-${index}`}
+            className={`yoru-series-stack-back is-${index + 1}`}
+            src={cover}
+            alt=""
+            loading="lazy"
+          />
+        ))}
+        <img className="yoru-series-stack-front" src={series.covers[0]} alt="" loading="lazy" />
+      </div>
+      <span className="yoru-poster-title">{series.title}</span>
+      <span className="yoru-poster-meta">
+        {series.count}{' '}
+        {es
+          ? series.count === 1 ? 'audiolibro' : 'audiolibros'
+          : series.count === 1 ? 'audiobook' : 'audiobooks'}
+        {series.author ? ` · ${series.author}` : ''}
+      </span>
+    </div>
+  );
+}
