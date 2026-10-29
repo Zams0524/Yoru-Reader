@@ -11,6 +11,14 @@ import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
 import { refreshServerCatalog } from './utils/serverCatalog';
+
+/**
+ * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
+ * id para que los caminos que escriben en IndexedDB lo dejen pasar de largo.
+ */
+const TEMPORARY_ID_PREFIX = 'tmp:';
+export const isTemporaryBookId = (id: string) => typeof id === 'string' && id.startsWith(TEMPORARY_ID_PREFIX);
+export const temporaryBookId = (volumeId: number) => TEMPORARY_ID_PREFIX + 'kavita:' + volumeId;
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
@@ -101,6 +109,8 @@ export default function App() {
   const [books, setBooks] = useState<any[]>([]);
   const [activeBook, setActiveBook] = useState<any | null>(null);
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
+  // El libro abierto, accesible desde callbacks memorizados sin dependencias.
+  const activeBookRef = useRef<any>(null);
   // The reader's code loads while the library sits idle, so opening the first book does not wait
   // for it ("Loading reader..." before the book's own loading screen).
   useEffect(() => {
@@ -627,6 +637,16 @@ export default function App() {
   };
 
   const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number) => {
+    // Libro temporal: no se guarda aqui, pero su progreso si sube al servidor del que
+    // salio. Se sale antes de tocar la base para no rozar el camino de siempre.
+    if (isTemporaryBookId(bookId)) {
+      setActiveBook((current: any) => (current && current.id === bookId
+        ? { ...current, progress: { ...(current.progress || {}), currentChapter, currentPage, percent } }
+        : current));
+      const temporaryTitle = activeBookRef.current?.title;
+      if (temporaryTitle) queueKavitaProgress(temporaryTitle, percent);
+      return;
+    }
     const updatedBooks = await db.updateBookProgress(bookId, currentChapter, currentPage, percent);
     setBooks(updatedBooks);
     // Books imported from Kavita send their progress back to the server.
@@ -634,7 +654,31 @@ export default function App() {
     if (title) queueKavitaProgress(title, percent);
   }, []);
 
+  /**
+   * Leer del servidor sin guardar: baja el volumen, lo parsea con el importador de
+   * siempre y lo abre. No pasa por `db`, asi que no entra en el Catalogo ni cuenta
+   * como libro suyo. `importKavitaBook` ya deja registrada la fuente por titulo, que
+   * es lo que necesita el progreso para subir a Kavita.
+   */
+  const handleReadTemporary = useCallback(async (kavitaBook: any) => {
+    const { importKavitaBook } = await import('./utils/kavitaService');
+    const parsed = await importKavitaBook(kavitaBook);
+    const first = parsed[0];
+    if (!first) throw new Error('El volumen no trae ningun libro que abrir.');
+    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
+    setActiveBook({
+      ...first,
+      id: temporaryBookId(kavitaBook.volumeId),
+      isTemporary: true,
+      kavitaBook,
+      progress: { currentChapter: 0, currentPage: 0, percent: 0 },
+    });
+  }, []);
+
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
+    // El temporal no tiene fila en la base. Las estadisticas de verdad (las del parte
+    // diario) van por titulo en handleSaveReadingStats, asi que no se pierden.
+    if (isTemporaryBookId(bookId)) return;
     const updatedBooks = await db.incrementReadingStats(bookId, chars, seconds);
     setBooks(updatedBooks);
   }, []);
@@ -912,6 +956,10 @@ export default function App() {
     void refreshServerCatalog();
   }, []);
 
+  useEffect(() => {
+    activeBookRef.current = activeBook;
+  }, [activeBook]);
+
   return (
     <div className="app-container" data-theme={settings.theme}>
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
@@ -950,6 +998,7 @@ export default function App() {
           initialTab={libraryTab}
           libraryProps={{
             navigateTo: libraryNav,
+            onReadTemporary: handleReadTemporary,
             onAddBooks: handleAddBooks,
             onDeleteBook: handleDeleteBook,
             onBulkDeleteBooks: handleBulkDeleteBooks,

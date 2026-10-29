@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, Download, Loader2, Search, Settings, X } from 'lucide-react';
+import { BookOpen, ArrowLeft, Check, Download, Loader2, Search, Settings, X } from 'lucide-react';
 import type { KavitaBook, KavitaLibrary, KavitaSeries } from '../types/integrations';
 import {
   getKavitaLibraries,
@@ -23,6 +23,8 @@ interface Props {
   onClose: () => void;
   onOpenSettings: () => void;
   showToast: (message: string, type?: string) => void;
+  /** Abrir el volumen sin guardarlo en la biblioteca. */
+  onReadTemporary?: (book: KavitaBook) => Promise<void>;
   /** Montado en el lienzo del shell: sin marco de diálogo ni botón de cerrar. */
   embedded?: boolean;
 }
@@ -34,7 +36,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, embedded = false }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -49,6 +51,7 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
   const [openSeries, setOpenSeries] = useState<KavitaSeries | null>(null);
   const [volumes, setVolumes] = useState<KavitaBook[] | null>(null);
   const [importState, setImportState] = useState<Record<number, ImportState>>({});
+  const [readState, setReadState] = useState<Record<number, 'loading' | undefined>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useBackHandler(true, () => (openSeries ? setOpenSeries(null) : onClose()));
@@ -113,6 +116,20 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
       .catch((err) => { if (current) { setError(describeServerError(err, es)); setOpenSeries(null); } });
     return () => { current = false; };
   }, [openSeries, es]);
+
+  /** «Leer»: baja el volumen y lo abre, sin anadirlo a la biblioteca. */
+  const readOne = async (book: KavitaBook): Promise<void> => {
+    if (!onReadTemporary) return;
+    setReadState((prev) => ({ ...prev, [book.volumeId]: 'loading' }));
+    try {
+      await onReadTemporary(book);
+    } catch (err) {
+      console.error('[Kavita] Temporary read failed:', err);
+      showToast(book.seriesName + ' ' + book.title + ': ' + describeServerError(err, es), 'error');
+    } finally {
+      setReadState((prev) => ({ ...prev, [book.volumeId]: undefined }));
+    }
+  };
 
   const importOne = async (book: KavitaBook): Promise<boolean> => {
     setImportState((prev) => ({ ...prev, [book.volumeId]: 'loading' }));
@@ -213,9 +230,23 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
                   <strong>{book.title}</strong>
                   {book.pages > 0 && <small>{book.pages} {es ? 'págs.' : 'pages'}</small>}
                 </span>
+                {onReadTemporary && !alreadyIn && state !== 'done' && (
+                  <button
+                    type="button"
+                    className="media-server-btn is-primary"
+                    onClick={() => readOne(book)}
+                    disabled={readState[book.volumeId] === 'loading' || state === 'loading'}
+                    aria-label={es ? `Leer ${book.title}` : `Read ${book.title}`}
+                  >
+                    {readState[book.volumeId] === 'loading'
+                      ? <Loader2 size={15} className="guide-spin" />
+                      : <BookOpen size={15} />}
+                    {readState[book.volumeId] === 'loading' ? (es ? 'Abriendo' : 'Opening') : (es ? 'Leer' : 'Read')}
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={`media-server-btn${state === 'done' || alreadyIn ? '' : ' is-primary'}`}
+                  className={`media-server-btn${state === 'done' || alreadyIn || onReadTemporary ? '' : ' is-primary'}`}
                   onClick={() => importOne(book)}
                   disabled={state === 'loading'}
                   aria-label={es ? `Importar ${book.title}` : `Import ${book.title}`}

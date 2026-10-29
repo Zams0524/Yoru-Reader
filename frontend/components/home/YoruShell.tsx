@@ -292,6 +292,7 @@ export default function YoruShell({
             onClose={() => go('home')}
             onOpenSettings={() => go('settings')}
             showToast={(message: string) => setServerToast(message)}
+            onReadTemporary={libraryProps.onReadTemporary}
             embedded
           />
         </React.Suspense>
