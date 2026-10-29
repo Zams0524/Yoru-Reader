@@ -18,6 +18,8 @@ import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reade
 import NativeReaderHost, { type NativeTextSelection } from './reader/NativeReaderHost';
 import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
+import AudioSyncPlayer from './reader/AudioSyncPlayer';
+import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -448,6 +450,14 @@ export default function Reader({
   // web reader follows the player up when the bars show; the native page keeps its low place (a
   // relayout there takes about half a second, and the page bar covers that strip anyway).
   const [readAloudReach, setReadAloudReach] = useState({ current: 0, low: 0 });
+  // Audiobookshelf audiobook of this book. It and read aloud share the bottom spot (and the reach
+  // above): opening one closes the other.
+  // `__openAudiobook` lo pone la ficha del shell al pulsar «Escuchar audiolibro».
+  const [isAudiobookOpen, setIsAudiobookOpen] = useState(() => Boolean((book as any).__openAudiobook));
+  const audiobookAvailable = useMemo(() => isAudiobookshelfConfigured(), []);
+  useEffect(() => {
+    if (isReadAloudOpen) setIsAudiobookOpen(false);
+  }, [isReadAloudOpen]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2234,6 +2244,7 @@ export default function Reader({
       [showSettingsPopover, () => setShowSettingsPopover(false)],
       [sidebarMode !== null, () => setSidebarMode(null)],
       [isReadAloudOpen, () => { readAloud.stop(); setIsReadAloudOpen(false); }],
+      [isAudiobookOpen, () => setIsAudiobookOpen(false)],
     ];
     const step = steps.find(([open]) => open);
     if (step) step[1]();
@@ -2415,6 +2426,14 @@ export default function Reader({
             readAloud.start();
           }
         }}
+        isAudiobookOpen={isAudiobookOpen}
+        onToggleAudiobook={audiobookAvailable ? () => {
+          if (!isAudiobookOpen && isReadAloudOpen) {
+            readAloud.stop();
+            setIsReadAloudOpen(false);
+          }
+          setIsAudiobookOpen(open => !open);
+        } : undefined}
         onToggleSettings={() => setShowSettingsPopover(prev => !prev)}
         onToggleFullscreen={toggleFullscreen}
         isFullscreen={!!document.fullscreenElement}
@@ -2530,6 +2549,18 @@ export default function Reader({
         />
       )}
 
+      {isAudiobookOpen && (
+        <AudioSyncPlayer
+          book={{ id: book.id, title: book.title || '', author: book.author || '' }}
+          lang={lang}
+          accent={colors.accent}
+          raised={isHeaderVisible}
+          autoHide={!isHeaderVisible}
+          onReach={setReadAloudReach}
+          onClose={() => setIsAudiobookOpen(false)}
+        />
+      )}
+
       {isVoiceSettingsOpen && (
         <ReadAloudSettings
           voice={readAloud.voice}
@@ -2563,7 +2594,7 @@ export default function Reader({
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
-          bottomReserve={isReadAloudOpen ? readAloudReach.low : 0}
+          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.low : 0}
           highlights={highlights}
           onSelection={handleNativeSelection}
         />
@@ -2580,7 +2611,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
-          bottomReserve={isReadAloudOpen ? readAloudReach.current : 0}
+          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.current : 0}
         />
       )}
 

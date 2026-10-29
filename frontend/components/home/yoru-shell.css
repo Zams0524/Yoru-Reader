@@ -1,0 +1,1291 @@
+/*
+ * Yoru Shell — la estructura de la plantilla (cabecera global, barra lateral con
+ * secciones, lienzo con vistas y carruseles) escrita con los tokens del diseño Yoru
+ * (--bg-app, --bg-card, --primary…), de modo que los tres temas (dark/light/sepia)
+ * siguen funcionando sin colores fijos.
+ *
+ * Carga después de yoru-design-system.css; todo va prefijado con .yoru-shell para no
+ * tocar la biblioteca antigua ni el lector.
+ */
+
+.yoru-shell {
+  --shell-header-h: 64px;
+  --shell-sidebar-w: 212px;
+  --shell-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg-app);
+  color: var(--text-main);
+  overflow: hidden;
+}
+
+/* =========================================================
+   1. Cabecera global
+   ========================================================= */
+.yoru-shell-header {
+  height: var(--shell-header-h);
+  padding: 0 20px;
+  padding-top: var(--yoru-safe-top, 0px);
+  box-sizing: content-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-light);
+  position: relative;
+  z-index: 50;
+}
+
+.yoru-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: var(--shell-sidebar-w);
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.yoru-shell-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-gradient);
+  color: var(--bg-app);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.yoru-shell-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+.yoru-shell-brand-title {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+}
+.yoru-shell-brand-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.yoru-shell-search {
+  flex: 1;
+  max-width: 544px;
+  min-width: 0;
+}
+.yoru-shell-search-btn {
+  width: 100%;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  color: var(--text-dark);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.yoru-shell-search-btn:hover,
+.yoru-shell-search-btn:focus-visible {
+  background: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  outline: none;
+}
+.yoru-shell-search-btn svg { flex-shrink: 0; }
+
+.yoru-shell-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.yoru-shell-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.yoru-shell-icon-btn:hover,
+.yoru-shell-icon-btn.active {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+.yoru-shell-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-light);
+  background: var(--surface-raised);
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  flex-shrink: 0;
+}
+.yoru-shell-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* =========================================================
+   2. Área de trabajo: barra lateral + lienzo
+   ========================================================= */
+.yoru-shell-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.yoru-shell-sidebar {
+  width: var(--shell-sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-light);
+  overflow-y: auto;
+  padding: 10px 8px 40px;
+}
+
+.yoru-shell-nav-section { margin-bottom: 18px; }
+
+.yoru-shell-nav-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 14px 14px 6px;
+}
+
+.yoru-shell-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.yoru-shell-nav-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+.yoru-shell-nav-item.active {
+  background: var(--surface-raised);
+  border-color: var(--border-focus);
+  color: var(--text-main);
+  font-weight: 600;
+}
+.yoru-shell-nav-item svg { flex-shrink: 0; }
+.yoru-shell-nav-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+/* Estantes de la barra lateral (icono cuadrado + dos líneas) */
+.yoru-shell-shelf-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.yoru-shell-shelf-item:hover { background: var(--surface-soft); }
+.yoru-shell-shelf-item.active { background: var(--surface-raised); }
+.yoru-shell-shelf-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  overflow: hidden;
+}
+.yoru-shell-shelf-icon img { width: 100%; height: 100%; object-fit: cover; }
+.yoru-shell-shelf-icon.dashed {
+  background: transparent;
+  border: 1.5px dashed var(--border-light);
+  color: var(--text-muted);
+}
+.yoru-shell-shelf-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.yoru-shell-shelf-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-shell-shelf-sub { font-size: 11px; color: var(--text-dark); }
+
+.yoru-shell-canvas {
+  --yoru-canvas-pad: 24px;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg-app);
+  padding: 20px 24px 64px;
+}
+
+/* El lienzo embebe la biblioteca antigua para Catálogo/SRS/Estadísticas/Ajustes */
+.yoru-shell-embed {
+  margin: -20px -24px -64px;
+}
+.library-container.is-embedded {
+  min-height: 0;
+  height: auto;
+}
+
+/* =========================================================
+   3. Primitivas de vista: títulos, carruseles y tarjetas
+   ========================================================= */
+.yoru-view-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.yoru-view-title {
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+  margin: 0;
+}
+.yoru-view-sub {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.yoru-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.yoru-chip {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+  padding: 9px 20px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.yoru-chip:hover { background: var(--bg-card-hover); color: var(--text-main); }
+.yoru-chip.active {
+  background: var(--text-main);
+  border-color: var(--text-main);
+  color: var(--bg-app);
+}
+
+.yoru-rail { margin-bottom: 32px; }
+.yoru-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.yoru-rail-title {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-main);
+  margin: 0;
+}
+.yoru-rail-more {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.yoru-rail-more:hover { background: var(--surface-soft); }
+.yoru-rail-track {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Llega al borde derecho del lienzo: la fila no muere antes que la ventana. */
+  margin-right: calc(-1 * var(--yoru-canvas-pad, 24px));
+  padding-right: var(--yoru-canvas-pad, 24px);
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+.yoru-rail-track > * { flex: 0 0 auto; }
+
+/* Tarjeta póster (carrusel y cuadrícula) */
+.yoru-poster {
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-poster-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1.45;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+.yoru-poster:hover .yoru-poster-frame,
+.yoru-poster:focus-visible .yoru-poster-frame {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+.yoru-poster-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  font-family: var(--font-japanese);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.yoru-poster-progress {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.yoru-poster-progress span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+.yoru-poster-title {
+  font-family: var(--font-japanese);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yoru-poster-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.yoru-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: 28px 24px;
+}
+
+/* Catálogo: cuatro por fila y solo la portada, como la maqueta de referencia. */
+.yoru-grid.is-covers {
+  grid-template-columns: repeat(4, 1fr);
+}
+.yoru-grid.is-covers .yoru-poster-title,
+.yoru-grid.is-covers .yoru-poster-meta {
+  display: none;
+}
+.yoru-grid .yoru-poster { width: 100%; }
+
+/* Tarjeta «Continuar» horizontal */
+.yoru-continue-card {
+  width: 340px;
+  min-width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.yoru-continue-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-focus);
+}
+.yoru-continue-cover {
+  width: 56px;
+  flex-shrink: 0;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.yoru-continue-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-continue-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.yoru-continue-title {
+  font-family: var(--font-japanese);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-continue-author,
+.yoru-continue-state {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-continue-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-soft);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.yoru-continue-bar span { display: block; height: 100%; background: var(--primary); }
+
+/* Tarjeta de entidad (serie, autor, colección) */
+.yoru-entity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+.yoru-entity-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--shell-radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease;
+}
+.yoru-entity-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-focus);
+}
+.yoru-entity-stack {
+  position: relative;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.yoru-entity-stack .stack-cover {
+  position: absolute;
+  width: 104px;
+  aspect-ratio: 1 / 1.45;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  opacity: 0.6;
+}
+.yoru-entity-stack .stack-cover img { width: 100%; height: 100%; object-fit: cover; }
+.yoru-entity-stack .stack-left { transform: rotate(-6deg) translateX(-26px); }
+.yoru-entity-stack .stack-right { transform: rotate(6deg) translateX(26px); }
+.yoru-entity-stack .stack-main {
+  position: relative;
+  width: 118px;
+  aspect-ratio: 1 / 1.45;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  z-index: 2;
+}
+.yoru-entity-stack .stack-main img { width: 100%; height: 100%; object-fit: cover; }
+.yoru-entity-name {
+  font-family: var(--font-japanese);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yoru-entity-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+
+.yoru-empty {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.yoru-empty-title {
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+.yoru-empty-sub { font-size: 13.5px; }
+
+/* =========================================================
+   4. Detalle del libro
+   ========================================================= */
+.yoru-detail { max-width: 1180px; margin: 0 auto; }
+.yoru-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px 4px 0;
+  margin-bottom: 18px;
+}
+.yoru-detail-back:hover { color: var(--text-main); }
+
+.yoru-detail-head {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 36px;
+}
+.yoru-detail-cover {
+  width: 230px;
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1.45;
+  border-radius: var(--shell-radius);
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+.yoru-detail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-detail-info { min-width: 0; flex: 1; }
+.yoru-detail-title {
+  font-family: var(--font-japanese);
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text-main);
+  margin: 0 0 8px;
+}
+.yoru-detail-author { font-size: 15px; color: var(--text-muted); margin-bottom: 18px; }
+.yoru-detail-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.yoru-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+.yoru-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border-radius: 9px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.yoru-btn:hover { background: var(--bg-card-hover); border-color: var(--border-focus); }
+.yoru-btn-primary {
+  background: var(--button-gradient);
+  border-color: transparent;
+  color: var(--bg-app);
+}
+.yoru-btn-primary:hover { background: var(--primary-hover); }
+
+.yoru-detail-progress { max-width: 460px; }
+.yoru-detail-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-soft);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.yoru-detail-progress-bar span { display: block; height: 100%; background: var(--primary); }
+.yoru-detail-progress-text { font-size: 12.5px; color: var(--text-muted); }
+
+.yoru-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 22px;
+}
+.yoru-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-tab:hover { color: var(--text-main); }
+.yoru-tab.active { color: var(--text-main); border-bottom-color: var(--primary); }
+
+.yoru-meta-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.yoru-meta-table th,
+.yoru-meta-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+}
+.yoru-meta-table th { width: 200px; color: var(--text-muted); font-weight: 600; }
+.yoru-meta-table td { color: var(--text-main); }
+
+.yoru-chapter-list { display: flex; flex-direction: column; gap: 2px; }
+.yoru-chapter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-chapter-row:hover { background: var(--surface-soft); }
+.yoru-chapter-row.current { background: var(--surface-raised); }
+.yoru-chapter-index {
+  width: 30px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+.yoru-chapter-title {
+  font-family: var(--font-japanese);
+  font-size: 13.5px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* =========================================================
+   5. Búsqueda global
+   ========================================================= */
+.yoru-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  padding: 10vh 16px 16px;
+}
+.yoru-search-panel {
+  width: 100%;
+  max-width: 620px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+.yoru-search-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-search-field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 16px;
+}
+.yoru-search-field input::placeholder { color: var(--text-dark); }
+.yoru-search-results { overflow-y: auto; padding: 8px; }
+.yoru-search-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-search-row:hover { background: var(--surface-soft); }
+.yoru-search-thumb {
+  width: 34px;
+  flex-shrink: 0;
+  aspect-ratio: 2 / 3;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.yoru-search-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.yoru-search-row-title {
+  font-family: var(--font-japanese);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-search-row-sub { font-size: 12px; color: var(--text-muted); }
+
+/* =========================================================
+   6. Móvil: cajón lateral + barra inferior de cinco accesos
+   ========================================================= */
+.yoru-shell-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+}
+
+.yoru-shell-bottom-nav { display: none; }
+
+@media (max-width: 900px) {
+  .yoru-shell { --shell-sidebar-w: 0px; }
+
+  .yoru-shell-brand { width: auto; }
+  .yoru-shell-brand-text { display: none; }
+
+  .yoru-shell-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 272px;
+    z-index: 200;
+    padding-top: calc(12px + var(--yoru-safe-top, 0px));
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-panel);
+  }
+  .yoru-shell-sidebar.open { transform: translateX(0); }
+
+  .yoru-shell-canvas {
+    --yoru-canvas-pad: 16px;
+    padding: 16px 16px calc(76px + var(--yoru-safe-bottom, 0px));
+  }
+  .yoru-shell-embed { margin: -16px -16px calc(-76px - var(--yoru-safe-bottom, 0px)); }
+
+  .yoru-shell-bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+    background: var(--bg-panel-translucent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border-light);
+    padding-bottom: var(--yoru-safe-bottom, 0px);
+  }
+  .yoru-shell-bottom-btn {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 9px 2px 7px;
+    background: none;
+    border: none;
+    color: var(--text-dark);
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .yoru-shell-bottom-btn.active { color: var(--primary); }
+
+  .yoru-detail-head { flex-direction: column; gap: 20px; }
+  .yoru-detail-cover { width: 160px; }
+  .yoru-detail-title { font-size: 22px; }
+  .yoru-view-title { font-size: 22px; }
+  .yoru-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 14px; }
+  .yoru-grid.is-covers { grid-template-columns: repeat(2, 1fr); }
+  .yoru-entity-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .yoru-poster { width: 148px; }
+  .yoru-continue-card { width: 280px; min-width: 260px; }
+  .yoru-meta-table th { width: 130px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yoru-shell-sidebar,
+  .yoru-poster-frame,
+  .yoru-entity-card { transition: none; }
+  .yoru-poster:hover .yoru-poster-frame,
+  .yoru-entity-card:hover { transform: none; }
+}
+
+/* Estado vacío de «Leer y escuchar»: explica dónde se vincula el audiolibro. */
+.yoru-empty-note {
+  margin: 24px 0 0;
+  max-width: 52ch;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* Fila de controles (BUSCAR / ORDENAR / …), con la etiqueta encima del campo. */
+.yoru-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 24px;
+  margin-bottom: 26px;
+}
+.yoru-control-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-control-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+.yoru-control-field:focus-within {
+  border-color: var(--primary);
+}
+.yoru-control-field input,
+.yoru-control-field select {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+}
+@media (max-width: 900px) {
+  .yoru-controls { grid-template-columns: 1fr; gap: 14px; }
+}
+
+/* ==========================================================================
+   Estadísticas
+   ========================================================================== */
+.yoru-stats-section { margin-bottom: 34px; }
+.yoru-stats-title {
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  margin: 0;
+}
+.yoru-stats-desc { margin: 4px 0 14px; font-size: 13.5px; color: var(--text-muted); }
+.yoru-stats-lead { margin: 0 0 18px; font-size: 15px; color: var(--text-main); }
+.yoru-stats-empty { margin: 0; padding: 28px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+.yoru-stats-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.yoru-stats-switches { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.yoru-stats-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 22px 24px;
+}
+.yoru-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.yoru-stats-today {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 34px;
+}
+.yoru-stats-dial { position: relative; text-align: center; }
+.yoru-stats-dial svg { width: 100%; max-width: 300px; display: block; margin: 0 auto; }
+.yoru-stats-dial-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.yoru-stats-dial-label { font-size: 14px; font-weight: 700; color: var(--text-main); }
+.yoru-stats-dial-value {
+  font-family: var(--font-heading);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--text-main);
+}
+.yoru-stats-dial-sub { font-size: 13px; color: var(--text-muted); }
+.yoru-stats-split {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.yoru-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.yoru-dot.is-reading { background: var(--primary); }
+.yoru-dot.is-listening { background: var(--text-muted); }
+
+.yoru-stats-figures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px 30px;
+}
+.yoru-stats-figures.is-row {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+}
+.yoru-stats-figure-label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
+.yoru-stats-figure {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.15;
+}
+.yoru-stats-figure-sub { display: block; margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
+
+/* Barras de la tendencia */
+.yoru-stats-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 190px;
+  padding-bottom: 22px;
+  position: relative;
+}
+.yoru-stats-bar-slot {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+.yoru-stats-bar {
+  width: 100%;
+  max-width: 34px;
+  min-height: 2px;
+  border-radius: 5px 5px 0 0;
+  background: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.yoru-stats-bar-reading { display: block; width: 100%; background: var(--primary); border-radius: 5px 5px 0 0; }
+.yoru-stats-bar-label {
+  position: absolute;
+  bottom: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.yoru-stats-bar-slot { position: relative; }
+.yoru-stats-legend {
+  display: flex;
+  gap: 20px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Libros del periodo */
+.yoru-stats-books { list-style: none; margin: 0; padding: 0; }
+.yoru-stats-books li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-stats-books li:last-child { border-bottom: none; }
+.yoru-stats-book-title { color: var(--text-main); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-stats-book-value { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+
+/* Días de la semana */
+.yoru-stats-weekdays { display: flex; gap: 10px; height: 120px; }
+.yoru-stats-weekday { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
+.yoru-stats-weekday-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.yoru-stats-weekday-track span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--primary); }
+.yoru-stats-weekday .yoru-stats-bar-label { position: static; }
+
+/* Mapa de calor */
+.yoru-heatmap { overflow-x: auto; }
+.yoru-heatmap-months {
+  display: grid;
+  grid-template-columns: repeat(53, 1fr);
+  gap: 3px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 700px;
+}
+.yoru-heatmap-grid { display: flex; gap: 3px; min-width: 700px; }
+.yoru-heatmap-week { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.yoru-heatmap-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--border-light);
+  display: block;
+}
+/* En la leyenda las celdas no se estiran: son la muestra de la escala. */
+.yoru-heatmap-scale .yoru-heatmap-cell { width: 10px; height: 10px; aspect-ratio: auto; }
+.yoru-heatmap-cell[data-level='1'] { background: color-mix(in srgb, var(--primary) 28%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='2'] { background: color-mix(in srgb, var(--primary) 50%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='3'] { background: color-mix(in srgb, var(--primary) 74%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='4'] { background: var(--primary); }
+.yoru-heatmap-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.yoru-heatmap-scale { display: flex; align-items: center; gap: 4px; }
+
+@media (max-width: 900px) {
+  .yoru-stats-today { grid-template-columns: 1fr; gap: 24px; }
+  .yoru-stats-card { padding: 18px 16px; }
+  .yoru-stats-figure { font-size: 22px; }
+  .yoru-stats-bars { height: 150px; }
+}
+
+/* ==========================================================================
+   La biblioteca embebida dentro del lienzo del shell
+   --------------------------------------------------------------------------
+   Fuera del shell, `Library` es la pantalla entera: se reserva el alto de su
+   cabecera y hace su propio scroll. Embebida, la pantalla es el lienzo, así
+   que ese alto reservado deja un hueco muerto arriba y su scroll se suma al
+   del lienzo. Aquí se le devuelve el flujo normal.
+   ========================================================================== */
+.library-container.is-embedded .library-layout-wrapper {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.library-container.is-embedded .library-main-content {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding-top: 0 !important;
+}
+.library-container.is-embedded .library-sidebar,
+.library-container.is-embedded .sidebar-overlay {
+  display: none !important;
+}
+
+/* Los filtros rápidos vuelven: en escritorio se ocultaban porque los tenía el
+   cajón de la biblioteca, y embebida ya no hay cajón (yoru-design-system.css
+   los esconde con «the sidebar and the header tabs already hold these»). */
+.library-container.is-embedded .library-quick-chips {
+  display: flex !important;
+}
+.library-container.is-embedded .library-quick-bar {
+  justify-content: space-between !important;
+  gap: 16px;
+}
+
+/* Yoru SRS y las demás pestañas traen su propio contenedor con scroll. Dentro
+   del lienzo eso es un segundo scroll anidado: manda el del lienzo. */
+.library-container.is-embedded .tab-view-container {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Vistas de servidor: estado vacío y aviso corto */
+.yoru-server-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 55vh;
+  text-align: center;
+  color: var(--text-muted);
+}
+.yoru-server-empty .yoru-empty-note { margin: 0; }
+.yoru-server-toast {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 14px;
+  padding: 11px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+/* El navegador de Kavita, dentro del lienzo: deja de ser un diálogo a pantalla
+   completa y se comporta como una vista más. */
+.media-browser.is-embedded {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: none !important;
+  z-index: auto !important;
+}
+.media-browser.is-embedded .media-browser-header {
+  position: static !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  background: none !important;
+}

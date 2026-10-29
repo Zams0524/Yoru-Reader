@@ -11,6 +11,7 @@ import {
   MoreVertical,
   StickyNote,
   Bookmark,
+  BookAudio,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -49,6 +50,9 @@ interface ReaderNavbarProps {
   onMouseLeave?: () => void;
   isReadingAloud?: boolean;
   onToggleReadAloud?: () => void;
+  /** Audiobook from Audiobookshelf; only when a server is connected. */
+  isAudiobookOpen?: boolean;
+  onToggleAudiobook?: () => void;
   onOpenSearch?: () => void;
   onOpenNotes?: () => void;
   /** The page on screen has a bookmark (ribbon), and the button that sets or removes it. */
@@ -79,6 +83,8 @@ export default function ReaderNavbar({
   onMouseLeave,
   isReadingAloud = false,
   onToggleReadAloud,
+  isAudiobookOpen = false,
+  onToggleAudiobook,
   onOpenSearch,
   onOpenNotes,
   isPageBookmarked = false,
@@ -188,6 +194,12 @@ export default function ReaderNavbar({
                   <button type="button" role="menuitem" onClick={runAndClose(onToggleSession)}>
                     <Timer size={18} />
                     <span>{es ? 'Sesión de lectura' : 'Reading session'}</span>
+                  </button>
+                )}
+                {onToggleAudiobook && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onToggleAudiobook)}>
+                    <BookAudio size={18} />
+                    <span>{isAudiobookOpen ? (es ? 'Cerrar audiolibro' : 'Close audiobook') : (es ? 'Escuchar audiolibro' : 'Listen to audiobook')}</span>
                   </button>
                 )}
                 {onOpenNotes && (

@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plain HTTP only to this device: AnkiConnect for Android listens on http://127.0.0.1:8765.
-     Everything else stays HTTPS-only (Android's default). -->
+<!-- Plain HTTP only to this device and to zams's home PC; everything else stays HTTPS-only
+     (Android's default).
+     - 127.0.0.1 / localhost: AnkiConnect for Android listens on http://127.0.0.1:8765.
+     - 192.168.1.196: the home PC running Kavita (:5000) and Audiobookshelf (:13378). It needs a
+       reserved address in the router; if it changes, update it here (native change: new APK). -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">192.168.1.196</domain>
     </domain-config>
 </network-security-config>

@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DictionaryInstallToast from './components/DictionaryInstallToast';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from './utils/platform';
-const Library = React.lazy(() => import('./components/Library'));
+const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import { db } from './utils/db';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
+import { queueKavitaProgress } from './utils/kavitaService';
+import { refreshServerCatalog } from './utils/serverCatalog';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
@@ -608,10 +610,17 @@ export default function App() {
     };
   }, [activeBook]);
 
-  const handleSelectBook = async (book: any) => {
+  // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
+  // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
+  const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
     // Start of an open, for the timing line the native reader logs.
     (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
-    setActiveBook(book);
+    const positioned = typeof startChapter === 'number'
+      ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
+      : book;
+    // Bandera de apertura, solo en memoria: no se guarda con el libro.
+    const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
+    setActiveBook(target);
     await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
     const loadedBooks = await db.getBooks();
     setBooks(loadedBooks);
@@ -620,6 +629,9 @@ export default function App() {
   const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number) => {
     const updatedBooks = await db.updateBookProgress(bookId, currentChapter, currentPage, percent);
     setBooks(updatedBooks);
+    // Books imported from Kavita send their progress back to the server.
+    const title = updatedBooks.find(b => b.id === bookId)?.title;
+    if (title) queueKavitaProgress(title, percent);
   }, []);
 
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
@@ -894,6 +906,12 @@ export default function App() {
     }
   };
 
+  // Novedades de los servidores de casa, en segundo plano. No bloquea nada: si no
+  // responden (fuera de casa, modo avión) se queda lo que hubiera en la caché.
+  useEffect(() => {
+    void refreshServerCatalog();
+  }, []);
+
   return (
     <div className="app-container" data-theme={settings.theme}>
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
@@ -920,29 +938,31 @@ export default function App() {
             onUpdateBookDetails={handleUpdateBookDetails}
           />
         ) : (
-          <Library 
+          <YoruShell
           books={books}
+          settings={settings}
           onSelectBook={handleSelectBook}
-          onAddBooks={handleAddBooks}
-          onDeleteBook={handleDeleteBook}
-          onBulkDeleteBooks={handleBulkDeleteBooks}
           onUpdateBookDetails={handleUpdateBookDetails}
-          onOpenInfo={(book) => {
+          onOpenInfo={(book: any) => {
             setInfoBook(book);
             setIsInfoOpen(true);
           }}
-          profiles={profiles}
-          activeProfileId={activeProfileId || ''}
-          onSelectProfile={handleSelectProfile}
-          onAddProfile={handleAddProfile}
-          onDeleteProfile={handleDeleteProfile}
-          onUpdateProfile={handleUpdateProfile}
-          onClearDeletedBooks={handleClearDeletedBooks}
-          settings={settings}
-          onSaveSettings={handleSaveSettings}
-          wordStatuses={wordStatuses}
           initialTab={libraryTab}
-          navigateTo={libraryNav}
+          libraryProps={{
+            navigateTo: libraryNav,
+            onAddBooks: handleAddBooks,
+            onDeleteBook: handleDeleteBook,
+            onBulkDeleteBooks: handleBulkDeleteBooks,
+            profiles,
+            activeProfileId: activeProfileId || '',
+            onSelectProfile: handleSelectProfile,
+            onAddProfile: handleAddProfile,
+            onDeleteProfile: handleDeleteProfile,
+            onUpdateProfile: handleUpdateProfile,
+            onClearDeletedBooks: handleClearDeletedBooks,
+            onSaveSettings: handleSaveSettings,
+            wordStatuses,
+          }}
           />
         )}
       </React.Suspense>
