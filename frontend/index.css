@@ -4104,8 +4104,8 @@ rt {
   margin-bottom: 24px;
 }
 
-@media (max-width: 768px) {
-  .stats-overview-grid {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .stats-overview-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -5544,33 +5544,33 @@ rt {
 }
 
 /* --- Mobile Responsive Layout Styles --- */
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* Hide standard header tabs */
-  .header-navigation-tabs {
+  html:where(.yoru-compact) .header-navigation-tabs {
     display: none !important;
   }
   
-  .library-brand-name {
+  html:where(.yoru-compact) .library-brand-name {
     font-size: 1.05rem !important;
     letter-spacing: 1px !important;
   }
   
   /* Make header compact */
-  .library-header {
+  html:where(.yoru-compact) .library-header {
     padding: 0 12px;
     height: 56px;
   }
   
-  .library-header-actions {
+  html:where(.yoru-compact) .library-header-actions {
     gap: 6px !important;
   }
   
-  .header-display-settings-btn {
+  html:where(.yoru-compact) .header-display-settings-btn {
     width: 32px !important;
     height: 32px !important;
   }
   
-  .header-action-btn-text {
+  html:where(.yoru-compact) .header-action-btn-text {
     width: 32px !important;
     height: 32px !important;
     border-radius: 50% !important;
@@ -5580,21 +5580,21 @@ rt {
     justify-content: center !important;
   }
   
-  .header-action-btn-text span,
-  .header-action-btn-text svg.lucide-chevron-down {
+  html:where(.yoru-compact) .header-action-btn-text span,
+html:where(.yoru-compact) .header-action-btn-text svg.lucide-chevron-down {
     display: none !important;
   }
   
-  .library-container {
+  html:where(.yoru-compact) .library-container {
     padding: 56px 0 60px 0 !important; /* padding bottom for bottom tab bar */
   }
   
-  .library-layout-wrapper {
+  html:where(.yoru-compact) .library-layout-wrapper {
     height: calc(100vh - 116px) !important; /* 56px header + 60px bottom bar */
   }
   
   /* Sidebar Drawer styling */
-  .library-sidebar {
+  html:where(.yoru-compact) .library-sidebar {
     position: fixed;
     top: 56px;
     left: 0;
@@ -5607,12 +5607,12 @@ rt {
     border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
   
-  .library-sidebar.open {
+  html:where(.yoru-compact) .library-sidebar.open {
     transform: translateX(0);
   }
   
   /* Sidebar backdrop overlay */
-  .sidebar-overlay {
+  html:where(.yoru-compact) .sidebar-overlay {
     position: fixed;
     top: 56px;
     left: 0;
@@ -5626,18 +5626,18 @@ rt {
     transition: opacity 0.3s ease;
   }
   
-  .sidebar-overlay.active {
+  html:where(.yoru-compact) .sidebar-overlay.active {
     opacity: 1;
     pointer-events: auto;
   }
   
   /* Main content padding on mobile */
-  .library-main-content {
+  html:where(.yoru-compact) .library-main-content {
     padding: 20px 16px;
   }
   
   /* Bottom tab bar styling */
-  .bottom-navigation-bar {
+  html:where(.yoru-compact) .bottom-navigation-bar {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -5653,7 +5653,7 @@ rt {
     padding: 0 10px;
   }
   
-  .bottom-tab-btn {
+  html:where(.yoru-compact) .bottom-tab-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -5669,43 +5669,43 @@ rt {
     transition: color 0.15s ease;
   }
   
-  .bottom-tab-btn.active {
+  html:where(.yoru-compact) .bottom-tab-btn.active {
     color: var(--primary); /* Yellow primary */
   }
   
-  .bottom-tab-btn span {
+  html:where(.yoru-compact) .bottom-tab-btn span {
     font-size: 0.65rem;
     font-weight: 500;
   }
   
   /* Compact Statistics Sub-navigation */
-  .stats-sub-tabs-container {
+  html:where(.yoru-compact) .stats-sub-tabs-container {
     gap: 4px !important;
     margin-bottom: 20px !important;
     padding: 3px !important;
   }
   
-  .stats-sub-tab-btn {
+  html:where(.yoru-compact) .stats-sub-tab-btn {
     padding: 8px 4px !important;
   }
   
-  .sub-tab-title {
+  html:where(.yoru-compact) .sub-tab-title {
     font-size: 0.76rem !important;
     white-space: nowrap !important;
   }
   
-  .sub-tab-desc {
+  html:where(.yoru-compact) .sub-tab-desc {
     display: none !important;
   }
   
   /* Settings category drilldown mobile views */
-  .yomitan-settings-layout {
+  html:where(.yoru-compact) .yomitan-settings-layout {
     flex-direction: column !important;
     gap: 0 !important;
     height: 100% !important;
   }
   
-  .yomitan-settings-sidebar {
+  html:where(.yoru-compact) .yomitan-settings-sidebar {
     width: 100% !important;
     max-width: 100% !important;
     border-right: none !important;
@@ -5716,52 +5716,52 @@ rt {
     box-sizing: border-box !important;
   }
   
-  .yomitan-settings-pane {
+  html:where(.yoru-compact) .yomitan-settings-pane {
     width: 100% !important;
     padding-right: 0 !important;
     height: 100% !important;
   }
   
-  .settings-section-card {
+  html:where(.yoru-compact) .settings-section-card {
     margin-bottom: 16px !important;
     padding: 16px !important;
   }
   
   /* Compact statistics panel on mobile */
-  .statistics-top-header {
+  html:where(.yoru-compact) .statistics-top-header {
     flex-direction: column !important;
     align-items: flex-start !important;
     gap: 10px !important;
     margin-bottom: 14px !important;
   }
   
-  .tab-view-title {
+  html:where(.yoru-compact) .tab-view-title {
     font-size: 1.2rem !important;
     margin-bottom: 2px !important;
   }
   
-  .tab-view-subtitle {
+  html:where(.yoru-compact) .tab-view-subtitle {
     font-size: 0.74rem !important;
     line-height: 1.2 !important;
   }
   
-  .stats-toggle-group {
+  html:where(.yoru-compact) .stats-toggle-group {
     width: 100% !important;
     display: flex !important;
   }
   
-  .stats-toggle-btn {
+  html:where(.yoru-compact) .stats-toggle-btn {
     flex: 1 !important;
     text-align: center !important;
     font-size: 0.74rem !important;
     padding: 5px 8px !important;
   }
   
-  .tab-view-container {
+  html:where(.yoru-compact) .tab-view-container {
     padding: 1.5rem 6px 5rem 6px !important;
   }
 
-  .stats-overview-grid {
+  html:where(.yoru-compact) .stats-overview-grid {
     gap: 6px !important;
     grid-template-columns: 1fr 1fr !important;
     width: 100% !important;
@@ -5769,42 +5769,42 @@ rt {
     padding: 0 !important;
   }
   
-  .stats-overview-item {
+  html:where(.yoru-compact) .stats-overview-item {
     padding: 8px 10px !important;
     gap: 8px !important;
     border-radius: 10px !important;
   }
   
-  .stats-icon-circle {
+  html:where(.yoru-compact) .stats-icon-circle {
     width: 28px !important;
     height: 28px !important;
   }
   
-  .stats-icon-circle svg {
+  html:where(.yoru-compact) .stats-icon-circle svg {
     width: 12px !important;
     height: 12px !important;
   }
   
-  .item-label {
+  html:where(.yoru-compact) .item-label {
     font-size: 0.55rem !important;
   }
   
-  .item-val {
+  html:where(.yoru-compact) .item-val {
     font-size: 0.95rem !important;
   }
   
-  .item-sub {
+  html:where(.yoru-compact) .item-sub {
     font-size: 0.6rem !important;
   }
 
-  .stats-book-row {
+  html:where(.yoru-compact) .stats-book-row {
     flex-direction: column !important;
     align-items: flex-start !important;
     gap: 8px !important;
     padding: 10px 12px !important;
   }
   
-  .stats-book-name {
+  html:where(.yoru-compact) .stats-book-name {
     max-width: 100% !important;
     font-size: 0.85rem !important;
     white-space: normal !important;
@@ -5812,19 +5812,19 @@ rt {
   }
   
   /* Make settings options take full screen width */
-  .settings-view-panel.tab-view-container {
+  html:where(.yoru-compact) .settings-view-panel.tab-view-container {
     padding: 1rem 6px 5rem 6px !important;
     width: 100% !important;
     max-width: none !important;
   }
   
-  .yomitan-settings-pane {
+  html:where(.yoru-compact) .yomitan-settings-pane {
     padding-left: 0 !important;
     padding-right: 0 !important;
     width: 100% !important;
   }
   
-  .settings-section-card {
+  html:where(.yoru-compact) .settings-section-card {
     width: 100% !important;
     max-width: none !important;
     margin-left: 0 !important;
@@ -5833,22 +5833,22 @@ rt {
   }
 
   /* Compact Heatmap adaptation on mobile */
-  .heatmap-subtitle,
-  .heatmap-scale-select,
-  .heatmap-legend-row {
+  html:where(.yoru-compact) .heatmap-subtitle,
+html:where(.yoru-compact) .heatmap-scale-select,
+html:where(.yoru-compact) .heatmap-legend-row {
     display: none !important;
   }
   
-  .stats-heatmap-panel {
+  html:where(.yoru-compact) .stats-heatmap-panel {
     padding: 14px !important;
   }
   
-  .heatmap-grid-scroll {
+  html:where(.yoru-compact) .heatmap-grid-scroll {
     overflow: visible !important;
     width: 100% !important;
   }
   
-  .heatmap-grid-container {
+  html:where(.yoru-compact) .heatmap-grid-container {
     zoom: 0.53 !important;
     min-width: unset !important;
     width: 100% !important;
@@ -5856,11 +5856,11 @@ rt {
   }
 
   /* Welcome Screen Full Screen on mobile */
-  .welcome-screen-container {
+  html:where(.yoru-compact) .welcome-screen-container {
     padding: 0 !important;
     background-color: #131316 !important;
   }
-  .welcome-card {
+  html:where(.yoru-compact) .welcome-card {
     border-radius: 0 !important;
     border: none !important;
     min-height: 100vh !important;
@@ -5873,7 +5873,7 @@ rt {
   }
 
   /* Display Settings Drawer Full Screen on mobile */
-  .display-settings-drawer {
+  html:where(.yoru-compact) .display-settings-drawer {
     width: 100% !important;
     height: 100vh !important;
     top: 0 !important;
@@ -5881,12 +5881,12 @@ rt {
     position: fixed !important;
     z-index: 2000 !important;
   }
-  .display-settings-drawer.open {
+  html:where(.yoru-compact) .display-settings-drawer.open {
     right: 0 !important;
   }
 
   /* Settings view container height collapse fix */
-  .settings-view-panel.tab-view-container {
+  html:where(.yoru-compact) .settings-view-panel.tab-view-container {
     padding: 1rem 12px 5rem 12px !important;
     width: 100% !important;
     max-width: none !important;
@@ -7256,36 +7256,36 @@ body:has(.reader-container) #ajb-reader {
 /* ==========================================================================
    Comprehensive Mobile (Android/iOS) Responsive Overhaul
    ========================================================================== */
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* Library Empty State */
-  .library-empty-hero {
+  html:where(.yoru-compact) .library-empty-hero {
     flex-direction: column !important;
     padding: 32px 16px !important;
     gap: 24px !important;
     min-height: auto !important;
     text-align: center !important;
   }
-  .empty-hero-covers {
+  html:where(.yoru-compact) .empty-hero-covers {
     margin: 0 auto !important;
   }
-  .empty-hero-right {
+  html:where(.yoru-compact) .empty-hero-right {
     max-width: 100% !important;
     width: 100% !important;
   }
-  .empty-info-panel {
+  html:where(.yoru-compact) .empty-info-panel {
     padding: 16px 18px !important;
     text-align: left !important;
     font-size: 0.85rem !important;
   }
-  .empty-hero-actions {
+  html:where(.yoru-compact) .empty-hero-actions {
     width: 100% !important;
   }
-  .empty-add-btn {
+  html:where(.yoru-compact) .empty-add-btn {
     width: 100% !important;
   }
 
   /* SRS Subtabs Horizontal Touch Scroll */
-  .srs-subtabs-container {
+  html:where(.yoru-compact) .srs-subtabs-container {
     overflow-x: auto !important;
     white-space: nowrap !important;
     -webkit-overflow-scrolling: touch !important;
@@ -7295,32 +7295,32 @@ body:has(.reader-container) #ajb-reader {
 
 
   /* Top Navigation Bar Spacing */
-  .library-header {
+  html:where(.yoru-compact) .library-header {
     padding: 10px 14px !important;
   }
-  .library-actions {
+  html:where(.yoru-compact) .library-actions {
     gap: 6px !important;
   }
 
   /* Yoru SRS Top Dashboard Card */
-  .vocab-dashboard-card {
+  html:where(.yoru-compact) .vocab-dashboard-card {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 16px !important;
     padding: 16px !important;
   }
-  .vocab-dashboard-card .vocab-action-btn {
+  html:where(.yoru-compact) .vocab-dashboard-card .vocab-action-btn {
     width: 100% !important;
     justify-content: center !important;
   }
 
   /* Welcome Screen Mobile Layout */
-  .welcome-screen-container {
+  html:where(.yoru-compact) .welcome-screen-container {
     padding: 16px !important;
     min-height: 100vh !important;
     box-sizing: border-box !important;
   }
-  .welcome-card {
+  html:where(.yoru-compact) .welcome-card {
     padding: 20px 16px !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
@@ -7332,9 +7332,9 @@ body:has(.reader-container) #ajb-reader {
    YORU READER — REIMAGINED MOBILE NOVEL & SETTINGS UI
    ======================================================== */
 
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* Top App Bar */
-  .mobile-top-app-bar {
+  html:where(.yoru-compact) .mobile-top-app-bar {
     position: sticky;
     top: 0;
     z-index: 100;
@@ -7347,7 +7347,7 @@ body:has(.reader-container) #ajb-reader {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
 
-  .mobile-top-title {
+  html:where(.yoru-compact) .mobile-top-title {
     font-size: 1.35rem;
     font-weight: 800;
     color: #ffffff;
@@ -7355,7 +7355,7 @@ body:has(.reader-container) #ajb-reader {
     font-family: var(--font-ui), sans-serif;
   }
 
-  .mobile-icon-btn {
+  html:where(.yoru-compact) .mobile-icon-btn {
     background: transparent;
     border: none;
     color: #e0e0ea;
@@ -7368,12 +7368,12 @@ body:has(.reader-container) #ajb-reader {
     transition: background 0.15s ease;
   }
 
-  .mobile-icon-btn:active {
+  html:where(.yoru-compact) .mobile-icon-btn:active {
     background: rgba(255, 255, 255, 0.1);
   }
 
   /* Novel Grid Layout */
-  .mobile-novel-grid {
+  html:where(.yoru-compact) .mobile-novel-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
     gap: 14px;
@@ -7381,7 +7381,7 @@ body:has(.reader-container) #ajb-reader {
     box-sizing: border-box;
   }
 
-  .mobile-novel-card {
+  html:where(.yoru-compact) .mobile-novel-card {
     position: relative;
     aspect-ratio: 2 / 3;
     border-radius: 16px;
@@ -7394,18 +7394,18 @@ body:has(.reader-container) #ajb-reader {
     -webkit-user-select: none;
   }
 
-  .mobile-novel-card:active {
+  html:where(.yoru-compact) .mobile-novel-card:active {
     transform: scale(0.97);
   }
 
-  .mobile-novel-card img {
+  html:where(.yoru-compact) .mobile-novel-card img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
   }
 
-  .mobile-novel-overlay {
+  html:where(.yoru-compact) .mobile-novel-overlay {
     position: absolute;
     inset: 0;
     background: linear-gradient(to top, rgba(10, 10, 14, 0.95) 0%, rgba(10, 10, 14, 0.6) 45%, transparent 100%);
@@ -7416,7 +7416,7 @@ body:has(.reader-container) #ajb-reader {
     box-sizing: border-box;
   }
 
-  .mobile-novel-title {
+  html:where(.yoru-compact) .mobile-novel-title {
     font-size: 0.88rem;
     font-weight: 700;
     color: #ffffff;
@@ -7429,7 +7429,7 @@ body:has(.reader-container) #ajb-reader {
     overflow: hidden;
   }
 
-  .mobile-novel-progress-bar {
+  html:where(.yoru-compact) .mobile-novel-progress-bar {
     width: 100%;
     height: 4px;
     background: rgba(255, 255, 255, 0.2);
@@ -7438,14 +7438,14 @@ body:has(.reader-container) #ajb-reader {
     margin-bottom: 4px;
   }
 
-  .mobile-novel-progress-fill {
+  html:where(.yoru-compact) .mobile-novel-progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #f2c866, #d6a940);
     border-radius: 2px;
     transition: width 0.3s ease;
   }
 
-  .mobile-novel-progress-text {
+  html:where(.yoru-compact) .mobile-novel-progress-text {
     font-size: 0.72rem;
     font-weight: 700;
     color: #f2c866;
@@ -7454,7 +7454,7 @@ body:has(.reader-container) #ajb-reader {
   }
 
   /* Bottom Navigation Bar (5 Items with active pill indicator) */
-  .bottom-navigation-bar {
+  html:where(.yoru-compact) .bottom-navigation-bar {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -7470,7 +7470,7 @@ body:has(.reader-container) #ajb-reader {
     padding: 0 4px;
   }
 
-  .bottom-tab-btn {
+  html:where(.yoru-compact) .bottom-tab-btn {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -7487,15 +7487,15 @@ body:has(.reader-container) #ajb-reader {
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .bottom-tab-btn.active {
+  html:where(.yoru-compact) .bottom-tab-btn.active {
     color: #ffffff;
   }
 
-  .bottom-tab-btn.active svg {
+  html:where(.yoru-compact) .bottom-tab-btn.active svg {
     color: #f2c866;
   }
 
-  .bottom-tab-pill {
+  html:where(.yoru-compact) .bottom-tab-pill {
     padding: 4px 18px;
     border-radius: 16px;
     background: rgba(242, 200, 102, 0.15);
@@ -7506,7 +7506,7 @@ body:has(.reader-container) #ajb-reader {
   }
 
   /* "Más" Screen Styles */
-  .mas-screen-container {
+  html:where(.yoru-compact) .mas-screen-container {
     padding: 16px;
     padding-bottom: 84px;
     max-width: 600px;
@@ -7517,14 +7517,14 @@ body:has(.reader-container) #ajb-reader {
     gap: 16px;
   }
 
-  .mas-screen-title {
+  html:where(.yoru-compact) .mas-screen-title {
     font-size: 1.7rem;
     font-weight: 800;
     color: #ffffff;
     margin-bottom: 8px;
   }
 
-  .mas-card-installing {
+  html:where(.yoru-compact) .mas-card-installing {
     background: rgba(242, 200, 102, 0.08);
     border: 1px solid rgba(242, 200, 102, 0.3);
     border-radius: 16px;
@@ -7535,14 +7535,14 @@ body:has(.reader-container) #ajb-reader {
     animation: pulseGlow 2s infinite ease-in-out;
   }
 
-  .mas-item-group {
+  html:where(.yoru-compact) .mas-item-group {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 16px;
     overflow: hidden;
   }
 
-  .mas-list-item {
+  html:where(.yoru-compact) .mas-list-item {
     display: flex;
     align-items: center;
     justifyContent: space-between;
@@ -7552,21 +7552,21 @@ body:has(.reader-container) #ajb-reader {
     transition: background 0.15s;
   }
 
-  .mas-list-item:last-child {
+  html:where(.yoru-compact) .mas-list-item:last-child {
     border-bottom: none;
   }
 
-  .mas-list-item:active {
+  html:where(.yoru-compact) .mas-list-item:active {
     background: rgba(255, 255, 255, 0.04);
   }
 
-  .mas-item-left {
+  html:where(.yoru-compact) .mas-item-left {
     display: flex;
     align-items: center;
     gap: 14px;
   }
 
-  .mas-item-icon {
+  html:where(.yoru-compact) .mas-item-icon {
     width: 38px;
     height: 38px;
     border-radius: 10px;
@@ -7577,33 +7577,33 @@ body:has(.reader-container) #ajb-reader {
     color: #f2c866;
   }
 
-  .mas-item-title {
+  html:where(.yoru-compact) .mas-item-title {
     font-size: 0.95rem;
     font-weight: 700;
     color: #ffffff;
     margin-bottom: 2px;
   }
 
-  .mas-item-subtitle {
+  html:where(.yoru-compact) .mas-item-subtitle {
     font-size: 0.8rem;
     color: #8a8a9a;
   }
 
   /* iOS / Android Toggle Switch */
-  .switch {
+  html:where(.yoru-compact) .switch {
     position: relative;
     display: inline-block;
     width: 46px;
     height: 26px;
   }
 
-  .switch input {
+  html:where(.yoru-compact) .switch input {
     opacity: 0;
     width: 0;
     height: 0;
   }
 
-  .slider-round {
+  html:where(.yoru-compact) .slider-round {
     position: absolute;
     cursor: pointer;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -7612,7 +7612,7 @@ body:has(.reader-container) #ajb-reader {
     border-radius: 26px;
   }
 
-  .slider-round:before {
+  html:where(.yoru-compact) .slider-round:before {
     position: absolute;
     content: "";
     height: 20px;
@@ -7624,11 +7624,11 @@ body:has(.reader-container) #ajb-reader {
     border-radius: 50%;
   }
 
-  input:checked + .slider-round {
+  html:where(.yoru-compact) input:checked + .slider-round {
     background-color: #f2c866;
   }
 
-  input:checked + .slider-round:before {
+  html:where(.yoru-compact) input:checked + .slider-round:before {
     transform: translateX(20px);
     background-color: #000;
   }
@@ -7711,8 +7711,8 @@ body:has(.reader-container) #ajb-reader {
 
 
 /* Ensure all tabs and stats are smoothly scrollable on mobile */
-@media (max-width: 768px) {
-  .library-container {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .library-container {
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
     height: 100vh !important;
@@ -7721,11 +7721,11 @@ body:has(.reader-container) #ajb-reader {
     box-sizing: border-box !important;
   }
 
-  .stats-tab-content,
-  .progress-dashboard,
-  .mas-screen-container,
-  .srs-tab-container,
-  .mobile-novel-grid {
+  html:where(.yoru-compact) .stats-tab-content,
+html:where(.yoru-compact) .progress-dashboard,
+html:where(.yoru-compact) .mas-screen-container,
+html:where(.yoru-compact) .srs-tab-container,
+html:where(.yoru-compact) .mobile-novel-grid {
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
     padding-bottom: 90px !important;
@@ -7738,9 +7738,9 @@ body:has(.reader-container) #ajb-reader {
 /* ==========================================================================
    Mobile Bottom Sheet for Reader Settings Popover & Responsive SRS
    ========================================================================== */
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* Reader Settings Bottom Sheet */
-  .settings-popover-card {
+  html:where(.yoru-compact) .settings-popover-card {
     position: fixed !important;
     top: auto !important;
     bottom: 0 !important;
@@ -7762,11 +7762,11 @@ body:has(.reader-container) #ajb-reader {
     z-index: 100005 !important;
   }
 
-  .settings-popover-arrow {
+  html:where(.yoru-compact) .settings-popover-arrow {
     display: none !important;
   }
 
-  .settings-popover-body {
+  html:where(.yoru-compact) .settings-popover-body {
     max-height: 65vh !important;
     padding: 12px 16px 24px 16px !important;
   }
@@ -7783,22 +7783,22 @@ body:has(.reader-container) #ajb-reader {
   }
 
   /* SRS responsive cards */
-  .srs-view-panel {
+  html:where(.yoru-compact) .srs-view-panel {
     padding: 12px 12px 110px 12px !important;
     width: 100% !important;
     max-width: 100% !important;
   }
 
-  .srs-deck-card,
-  .srs-banner-container,
-  .srs-review-card {
+  html:where(.yoru-compact) .srs-deck-card,
+html:where(.yoru-compact) .srs-banner-container,
+html:where(.yoru-compact) .srs-review-card {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
   }
 
   /* Mobile Novel Grid Spacing */
-  .mobile-novel-grid {
+  html:where(.yoru-compact) .mobile-novel-grid {
     display: grid !important;
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
     gap: 14px !important;
@@ -7807,7 +7807,7 @@ body:has(.reader-container) #ajb-reader {
     box-sizing: border-box !important;
   }
 
-  .mobile-novel-card {
+  html:where(.yoru-compact) .mobile-novel-card {
     aspect-ratio: 2 / 3 !important;
     border-radius: 14px !important;
     overflow: hidden !important;

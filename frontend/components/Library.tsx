@@ -18,7 +18,8 @@ import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
 import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
-import { isPhoneUI } from '../utils/platform';
+import { hasDesktopIntegrations, isPhoneUI } from '../utils/platform';
+import { useDeviceClass } from '../hooks/useDeviceClass';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
@@ -272,38 +273,37 @@ const Library = React.memo(function Library({
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [previewBook, setPreviewBook] = useState(null);
   
-  // Mobile responsive layout states
-  const checkIsMobileDevice = () => {
-    if (typeof window === 'undefined') return false;
-    const isAndroidApp = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
-    return isAndroidApp || window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-  };
-  const [isMobile, setIsMobile] = useState(checkIsMobileDevice());
+  // The compact (phone) shell — top app bar, bottom tab bar, drawer — on every
+  // Android screen and on any touch-only small one. The stylesheet reads the
+  // same decision from html.yoru-compact, and deviceClass only scales it up for
+  // tablets (see frontend/utils/platform.ts).
+  const { deviceClass, compact: isMobile } = useDeviceClass();
+  // Discord RPC, keyboard shortcuts and other desktop-only integrations: a
+  // tablet is a wide screen without any of them.
+  const showDesktopIntegrations = hasDesktopIntegrations();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSettingsSectionOpen, setMobileSettingsSectionOpen] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
+  // The drawer belongs to the compact shell: leaving it must not strand it open.
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = checkIsMobileDevice();
-      setIsMobile(mobile);
-      if (!mobile) setIsSidebarOpen(false);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (!isMobile) setIsSidebarOpen(false);
+  }, [isMobile]);
 
   const handleTouchStart = (e) => {
+    if (!isMobile) return;
     touchStartX.current = e.changedTouches[0].screenX;
     touchEndX.current = e.changedTouches[0].screenX;
   };
 
   const handleTouchMove = (e) => {
+    if (!isMobile) return;
     touchEndX.current = e.changedTouches[0].screenX;
   };
 
   const handleTouchEnd = () => {
+    if (!isMobile) return;
     const diffX = touchEndX.current - touchStartX.current;
     
     // 1. Left Sidebar Navigation Drawer
@@ -2670,7 +2670,7 @@ const Library = React.memo(function Library({
     const showDiagnostics = Capacitor.getPlatform() === 'android'
       && (settings.profileName || '').trim().toLowerCase() === 'zams';
     // Phones have no physical keyboard: hide the shortcuts section there.
-    const showKeyboardShortcuts = !isMobile && Capacitor.getPlatform() !== 'android';
+    const showKeyboardShortcuts = showDesktopIntegrations;
     const handleSliderChange = (val) => {
       onSaveSettings({ ...settings, fontSize: val });
     };
@@ -2875,7 +2875,7 @@ const Library = React.memo(function Library({
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
                   {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
-                  {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
+                  {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
               </div>
   
@@ -3858,7 +3858,7 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Discord Rich Presence */}
-          {!isMobile && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
+          {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
             <div id="sec-discord" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MessageSquare size={18} style={{ color: 'var(--primary)' }} />
@@ -5927,7 +5927,8 @@ const Library = React.memo(function Library({
 
   return (
     <div 
-      className="library-container"
+      className={`library-container device-${deviceClass}`}
+      data-device={deviceClass}
       aria-busy={isSectionPending}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
