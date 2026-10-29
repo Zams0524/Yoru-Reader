@@ -167,7 +167,7 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
   }, [phase.kind, session, loadTrack]);
 
   const chooseItem = useCallback((item: AudiobookItem) => {
-    setAudiobookLink(book.id, { itemId: item.id, title: item.title });
+    setAudiobookLink(book.id, { itemId: item.id, title: item.title, chapters: item.chapters?.length });
     void openSession(item.id);
   }, [book.id, openSession]);
 
@@ -371,6 +371,12 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
               phase.matches.length === 0
                 ? <p className="audio-sync-message">{es ? 'No se encontró este libro. Busca el título del audiolibro.' : 'This book was not found. Search for the audiobook title.'}</p>
                 : (
+                  <>
+                    <p className="audio-sync-message">
+                      {es
+                        ? 'Parecidos por título. Elige cuál es:'
+                        : 'Similar by title. Pick the right one:'}
+                    </p>
                   <ul className="audio-sync-matches">
                     {phase.matches.slice(0, 8).map((item) => (
                       <li key={item.id}>
@@ -385,6 +391,7 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
                       </li>
                     ))}
                   </ul>
+                  </>
                 )
             )}
           </>

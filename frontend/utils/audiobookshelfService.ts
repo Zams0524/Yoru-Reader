@@ -275,6 +275,12 @@ export function chapterAt(chapters: Chapter[], time: number): number {
 export interface AudiobookLink {
   itemId: string;
   title: string;
+  /**
+   * Capitulos del audiolibro, apuntados al vincular para no preguntarselo al servidor
+   * cada vez que se pinta una lista. Un audiolibro de un solo bloque no se puede
+   * seguir por capitulos; uno con muchos, si.
+   */
+  chapters?: number;
 }
 
 function getLinks(): Record<string, AudiobookLink> {
@@ -287,6 +293,22 @@ function getLinks(): Record<string, AudiobookLink> {
 
 export function getAudiobookLink(bookId: string): AudiobookLink | null {
   return getLinks()[bookId] || null;
+}
+
+export type AudiobookLinkState = 'none' | 'linked' | 'chapters';
+
+/**
+ * Lo que sabemos de verdad del vinculo, y nada mas.
+ *
+ * No hay «grado de alineacion»: Kavita y Audiobookshelf no se conocen entre si, asi
+ * que ninguno puede decir cuanto encaja un libro de uno con un audio del otro. Lo que
+ * si sabemos es si hay vinculo y si el audiolibro viene partido en capitulos, que es
+ * lo que de verdad cambia al leer escuchando.
+ */
+export function audiobookLinkState(bookId: string): AudiobookLinkState {
+  const link = getAudiobookLink(bookId);
+  if (!link) return 'none';
+  return (link.chapters || 0) > 1 ? 'chapters' : 'linked';
 }
 
 export function setAudiobookLink(bookId: string, link: AudiobookLink | null): void {

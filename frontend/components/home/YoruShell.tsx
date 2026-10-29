@@ -28,7 +28,7 @@ import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import StatsView from './StatsView';
 import { AudiobookshelfView, ServerEmptyState } from './ServerViews';
-import { getAudiobookLink } from '../../utils/audiobookshelfService';
+import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import {
   authorGroups,
@@ -330,11 +330,16 @@ export default function YoruShell({
       return (
         <BookGridView
           title={es ? 'Leer y escuchar' : 'Read and listen'}
-          subtitle={
-            es
-              ? `${listenable.length} ${listenable.length === 1 ? 'libro con audiolibro' : 'libros con audiolibro'}`
-              : `${listenable.length} ${listenable.length === 1 ? 'book with an audiobook' : 'books with an audiobook'}`
-          }
+          subtitle={(() => {
+            const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
+            const total = listenable.length;
+            if (es) {
+              const base = `${total} ${total === 1 ? 'libro con audiolibro' : 'libros con audiolibro'}`;
+              return withChapters ? `${base} · ${withChapters} con capítulos` : base;
+            }
+            const base = `${total} ${total === 1 ? 'book with an audiobook' : 'books with an audiobook'}`;
+            return withChapters ? `${base} · ${withChapters} with chapters` : base;
+          })()}
           books={listenable}
           es={es}
           onOpenDetail={openDetail}

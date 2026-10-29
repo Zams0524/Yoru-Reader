@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Headphones, Info, Play } from 'lucide-react';
 import { BookRail, Cover } from './primitives';
 import { bookStatus, sameAuthor, sameSeries, type ShelfBook } from './libraryIndex';
-import { getAudiobookLink } from '../../utils/audiobookshelfService';
+import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 
 type Tab = 'summary' | 'chapters';
 
@@ -61,6 +61,9 @@ export default function BookDetailView({
   const chapters = useMemo(() => (Array.isArray(book.chapters) ? book.chapters : []), [book.chapters]);
   // El audiolibro se vincula desde el lector (⋮ > Escuchar audiolibro); aquí solo se mira.
   const hasAudiobook = useMemo(() => Boolean(getAudiobookLink(book.id)), [book.id]);
+  // Tres estados, los tres ciertos: sin vincular, vinculado, y vinculado con
+  // capitulos (que es el unico que permite seguir el audio capitulo a capitulo).
+  const linkState = useMemo(() => audiobookLinkState(book.id), [book.id]);
   const series = useMemo(() => sameSeries(books, book), [books, book]);
   const byAuthor = useMemo(() => sameAuthor(books, book), [books, book]);
 
@@ -109,7 +112,9 @@ export default function BookDetailView({
             {onListen && hasAudiobook && (
               <button type="button" className="yoru-btn" onClick={() => onListen(book)}>
                 <Headphones size={16} />
-                {es ? 'Escuchar audiolibro' : 'Listen to audiobook'}
+                {linkState === 'chapters'
+                  ? (es ? 'Leer escuchando · por capítulos' : 'Read along · by chapter')
+                  : (es ? 'Leer escuchando' : 'Read along')}
               </button>
             )}
             {status === 'completed' ? (
