@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import './index.css'
 import './yoru-design-system.css'
 import App from './App'
+import { applyDeviceClasses, watchDeviceClass } from './utils/platform'
 import { applyLocalWordStyles } from './utils/parserSettingsStore'
 import { notifyWebBundleReady } from './hooks/useAppUpdater'
 import { installBackButton } from './hooks/useBackButton'
@@ -13,6 +14,12 @@ const previewAndroid = new URLSearchParams(window.location.search).has('android'
 if ((Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') || previewAndroid) {
   document.documentElement.classList.add('platform-android')
 }
+
+// The shell and the stylesheet read the screen from the same place: <html>
+// carries yoru-compact plus yoru-phone / yoru-tablet / yoru-desktop from the
+// first paint, and follows rotation, split screen and window resizing.
+applyDeviceClasses()
+watchDeviceClass(applyDeviceClasses)
 
 // Word-state styles chosen in the Yoru Parser settings (kept locally where there is no extension).
 applyLocalWordStyles()

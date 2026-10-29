@@ -104,13 +104,13 @@ textarea:focus-visible,
 
 /* Desktop app frame */
 @media (min-width: 769px) {
-  .library-container {
+  html:where(:not(.yoru-compact)) .library-container {
     height: 100dvh;
     padding-top: 72px;
     background: var(--bg-app);
   }
 
-  .library-header {
+  html:where(:not(.yoru-compact)) .library-header {
     height: 72px;
     padding-inline: clamp(20px, 3vw, 48px);
     display: grid;
@@ -122,7 +122,7 @@ textarea:focus-visible,
     backdrop-filter: blur(18px) saturate(140%);
   }
 
-  .library-brand-name {
+  html:where(:not(.yoru-compact)) .library-brand-name {
     font-family: var(--font-heading);
     font-size: 1.04rem;
     letter-spacing: 0.18em;
@@ -132,7 +132,7 @@ textarea:focus-visible,
     -webkit-text-fill-color: transparent;
   }
 
-  .header-navigation-tabs {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs {
     justify-self: center;
     min-width: 0;
     max-width: 100%;
@@ -146,11 +146,11 @@ textarea:focus-visible,
     border-radius: 15px;
   }
 
-  .header-navigation-tabs::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs::-webkit-scrollbar {
     display: none;
   }
 
-  .nav-tab-btn {
+  html:where(:not(.yoru-compact)) .nav-tab-btn {
     flex: 0 0 auto;
     min-height: 34px;
     padding: 7px 15px;
@@ -162,20 +162,20 @@ textarea:focus-visible,
     text-shadow: none;
   }
 
-  .nav-tab-btn:hover {
+  html:where(:not(.yoru-compact)) .nav-tab-btn:hover {
     color: var(--text-main);
     background: var(--surface-raised);
     transform: none;
   }
 
-  .nav-tab-btn.active {
+  html:where(:not(.yoru-compact)) .nav-tab-btn.active {
     color: var(--text-main);
     background: color-mix(in srgb, var(--primary) 13%, var(--bg-card));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
     text-shadow: none;
   }
 
-  .library-header-actions {
+  html:where(:not(.yoru-compact)) .library-header-actions {
     justify-self: end;
     width: max-content;
     max-width: 100%;
@@ -183,8 +183,8 @@ textarea:focus-visible,
     gap: 10px;
   }
 
-  .header-display-settings-btn,
-  .library-header-btn {
+  html:where(:not(.yoru-compact)) .header-display-settings-btn,
+html:where(:not(.yoru-compact)) .library-header-btn {
     width: 42px;
     height: 42px;
     border-radius: 13px;
@@ -192,20 +192,20 @@ textarea:focus-visible,
     border-color: var(--border-light);
   }
 
-  .header-display-settings-btn:hover,
-  .library-header-btn:hover {
+  html:where(:not(.yoru-compact)) .header-display-settings-btn:hover,
+html:where(:not(.yoru-compact)) .library-header-btn:hover {
     color: var(--primary);
     background: var(--surface-raised);
     border-color: var(--border-focus);
     transform: translateY(-1px);
   }
 
-  .library-layout-wrapper {
+  html:where(:not(.yoru-compact)) .library-layout-wrapper {
     height: calc(100dvh - 72px);
     min-height: 0;
   }
 
-  .library-sidebar {
+  html:where(:not(.yoru-compact)) .library-sidebar {
     width: 278px;
     padding: 26px 18px;
     gap: 24px;
@@ -213,30 +213,30 @@ textarea:focus-visible,
     border-right-color: var(--border-light);
   }
 
-  .library-main-content {
+  html:where(:not(.yoru-compact)) .library-main-content {
     padding: clamp(30px, 4vw, 58px) clamp(30px, 4.2vw, 72px);
     background: transparent;
   }
 
-  .section-header {
+  html:where(:not(.yoru-compact)) .section-header {
     align-items: center;
     gap: 12px;
     margin-bottom: 24px;
   }
 
-  .section-title,
-  .tab-view-title {
+  html:where(:not(.yoru-compact)) .section-title,
+html:where(:not(.yoru-compact)) .tab-view-title {
     color: var(--text-main);
     font-family: var(--font-heading);
     letter-spacing: -0.035em;
     text-shadow: none;
   }
 
-  .section-title {
+  html:where(:not(.yoru-compact)) .section-title {
     font-size: clamp(1.55rem, 2vw, 2rem);
   }
 
-  .section-count {
+  html:where(:not(.yoru-compact)) .section-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -251,12 +251,12 @@ textarea:focus-visible,
     font-size: 0.78rem;
   }
 
-  .books-grid {
+  html:where(:not(.yoru-compact)) .books-grid {
     grid-template-columns: repeat(auto-fill, minmax(max(164px, var(--card-width, 180px)), 1fr));
     gap: 26px 20px;
   }
 
-  .book-card {
+  html:where(:not(.yoru-compact)) .book-card {
     padding: 9px;
     border-radius: 16px;
     border-color: var(--border-light);
@@ -264,25 +264,25 @@ textarea:focus-visible,
     box-shadow: 0 7px 24px rgba(0, 0, 0, 0.12);
   }
 
-  .book-card:hover {
+  html:where(:not(.yoru-compact)) .book-card:hover {
     transform: translateY(-4px);
     border-color: color-mix(in srgb, var(--primary) 35%, var(--border-light));
     background: var(--bg-card-hover);
     box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
   }
 
-  .book-cover-container {
+  html:where(:not(.yoru-compact)) .book-cover-container {
     border-radius: 11px;
     background: var(--surface-raised);
     box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
   }
 
-  .book-title {
+  html:where(:not(.yoru-compact)) .book-title {
     font-weight: 700 !important;
     letter-spacing: -0.012em;
   }
 
-  .sidebar-search-input {
+  html:where(:not(.yoru-compact)) .sidebar-search-input {
     height: 44px;
     padding-inline: 14px;
     border-color: var(--border-light);
@@ -291,19 +291,19 @@ textarea:focus-visible,
     color: var(--text-main);
   }
 
-  .sidebar-search-input:focus {
+  html:where(:not(.yoru-compact)) .sidebar-search-input:focus {
     background: var(--bg-card);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
-  .sidebar-group-title {
+  html:where(:not(.yoru-compact)) .sidebar-group-title {
     padding-left: 10px;
     color: var(--text-dark);
     font-size: 0.68rem;
     letter-spacing: 0.13em;
   }
 
-  .sidebar-item {
+  html:where(:not(.yoru-compact)) .sidebar-item {
     min-height: 40px;
     padding: 9px 11px;
     border-left: 2px solid transparent;
@@ -312,13 +312,13 @@ textarea:focus-visible,
     font-weight: 600;
   }
 
-  .sidebar-item:hover {
+  html:where(:not(.yoru-compact)) .sidebar-item:hover {
     padding-left: 11px;
     background: var(--surface-soft);
     color: var(--text-main);
   }
 
-  .sidebar-item.active {
+  html:where(:not(.yoru-compact)) .sidebar-item.active {
     padding-left: 11px;
     background: color-mix(in srgb, var(--primary) 9%, transparent);
     border-left-color: var(--primary);
@@ -328,36 +328,36 @@ textarea:focus-visible,
 }
 
 @media (min-width: 769px) and (max-width: 1250px) {
-  .library-header {
+  html:where(:not(.yoru-compact)) .library-header {
     padding-inline: 16px;
     gap: 12px;
   }
 
-  .library-brand-name {
+  html:where(:not(.yoru-compact)) .library-brand-name {
     display: none;
   }
 
-  .nav-tab-btn {
+  html:where(:not(.yoru-compact)) .nav-tab-btn {
     gap: 5px;
     padding-inline: 8px;
     font-size: 0.76rem;
   }
 
-  .library-header-actions {
+  html:where(:not(.yoru-compact)) .library-header-actions {
     gap: 6px;
   }
 
-  .header-action-btn-text {
+  html:where(:not(.yoru-compact)) .header-action-btn-text {
     padding-inline: 10px;
   }
 }
 
 @media (min-width: 769px) and (max-width: 1050px) {
-  .nav-tab-btn span {
+  html:where(:not(.yoru-compact)) .nav-tab-btn span {
     display: none;
   }
 
-  .header-navigation-tabs {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs {
     gap: 1px;
   }
 }
@@ -632,111 +632,111 @@ textarea:focus-visible,
 }
 
 @media (min-width: 769px) {
-  .library-sidebar,
-  .library-main-content,
-  .settings-sidebar-left,
-  .settings-sidebar-right,
-  .stats-tab-content,
-  .progress-dashboard,
-  .srs-view-panel,
-  .yomitan-settings-pane,
-  .yomitan-settings-sidebar,
-  .drawer-content {
+  html:where(:not(.yoru-compact)) .library-sidebar,
+html:where(:not(.yoru-compact)) .library-main-content,
+html:where(:not(.yoru-compact)) .settings-sidebar-left,
+html:where(:not(.yoru-compact)) .settings-sidebar-right,
+html:where(:not(.yoru-compact)) .stats-tab-content,
+html:where(:not(.yoru-compact)) .progress-dashboard,
+html:where(:not(.yoru-compact)) .srs-view-panel,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar,
+html:where(:not(.yoru-compact)) .drawer-content {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--text-dark) 50%, transparent) transparent;
   }
 
-  .library-sidebar::-webkit-scrollbar,
-  .library-main-content::-webkit-scrollbar,
-  .settings-sidebar-left::-webkit-scrollbar,
-  .settings-sidebar-right::-webkit-scrollbar,
-  .stats-tab-content::-webkit-scrollbar,
-  .progress-dashboard::-webkit-scrollbar,
-  .srs-view-panel::-webkit-scrollbar,
-  .yomitan-settings-pane::-webkit-scrollbar,
-  .yomitan-settings-sidebar::-webkit-scrollbar,
-  .drawer-content::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .library-sidebar::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .library-main-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .settings-sidebar-left::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .settings-sidebar-right::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .stats-tab-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .progress-dashboard::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .srs-view-panel::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .drawer-content::-webkit-scrollbar {
     display: block;
     width: 8px;
     height: 8px;
   }
 
-  .library-sidebar::-webkit-scrollbar-thumb,
-  .library-main-content::-webkit-scrollbar-thumb,
-  .settings-sidebar-left::-webkit-scrollbar-thumb,
-  .settings-sidebar-right::-webkit-scrollbar-thumb,
-  .stats-tab-content::-webkit-scrollbar-thumb,
-  .progress-dashboard::-webkit-scrollbar-thumb,
-  .srs-view-panel::-webkit-scrollbar-thumb,
-  .yomitan-settings-pane::-webkit-scrollbar-thumb,
-  .yomitan-settings-sidebar::-webkit-scrollbar-thumb,
-  .drawer-content::-webkit-scrollbar-thumb {
+  html:where(:not(.yoru-compact)) .library-sidebar::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .library-main-content::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .settings-sidebar-left::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .settings-sidebar-right::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .stats-tab-content::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .progress-dashboard::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .srs-view-panel::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .drawer-content::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 999px;
     background: color-mix(in srgb, var(--text-dark) 46%, transparent);
     background-clip: padding-box;
   }
 
-  .reader-engine-container,
-  .reader-engine-content,
-  .book-content {
+  html:where(:not(.yoru-compact)) .reader-engine-container,
+html:where(:not(.yoru-compact)) .reader-engine-content,
+html:where(:not(.yoru-compact)) .book-content {
     scrollbar-width: none;
   }
 
-  .reader-engine-container::-webkit-scrollbar,
-  .reader-engine-content::-webkit-scrollbar,
-  .book-content::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .reader-engine-container::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .reader-engine-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .book-content::-webkit-scrollbar {
     display: none;
   }
 }
 
-@media (max-width: 768px) {
-  .library-container {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .library-container {
     height: 100dvh !important;
     padding-top: calc(56px + var(--yoru-safe-top, 0px)) !important;
     background: var(--bg-app);
   }
 
-  .mobile-top-app-bar {
+  html:where(.yoru-compact) .mobile-top-app-bar {
     padding-top: var(--yoru-safe-top, 0px);
     background: var(--bg-panel-translucent);
     border-bottom-color: var(--border-light);
     backdrop-filter: blur(16px);
   }
 
-  .library-layout-wrapper {
+  html:where(.yoru-compact) .library-layout-wrapper {
     height: calc(100dvh - 116px - var(--yoru-safe-top, 0px)) !important;
   }
 
-  .library-main-content {
+  html:where(.yoru-compact) .library-main-content {
     padding: 22px 16px calc(100px + var(--yoru-safe-bottom, 0px));
   }
 
-  .section-header {
+  html:where(.yoru-compact) .section-header {
     margin-bottom: 18px;
   }
 
-  .section-title {
+  html:where(.yoru-compact) .section-title {
     font-size: 1.45rem;
   }
 
-  .books-grid {
+  html:where(.yoru-compact) .books-grid {
     /* Follows the card size option; the default 160px gives the usual 138px. */
     grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-width, 160px) * 0.8625), 1fr));
     gap: 16px 12px;
   }
 
-  .book-card {
+  html:where(.yoru-compact) .book-card {
     padding: 7px;
     border-radius: 13px;
   }
 
-  .settings-dictionary-row {
+  html:where(.yoru-compact) .settings-dictionary-row {
     align-items: flex-start;
     padding: 12px;
   }
 
-  .settings-dictionary-state {
+  html:where(.yoru-compact) .settings-dictionary-state {
     flex-direction: column-reverse;
     align-items: flex-end;
     gap: 7px;
@@ -755,17 +755,17 @@ textarea:focus-visible,
 }
 
 /* Native Android shell: keep phone layouts independent from the desktop frame. */
-@media (max-width: 768px) {
-  html.platform-android,
-  html.platform-android body,
-  html.platform-android #root {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html.platform-android:where(.yoru-compact),
+html.platform-android:where(.yoru-compact) body,
+html.platform-android:where(.yoru-compact) #root {
     width: 100%;
     min-width: 0;
     min-height: 100%;
     overflow-x: clip;
   }
 
-  html.platform-android .library-container {
+  html.platform-android:where(.yoru-compact) .library-container {
     width: 100%;
     min-width: 0;
     height: 100dvh !important;
@@ -777,7 +777,7 @@ textarea:focus-visible,
     scroll-padding-top: calc(60px + var(--yoru-safe-top, 0px));
   }
 
-  html.platform-android .mobile-top-app-bar {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -800,7 +800,7 @@ textarea:focus-visible,
     -webkit-backdrop-filter: blur(18px) saturate(1.18);
   }
 
-  html.platform-android .mobile-top-app-bar::after {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar::after {
     content: "";
     position: absolute;
     z-index: -1;
@@ -810,7 +810,7 @@ textarea:focus-visible,
     pointer-events: none;
   }
 
-  html.platform-android .mobile-top-title {
+  html.platform-android:where(.yoru-compact) .mobile-top-title {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -824,7 +824,7 @@ textarea:focus-visible,
     text-shadow: 0 1px 14px rgba(255, 218, 94, 0.12);
   }
 
-  html.platform-android .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -840,34 +840,34 @@ textarea:focus-visible,
     transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
   }
 
-  html.platform-android .mobile-top-app-bar > .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-icon-btn {
     border-color: rgba(242, 200, 102, 0.24);
     background: linear-gradient(145deg, rgba(242, 200, 102, 0.13), rgba(255, 126, 101, 0.08));
     color: #ffe45c;
   }
 
-  html.platform-android .mobile-icon-btn:active {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn:active {
     transform: scale(0.94);
     border-color: rgba(242, 200, 102, 0.42);
     background: linear-gradient(145deg, rgba(242, 200, 102, 0.19), rgba(255, 126, 101, 0.12));
   }
 
-  html.platform-android .mobile-icon-btn:focus-visible {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn:focus-visible {
     outline: 2px solid rgba(242, 200, 102, 0.82);
     outline-offset: 2px;
   }
 
-  html.platform-android .library-layout-wrapper {
+  html.platform-android:where(.yoru-compact) .library-layout-wrapper {
     width: 100%;
     min-width: 0;
     height: calc(100dvh - 120px - var(--yoru-safe-top, 0px) - var(--yoru-safe-bottom, 0px)) !important;
     min-height: 320px;
   }
 
-  html.platform-android .library-main-content,
-  html.platform-android .mas-screen-container,
-  html.platform-android .stats-tab-content,
-  html.platform-android .progress-dashboard {
+  html.platform-android:where(.yoru-compact) .library-main-content,
+html.platform-android:where(.yoru-compact) .mas-screen-container,
+html.platform-android:where(.yoru-compact) .stats-tab-content,
+html.platform-android:where(.yoru-compact) .progress-dashboard {
     width: 100%;
     min-width: 0;
     max-width: 100%;
@@ -876,13 +876,13 @@ textarea:focus-visible,
     overflow-x: clip;
   }
 
-  html.platform-android .library-main-content {
+  html.platform-android:where(.yoru-compact) .library-main-content {
     padding-top: 20px;
     padding-bottom: calc(88px + var(--yoru-safe-bottom, 0px));
     background-image: radial-gradient(ellipse at 92% 0%, rgba(255, 214, 102, 0.08), transparent 34rem);
   }
 
-  html.platform-android .section-header {
+  html.platform-android:where(.yoru-compact) .section-header {
     align-items: center;
     gap: 10px;
     padding: 0 0 12px;
@@ -890,7 +890,7 @@ textarea:focus-visible,
     border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border-light));
   }
 
-  html.platform-android .section-header::before {
+  html.platform-android:where(.yoru-compact) .section-header::before {
     content: '読';
     display: grid;
     flex: 0 0 34px;
@@ -907,13 +907,13 @@ textarea:focus-visible,
     box-shadow: 0 6px 18px rgba(255, 196, 61, 0.08);
   }
 
-  html.platform-android .section-title {
+  html.platform-android:where(.yoru-compact) .section-title {
     min-width: 0;
     font-size: 1.38rem;
     letter-spacing: -0.03em;
   }
 
-  html.platform-android .section-count {
+  html.platform-android:where(.yoru-compact) .section-count {
     /* The centring rules only exist in the desktop block; without them the number sat in a corner. */
     display: inline-flex;
     align-items: center;
@@ -933,12 +933,12 @@ textarea:focus-visible,
     font-weight: 800;
   }
 
-  html.platform-android .books-grid {
+  html.platform-android:where(.yoru-compact) .books-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
 
-  html.platform-android .book-card {
+  html.platform-android:where(.yoru-compact) .book-card {
     display: grid;
     grid-template-columns: 76px minmax(0, 1fr);
     align-items: center;
@@ -953,12 +953,12 @@ textarea:focus-visible,
     transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
   }
 
-  html.platform-android .book-card:active {
+  html.platform-android:where(.yoru-compact) .book-card:active {
     transform: scale(0.985);
     border-color: color-mix(in srgb, var(--primary) 42%, var(--border-light));
   }
 
-  html.platform-android .book-cover-container {
+  html.platform-android:where(.yoru-compact) .book-cover-container {
     width: 76px;
     height: 96px;
     aspect-ratio: auto;
@@ -968,14 +968,14 @@ textarea:focus-visible,
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
   }
 
-  html.platform-android .book-info {
+  html.platform-android:where(.yoru-compact) .book-info {
     min-width: 0;
     margin: 0 !important;
     padding: 0 28px 0 0;
     gap: 5px !important;
   }
 
-  html.platform-android .book-title {
+  html.platform-android:where(.yoru-compact) .book-title {
     display: -webkit-box;
     overflow: hidden;
     color: var(--text-main) !important;
@@ -986,20 +986,20 @@ textarea:focus-visible,
     -webkit-line-clamp: 2;
   }
 
-  html.platform-android .book-series,
-  html.platform-android .book-author {
+  html.platform-android:where(.yoru-compact) .book-series,
+html.platform-android:where(.yoru-compact) .book-author {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.76rem !important;
   }
 
-  html.platform-android .card-menu-trigger-btn {
+  html.platform-android:where(.yoru-compact) .card-menu-trigger-btn {
     min-width: 34px;
     min-height: 34px;
   }
 
-  html.platform-android .bottom-navigation-bar {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     height: calc(64px + var(--yoru-safe-bottom, 0px));
     padding: 4px 8px max(4px, var(--yoru-safe-bottom, 0px));
     box-sizing: border-box;
@@ -1008,7 +1008,7 @@ textarea:focus-visible,
     backdrop-filter: blur(18px);
   }
 
-  html.platform-android .bottom-tab-btn {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn {
     min-width: 0;
     min-height: 48px;
     gap: 3px;
@@ -1016,7 +1016,7 @@ textarea:focus-visible,
     touch-action: manipulation;
   }
 
-  html.platform-android .bottom-tab-btn span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn span {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1024,7 +1024,7 @@ textarea:focus-visible,
     font-size: 0.65rem;
   }
 
-  html.platform-android .srs-view-panel {
+  html.platform-android:where(.yoru-compact) .srs-view-panel {
     width: 100%;
     min-width: 0;
     max-width: none !important;
@@ -1037,7 +1037,7 @@ textarea:focus-visible,
     overflow-wrap: anywhere;
   }
 
-  html.platform-android .srs-dashboard-toolbar {
+  html.platform-android:where(.yoru-compact) .srs-dashboard-toolbar {
     display: flex !important;
     flex-direction: column;
     align-items: stretch !important;
@@ -1045,7 +1045,7 @@ textarea:focus-visible,
     margin-bottom: 16px !important;
   }
 
-  html.platform-android .srs-subtabs-container {
+  html.platform-android:where(.yoru-compact) .srs-subtabs-container {
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
@@ -1058,7 +1058,7 @@ textarea:focus-visible,
     border-radius: 16px !important;
   }
 
-  html.platform-android .srs-subtabs-container > button {
+  html.platform-android:where(.yoru-compact) .srs-subtabs-container > button {
     min-width: 0;
     min-height: 40px;
     padding: 8px 4px !important;
@@ -1069,52 +1069,52 @@ textarea:focus-visible,
     overflow-wrap: anywhere;
   }
 
-  html.platform-android .srs-quick-actions {
+  html.platform-android:where(.yoru-compact) .srs-quick-actions {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px !important;
     width: 100%;
   }
 
-  html.platform-android .srs-quick-actions > button {
+  html.platform-android:where(.yoru-compact) .srs-quick-actions > button {
     min-width: 0;
     min-height: 44px;
     padding: 8px 10px !important;
     white-space: nowrap;
   }
 
-  html.platform-android .srs-deck-list {
+  html.platform-android:where(.yoru-compact) .srs-deck-list {
     min-width: 0;
     margin-bottom: 16px !important;
   }
 
-  html.platform-android .srs-deck-grid {
+  html.platform-android:where(.yoru-compact) .srs-deck-grid {
     grid-template-columns: minmax(0, 1fr) !important;
     gap: 10px !important;
     width: 100%;
     min-width: 0;
   }
 
-  html.platform-android .srs-deck-card,
-  html.platform-android .srs-empty-state {
+  html.platform-android:where(.yoru-compact) .srs-deck-card,
+html.platform-android:where(.yoru-compact) .srs-empty-state {
     width: 100%;
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  html.platform-android .srs-empty-state {
+  html.platform-android:where(.yoru-compact) .srs-empty-state {
     padding: 24px 16px !important;
   }
 
-  html.platform-android .srs-empty-hint {
+  html.platform-android:where(.yoru-compact) .srs-empty-hint {
     margin: 8px auto 0;
     max-width: 30rem;
     font-size: 0.78rem;
     line-height: 1.5;
   }
 
-  html.platform-android .yoru-toast {
+  html.platform-android:where(.yoru-compact) .yoru-toast {
     left: 12px;
     right: 12px !important;
     bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
@@ -1126,9 +1126,9 @@ textarea:focus-visible,
 }
 
 /* Android shell v1.3.6: centered top bar, styled bottom nav, settings that scroll with the page. */
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* ---- Top bar: equal side columns so the title sits in the true center ---- */
-  html.platform-android .mobile-top-app-bar {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     grid-template-columns: minmax(92px, 1fr) minmax(0, max-content) minmax(92px, 1fr);
     gap: 10px;
     min-height: 60px;
@@ -1137,8 +1137,8 @@ textarea:focus-visible,
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   }
 
-  html.platform-android .mobile-top-app-bar > .mobile-cloud-btn,
-  html.platform-android .mobile-top-app-bar > .mobile-leading-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-cloud-btn,
+html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-leading-btn {
     justify-self: start;
     width: 42px;
     min-width: 42px;
@@ -1148,7 +1148,7 @@ textarea:focus-visible,
     border-radius: 13px;
   }
 
-  html.platform-android .mobile-top-title {
+  html.platform-android:where(.yoru-compact) .mobile-top-title {
     justify-self: center;
     max-width: 100%;
     margin: 0;
@@ -1158,7 +1158,7 @@ textarea:focus-visible,
     border-radius: 0;
   }
 
-  html.platform-android .mobile-top-actions {
+  html.platform-android:where(.yoru-compact) .mobile-top-actions {
     display: flex;
     justify-self: end;
     align-items: center;
@@ -1167,7 +1167,7 @@ textarea:focus-visible,
     min-width: 0;
   }
 
-  html.platform-android .mobile-top-actions .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-actions .mobile-icon-btn {
     width: 42px;
     min-width: 42px;
     height: 42px;
@@ -1177,14 +1177,14 @@ textarea:focus-visible,
   }
 
   /* The top bar already names the screen; drop the repeated page headings. */
-  html.platform-android .settings-page-heading,
-  html.platform-android .progress-page-heading,
-  html.platform-android .progress-page-subtitle {
+  html.platform-android:where(.yoru-compact) .settings-page-heading,
+html.platform-android:where(.yoru-compact) .progress-page-heading,
+html.platform-android:where(.yoru-compact) .progress-page-subtitle {
     display: none !important;
   }
 
   /* ---- Settings: no fixed-height inner scroller, no dead space ---- */
-  html.platform-android .settings-view-panel.tab-view-container {
+  html.platform-android:where(.yoru-compact) .settings-view-panel.tab-view-container {
     display: flex !important;
     height: auto !important;
     min-height: 0 !important;
@@ -1193,38 +1193,38 @@ textarea:focus-visible,
     padding: 16px 14px 20px !important;
   }
 
-  html.platform-android .yomitan-settings-layout {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-layout {
     height: auto !important;
   }
 
-  html.platform-android .yomitan-settings-sidebar,
-  html.platform-android .yomitan-settings-pane {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-sidebar,
+html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 8px !important;
   }
 
-  html.platform-android .yomitan-search-wrapper input {
+  html.platform-android:where(.yoru-compact) .yomitan-search-wrapper input {
     min-height: 44px;
     border-radius: 12px !important;
     font-size: 0.9rem !important;
   }
 
   /* ---- Statistics: let the page scroller handle it ---- */
-  html.platform-android .stats-tab-content {
+  html.platform-android:where(.yoru-compact) .stats-tab-content {
     min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 20px !important;
   }
 
-  html.platform-android .progress-dashboard-root {
+  html.platform-android:where(.yoru-compact) .progress-dashboard-root {
     min-height: 0 !important;
     padding-top: 14px !important;
   }
 
   /* ---- Bottom navigation ---- */
-  html.platform-android .bottom-navigation-bar {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     height: calc(68px + var(--yoru-safe-bottom, 0px));
     padding: 6px 10px max(6px, var(--yoru-safe-bottom, 0px));
     background:
@@ -1234,7 +1234,7 @@ textarea:focus-visible,
     box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.3);
   }
 
-  html.platform-android .bottom-navigation-bar::before {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar::before {
     content: "";
     position: absolute;
     inset: -1px 14px auto;
@@ -1243,7 +1243,7 @@ textarea:focus-visible,
     pointer-events: none;
   }
 
-  html.platform-android .bottom-tab-btn {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn {
     position: relative;
     justify-content: center;
     gap: 4px;
@@ -1253,7 +1253,7 @@ textarea:focus-visible,
     -webkit-tap-highlight-color: transparent;
   }
 
-  html.platform-android .bottom-tab-btn::before {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn::before {
     content: "";
     position: absolute;
     top: 4px;
@@ -1268,7 +1268,7 @@ textarea:focus-visible,
     transition: opacity 160ms ease, transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
   }
 
-  html.platform-android .bottom-tab-btn svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn svg {
     position: relative;
     z-index: 1;
     width: 20px;
@@ -1277,7 +1277,7 @@ textarea:focus-visible,
     transition: transform 160ms ease, color 160ms ease;
   }
 
-  html.platform-android .bottom-tab-btn span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn span {
     position: relative;
     z-index: 1;
     font-size: 0.66rem;
@@ -1285,33 +1285,33 @@ textarea:focus-visible,
     letter-spacing: 0.01em;
   }
 
-  html.platform-android .bottom-tab-btn.active {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active {
     color: #fff6cf;
   }
 
-  html.platform-android .bottom-tab-btn.active::before {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active::before {
     opacity: 1;
     transform: translateX(-50%) scale(1);
   }
 
-  html.platform-android .bottom-tab-btn.active svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active svg {
     color: #ffe45c;
     transform: translateY(-1px);
   }
 
-  html.platform-android .bottom-tab-btn.active span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active span {
     font-weight: 800;
   }
 
-  html.platform-android .bottom-tab-btn:active svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn:active svg {
     transform: scale(0.9);
   }
 
-  html.platform-android .library-container {
+  html.platform-android:where(.yoru-compact) .library-container {
     padding-bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
   }
 
-  html.platform-android .yoru-toast {
+  html.platform-android:where(.yoru-compact) .yoru-toast {
     bottom: calc(80px + var(--yoru-safe-bottom, 0px)) !important;
   }
 }
@@ -1320,14 +1320,14 @@ textarea:focus-visible,
    Yoru Parser settings modal on phones (v1.3.9)
    A bottom sheet with every tab visible and compact word-state rows.
    ========================================================================== */
-@media (max-width: 768px) {
-  .yoru-parser-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .yoru-parser-overlay {
     align-items: flex-end !important;
     padding-top: calc(var(--yoru-safe-top, 0px) + 12px);
     box-sizing: border-box;
   }
 
-  .yoru-parser-panel {
+  html:where(.yoru-compact) .yoru-parser-panel {
     width: 100% !important;
     max-width: none !important;
     max-height: 100% !important;
@@ -1337,21 +1337,21 @@ textarea:focus-visible,
     box-sizing: border-box;
   }
 
-  .yoru-parser-header {
+  html:where(.yoru-compact) .yoru-parser-header {
     padding: 10px 8px 10px 16px !important;
   }
 
-  .yoru-parser-title {
+  html:where(.yoru-compact) .yoru-parser-title {
     font-size: 16px !important;
   }
 
-  .yoru-parser-close {
+  html:where(.yoru-compact) .yoru-parser-close {
     width: 40px;
     height: 40px;
     font-size: 18px !important;
   }
 
-  .yoru-parser-tabs {
+  html:where(.yoru-compact) .yoru-parser-tabs {
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px !important;
@@ -1359,57 +1359,57 @@ textarea:focus-visible,
     overflow: visible !important;
   }
 
-  .yoru-parser-tab {
+  html:where(.yoru-compact) .yoru-parser-tab {
     min-height: 36px;
     padding: 6px 4px !important;
     font-size: 12.5px !important;
     gap: 4px !important;
   }
 
-  .yoru-parser-tab[aria-selected="true"] {
+  html:where(.yoru-compact) .yoru-parser-tab[aria-selected="true"] {
     box-shadow: inset 0 0 0 1px currentColor;
   }
 
-  .yoru-parser-body {
+  html:where(.yoru-compact) .yoru-parser-body {
     padding: 0 14px 20px !important;
     overscroll-behavior: contain;
   }
 
-  .yoru-parser-states {
+  html:where(.yoru-compact) .yoru-parser-states {
     gap: 6px !important;
   }
 
-  .yoru-parser-state-head {
+  html:where(.yoru-compact) .yoru-parser-state-head {
     padding: 9px 10px 9px 12px !important;
     gap: 8px;
     min-height: 48px;
     box-sizing: border-box;
   }
 
-  .yoru-parser-state-label {
+  html:where(.yoru-compact) .yoru-parser-state-label {
     font-size: 14px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .yoru-parser-state-summary {
+  html:where(.yoru-compact) .yoru-parser-state-summary {
     font-size: 11.5px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .yoru-parser-state-actions {
+  html:where(.yoru-compact) .yoru-parser-state-actions {
     gap: 8px !important;
   }
 
-  .yoru-parser-state-sample {
+  html:where(.yoru-compact) .yoru-parser-state-sample {
     font-size: 15px !important;
     padding: 0 4px !important;
   }
 
-  .yoru-parser-add-effect {
+  html:where(.yoru-compact) .yoru-parser-add-effect {
     height: 32px;
     max-width: 92px;
     padding: 0 6px !important;
@@ -1421,12 +1421,12 @@ textarea:focus-visible,
    Reader image gallery on phones (v1.3.10)
    Full-width image, thumbnails as a bottom strip, close button below the status bar.
    ========================================================================== */
-@media (max-width: 768px) {
-  .reader-gallery {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .reader-gallery {
     flex-direction: column !important;
   }
 
-  .reader-gallery-close {
+  html:where(.yoru-compact) .reader-gallery-close {
     width: 44px;
     height: 44px;
     top: calc(10px + var(--yoru-safe-top, 0px)) !important;
@@ -1435,7 +1435,7 @@ textarea:focus-visible,
     touch-action: manipulation;
   }
 
-  .reader-gallery-main {
+  html:where(.yoru-compact) .reader-gallery-main {
     order: 0;
     flex: 1 1 auto !important;
     min-height: 0;
@@ -1443,21 +1443,21 @@ textarea:focus-visible,
   }
 
   /* Room left after the close button, the counter and (with several images) the strip. */
-  .reader-gallery {
+  html:where(.yoru-compact) .reader-gallery {
     --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 160px - var(--yoru-safe-bottom, 0px));
   }
 
-  .reader-gallery:has(.gallery-sidebar.is-single) {
+  html:where(.yoru-compact) .reader-gallery:has(.gallery-sidebar.is-single) {
     --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 64px - var(--yoru-safe-bottom, 0px));
   }
 
-  .reader-gallery-frame,
-  .reader-gallery-image {
+  html:where(.yoru-compact) .reader-gallery-frame,
+html:where(.yoru-compact) .reader-gallery-image {
     max-width: 100% !important;
     max-height: var(--gallery-image-max-height) !important;
   }
 
-  .reader-gallery .gallery-sidebar {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar {
     order: 1;
     width: 100% !important;
     height: calc(96px + var(--yoru-safe-bottom, 0px));
@@ -1470,24 +1470,24 @@ textarea:focus-visible,
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .reader-gallery .gallery-sidebar > div {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar > div {
     width: auto !important;
     height: 100%;
   }
 
-  .reader-gallery .gallery-sidebar.is-single {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar.is-single {
     display: none !important;
   }
 
-  .reader-gallery-arrow {
+  html:where(.yoru-compact) .reader-gallery-arrow {
     padding: 12px 8px !important;
   }
 
-  .reader-gallery-arrow.is-prev {
+  html:where(.yoru-compact) .reader-gallery-arrow.is-prev {
     left: 6px !important;
   }
 
-  .reader-gallery-arrow.is-next {
+  html:where(.yoru-compact) .reader-gallery-arrow.is-next {
     right: 6px !important;
   }
 }
@@ -1728,8 +1728,8 @@ textarea:focus-visible,
   padding: 0 1px;
 }
 
-@media (max-width: 768px) {
-  .reader-side-panel {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .reader-side-panel {
     width: 100%;
     max-width: 100%;
     border-left: none !important;
@@ -1885,13 +1885,13 @@ textarea:focus-visible,
   flex-wrap: wrap;
 }
 
-@media (max-width: 768px) {
-  .highlight-note-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .highlight-note-overlay {
     align-items: flex-end;
     padding: 0;
   }
 
-  .highlight-note-dialog {
+  html:where(.yoru-compact) .highlight-note-dialog {
     max-width: none;
     border-radius: 18px 18px 0 0;
     padding-bottom: calc(16px + var(--yoru-safe-bottom, 0px));
@@ -2101,8 +2101,8 @@ textarea:focus-visible,
   border-top: 1px solid var(--border-light, rgba(255, 255, 255, 0.08));
 }
 
-@media (max-width: 768px) {
-  .library-sidebar .sidebar-item {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .library-sidebar .sidebar-item {
     min-height: 46px;
     font-size: 0.95rem;
   }
@@ -3001,8 +3001,8 @@ textarea:focus-visible,
 }
 
 /* On phones every library display option is in the ⋮ menu, so the side panel is not used. */
-@media (max-width: 768px) {
-  .display-settings-drawer {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .display-settings-drawer {
     display: none !important;
   }
 }
@@ -3626,22 +3626,22 @@ textarea:focus-visible,
    ========================================================================== */
 @media (min-width: 769px) {
   /* Reader: back · title/author/section · actions, on one row. */
-  .reader-topbar {
+  html:where(:not(.yoru-compact)) .reader-topbar {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 6px 12px;
   }
 
-  .reader-topbar-row {
+  html:where(:not(.yoru-compact)) .reader-topbar-row {
     display: contents;
   }
 
-  .reader-topbar-row > .reader-topbar-btn {
+  html:where(:not(.yoru-compact)) .reader-topbar-row > .reader-topbar-btn {
     order: 0;
   }
 
-  .reader-topbar-info {
+  html:where(:not(.yoru-compact)) .reader-topbar-info {
     order: 1;
     flex: 1;
     min-width: 0;
@@ -3651,29 +3651,29 @@ textarea:focus-visible,
     gap: 14px;
   }
 
-  .reader-topbar-title {
+  html:where(:not(.yoru-compact)) .reader-topbar-title {
     flex-shrink: 1;
     min-width: 0;
     font-size: 1rem;
   }
 
-  .reader-topbar-sub {
+  html:where(:not(.yoru-compact)) .reader-topbar-sub {
     margin-top: 0;
     font-size: 0.8rem;
     flex-shrink: 1;
     min-width: 0;
   }
 
-  .reader-topbar-actions {
+  html:where(:not(.yoru-compact)) .reader-topbar-actions {
     order: 2;
   }
 
-  .readera-settings {
+  html:where(:not(.yoru-compact)) .readera-settings {
     top: 60px;
     right: 16px;
   }
 
-  .reader-pagebar {
+  html:where(:not(.yoru-compact)) .reader-pagebar {
     left: 50%;
     right: auto;
     width: min(720px, calc(100vw - 32px));
@@ -3684,36 +3684,36 @@ textarea:focus-visible,
     border-radius: 16px;
   }
 
-  .read-aloud-bar.is-raised {
+  html:where(:not(.yoru-compact)) .read-aloud-bar.is-raised {
     bottom: 124px;
   }
 
   /* Library: the sidebar and the header tabs already hold these on desktop. */
-  .library-sidebar .sidebar-footer-group,
-  .library-quick-chips {
+  html:where(:not(.yoru-compact)) .library-sidebar .sidebar-footer-group,
+html:where(:not(.yoru-compact)) .library-quick-chips {
     display: none !important;
   }
 
-  .library-quick-bar {
+  html:where(:not(.yoru-compact)) .library-quick-bar {
     justify-content: flex-end;
   }
 }
 
 /* ---- Phone: library drawer reaches the bottom (the tab bar hides while it is open) ---- */
-@media (max-width: 768px) {
-  html.platform-android .library-sidebar,
-  html.platform-android .sidebar-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html.platform-android:where(.yoru-compact) .library-sidebar,
+html.platform-android:where(.yoru-compact) .sidebar-overlay {
     height: auto;
     bottom: 0;
   }
 
-  html.platform-android .library-sidebar {
+  html.platform-android:where(.yoru-compact) .library-sidebar {
     overflow-y: auto;
     padding-bottom: 0;
   }
 
   /* Google Drive and Settings stay pinned above the system navigation bar. */
-  html.platform-android .library-sidebar .sidebar-footer-group {
+  html.platform-android:where(.yoru-compact) .library-sidebar .sidebar-footer-group {
     position: sticky;
     bottom: 0;
     z-index: 1;
@@ -3725,12 +3725,12 @@ textarea:focus-visible,
 }
 
 /* ---- Phone: SRS review utility buttons fit the width ---- */
-html.platform-android .srs-utility-row {
+html.platform-android:where(.yoru-phone) .srs-utility-row {
   flex-wrap: nowrap !important;
   gap: 8px !important;
 }
 
-html.platform-android .srs-utility-row > button {
+html.platform-android:where(.yoru-phone) .srs-utility-row > button {
   flex: 1 1 0;
   min-width: 0;
   justify-content: center;
@@ -4559,59 +4559,59 @@ html.platform-android .reader-engine-content {
   }
 }
 
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* Book menu: bigger rows for thumbs. */
-  html.platform-android .card-menu-trigger-btn {
+  html.platform-android:where(.yoru-compact) .card-menu-trigger-btn {
     width: 34px;
     height: 34px;
   }
 
-  html.platform-android .book-context-menu-dropdown {
+  html.platform-android:where(.yoru-compact) .book-context-menu-dropdown {
     top: 40px;
     width: 236px;
     max-height: min(600px, calc(100dvh - 170px));
   }
 
-  html.platform-android .context-menu-item-btn {
+  html.platform-android:where(.yoru-compact) .context-menu-item-btn {
     min-height: 44px;
     font-size: 0.9rem;
   }
 
   /* Select mode: full-width panel that stays above the bottom navigation. */
-  .yomitan-select-mode-panel {
+  html:where(.yoru-compact) .yomitan-select-mode-panel {
     right: 8px;
     bottom: calc(76px + var(--yoru-safe-bottom, 0px));
     left: 8px;
     width: auto;
   }
 
-  html.platform-android .library-container:has(.book-card.select-mode-active),
-  html.platform-android .library-container:has(.book-list-row.select-mode-active) {
+  html.platform-android:where(.yoru-compact) .library-container:has(.book-card.select-mode-active),
+html.platform-android:where(.yoru-compact) .library-container:has(.book-list-row.select-mode-active) {
     padding-bottom: calc(330px + var(--yoru-safe-bottom, 0px)) !important;
   }
 
   /* Settings list: a flat menu with descriptions instead of a sidebar. */
-  .settings-nav-groups {
+  html:where(.yoru-compact) .settings-nav-groups {
     gap: 18px;
   }
 
-  .settings-nav-group-title {
+  html:where(.yoru-compact) .settings-nav-group-title {
     margin: 0 0 4px 4px;
     font-size: 0.72rem;
     letter-spacing: 0.08em;
   }
 
-  .settings-nav-group-title svg {
+  html:where(.yoru-compact) .settings-nav-group-title svg {
     display: none;
   }
 
-  .settings-nav-group {
+  html:where(.yoru-compact) .settings-nav-group {
     gap: 0;
     padding-left: 0;
     border-left: none;
   }
 
-  .settings-nav-item {
+  html:where(.yoru-compact) .settings-nav-item {
     min-height: 58px;
     gap: 14px;
     padding: 8px 6px;
@@ -4619,11 +4619,11 @@ html.platform-android .reader-engine-content {
     color: var(--text-main);
   }
 
-  .settings-nav-item:active {
+  html:where(.yoru-compact) .settings-nav-item:active {
     background: var(--surface-soft);
   }
 
-  .settings-nav-icon {
+  html:where(.yoru-compact) .settings-nav-icon {
     width: 36px;
     height: 36px;
     border-radius: 10px;
@@ -4631,41 +4631,41 @@ html.platform-android .reader-engine-content {
     color: var(--text-muted);
   }
 
-  .settings-nav-label {
+  html:where(.yoru-compact) .settings-nav-label {
     font-size: 0.95rem;
     font-weight: 600;
   }
 
-  .settings-nav-item.is-danger .settings-nav-icon {
+  html:where(.yoru-compact) .settings-nav-item.is-danger .settings-nav-icon {
     background: var(--yoru-danger-soft);
     color: var(--yoru-danger);
   }
 
-  html.platform-android .yomitan-settings-sidebar,
-  html.platform-android .yomitan-settings-pane {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-sidebar,
+html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     padding-bottom: calc(92px + var(--yoru-safe-bottom, 0px)) !important;
   }
 
   /* Settings sections: the top bar names the section, so drop the card frame
      and let each option breathe as its own row. */
-  html.platform-android .yomitan-settings-pane .settings-section-card {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-section-card {
     padding: 0 !important;
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
   }
 
-  html.platform-android .yomitan-settings-pane .settings-card-title {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-card-title {
     margin: 4px 0 6px !important;
     font-size: 1.05rem !important;
   }
 
-  html.platform-android .yomitan-settings-pane .settings-card-desc {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-card-desc {
     margin-bottom: 14px !important;
     font-size: 0.84rem !important;
   }
 
-  html.platform-android .yomitan-settings-pane .settings-row-control {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-row-control {
     flex-wrap: wrap;
     gap: 8px 12px;
     min-height: 56px;
@@ -4673,14 +4673,14 @@ html.platform-android .reader-engine-content {
     border-bottom: 1px solid var(--border-light);
   }
 
-  html.platform-android .yomitan-settings-pane .settings-row-control > .settings-label-text {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-row-control > .settings-label-text {
     min-width: 0;
     flex: 1 1 140px;
     font-size: 0.92rem;
     font-weight: 600;
   }
 
-  html.platform-android .yomitan-settings-pane .migaku-select {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .migaku-select {
     min-width: 0;
     max-width: 100%;
     min-height: 44px;
@@ -4693,12 +4693,12 @@ html.platform-android .reader-engine-content {
   }
 
   /* Google Drive: bottom sheet on phones. */
-  .yoru-sheet-overlay {
+  html:where(.yoru-compact) .yoru-sheet-overlay {
     align-items: flex-end;
     padding: calc(var(--yoru-safe-top, 0px) + 24px) 0 0;
   }
 
-  .yoru-sheet {
+  html:where(.yoru-compact) .yoru-sheet {
     width: 100%;
     max-height: 100%;
     gap: 14px;
@@ -4708,40 +4708,40 @@ html.platform-android .reader-engine-content {
     animation: yoruSheetUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .yoru-sheet-handle {
+  html:where(.yoru-compact) .yoru-sheet-handle {
     display: block;
   }
 
   /* Progress: the picker spans the width so it never overflows. */
-  .progress-header .progress-window-picker {
+  html:where(.yoru-compact) .progress-header .progress-window-picker {
     display: grid;
     width: 100%;
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .progress-window-picker button {
+  html:where(.yoru-compact) .progress-window-picker button {
     min-height: 36px;
     padding: 6px 4px;
   }
 
-  .progress-kpi-grid {
+  html:where(.yoru-compact) .progress-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
 
-  .progress-kpi-value {
+  html:where(.yoru-compact) .progress-kpi-value {
     font-size: 1.45rem;
   }
 
   /* The bottom bar is solid: nothing shows through it while scrolling. */
-  html.platform-android .bottom-navigation-bar {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     z-index: 1100;
     background:
       radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
       linear-gradient(0deg, #0c0e13, #14171e);
   }
 
-  html.platform-android .mobile-top-app-bar {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     background:
       radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
       linear-gradient(180deg, #181b22, #0e1116);
@@ -6178,5 +6178,142 @@ html.platform-android .reader-engine-content {
     max-height: 88vh;
     border-radius: 18px 18px 0 0;
     padding-bottom: var(--yoru-safe-bottom, 0px);
+  }
+}
+
+
+/* ==========================================================================
+   Compact shell on a big screen (v1.4.6) — tablets
+   --------------------------------------------------------------------------
+   The phone chrome (top app bar, bottom tab bar, drawer) is now gated on
+   `html.yoru-compact` instead of `@media (max-width: 768px)`, so an Android
+   tablet gets the same shell as a phone instead of the phone markup under the
+   desktop stylesheet. frontend/utils/platform.ts sets that class, together with
+   `yoru-phone` / `yoru-tablet` / `yoru-desktop` for the size.
+
+   The rules below only scale that shell up: wider gutters, more columns, bigger
+   bars and type. Nothing here touches the phone (`yoru-phone` is excluded) or
+   the desktop frame (which needs `:not(.yoru-compact)`).
+   ========================================================================== */
+
+html.yoru-compact:not(.yoru-phone) {
+  --yoru-gutter: clamp(20px, 3.4vw, 44px);
+  --yoru-topbar-h: 64px;
+  --yoru-tabbar-h: 72px;
+}
+
+/* ---- Top app bar: same shape, room to breathe ---- */
+html.yoru-compact:not(.yoru-phone) .mobile-top-app-bar {
+  grid-template-columns: 52px minmax(0, 1fr) 116px;
+  gap: 12px;
+  min-height: var(--yoru-topbar-h);
+  padding:
+    max(10px, var(--yoru-safe-top, 0px))
+    max(var(--yoru-gutter), var(--yoru-safe-right, 0px))
+    10px
+    max(var(--yoru-gutter), var(--yoru-safe-left, 0px)) !important;
+}
+
+html.yoru-compact:not(.yoru-phone) .mobile-top-title {
+  font-size: 1.34rem;
+}
+
+html.yoru-compact:not(.yoru-phone) .mobile-icon-btn {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 16px;
+}
+
+/* ---- Content: the gutters grow with the screen, the column stays readable ---- */
+html.yoru-compact:not(.yoru-phone) .library-main-content,
+html.yoru-compact:not(.yoru-phone) .mas-screen-container,
+html.yoru-compact:not(.yoru-phone) .stats-tab-content,
+html.yoru-compact:not(.yoru-phone) .progress-dashboard,
+html.yoru-compact:not(.yoru-phone) .srs-view-panel {
+  padding-left: max(var(--yoru-gutter), var(--yoru-safe-left, 0px));
+  padding-right: max(var(--yoru-gutter), var(--yoru-safe-right, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .library-main-content {
+  padding-top: 26px;
+  padding-bottom: calc(var(--yoru-tabbar-h) + 28px + var(--yoru-safe-bottom, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .library-layout-wrapper {
+  padding-right: 0;
+}
+
+html.yoru-compact:not(.yoru-phone) .library-container {
+  padding-bottom: calc(var(--yoru-tabbar-h) + var(--yoru-safe-bottom, 0px)) !important;
+}
+
+/* ---- Book cards: the same row card, several per row ---- */
+html.yoru-compact:not(.yoru-phone) .books-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+html.yoru-compact:not(.yoru-phone) .book-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-height: 124px;
+  gap: 14px;
+}
+
+html.yoru-compact:not(.yoru-phone) .section-title {
+  font-size: 1.6rem;
+}
+
+html.yoru-compact:not(.yoru-phone) .section-header::before {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  font-size: 1.15rem;
+}
+
+/* ---- Bottom tab bar: taller, and the tabs stay together instead of
+   stretching to the far corners of a 1280 px screen ---- */
+html.yoru-compact:not(.yoru-phone) .bottom-navigation-bar {
+  height: calc(var(--yoru-tabbar-h) + var(--yoru-safe-bottom, 0px));
+  justify-content: center;
+  gap: clamp(28px, 9vw, 140px);
+  padding: 6px max(var(--yoru-gutter), var(--yoru-safe-left, 0px)) max(6px, var(--yoru-safe-bottom, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .bottom-tab-btn {
+  flex: 0 0 auto;
+  min-width: 128px;
+  min-height: 56px;
+  border-radius: 16px;
+}
+
+html.yoru-compact:not(.yoru-phone) .bottom-tab-btn span {
+  font-size: 0.78rem;
+}
+
+/* ---- Drawer: wider, and it still covers the page below the bar ---- */
+html.yoru-compact:not(.yoru-phone) .library-sidebar {
+  width: 340px;
+  top: calc(var(--yoru-topbar-h) + var(--yoru-safe-top, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .sidebar-overlay {
+  top: calc(var(--yoru-topbar-h) + var(--yoru-safe-top, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .sidebar-item {
+  min-height: 48px;
+  font-size: 0.97rem;
+}
+
+/* ---- Nothing may scroll sideways, whatever the width ---- */
+html.yoru-compact body,
+html.yoru-compact #root {
+  overflow-x: clip;
+}
+
+/* ---- Touch on a wide screen: no hover-only affordances ---- */
+@media (hover: none) {
+  .book-card:hover {
+    transform: none;
   }
 }
