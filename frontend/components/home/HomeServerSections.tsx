@@ -124,7 +124,10 @@ function ServerCard({ item, es }: { item: ServerItem; es: boolean }) {
       </div>
       <span className="yoru-poster-title">{item.title}</span>
       <span className="yoru-poster-meta">
-        {item.author || (isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}
+        {item.author
+          || (item.hours
+            ? `~${Math.round(item.hours)} h ${es ? 'de lectura' : 'to read'}`
+            : isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}
       </span>
     </div>
   );

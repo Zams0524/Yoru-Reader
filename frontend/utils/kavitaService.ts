@@ -400,6 +400,38 @@ export function kavitaPageForPercent(pages: number, percent: number): number {
   return Math.min(pages, Math.max(0, Math.round((pages * clamped) / 100)));
 }
 
+/**
+ * La vuelta: de la pagina que guarda Kavita al porcentaje nuestro, para poder retomar
+ * un libro por donde lo dejo el servidor.
+ *
+ * Devuelve el PRINCIPIO de esa pagina, no su centro, por dos razones: es lo que se
+ * espera al retomar (empezar esa pagina, no caer en mitad de ella) y hace que la ida
+ * y vuelta conserve la pagina exacta. Con el centro, una pagina acabada en .5 se iba
+ * a la siguiente al redondear.
+ *
+ * Con `pages` invalido devuelve 0 en vez de NaN o Infinity.
+ */
+export function kavitaPercentForPage(pages: number, pageNum: number): number {
+  if (!Number.isFinite(pages) || pages <= 0) return 0;
+  if (!Number.isFinite(pageNum) || pageNum <= 0) return 0;
+  if (pageNum >= pages) return 100;
+  const percent = (pageNum / pages) * 100;
+  return Math.min(100, Math.max(0, Math.round(percent * 100) / 100));
+}
+
+/** El capitulo que contiene ese porcentaje, segun las paginas de cada capitulo. */
+export function kavitaChapterForPercent(chapterPages: number[], percent: number): number {
+  const total = chapterPages.reduce((sum, value) => sum + (value > 0 ? value : 0), 0);
+  if (total <= 0) return 0;
+  const target = (Math.min(100, Math.max(0, percent)) / 100) * total;
+  let seen = 0;
+  for (let index = 0; index < chapterPages.length; index += 1) {
+    seen += Math.max(0, chapterPages[index]);
+    if (target < seen) return index;
+  }
+  return Math.max(0, chapterPages.length - 1);
+}
+
 async function sendKavitaProgress(title: string, percent: number): Promise<void> {
   const source = getKavitaSource(title);
   const config = getKavitaConfig();

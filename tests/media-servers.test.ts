@@ -6,7 +6,9 @@ import {
   getKavitaLibraries,
   getKavitaSeries,
   getKavitaVolumes,
+  kavitaChapterForPercent,
   kavitaPageForPercent,
+  kavitaPercentForPage,
   kavitaVolumesToBooks,
   loginKavita,
   saveKavitaConfig,
@@ -108,6 +110,23 @@ async function kavitaTests() {
   check(books[0].coverUrl.includes('volume-cover?volumeId=71&apiKey=key-1'), 'Portada con apiKey en la URL');
 
   check(kavitaPageForPercent(200, 50) === 100 && kavitaPageForPercent(200, 140) === 200, 'Porcentaje → página Kavita');
+
+  // La vuelta: de la página de Kavita al porcentaje nuestro.
+  check(kavitaPercentForPage(200, 100) === 50, 'Página → porcentaje: el principio de la página');
+  check(kavitaPercentForPage(200, 200) === 100 && kavitaPercentForPage(200, 500) === 100, 'Página → porcentaje: el final es 100');
+  check(kavitaPercentForPage(200, 0) === 0 && kavitaPercentForPage(200, -3) === 0, 'Página → porcentaje: el principio es 0');
+  check(kavitaPercentForPage(0, 10) === 0 && kavitaPercentForPage(NaN, 10) === 0, 'Página → porcentaje: sin páginas no hay NaN');
+  // Ida y vuelta: la página se conserva exacta, incluidas las que caen en .5.
+  check(
+    [1, 50, 137, 150, 199].every((page) => kavitaPageForPercent(200, kavitaPercentForPage(200, page)) === page),
+    'Ida y vuelta: la página se conserva'
+  );
+
+  // El capítulo que contiene un porcentaje, según las páginas de cada capítulo.
+  check(kavitaChapterForPercent([10, 10, 10], 0) === 0, 'Porcentaje → capítulo: el principio');
+  check(kavitaChapterForPercent([10, 10, 10], 50) === 1, 'Porcentaje → capítulo: la mitad');
+  check(kavitaChapterForPercent([10, 10, 10], 100) === 2, 'Porcentaje → capítulo: el final');
+  check(kavitaChapterForPercent([], 50) === 0, 'Porcentaje → capítulo: sin capítulos');
 
   // Downloads: a single EPUB, and a ZIP holding two EPUBs.
   const epub = new JSZip();

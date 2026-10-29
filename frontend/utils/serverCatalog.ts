@@ -38,6 +38,8 @@ export interface ServerItem {
   /** Serie a la que pertenece, cuando el servidor la da. */
   series?: string;
   author?: string;
+  /** Horas estimadas de lectura, cuando Kavita las da. */
+  hours?: number;
 }
 
 /** Una serie del servidor, con los tomos que conocemos de ella. */
@@ -110,6 +112,7 @@ async function fetchKavita(): Promise<ServerItem[]> {
     title: series.name,
     cover: kavitaSeriesCoverUrl(series.id),
     source: 'kavita' as const,
+    hours: series.avgHoursToRead,
   }));
 }
 
