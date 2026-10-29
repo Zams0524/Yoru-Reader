@@ -986,3 +986,262 @@
 @media (max-width: 900px) {
   .yoru-controls { grid-template-columns: 1fr; gap: 14px; }
 }
+
+/* ==========================================================================
+   Estadísticas
+   ========================================================================== */
+.yoru-stats-section { margin-bottom: 34px; }
+.yoru-stats-title {
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  margin: 0;
+}
+.yoru-stats-desc { margin: 4px 0 14px; font-size: 13.5px; color: var(--text-muted); }
+.yoru-stats-lead { margin: 0 0 18px; font-size: 15px; color: var(--text-main); }
+.yoru-stats-empty { margin: 0; padding: 28px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+.yoru-stats-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.yoru-stats-switches { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.yoru-stats-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 22px 24px;
+}
+.yoru-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.yoru-stats-today {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 34px;
+}
+.yoru-stats-dial { position: relative; text-align: center; }
+.yoru-stats-dial svg { width: 100%; max-width: 300px; display: block; margin: 0 auto; }
+.yoru-stats-dial-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.yoru-stats-dial-label { font-size: 14px; font-weight: 700; color: var(--text-main); }
+.yoru-stats-dial-value {
+  font-family: var(--font-heading);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--text-main);
+}
+.yoru-stats-dial-sub { font-size: 13px; color: var(--text-muted); }
+.yoru-stats-split {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.yoru-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.yoru-dot.is-reading { background: var(--primary); }
+.yoru-dot.is-listening { background: var(--text-muted); }
+
+.yoru-stats-figures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px 30px;
+}
+.yoru-stats-figures.is-row {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+}
+.yoru-stats-figure-label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
+.yoru-stats-figure {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.15;
+}
+.yoru-stats-figure-sub { display: block; margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
+
+/* Barras de la tendencia */
+.yoru-stats-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 190px;
+  padding-bottom: 22px;
+  position: relative;
+}
+.yoru-stats-bar-slot {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+.yoru-stats-bar {
+  width: 100%;
+  max-width: 34px;
+  min-height: 2px;
+  border-radius: 5px 5px 0 0;
+  background: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.yoru-stats-bar-reading { display: block; width: 100%; background: var(--primary); border-radius: 5px 5px 0 0; }
+.yoru-stats-bar-label {
+  position: absolute;
+  bottom: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.yoru-stats-bar-slot { position: relative; }
+.yoru-stats-legend {
+  display: flex;
+  gap: 20px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Libros del periodo */
+.yoru-stats-books { list-style: none; margin: 0; padding: 0; }
+.yoru-stats-books li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-stats-books li:last-child { border-bottom: none; }
+.yoru-stats-book-title { color: var(--text-main); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-stats-book-value { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+
+/* Días de la semana */
+.yoru-stats-weekdays { display: flex; gap: 10px; height: 120px; }
+.yoru-stats-weekday { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
+.yoru-stats-weekday-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.yoru-stats-weekday-track span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--primary); }
+.yoru-stats-weekday .yoru-stats-bar-label { position: static; }
+
+/* Mapa de calor */
+.yoru-heatmap { overflow-x: auto; }
+.yoru-heatmap-months {
+  display: grid;
+  grid-template-columns: repeat(53, 1fr);
+  gap: 3px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 700px;
+}
+.yoru-heatmap-grid { display: flex; gap: 3px; min-width: 700px; }
+.yoru-heatmap-week { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.yoru-heatmap-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--border-light);
+  display: block;
+}
+/* En la leyenda las celdas no se estiran: son la muestra de la escala. */
+.yoru-heatmap-scale .yoru-heatmap-cell { width: 10px; height: 10px; aspect-ratio: auto; }
+.yoru-heatmap-cell[data-level='1'] { background: color-mix(in srgb, var(--primary) 28%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='2'] { background: color-mix(in srgb, var(--primary) 50%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='3'] { background: color-mix(in srgb, var(--primary) 74%, var(--surface-raised)); }
+.yoru-heatmap-cell[data-level='4'] { background: var(--primary); }
+.yoru-heatmap-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.yoru-heatmap-scale { display: flex; align-items: center; gap: 4px; }
+
+@media (max-width: 900px) {
+  .yoru-stats-today { grid-template-columns: 1fr; gap: 24px; }
+  .yoru-stats-card { padding: 18px 16px; }
+  .yoru-stats-figure { font-size: 22px; }
+  .yoru-stats-bars { height: 150px; }
+}
+
+/* ==========================================================================
+   La biblioteca embebida dentro del lienzo del shell
+   --------------------------------------------------------------------------
+   Fuera del shell, `Library` es la pantalla entera: se reserva el alto de su
+   cabecera y hace su propio scroll. Embebida, la pantalla es el lienzo, así
+   que ese alto reservado deja un hueco muerto arriba y su scroll se suma al
+   del lienzo. Aquí se le devuelve el flujo normal.
+   ========================================================================== */
+.library-container.is-embedded .library-layout-wrapper {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.library-container.is-embedded .library-main-content {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding-top: 0 !important;
+}
+.library-container.is-embedded .library-sidebar,
+.library-container.is-embedded .sidebar-overlay {
+  display: none !important;
+}
+
+/* Los filtros rápidos vuelven: en escritorio se ocultaban porque los tenía el
+   cajón de la biblioteca, y embebida ya no hay cajón (yoru-design-system.css
+   los esconde con «the sidebar and the header tabs already hold these»). */
+.library-container.is-embedded .library-quick-chips {
+  display: flex !important;
+}
+.library-container.is-embedded .library-quick-bar {
+  justify-content: space-between !important;
+  gap: 16px;
+}
+
+/* Yoru SRS y las demás pestañas traen su propio contenedor con scroll. Dentro
+   del lienzo eso es un segundo scroll anidado: manda el del lienzo. */
+.library-container.is-embedded .tab-view-container {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}

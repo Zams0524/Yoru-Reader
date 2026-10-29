@@ -6513,12 +6513,14 @@ const Library = React.memo(function Library({
       {/* 2. Two-column Sidebar + Main Content Layout */}
       {activeTab === 'library' && (
         <div className="library-layout-wrapper">
-          {isMobile && (
+          {!embedded && isMobile && (
             <div 
               className={`sidebar-overlay ${isSidebarOpen ? 'active' : ''}`}
               onClick={() => setIsSidebarOpen(false)}
             />
           )}
+          {/* El cajon de la biblioteca duplicaria la barra lateral del shell. */}
+          {!embedded && (
           <aside 
             className={`library-sidebar ${isSidebarOpen ? 'open' : ''}`}
             onClick={(e) => {
@@ -6733,6 +6735,7 @@ const Library = React.memo(function Library({
                 </div>
               </div>
             </aside>
+          )}
 
           <main className="library-main-content">
             {updateBannerVisible && (() => {
