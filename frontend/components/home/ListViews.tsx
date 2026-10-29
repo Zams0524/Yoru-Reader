@@ -44,29 +44,28 @@ export function BookGridView({
             {subtitle ?? formatCount(books.length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
           </div>
         </div>
-        <label className="yoru-shell-search-btn" style={{ maxWidth: 280, cursor: 'text' }}>
-          <Search size={16} />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={es ? 'Filtrar…' : 'Filter…'}
-            style={{
-              background: 'none',
-              border: 'none',
-              outline: 'none',
-              color: 'var(--text-main)',
-              font: 'inherit',
-              width: '100%',
-            }}
-          />
-        </label>
+      </div>
+
+      <div className="yoru-controls">
+        <div>
+          <span className="yoru-control-label" id="grid-search-label">{es ? 'Buscar' : 'Search'}</span>
+          <label className="yoru-control-field">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={es ? 'Buscar por título o autor…' : 'Search by title or author…'}
+              aria-labelledby="grid-search-label"
+            />
+          </label>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
         <EmptyState title={es ? 'Nada por aquí' : 'Nothing here'} />
       ) : (
-        <div className="yoru-grid">
+        <div className="yoru-grid is-covers">
           {filtered.map((book) => (
             <BookPoster key={book.id} book={book} onOpen={onOpenDetail} />
           ))}

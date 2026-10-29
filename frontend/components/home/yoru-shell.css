@@ -272,6 +272,7 @@
 .yoru-shell-shelf-sub { font-size: 11px; color: var(--text-dark); }
 
 .yoru-shell-canvas {
+  --yoru-canvas-pad: 24px;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -322,18 +323,18 @@
   background: var(--surface-raised);
   color: var(--text-muted);
   border: 1px solid var(--border-light);
-  padding: 6px 15px;
-  border-radius: 20px;
+  padding: 9px 20px;
+  border-radius: 12px;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .yoru-chip:hover { background: var(--bg-card-hover); color: var(--text-main); }
 .yoru-chip.active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--text-main);
+  border-color: var(--text-main);
   color: var(--bg-app);
 }
 
@@ -367,9 +368,12 @@
 .yoru-rail-more:hover { background: var(--surface-soft); }
 .yoru-rail-track {
   display: flex;
-  gap: 16px;
+  gap: 18px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* Llega al borde derecho del lienzo: la fila no muere antes que la ventana. */
+  margin-right: calc(-1 * var(--yoru-canvas-pad, 24px));
+  padding-right: var(--yoru-canvas-pad, 24px);
   padding-bottom: 6px;
   scrollbar-width: thin;
 }
@@ -377,7 +381,7 @@
 
 /* Tarjeta póster (carrusel y cuadrícula) */
 .yoru-poster {
-  width: 158px;
+  width: 190px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -453,8 +457,17 @@
 
 .yoru-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: 28px 24px;
+}
+
+/* Catálogo: cuatro por fila y solo la portada, como la maqueta de referencia. */
+.yoru-grid.is-covers {
+  grid-template-columns: repeat(4, 1fr);
+}
+.yoru-grid.is-covers .yoru-poster-title,
+.yoru-grid.is-covers .yoru-poster-meta {
+  display: none;
 }
 .yoru-grid .yoru-poster { width: 100%; }
 
@@ -866,6 +879,7 @@
   .yoru-shell-sidebar.open { transform: translateX(0); }
 
   .yoru-shell-canvas {
+    --yoru-canvas-pad: 16px;
     padding: 16px 16px calc(76px + var(--yoru-safe-bottom, 0px));
   }
   .yoru-shell-embed { margin: -16px -16px calc(-76px - var(--yoru-safe-bottom, 0px)); }
@@ -904,9 +918,10 @@
   .yoru-detail-cover { width: 160px; }
   .yoru-detail-title { font-size: 22px; }
   .yoru-view-title { font-size: 22px; }
-  .yoru-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 14px; }
+  .yoru-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 14px; }
+  .yoru-grid.is-covers { grid-template-columns: repeat(2, 1fr); }
   .yoru-entity-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-  .yoru-poster { width: 128px; }
+  .yoru-poster { width: 148px; }
   .yoru-continue-card { width: 280px; min-width: 260px; }
   .yoru-meta-table th { width: 130px; }
 }
@@ -926,4 +941,48 @@
   color: var(--text-muted);
   font-size: 0.9rem;
   line-height: 1.6;
+}
+
+/* Fila de controles (BUSCAR / ORDENAR / …), con la etiqueta encima del campo. */
+.yoru-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 24px;
+  margin-bottom: 26px;
+}
+.yoru-control-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-control-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+.yoru-control-field:focus-within {
+  border-color: var(--primary);
+}
+.yoru-control-field input,
+.yoru-control-field select {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+}
+@media (max-width: 900px) {
+  .yoru-controls { grid-template-columns: 1fr; gap: 14px; }
 }
