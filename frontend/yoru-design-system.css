@@ -104,13 +104,13 @@ textarea:focus-visible,
 
 /* Desktop app frame */
 @media (min-width: 769px) {
-  .library-container {
+  html:where(:not(.yoru-compact)) .library-container {
     height: 100dvh;
     padding-top: 72px;
     background: var(--bg-app);
   }
 
-  .library-header {
+  html:where(:not(.yoru-compact)) .library-header {
     height: 72px;
     padding-inline: clamp(20px, 3vw, 48px);
     display: grid;
@@ -122,7 +122,7 @@ textarea:focus-visible,
     backdrop-filter: blur(18px) saturate(140%);
   }
 
-  .library-brand-name {
+  html:where(:not(.yoru-compact)) .library-brand-name {
     font-family: var(--font-heading);
     font-size: 1.04rem;
     letter-spacing: 0.18em;
@@ -132,7 +132,7 @@ textarea:focus-visible,
     -webkit-text-fill-color: transparent;
   }
 
-  .header-navigation-tabs {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs {
     justify-self: center;
     min-width: 0;
     max-width: 100%;
@@ -146,11 +146,11 @@ textarea:focus-visible,
     border-radius: 15px;
   }
 
-  .header-navigation-tabs::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs::-webkit-scrollbar {
     display: none;
   }
 
-  .nav-tab-btn {
+  html:where(:not(.yoru-compact)) .nav-tab-btn {
     flex: 0 0 auto;
     min-height: 34px;
     padding: 7px 15px;
@@ -162,20 +162,20 @@ textarea:focus-visible,
     text-shadow: none;
   }
 
-  .nav-tab-btn:hover {
+  html:where(:not(.yoru-compact)) .nav-tab-btn:hover {
     color: var(--text-main);
     background: var(--surface-raised);
     transform: none;
   }
 
-  .nav-tab-btn.active {
+  html:where(:not(.yoru-compact)) .nav-tab-btn.active {
     color: var(--text-main);
     background: color-mix(in srgb, var(--primary) 13%, var(--bg-card));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
     text-shadow: none;
   }
 
-  .library-header-actions {
+  html:where(:not(.yoru-compact)) .library-header-actions {
     justify-self: end;
     width: max-content;
     max-width: 100%;
@@ -183,8 +183,8 @@ textarea:focus-visible,
     gap: 10px;
   }
 
-  .header-display-settings-btn,
-  .library-header-btn {
+  html:where(:not(.yoru-compact)) .header-display-settings-btn,
+html:where(:not(.yoru-compact)) .library-header-btn {
     width: 42px;
     height: 42px;
     border-radius: 13px;
@@ -192,20 +192,20 @@ textarea:focus-visible,
     border-color: var(--border-light);
   }
 
-  .header-display-settings-btn:hover,
-  .library-header-btn:hover {
+  html:where(:not(.yoru-compact)) .header-display-settings-btn:hover,
+html:where(:not(.yoru-compact)) .library-header-btn:hover {
     color: var(--primary);
     background: var(--surface-raised);
     border-color: var(--border-focus);
     transform: translateY(-1px);
   }
 
-  .library-layout-wrapper {
+  html:where(:not(.yoru-compact)) .library-layout-wrapper {
     height: calc(100dvh - 72px);
     min-height: 0;
   }
 
-  .library-sidebar {
+  html:where(:not(.yoru-compact)) .library-sidebar {
     width: 278px;
     padding: 26px 18px;
     gap: 24px;
@@ -213,30 +213,30 @@ textarea:focus-visible,
     border-right-color: var(--border-light);
   }
 
-  .library-main-content {
+  html:where(:not(.yoru-compact)) .library-main-content {
     padding: clamp(30px, 4vw, 58px) clamp(30px, 4.2vw, 72px);
     background: transparent;
   }
 
-  .section-header {
+  html:where(:not(.yoru-compact)) .section-header {
     align-items: center;
     gap: 12px;
     margin-bottom: 24px;
   }
 
-  .section-title,
-  .tab-view-title {
+  html:where(:not(.yoru-compact)) .section-title,
+html:where(:not(.yoru-compact)) .tab-view-title {
     color: var(--text-main);
     font-family: var(--font-heading);
     letter-spacing: -0.035em;
     text-shadow: none;
   }
 
-  .section-title {
+  html:where(:not(.yoru-compact)) .section-title {
     font-size: clamp(1.55rem, 2vw, 2rem);
   }
 
-  .section-count {
+  html:where(:not(.yoru-compact)) .section-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -251,12 +251,12 @@ textarea:focus-visible,
     font-size: 0.78rem;
   }
 
-  .books-grid {
+  html:where(:not(.yoru-compact)) .books-grid {
     grid-template-columns: repeat(auto-fill, minmax(max(164px, var(--card-width, 180px)), 1fr));
     gap: 26px 20px;
   }
 
-  .book-card {
+  html:where(:not(.yoru-compact)) .book-card {
     padding: 9px;
     border-radius: 16px;
     border-color: var(--border-light);
@@ -264,25 +264,25 @@ textarea:focus-visible,
     box-shadow: 0 7px 24px rgba(0, 0, 0, 0.12);
   }
 
-  .book-card:hover {
+  html:where(:not(.yoru-compact)) .book-card:hover {
     transform: translateY(-4px);
     border-color: color-mix(in srgb, var(--primary) 35%, var(--border-light));
     background: var(--bg-card-hover);
     box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
   }
 
-  .book-cover-container {
+  html:where(:not(.yoru-compact)) .book-cover-container {
     border-radius: 11px;
     background: var(--surface-raised);
     box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
   }
 
-  .book-title {
+  html:where(:not(.yoru-compact)) .book-title {
     font-weight: 700 !important;
     letter-spacing: -0.012em;
   }
 
-  .sidebar-search-input {
+  html:where(:not(.yoru-compact)) .sidebar-search-input {
     height: 44px;
     padding-inline: 14px;
     border-color: var(--border-light);
@@ -291,19 +291,19 @@ textarea:focus-visible,
     color: var(--text-main);
   }
 
-  .sidebar-search-input:focus {
+  html:where(:not(.yoru-compact)) .sidebar-search-input:focus {
     background: var(--bg-card);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
-  .sidebar-group-title {
+  html:where(:not(.yoru-compact)) .sidebar-group-title {
     padding-left: 10px;
     color: var(--text-dark);
     font-size: 0.68rem;
     letter-spacing: 0.13em;
   }
 
-  .sidebar-item {
+  html:where(:not(.yoru-compact)) .sidebar-item {
     min-height: 40px;
     padding: 9px 11px;
     border-left: 2px solid transparent;
@@ -312,13 +312,13 @@ textarea:focus-visible,
     font-weight: 600;
   }
 
-  .sidebar-item:hover {
+  html:where(:not(.yoru-compact)) .sidebar-item:hover {
     padding-left: 11px;
     background: var(--surface-soft);
     color: var(--text-main);
   }
 
-  .sidebar-item.active {
+  html:where(:not(.yoru-compact)) .sidebar-item.active {
     padding-left: 11px;
     background: color-mix(in srgb, var(--primary) 9%, transparent);
     border-left-color: var(--primary);
@@ -328,36 +328,36 @@ textarea:focus-visible,
 }
 
 @media (min-width: 769px) and (max-width: 1250px) {
-  .library-header {
+  html:where(:not(.yoru-compact)) .library-header {
     padding-inline: 16px;
     gap: 12px;
   }
 
-  .library-brand-name {
+  html:where(:not(.yoru-compact)) .library-brand-name {
     display: none;
   }
 
-  .nav-tab-btn {
+  html:where(:not(.yoru-compact)) .nav-tab-btn {
     gap: 5px;
     padding-inline: 8px;
     font-size: 0.76rem;
   }
 
-  .library-header-actions {
+  html:where(:not(.yoru-compact)) .library-header-actions {
     gap: 6px;
   }
 
-  .header-action-btn-text {
+  html:where(:not(.yoru-compact)) .header-action-btn-text {
     padding-inline: 10px;
   }
 }
 
 @media (min-width: 769px) and (max-width: 1050px) {
-  .nav-tab-btn span {
+  html:where(:not(.yoru-compact)) .nav-tab-btn span {
     display: none;
   }
 
-  .header-navigation-tabs {
+  html:where(:not(.yoru-compact)) .header-navigation-tabs {
     gap: 1px;
   }
 }
@@ -385,6 +385,85 @@ textarea:focus-visible,
 
 @keyframes app-section-loading-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Native reader (Android): one loading screen until the first page fades in over it. */
+.native-reader-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  pointer-events: none;
+  opacity: 1;
+  animation: native-reader-loading-in 0.2s ease-out backwards;
+  transition: opacity 0.22s ease-out;
+}
+
+.native-reader-loading.is-done {
+  opacity: 0;
+}
+
+.native-reader-loading-title {
+  max-width: min(82vw, 420px);
+  overflow: hidden;
+  font-family: var(--font-heading), sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.88;
+}
+
+.native-reader-loading-track {
+  position: relative;
+  width: 168px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.native-reader-loading-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--native-loading-accent);
+  transition: width 0.2s ease-out;
+}
+
+.native-reader-loading-fill.is-indeterminate {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  animation: native-reader-loading-slide 1.1s ease-in-out infinite;
+}
+
+.native-reader-loading-label {
+  font-family: var(--font-ui), sans-serif;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+@keyframes native-reader-loading-in {
+  from { opacity: 0; }
+}
+
+@keyframes native-reader-loading-slide {
+  from { transform: translateX(-105%); }
+  to { transform: translateX(270%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-reader-loading-fill.is-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 
 /* Shared learning, settings, and dialog surfaces */
@@ -553,110 +632,111 @@ textarea:focus-visible,
 }
 
 @media (min-width: 769px) {
-  .library-sidebar,
-  .library-main-content,
-  .settings-sidebar-left,
-  .settings-sidebar-right,
-  .stats-tab-content,
-  .progress-dashboard,
-  .srs-view-panel,
-  .yomitan-settings-pane,
-  .yomitan-settings-sidebar,
-  .drawer-content {
+  html:where(:not(.yoru-compact)) .library-sidebar,
+html:where(:not(.yoru-compact)) .library-main-content,
+html:where(:not(.yoru-compact)) .settings-sidebar-left,
+html:where(:not(.yoru-compact)) .settings-sidebar-right,
+html:where(:not(.yoru-compact)) .stats-tab-content,
+html:where(:not(.yoru-compact)) .progress-dashboard,
+html:where(:not(.yoru-compact)) .srs-view-panel,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar,
+html:where(:not(.yoru-compact)) .drawer-content {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--text-dark) 50%, transparent) transparent;
   }
 
-  .library-sidebar::-webkit-scrollbar,
-  .library-main-content::-webkit-scrollbar,
-  .settings-sidebar-left::-webkit-scrollbar,
-  .settings-sidebar-right::-webkit-scrollbar,
-  .stats-tab-content::-webkit-scrollbar,
-  .progress-dashboard::-webkit-scrollbar,
-  .srs-view-panel::-webkit-scrollbar,
-  .yomitan-settings-pane::-webkit-scrollbar,
-  .yomitan-settings-sidebar::-webkit-scrollbar,
-  .drawer-content::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .library-sidebar::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .library-main-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .settings-sidebar-left::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .settings-sidebar-right::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .stats-tab-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .progress-dashboard::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .srs-view-panel::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .drawer-content::-webkit-scrollbar {
     display: block;
     width: 8px;
     height: 8px;
   }
 
-  .library-sidebar::-webkit-scrollbar-thumb,
-  .library-main-content::-webkit-scrollbar-thumb,
-  .settings-sidebar-left::-webkit-scrollbar-thumb,
-  .settings-sidebar-right::-webkit-scrollbar-thumb,
-  .stats-tab-content::-webkit-scrollbar-thumb,
-  .progress-dashboard::-webkit-scrollbar-thumb,
-  .srs-view-panel::-webkit-scrollbar-thumb,
-  .yomitan-settings-pane::-webkit-scrollbar-thumb,
-  .yomitan-settings-sidebar::-webkit-scrollbar-thumb,
-  .drawer-content::-webkit-scrollbar-thumb {
+  html:where(:not(.yoru-compact)) .library-sidebar::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .library-main-content::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .settings-sidebar-left::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .settings-sidebar-right::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .stats-tab-content::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .progress-dashboard::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .srs-view-panel::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .yomitan-settings-pane::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .yomitan-settings-sidebar::-webkit-scrollbar-thumb,
+html:where(:not(.yoru-compact)) .drawer-content::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 999px;
     background: color-mix(in srgb, var(--text-dark) 46%, transparent);
     background-clip: padding-box;
   }
 
-  .reader-engine-container,
-  .reader-engine-content,
-  .book-content {
+  html:where(:not(.yoru-compact)) .reader-engine-container,
+html:where(:not(.yoru-compact)) .reader-engine-content,
+html:where(:not(.yoru-compact)) .book-content {
     scrollbar-width: none;
   }
 
-  .reader-engine-container::-webkit-scrollbar,
-  .reader-engine-content::-webkit-scrollbar,
-  .book-content::-webkit-scrollbar {
+  html:where(:not(.yoru-compact)) .reader-engine-container::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .reader-engine-content::-webkit-scrollbar,
+html:where(:not(.yoru-compact)) .book-content::-webkit-scrollbar {
     display: none;
   }
 }
 
-@media (max-width: 768px) {
-  .library-container {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .library-container {
     height: 100dvh !important;
     padding-top: calc(56px + var(--yoru-safe-top, 0px)) !important;
     background: var(--bg-app);
   }
 
-  .mobile-top-app-bar {
+  html:where(.yoru-compact) .mobile-top-app-bar {
     padding-top: var(--yoru-safe-top, 0px);
     background: var(--bg-panel-translucent);
     border-bottom-color: var(--border-light);
     backdrop-filter: blur(16px);
   }
 
-  .library-layout-wrapper {
+  html:where(.yoru-compact) .library-layout-wrapper {
     height: calc(100dvh - 116px - var(--yoru-safe-top, 0px)) !important;
   }
 
-  .library-main-content {
+  html:where(.yoru-compact) .library-main-content {
     padding: 22px 16px calc(100px + var(--yoru-safe-bottom, 0px));
   }
 
-  .section-header {
+  html:where(.yoru-compact) .section-header {
     margin-bottom: 18px;
   }
 
-  .section-title {
+  html:where(.yoru-compact) .section-title {
     font-size: 1.45rem;
   }
 
-  .books-grid {
-    grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  html:where(.yoru-compact) .books-grid {
+    /* Follows the card size option; the default 160px gives the usual 138px. */
+    grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-width, 160px) * 0.8625), 1fr));
     gap: 16px 12px;
   }
 
-  .book-card {
+  html:where(.yoru-compact) .book-card {
     padding: 7px;
     border-radius: 13px;
   }
 
-  .settings-dictionary-row {
+  html:where(.yoru-compact) .settings-dictionary-row {
     align-items: flex-start;
     padding: 12px;
   }
 
-  .settings-dictionary-state {
+  html:where(.yoru-compact) .settings-dictionary-state {
     flex-direction: column-reverse;
     align-items: flex-end;
     gap: 7px;
@@ -675,17 +755,17 @@ textarea:focus-visible,
 }
 
 /* Native Android shell: keep phone layouts independent from the desktop frame. */
-@media (max-width: 768px) {
-  html.platform-android,
-  html.platform-android body,
-  html.platform-android #root {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html.platform-android:where(.yoru-compact),
+html.platform-android:where(.yoru-compact) body,
+html.platform-android:where(.yoru-compact) #root {
     width: 100%;
     min-width: 0;
     min-height: 100%;
     overflow-x: clip;
   }
 
-  html.platform-android .library-container {
+  html.platform-android:where(.yoru-compact) .library-container {
     width: 100%;
     min-width: 0;
     height: 100dvh !important;
@@ -697,7 +777,7 @@ textarea:focus-visible,
     scroll-padding-top: calc(60px + var(--yoru-safe-top, 0px));
   }
 
-  html.platform-android .mobile-top-app-bar {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -720,7 +800,7 @@ textarea:focus-visible,
     -webkit-backdrop-filter: blur(18px) saturate(1.18);
   }
 
-  html.platform-android .mobile-top-app-bar::after {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar::after {
     content: "";
     position: absolute;
     z-index: -1;
@@ -730,7 +810,7 @@ textarea:focus-visible,
     pointer-events: none;
   }
 
-  html.platform-android .mobile-top-title {
+  html.platform-android:where(.yoru-compact) .mobile-top-title {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -744,7 +824,7 @@ textarea:focus-visible,
     text-shadow: 0 1px 14px rgba(255, 218, 94, 0.12);
   }
 
-  html.platform-android .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -760,34 +840,34 @@ textarea:focus-visible,
     transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
   }
 
-  html.platform-android .mobile-top-app-bar > .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-icon-btn {
     border-color: rgba(242, 200, 102, 0.24);
     background: linear-gradient(145deg, rgba(242, 200, 102, 0.13), rgba(255, 126, 101, 0.08));
     color: #ffe45c;
   }
 
-  html.platform-android .mobile-icon-btn:active {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn:active {
     transform: scale(0.94);
     border-color: rgba(242, 200, 102, 0.42);
     background: linear-gradient(145deg, rgba(242, 200, 102, 0.19), rgba(255, 126, 101, 0.12));
   }
 
-  html.platform-android .mobile-icon-btn:focus-visible {
+  html.platform-android:where(.yoru-compact) .mobile-icon-btn:focus-visible {
     outline: 2px solid rgba(242, 200, 102, 0.82);
     outline-offset: 2px;
   }
 
-  html.platform-android .library-layout-wrapper {
+  html.platform-android:where(.yoru-compact) .library-layout-wrapper {
     width: 100%;
     min-width: 0;
     height: calc(100dvh - 120px - var(--yoru-safe-top, 0px) - var(--yoru-safe-bottom, 0px)) !important;
     min-height: 320px;
   }
 
-  html.platform-android .library-main-content,
-  html.platform-android .mas-screen-container,
-  html.platform-android .stats-tab-content,
-  html.platform-android .progress-dashboard {
+  html.platform-android:where(.yoru-compact) .library-main-content,
+html.platform-android:where(.yoru-compact) .mas-screen-container,
+html.platform-android:where(.yoru-compact) .stats-tab-content,
+html.platform-android:where(.yoru-compact) .progress-dashboard {
     width: 100%;
     min-width: 0;
     max-width: 100%;
@@ -796,13 +876,13 @@ textarea:focus-visible,
     overflow-x: clip;
   }
 
-  html.platform-android .library-main-content {
+  html.platform-android:where(.yoru-compact) .library-main-content {
     padding-top: 20px;
     padding-bottom: calc(88px + var(--yoru-safe-bottom, 0px));
     background-image: radial-gradient(ellipse at 92% 0%, rgba(255, 214, 102, 0.08), transparent 34rem);
   }
 
-  html.platform-android .section-header {
+  html.platform-android:where(.yoru-compact) .section-header {
     align-items: center;
     gap: 10px;
     padding: 0 0 12px;
@@ -810,7 +890,7 @@ textarea:focus-visible,
     border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border-light));
   }
 
-  html.platform-android .section-header::before {
+  html.platform-android:where(.yoru-compact) .section-header::before {
     content: '読';
     display: grid;
     flex: 0 0 34px;
@@ -827,13 +907,13 @@ textarea:focus-visible,
     box-shadow: 0 6px 18px rgba(255, 196, 61, 0.08);
   }
 
-  html.platform-android .section-title {
+  html.platform-android:where(.yoru-compact) .section-title {
     min-width: 0;
     font-size: 1.38rem;
     letter-spacing: -0.03em;
   }
 
-  html.platform-android .section-count {
+  html.platform-android:where(.yoru-compact) .section-count {
     /* The centring rules only exist in the desktop block; without them the number sat in a corner. */
     display: inline-flex;
     align-items: center;
@@ -853,12 +933,12 @@ textarea:focus-visible,
     font-weight: 800;
   }
 
-  html.platform-android .books-grid {
+  html.platform-android:where(.yoru-compact) .books-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
 
-  html.platform-android .book-card {
+  html.platform-android:where(.yoru-compact) .book-card {
     display: grid;
     grid-template-columns: 76px minmax(0, 1fr);
     align-items: center;
@@ -873,12 +953,12 @@ textarea:focus-visible,
     transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
   }
 
-  html.platform-android .book-card:active {
+  html.platform-android:where(.yoru-compact) .book-card:active {
     transform: scale(0.985);
     border-color: color-mix(in srgb, var(--primary) 42%, var(--border-light));
   }
 
-  html.platform-android .book-cover-container {
+  html.platform-android:where(.yoru-compact) .book-cover-container {
     width: 76px;
     height: 96px;
     aspect-ratio: auto;
@@ -888,14 +968,14 @@ textarea:focus-visible,
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
   }
 
-  html.platform-android .book-info {
+  html.platform-android:where(.yoru-compact) .book-info {
     min-width: 0;
     margin: 0 !important;
     padding: 0 28px 0 0;
     gap: 5px !important;
   }
 
-  html.platform-android .book-title {
+  html.platform-android:where(.yoru-compact) .book-title {
     display: -webkit-box;
     overflow: hidden;
     color: var(--text-main) !important;
@@ -906,20 +986,20 @@ textarea:focus-visible,
     -webkit-line-clamp: 2;
   }
 
-  html.platform-android .book-series,
-  html.platform-android .book-author {
+  html.platform-android:where(.yoru-compact) .book-series,
+html.platform-android:where(.yoru-compact) .book-author {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.76rem !important;
   }
 
-  html.platform-android .card-menu-trigger-btn {
+  html.platform-android:where(.yoru-compact) .card-menu-trigger-btn {
     min-width: 34px;
     min-height: 34px;
   }
 
-  html.platform-android .bottom-navigation-bar {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     height: calc(64px + var(--yoru-safe-bottom, 0px));
     padding: 4px 8px max(4px, var(--yoru-safe-bottom, 0px));
     box-sizing: border-box;
@@ -928,7 +1008,7 @@ textarea:focus-visible,
     backdrop-filter: blur(18px);
   }
 
-  html.platform-android .bottom-tab-btn {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn {
     min-width: 0;
     min-height: 48px;
     gap: 3px;
@@ -936,7 +1016,7 @@ textarea:focus-visible,
     touch-action: manipulation;
   }
 
-  html.platform-android .bottom-tab-btn span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn span {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -944,7 +1024,7 @@ textarea:focus-visible,
     font-size: 0.65rem;
   }
 
-  html.platform-android .srs-view-panel {
+  html.platform-android:where(.yoru-compact) .srs-view-panel {
     width: 100%;
     min-width: 0;
     max-width: none !important;
@@ -957,7 +1037,7 @@ textarea:focus-visible,
     overflow-wrap: anywhere;
   }
 
-  html.platform-android .srs-dashboard-toolbar {
+  html.platform-android:where(.yoru-compact) .srs-dashboard-toolbar {
     display: flex !important;
     flex-direction: column;
     align-items: stretch !important;
@@ -965,7 +1045,7 @@ textarea:focus-visible,
     margin-bottom: 16px !important;
   }
 
-  html.platform-android .srs-subtabs-container {
+  html.platform-android:where(.yoru-compact) .srs-subtabs-container {
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
@@ -978,7 +1058,7 @@ textarea:focus-visible,
     border-radius: 16px !important;
   }
 
-  html.platform-android .srs-subtabs-container > button {
+  html.platform-android:where(.yoru-compact) .srs-subtabs-container > button {
     min-width: 0;
     min-height: 40px;
     padding: 8px 4px !important;
@@ -989,54 +1069,52 @@ textarea:focus-visible,
     overflow-wrap: anywhere;
   }
 
-  html.platform-android .srs-quick-actions {
+  html.platform-android:where(.yoru-compact) .srs-quick-actions {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px !important;
     width: 100%;
   }
 
-  html.platform-android .srs-quick-actions > button {
+  html.platform-android:where(.yoru-compact) .srs-quick-actions > button {
     min-width: 0;
     min-height: 44px;
     padding: 8px 10px !important;
     white-space: nowrap;
   }
 
-  html.platform-android .srs-deck-list {
+  html.platform-android:where(.yoru-compact) .srs-deck-list {
     min-width: 0;
-    padding: 16px !important;
     margin-bottom: 16px !important;
-    border-radius: 16px !important;
   }
 
-  html.platform-android .srs-deck-grid {
+  html.platform-android:where(.yoru-compact) .srs-deck-grid {
     grid-template-columns: minmax(0, 1fr) !important;
     gap: 10px !important;
     width: 100%;
     min-width: 0;
   }
 
-  html.platform-android .srs-deck-card,
-  html.platform-android .srs-empty-state {
+  html.platform-android:where(.yoru-compact) .srs-deck-card,
+html.platform-android:where(.yoru-compact) .srs-empty-state {
     width: 100%;
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  html.platform-android .srs-empty-state {
+  html.platform-android:where(.yoru-compact) .srs-empty-state {
     padding: 24px 16px !important;
   }
 
-  html.platform-android .srs-empty-hint {
+  html.platform-android:where(.yoru-compact) .srs-empty-hint {
     margin: 8px auto 0;
     max-width: 30rem;
     font-size: 0.78rem;
     line-height: 1.5;
   }
 
-  html.platform-android .yoru-toast {
+  html.platform-android:where(.yoru-compact) .yoru-toast {
     left: 12px;
     right: 12px !important;
     bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
@@ -1048,9 +1126,9 @@ textarea:focus-visible,
 }
 
 /* Android shell v1.3.6: centered top bar, styled bottom nav, settings that scroll with the page. */
-@media (max-width: 768px) {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
   /* ---- Top bar: equal side columns so the title sits in the true center ---- */
-  html.platform-android .mobile-top-app-bar {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     grid-template-columns: minmax(92px, 1fr) minmax(0, max-content) minmax(92px, 1fr);
     gap: 10px;
     min-height: 60px;
@@ -1059,8 +1137,8 @@ textarea:focus-visible,
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   }
 
-  html.platform-android .mobile-top-app-bar > .mobile-cloud-btn,
-  html.platform-android .mobile-top-app-bar > .mobile-leading-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-cloud-btn,
+html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-leading-btn {
     justify-self: start;
     width: 42px;
     min-width: 42px;
@@ -1070,7 +1148,7 @@ textarea:focus-visible,
     border-radius: 13px;
   }
 
-  html.platform-android .mobile-top-title {
+  html.platform-android:where(.yoru-compact) .mobile-top-title {
     justify-self: center;
     max-width: 100%;
     margin: 0;
@@ -1080,7 +1158,7 @@ textarea:focus-visible,
     border-radius: 0;
   }
 
-  html.platform-android .mobile-top-actions {
+  html.platform-android:where(.yoru-compact) .mobile-top-actions {
     display: flex;
     justify-self: end;
     align-items: center;
@@ -1089,7 +1167,7 @@ textarea:focus-visible,
     min-width: 0;
   }
 
-  html.platform-android .mobile-top-actions .mobile-icon-btn {
+  html.platform-android:where(.yoru-compact) .mobile-top-actions .mobile-icon-btn {
     width: 42px;
     min-width: 42px;
     height: 42px;
@@ -1099,14 +1177,14 @@ textarea:focus-visible,
   }
 
   /* The top bar already names the screen; drop the repeated page headings. */
-  html.platform-android .settings-page-heading,
-  html.platform-android .progress-page-heading,
-  html.platform-android .progress-page-subtitle {
+  html.platform-android:where(.yoru-compact) .settings-page-heading,
+html.platform-android:where(.yoru-compact) .progress-page-heading,
+html.platform-android:where(.yoru-compact) .progress-page-subtitle {
     display: none !important;
   }
 
   /* ---- Settings: no fixed-height inner scroller, no dead space ---- */
-  html.platform-android .settings-view-panel.tab-view-container {
+  html.platform-android:where(.yoru-compact) .settings-view-panel.tab-view-container {
     display: flex !important;
     height: auto !important;
     min-height: 0 !important;
@@ -1115,38 +1193,38 @@ textarea:focus-visible,
     padding: 16px 14px 20px !important;
   }
 
-  html.platform-android .yomitan-settings-layout {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-layout {
     height: auto !important;
   }
 
-  html.platform-android .yomitan-settings-sidebar,
-  html.platform-android .yomitan-settings-pane {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-sidebar,
+html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 8px !important;
   }
 
-  html.platform-android .yomitan-search-wrapper input {
+  html.platform-android:where(.yoru-compact) .yomitan-search-wrapper input {
     min-height: 44px;
     border-radius: 12px !important;
     font-size: 0.9rem !important;
   }
 
   /* ---- Statistics: let the page scroller handle it ---- */
-  html.platform-android .stats-tab-content {
+  html.platform-android:where(.yoru-compact) .stats-tab-content {
     min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 20px !important;
   }
 
-  html.platform-android .progress-dashboard-root {
+  html.platform-android:where(.yoru-compact) .progress-dashboard-root {
     min-height: 0 !important;
     padding-top: 14px !important;
   }
 
   /* ---- Bottom navigation ---- */
-  html.platform-android .bottom-navigation-bar {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     height: calc(68px + var(--yoru-safe-bottom, 0px));
     padding: 6px 10px max(6px, var(--yoru-safe-bottom, 0px));
     background:
@@ -1156,7 +1234,7 @@ textarea:focus-visible,
     box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.3);
   }
 
-  html.platform-android .bottom-navigation-bar::before {
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar::before {
     content: "";
     position: absolute;
     inset: -1px 14px auto;
@@ -1165,7 +1243,7 @@ textarea:focus-visible,
     pointer-events: none;
   }
 
-  html.platform-android .bottom-tab-btn {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn {
     position: relative;
     justify-content: center;
     gap: 4px;
@@ -1175,7 +1253,7 @@ textarea:focus-visible,
     -webkit-tap-highlight-color: transparent;
   }
 
-  html.platform-android .bottom-tab-btn::before {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn::before {
     content: "";
     position: absolute;
     top: 4px;
@@ -1190,7 +1268,7 @@ textarea:focus-visible,
     transition: opacity 160ms ease, transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
   }
 
-  html.platform-android .bottom-tab-btn svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn svg {
     position: relative;
     z-index: 1;
     width: 20px;
@@ -1199,7 +1277,7 @@ textarea:focus-visible,
     transition: transform 160ms ease, color 160ms ease;
   }
 
-  html.platform-android .bottom-tab-btn span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn span {
     position: relative;
     z-index: 1;
     font-size: 0.66rem;
@@ -1207,33 +1285,33 @@ textarea:focus-visible,
     letter-spacing: 0.01em;
   }
 
-  html.platform-android .bottom-tab-btn.active {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active {
     color: #fff6cf;
   }
 
-  html.platform-android .bottom-tab-btn.active::before {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active::before {
     opacity: 1;
     transform: translateX(-50%) scale(1);
   }
 
-  html.platform-android .bottom-tab-btn.active svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active svg {
     color: #ffe45c;
     transform: translateY(-1px);
   }
 
-  html.platform-android .bottom-tab-btn.active span {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn.active span {
     font-weight: 800;
   }
 
-  html.platform-android .bottom-tab-btn:active svg {
+  html.platform-android:where(.yoru-compact) .bottom-tab-btn:active svg {
     transform: scale(0.9);
   }
 
-  html.platform-android .library-container {
+  html.platform-android:where(.yoru-compact) .library-container {
     padding-bottom: calc(76px + var(--yoru-safe-bottom, 0px)) !important;
   }
 
-  html.platform-android .yoru-toast {
+  html.platform-android:where(.yoru-compact) .yoru-toast {
     bottom: calc(80px + var(--yoru-safe-bottom, 0px)) !important;
   }
 }
@@ -1242,14 +1320,14 @@ textarea:focus-visible,
    Yoru Parser settings modal on phones (v1.3.9)
    A bottom sheet with every tab visible and compact word-state rows.
    ========================================================================== */
-@media (max-width: 768px) {
-  .yoru-parser-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .yoru-parser-overlay {
     align-items: flex-end !important;
     padding-top: calc(var(--yoru-safe-top, 0px) + 12px);
     box-sizing: border-box;
   }
 
-  .yoru-parser-panel {
+  html:where(.yoru-compact) .yoru-parser-panel {
     width: 100% !important;
     max-width: none !important;
     max-height: 100% !important;
@@ -1259,21 +1337,21 @@ textarea:focus-visible,
     box-sizing: border-box;
   }
 
-  .yoru-parser-header {
+  html:where(.yoru-compact) .yoru-parser-header {
     padding: 10px 8px 10px 16px !important;
   }
 
-  .yoru-parser-title {
+  html:where(.yoru-compact) .yoru-parser-title {
     font-size: 16px !important;
   }
 
-  .yoru-parser-close {
+  html:where(.yoru-compact) .yoru-parser-close {
     width: 40px;
     height: 40px;
     font-size: 18px !important;
   }
 
-  .yoru-parser-tabs {
+  html:where(.yoru-compact) .yoru-parser-tabs {
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px !important;
@@ -1281,57 +1359,57 @@ textarea:focus-visible,
     overflow: visible !important;
   }
 
-  .yoru-parser-tab {
+  html:where(.yoru-compact) .yoru-parser-tab {
     min-height: 36px;
     padding: 6px 4px !important;
     font-size: 12.5px !important;
     gap: 4px !important;
   }
 
-  .yoru-parser-tab[aria-selected="true"] {
+  html:where(.yoru-compact) .yoru-parser-tab[aria-selected="true"] {
     box-shadow: inset 0 0 0 1px currentColor;
   }
 
-  .yoru-parser-body {
+  html:where(.yoru-compact) .yoru-parser-body {
     padding: 0 14px 20px !important;
     overscroll-behavior: contain;
   }
 
-  .yoru-parser-states {
+  html:where(.yoru-compact) .yoru-parser-states {
     gap: 6px !important;
   }
 
-  .yoru-parser-state-head {
+  html:where(.yoru-compact) .yoru-parser-state-head {
     padding: 9px 10px 9px 12px !important;
     gap: 8px;
     min-height: 48px;
     box-sizing: border-box;
   }
 
-  .yoru-parser-state-label {
+  html:where(.yoru-compact) .yoru-parser-state-label {
     font-size: 14px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .yoru-parser-state-summary {
+  html:where(.yoru-compact) .yoru-parser-state-summary {
     font-size: 11.5px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .yoru-parser-state-actions {
+  html:where(.yoru-compact) .yoru-parser-state-actions {
     gap: 8px !important;
   }
 
-  .yoru-parser-state-sample {
+  html:where(.yoru-compact) .yoru-parser-state-sample {
     font-size: 15px !important;
     padding: 0 4px !important;
   }
 
-  .yoru-parser-add-effect {
+  html:where(.yoru-compact) .yoru-parser-add-effect {
     height: 32px;
     max-width: 92px;
     padding: 0 6px !important;
@@ -1343,12 +1421,12 @@ textarea:focus-visible,
    Reader image gallery on phones (v1.3.10)
    Full-width image, thumbnails as a bottom strip, close button below the status bar.
    ========================================================================== */
-@media (max-width: 768px) {
-  .reader-gallery {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .reader-gallery {
     flex-direction: column !important;
   }
 
-  .reader-gallery-close {
+  html:where(.yoru-compact) .reader-gallery-close {
     width: 44px;
     height: 44px;
     top: calc(10px + var(--yoru-safe-top, 0px)) !important;
@@ -1357,7 +1435,7 @@ textarea:focus-visible,
     touch-action: manipulation;
   }
 
-  .reader-gallery-main {
+  html:where(.yoru-compact) .reader-gallery-main {
     order: 0;
     flex: 1 1 auto !important;
     min-height: 0;
@@ -1365,21 +1443,21 @@ textarea:focus-visible,
   }
 
   /* Room left after the close button, the counter and (with several images) the strip. */
-  .reader-gallery {
+  html:where(.yoru-compact) .reader-gallery {
     --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 160px - var(--yoru-safe-bottom, 0px));
   }
 
-  .reader-gallery:has(.gallery-sidebar.is-single) {
+  html:where(.yoru-compact) .reader-gallery:has(.gallery-sidebar.is-single) {
     --gallery-image-max-height: calc(100dvh - 64px - var(--yoru-safe-top, 0px) - 64px - var(--yoru-safe-bottom, 0px));
   }
 
-  .reader-gallery-frame,
-  .reader-gallery-image {
+  html:where(.yoru-compact) .reader-gallery-frame,
+html:where(.yoru-compact) .reader-gallery-image {
     max-width: 100% !important;
     max-height: var(--gallery-image-max-height) !important;
   }
 
-  .reader-gallery .gallery-sidebar {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar {
     order: 1;
     width: 100% !important;
     height: calc(96px + var(--yoru-safe-bottom, 0px));
@@ -1392,24 +1470,24 @@ textarea:focus-visible,
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .reader-gallery .gallery-sidebar > div {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar > div {
     width: auto !important;
     height: 100%;
   }
 
-  .reader-gallery .gallery-sidebar.is-single {
+  html:where(.yoru-compact) .reader-gallery .gallery-sidebar.is-single {
     display: none !important;
   }
 
-  .reader-gallery-arrow {
+  html:where(.yoru-compact) .reader-gallery-arrow {
     padding: 12px 8px !important;
   }
 
-  .reader-gallery-arrow.is-prev {
+  html:where(.yoru-compact) .reader-gallery-arrow.is-prev {
     left: 6px !important;
   }
 
-  .reader-gallery-arrow.is-next {
+  html:where(.yoru-compact) .reader-gallery-arrow.is-next {
     right: 6px !important;
   }
 }
@@ -1650,8 +1728,8 @@ textarea:focus-visible,
   padding: 0 1px;
 }
 
-@media (max-width: 768px) {
-  .reader-side-panel {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .reader-side-panel {
     width: 100%;
     max-width: 100%;
     border-left: none !important;
@@ -1807,13 +1885,13 @@ textarea:focus-visible,
   flex-wrap: wrap;
 }
 
-@media (max-width: 768px) {
-  .highlight-note-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .highlight-note-overlay {
     align-items: flex-end;
     padding: 0;
   }
 
-  .highlight-note-dialog {
+  html:where(.yoru-compact) .highlight-note-dialog {
     max-width: none;
     border-radius: 18px 18px 0 0;
     padding-bottom: calc(16px + var(--yoru-safe-bottom, 0px));
@@ -2023,8 +2101,8 @@ textarea:focus-visible,
   border-top: 1px solid var(--border-light, rgba(255, 255, 255, 0.08));
 }
 
-@media (max-width: 768px) {
-  .library-sidebar .sidebar-item {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .library-sidebar .sidebar-item {
     min-height: 46px;
     font-size: 0.95rem;
   }
@@ -2178,9 +2256,15 @@ textarea:focus-visible,
   touch-action: manipulation;
 }
 
-.reader-topbar-btn:hover,
 .reader-topbar-btn.is-active {
   background: rgba(255, 255, 255, 0.07);
+}
+
+/* On touch screens :hover sticks to the last tapped button (the search icon stayed lit). */
+@media (hover: hover) {
+  .reader-topbar-btn:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
 }
 
 .reader-topbar-info {
@@ -2525,6 +2609,57 @@ textarea:focus-visible,
   background: color-mix(in srgb, var(--pagebar-accent, #ffd54a) 55%, transparent);
 }
 
+/* Page bookmarks on the slider: a small ribbon each, a tap goes there. */
+.reader-pagebar-marks {
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  top: -12px;
+  height: 16px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.reader-pagebar-marks button {
+  position: absolute;
+  top: 0;
+  width: 24px;
+  height: 18px;
+  margin-left: -12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.reader-pagebar-marks button::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  width: 10px;
+  height: 14px;
+  background: var(--pagebar-accent, #ffd54a);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+}
+
+/* Ribbon in the corner of a bookmarked page (the bars hide it; their button shows the state). */
+.reader-page-ribbon {
+  position: fixed;
+  top: 0;
+  right: 14px;
+  z-index: 9990;
+  width: 16px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: var(--ribbon-color, #ffd54a);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+  opacity: 0.9;
+  cursor: pointer;
+}
+
 .reader-pagebar-track input[type="range"] {
   position: relative;
   width: 100%;
@@ -2568,6 +2703,26 @@ textarea:focus-visible,
 
 .read-aloud-bar.is-raised {
   bottom: calc(110px + var(--yoru-safe-bottom, 0px));
+}
+
+/* While reading aloud with the reader's bars hidden, the player slides away after a few seconds. */
+.read-aloud-bar {
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s;
+}
+
+.read-aloud-bar.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 24px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
+
+/* "Hide images" (spoilers): the book's pictures stay blurred until tapped. */
+.reader-hide-images img.yoru-book-img:not(.is-revealed) {
+  filter: blur(22px) brightness(0.6);
+  clip-path: inset(0);
+  cursor: pointer;
 }
 
 /* ReadEra-style dropdowns, font thickness slider and text alignment (v1.3.10) */
@@ -2826,9 +2981,28 @@ textarea:focus-visible,
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* On phones, sorting, grouping and card details are in the ⋮ menu; the panel keeps the rest. */
-@media (max-width: 768px) {
-  .display-settings-drawer .drawer-section--in-menu {
+.library-menu-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(236, 236, 242, 0.6);
+}
+
+.library-menu-slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  accent-color: #ffd54a;
+  cursor: pointer;
+}
+
+/* On phones every library display option is in the ⋮ menu, so the side panel is not used. */
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html:where(.yoru-compact) .display-settings-drawer {
     display: none !important;
   }
 }
@@ -3452,22 +3626,22 @@ textarea:focus-visible,
    ========================================================================== */
 @media (min-width: 769px) {
   /* Reader: back · title/author/section · actions, on one row. */
-  .reader-topbar {
+  html:where(:not(.yoru-compact)) .reader-topbar {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 6px 12px;
   }
 
-  .reader-topbar-row {
+  html:where(:not(.yoru-compact)) .reader-topbar-row {
     display: contents;
   }
 
-  .reader-topbar-row > .reader-topbar-btn {
+  html:where(:not(.yoru-compact)) .reader-topbar-row > .reader-topbar-btn {
     order: 0;
   }
 
-  .reader-topbar-info {
+  html:where(:not(.yoru-compact)) .reader-topbar-info {
     order: 1;
     flex: 1;
     min-width: 0;
@@ -3477,29 +3651,29 @@ textarea:focus-visible,
     gap: 14px;
   }
 
-  .reader-topbar-title {
+  html:where(:not(.yoru-compact)) .reader-topbar-title {
     flex-shrink: 1;
     min-width: 0;
     font-size: 1rem;
   }
 
-  .reader-topbar-sub {
+  html:where(:not(.yoru-compact)) .reader-topbar-sub {
     margin-top: 0;
     font-size: 0.8rem;
     flex-shrink: 1;
     min-width: 0;
   }
 
-  .reader-topbar-actions {
+  html:where(:not(.yoru-compact)) .reader-topbar-actions {
     order: 2;
   }
 
-  .readera-settings {
+  html:where(:not(.yoru-compact)) .readera-settings {
     top: 60px;
     right: 16px;
   }
 
-  .reader-pagebar {
+  html:where(:not(.yoru-compact)) .reader-pagebar {
     left: 50%;
     right: auto;
     width: min(720px, calc(100vw - 32px));
@@ -3510,42 +3684,53 @@ textarea:focus-visible,
     border-radius: 16px;
   }
 
-  .read-aloud-bar.is-raised {
+  html:where(:not(.yoru-compact)) .read-aloud-bar.is-raised {
     bottom: 124px;
   }
 
   /* Library: the sidebar and the header tabs already hold these on desktop. */
-  .library-sidebar .sidebar-footer-group,
-  .library-quick-chips {
+  html:where(:not(.yoru-compact)) .library-sidebar .sidebar-footer-group,
+html:where(:not(.yoru-compact)) .library-quick-chips {
     display: none !important;
   }
 
-  .library-quick-bar {
+  html:where(:not(.yoru-compact)) .library-quick-bar {
     justify-content: flex-end;
   }
 }
 
 /* ---- Phone: library drawer reaches the bottom (the tab bar hides while it is open) ---- */
-@media (max-width: 768px) {
-  html.platform-android .library-sidebar,
-  html.platform-android .sidebar-overlay {
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  html.platform-android:where(.yoru-compact) .library-sidebar,
+html.platform-android:where(.yoru-compact) .sidebar-overlay {
     height: auto;
     bottom: 0;
   }
 
-  html.platform-android .library-sidebar {
+  html.platform-android:where(.yoru-compact) .library-sidebar {
     overflow-y: auto;
-    padding-bottom: calc(20px + var(--yoru-safe-bottom, 0px));
+    padding-bottom: 0;
+  }
+
+  /* Google Drive and Settings stay pinned above the system navigation bar. */
+  html.platform-android:where(.yoru-compact) .library-sidebar .sidebar-footer-group {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-right: -18px;
+    margin-left: -18px;
+    padding: 10px 18px calc(12px + var(--yoru-safe-bottom, 0px));
+    background: var(--bg-panel);
   }
 }
 
 /* ---- Phone: SRS review utility buttons fit the width ---- */
-html.platform-android .srs-utility-row {
+html.platform-android:where(.yoru-phone) .srs-utility-row {
   flex-wrap: nowrap !important;
   gap: 8px !important;
 }
 
-html.platform-android .srs-utility-row > button {
+html.platform-android:where(.yoru-phone) .srs-utility-row > button {
   flex: 1 1 0;
   min-width: 0;
   justify-content: center;
@@ -3701,4 +3886,2434 @@ html.platform-android .mas-card-installing {
    (transform / opacity, ReaderEngine slideIn) run on the compositor without a first-frame stall. */
 html.platform-android .reader-engine-content {
   will-change: transform, opacity;
+}
+
+/* ==========================================================================
+   Menus v2 (nix/menus-rediseno): book menu, select mode, settings list,
+   Google Drive sheet and progress picker. One accent (gold); red only for
+   destructive actions; 44-48px touch rows on Android.
+   ========================================================================== */
+:root {
+  --yoru-danger: #ef7d7d;
+  --yoru-danger-soft: rgba(239, 125, 125, 0.12);
+  --yoru-ok: #8fd19e;
+  --yoru-gold-soft: rgba(242, 200, 102, 0.13);
+  --yoru-on-gold: #1d1708;
+}
+
+[data-theme='light'],
+[data-theme='sepia'] {
+  --yoru-danger: #c2413b;
+  --yoru-danger-soft: rgba(194, 65, 59, 0.1);
+  --yoru-ok: #2f8a4a;
+  --yoru-gold-soft: rgba(163, 107, 18, 0.12);
+}
+
+/* ---- Book card: ⋮ trigger, status badge and menu ---- */
+.card-menu-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.card-menu-trigger-btn {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-app) 78%, transparent);
+  color: var(--text-main);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease;
+}
+
+.card-menu-trigger-btn[aria-expanded='true'] {
+  border-color: var(--border-focus);
+  color: var(--primary);
+}
+
+.book-status-badge {
+  position: absolute;
+  top: 8px;
+  right: 40px;
+  z-index: 10;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.book-context-menu-dropdown {
+  position: absolute;
+  top: 34px;
+  z-index: 1000;
+  display: flex;
+  width: 224px;
+  max-width: calc(100vw - 24px);
+  max-height: min(460px, 70vh);
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  animation: tabViewFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.book-cover-container .book-status-badge {
+  top: auto;
+  right: 6px;
+  bottom: 6px;
+}
+
+/* Phones: portalled, fixed to the viewport (position set inline from the ⋮ button). */
+.book-context-menu-dropdown.is-floating {
+  position: fixed;
+  top: auto;
+  z-index: 1150;
+  width: min(248px, calc(100vw - 24px));
+}
+
+.context-menu-item-btn {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.context-menu-item-btn svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.context-menu-item-btn:hover,
+.context-menu-item-btn:focus-visible {
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.context-menu-item-btn.is-danger,
+.context-menu-item-btn.is-danger svg {
+  color: var(--yoru-danger);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-light);
+}
+
+.context-menu-label {
+  padding: 6px 10px 2px;
+  color: var(--text-dark);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.context-menu-radio {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, var(--text-dark) 70%, transparent);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.context-menu-status.is-current {
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.context-menu-status.is-current .context-menu-radio {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 3px var(--bg-panel);
+}
+
+/* ---- Select mode panel ---- */
+.yomitan-select-mode-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9999;
+  display: flex;
+  width: 340px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  animation: tabViewFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.select-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.select-panel-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.select-panel-title strong {
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.select-panel-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dark);
+  font-size: 0.8rem;
+}
+
+.select-panel-links button {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.yomitan-select-mode-panel .panel-close-btn {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.select-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.select-panel-action-btn {
+  display: flex;
+  min-height: 64px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 550;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.select-panel-action-btn svg {
+  color: var(--primary);
+}
+
+.select-panel-action-btn:not(:disabled):hover,
+.select-panel-action-btn:focus-visible {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.select-panel-delete-btn {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 12px;
+  background: var(--yoru-danger-soft);
+  color: var(--yoru-danger);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.select-panel-action-btn:disabled,
+.select-panel-delete-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---- Settings list ---- */
+.settings-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-nav-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.settings-nav-group-title svg {
+  opacity: 0.7;
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-light);
+}
+
+.settings-nav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.settings-nav-item.is-active {
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.settings-nav-item.is-danger {
+  color: var(--yoru-danger);
+}
+
+.settings-nav-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-nav-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav-desc {
+  overflow: hidden;
+  color: var(--text-dark);
+  font-size: 0.76rem;
+  font-weight: 450;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav-chevron {
+  flex-shrink: 0;
+  color: var(--text-dark);
+}
+
+/* ---- Bottom sheet (Google Drive) ---- */
+.yoru-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+  animation: yoruSheetFade 0.18s ease;
+}
+
+.yoru-sheet {
+  display: flex;
+  width: min(420px, 100%);
+  max-height: 100%;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--bg-panel);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+
+.yoru-sheet-handle {
+  display: none;
+  width: 38px;
+  height: 4px;
+  flex-shrink: 0;
+  align-self: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-dark) 55%, transparent);
+}
+
+.gdrive-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gdrive-sheet-icon {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--yoru-gold-soft);
+  color: var(--primary);
+}
+
+.gdrive-sheet-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.gdrive-sheet-heading h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.yoru-sheet-close {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.yoru-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.yoru-status-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dark);
+}
+
+.yoru-status-pill.is-ok i { background: var(--yoru-ok); }
+.yoru-status-pill.is-busy i { background: var(--primary); }
+
+.gdrive-sheet-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.gdrive-sheet-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  list-style: none;
+}
+
+.gdrive-sheet-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gdrive-sheet-list svg {
+  flex-shrink: 0;
+  color: var(--yoru-ok);
+}
+
+.gdrive-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.yoru-btn {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.yoru-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.yoru-btn-primary {
+  background: var(--button-gradient);
+  color: var(--yoru-on-gold);
+}
+
+.yoru-btn-secondary {
+  border-color: var(--border-light);
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+
+.yoru-btn-ghost {
+  min-height: 40px;
+  background: none;
+  color: var(--text-muted);
+}
+
+.yoru-switch-row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.yoru-switch-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+@keyframes yoruSheetFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes yoruSheetUp {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ---- Progress: time window picker and KPI cards ---- */
+.progress-window-picker {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.progress-window-picker button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.progress-window-picker button.is-active {
+  background: var(--primary);
+  color: var(--yoru-on-gold);
+}
+
+.progress-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.progress-kpi-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-sizing: border-box;
+}
+
+.progress-kpi-value {
+  margin: 8px 0;
+  color: var(--text-main);
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yoru-sheet-overlay,
+  .yoru-sheet,
+  .yomitan-select-mode-panel,
+  .book-context-menu-dropdown {
+    animation: none !important;
+  }
+}
+
+@media all { /* was: max-width 768px — now gated on html.yoru-compact */
+  /* Book menu: bigger rows for thumbs. */
+  html.platform-android:where(.yoru-compact) .card-menu-trigger-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  html.platform-android:where(.yoru-compact) .book-context-menu-dropdown {
+    top: 40px;
+    width: 236px;
+    max-height: min(600px, calc(100dvh - 170px));
+  }
+
+  html.platform-android:where(.yoru-compact) .context-menu-item-btn {
+    min-height: 44px;
+    font-size: 0.9rem;
+  }
+
+  /* Select mode: full-width panel that stays above the bottom navigation. */
+  html:where(.yoru-compact) .yomitan-select-mode-panel {
+    right: 8px;
+    bottom: calc(76px + var(--yoru-safe-bottom, 0px));
+    left: 8px;
+    width: auto;
+  }
+
+  html.platform-android:where(.yoru-compact) .library-container:has(.book-card.select-mode-active),
+html.platform-android:where(.yoru-compact) .library-container:has(.book-list-row.select-mode-active) {
+    padding-bottom: calc(330px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+
+  /* Settings list: a flat menu with descriptions instead of a sidebar. */
+  html:where(.yoru-compact) .settings-nav-groups {
+    gap: 18px;
+  }
+
+  html:where(.yoru-compact) .settings-nav-group-title {
+    margin: 0 0 4px 4px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+  }
+
+  html:where(.yoru-compact) .settings-nav-group-title svg {
+    display: none;
+  }
+
+  html:where(.yoru-compact) .settings-nav-group {
+    gap: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  html:where(.yoru-compact) .settings-nav-item {
+    min-height: 58px;
+    gap: 14px;
+    padding: 8px 6px;
+    border-radius: 12px;
+    color: var(--text-main);
+  }
+
+  html:where(.yoru-compact) .settings-nav-item:active {
+    background: var(--surface-soft);
+  }
+
+  html:where(.yoru-compact) .settings-nav-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--surface-raised);
+    color: var(--text-muted);
+  }
+
+  html:where(.yoru-compact) .settings-nav-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  html:where(.yoru-compact) .settings-nav-item.is-danger .settings-nav-icon {
+    background: var(--yoru-danger-soft);
+    color: var(--yoru-danger);
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-sidebar,
+html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
+    padding-bottom: calc(92px + var(--yoru-safe-bottom, 0px)) !important;
+  }
+
+  /* Settings sections: the top bar names the section, so drop the card frame
+     and let each option breathe as its own row. */
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-section-card {
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-card-title {
+    margin: 4px 0 6px !important;
+    font-size: 1.05rem !important;
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-card-desc {
+    margin-bottom: 14px !important;
+    font-size: 0.84rem !important;
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-row-control {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    min-height: 56px;
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .settings-row-control > .settings-label-text {
+    min-width: 0;
+    flex: 1 1 140px;
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .migaku-select {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    flex: 1 1 170px;
+    border-color: var(--border-light);
+    border-radius: 12px;
+    background-color: var(--surface-raised);
+    color: var(--text-main);
+    text-overflow: ellipsis;
+  }
+
+  /* Google Drive: bottom sheet on phones. */
+  html:where(.yoru-compact) .yoru-sheet-overlay {
+    align-items: flex-end;
+    padding: calc(var(--yoru-safe-top, 0px) + 24px) 0 0;
+  }
+
+  html:where(.yoru-compact) .yoru-sheet {
+    width: 100%;
+    max-height: 100%;
+    gap: 14px;
+    padding: 10px 18px calc(18px + var(--yoru-safe-bottom, 0px));
+    border-bottom: none;
+    border-radius: 22px 22px 0 0;
+    animation: yoruSheetUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  html:where(.yoru-compact) .yoru-sheet-handle {
+    display: block;
+  }
+
+  /* Progress: the picker spans the width so it never overflows. */
+  html:where(.yoru-compact) .progress-header .progress-window-picker {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  html:where(.yoru-compact) .progress-window-picker button {
+    min-height: 36px;
+    padding: 6px 4px;
+  }
+
+  html:where(.yoru-compact) .progress-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  html:where(.yoru-compact) .progress-kpi-value {
+    font-size: 1.45rem;
+  }
+
+  /* The bottom bar is solid: nothing shows through it while scrolling. */
+  html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
+    z-index: 1100;
+    background:
+      radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
+      linear-gradient(0deg, #0c0e13, #14171e);
+  }
+
+  html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
+    background:
+      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
+      linear-gradient(180deg, #181b22, #0e1116);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ---------- Yoru SRS dashboard: today summary, deck cards, activity heatmap ---------- */
+:root {
+  --srs-new: #7cb4ff;
+  --srs-learn: #f5a85b;
+  --srs-review: #8fd19e;
+  --srs-again: #ef7d7d;
+  --srs-on-primary: #1a1408;
+}
+
+[data-theme='light'],
+[data-theme='sepia'] {
+  --srs-new: #1d5fc4;
+  --srs-learn: #a3520b;
+  --srs-review: #1e7a3a;
+  --srs-again: #b42323;
+  --srs-on-primary: #ffffff;
+}
+
+.srs-section-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: var(--text-main);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.srs-today {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid var(--border-focus);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.srs-today-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.srs-today-head strong {
+  color: var(--primary);
+}
+
+.srs-today-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.srs-today-count {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.srs-today-count strong {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.srs-today-count span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.srs-today-count.is-new strong { color: var(--srs-new); }
+.srs-today-count.is-learn strong { color: var(--srs-learn); }
+.srs-today-count.is-review strong { color: var(--srs-review); }
+
+.srs-today-cta {
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: var(--primary);
+  color: var(--srs-on-primary);
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.srs-today-cta:hover:not(:disabled) { filter: brightness(1.08); }
+
+.srs-today-cta:disabled {
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.srs-today-limit-note {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.srs-deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.srs-deck-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.srs-deck-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 4px 4px 0;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg-card);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.srs-deck-item.is-due:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-card-hover);
+}
+
+.srs-deck-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 6px 10px 14px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.srs-deck-main:disabled {
+  cursor: default;
+}
+
+.srs-deck-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.srs-deck-name svg {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.srs-deck-name > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.srs-deck-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.srs-pill {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.srs-pill.is-new { color: var(--srs-new); background: color-mix(in srgb, var(--srs-new) 13%, transparent); }
+.srs-pill.is-learn { color: var(--srs-learn); background: color-mix(in srgb, var(--srs-learn) 13%, transparent); }
+.srs-pill.is-review { color: var(--srs-review); background: color-mix(in srgb, var(--srs-review) 13%, transparent); }
+.srs-pill.is-zero { color: var(--text-muted); background: var(--surface-soft); }
+
+.srs-deck-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.srs-deck-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.srs-deck-actions button:hover {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.srs-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.srs-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.srs-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.srs-cal-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.srs-cal-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.srs-cal-range {
+  min-width: 96px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.srs-cal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.srs-cal-stat-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.srs-cal-stat-value.is-accent { color: var(--primary); }
+
+.srs-cal-stat-label {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.srs-cal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.srs-cal-months {
+  display: grid;
+  gap: 3px;
+  margin-left: 18px;
+  height: 14px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.srs-cal-months span {
+  grid-row: 1;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.srs-cal-grid-row {
+  display: flex;
+  gap: 4px;
+}
+
+.srs-cal-days {
+  display: grid;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  width: 14px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.srs-cal-days span {
+  display: flex;
+  align-items: center;
+}
+
+.srs-cal-grid {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.srs-cal-week {
+  display: grid;
+  grid-template-rows: repeat(7, auto);
+  gap: 3px;
+}
+
+.srs-cal-cell {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--surface-soft);
+  box-shadow: inset 0 0 0 1px var(--border-light);
+}
+
+.srs-cal-cell.level-1 { background: color-mix(in srgb, var(--primary) 38%, transparent); box-shadow: none; }
+.srs-cal-cell.level-2 { background: color-mix(in srgb, var(--primary) 62%, transparent); box-shadow: none; }
+.srs-cal-cell.level-3 { background: color-mix(in srgb, var(--primary) 82%, transparent); box-shadow: none; }
+.srs-cal-cell.level-4 { background: var(--primary); box-shadow: none; }
+.srs-cal-cell.is-today { outline: 1.5px solid var(--text-main); outline-offset: 0; }
+.srs-cal-cell.is-future { visibility: hidden; }
+
+.srs-cal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.srs-cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.srs-cal-legend .srs-cal-cell {
+  width: 11px;
+  height: 11px;
+}
+
+@media (min-width: 900px) {
+  .srs-cal-cell { border-radius: 2px; }
+}
+
+/* ---------- Yoru SRS review session ---------- */
+.srs-rv {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  /* The card is tappable (tap to reveal), so the WebView flashed its grey tap highlight over
+     the whole card whenever any button inside it was pressed. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.srs-rv button:active {
+  opacity: 0.8;
+}
+
+.srs-rv-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(12px + var(--yoru-safe-top, 0px)) 16px 10px;
+}
+
+.srs-rv-icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.srs-rv-icon-btn.is-active {
+  border-color: var(--border-focus);
+  color: var(--primary);
+}
+
+.srs-rv-counts {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  gap: 6px;
+}
+
+.srs-rv-counts .srs-pill {
+  min-width: 34px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.srs-rv-progress {
+  padding: 0 16px;
+}
+
+.srs-rv-progress-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.srs-rv-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.2s ease-in-out;
+}
+
+.srs-rv-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.srs-rv-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srs-rv-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 14px 16px calc(16px + var(--yoru-safe-bottom, 0px));
+  overflow-y: auto;
+}
+
+.srs-rv-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.srs-rv-card {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 260px;
+  padding: 22px 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 22px;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+
+.srs-rv-card.is-answer {
+  cursor: default;
+}
+
+.srs-rv-kind {
+  align-self: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.srs-rv-kind.is-new { color: var(--srs-new); background: color-mix(in srgb, var(--srs-new) 13%, transparent); }
+.srs-rv-kind.is-learn { color: var(--srs-learn); background: color-mix(in srgb, var(--srs-learn) 13%, transparent); }
+.srs-rv-kind.is-review { color: var(--srs-review); background: color-mix(in srgb, var(--srs-review) 13%, transparent); }
+
+.srs-rv-front-sentence {
+  max-width: 34em;
+  margin: 22px auto 0;
+  font-family: var(--font-japanese);
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.srs-rv-front-sentence mark,
+.srs-rv-mark {
+  background: none;
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.srs-rv-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.srs-rv-grades {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.srs-rv-grade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.srs-rv-grade:active { transform: scale(0.97); }
+.srs-rv-grade:hover { filter: brightness(1.1); }
+
+.srs-rv-grade-label {
+  font-size: 0.95rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.srs-rv-grade-interval {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.srs-rv-grade.is-again { color: var(--srs-again); background: color-mix(in srgb, var(--srs-again) 16%, transparent); }
+.srs-rv-grade.is-hard { color: var(--srs-learn); background: color-mix(in srgb, var(--srs-learn) 16%, transparent); }
+.srs-rv-grade.is-good { color: var(--srs-on-primary); background: var(--primary); }
+.srs-rv-grade.is-easy { color: var(--srs-new); background: color-mix(in srgb, var(--srs-new) 16%, transparent); }
+
+.srs-rv-show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 56px;
+  border: none;
+  border-radius: 16px;
+  background: var(--primary);
+  color: var(--srs-on-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.srs-rv-utility {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.srs-rv-utility button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.srs-rv-utility button:hover:not(:disabled) {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.srs-rv-utility button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.srs-rv-key {
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  font-size: 0.66rem;
+  opacity: 0.7;
+}
+
+.srs-rv-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.srs-rv-size {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.srs-rv-size button {
+  width: 36px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.srs-rv-size button.is-active {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+}
+
+.srs-rv-listen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.srs-rv-listen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--border-focus);
+  border-radius: 999px;
+  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+  color: var(--primary);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.srs-rv-listen-btn.is-playing {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.srs-rv-front-sentence.is-main {
+  margin: 0 auto;
+  font-size: 1.45rem;
+  line-height: 1.8;
+  color: var(--text-main);
+}
+
+.srs-front-modes {
+  display: grid;
+  gap: 8px;
+}
+
+.srs-front-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.srs-front-mode strong {
+  font-size: 0.88rem;
+}
+
+.srs-front-mode span {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.srs-front-mode.is-selected {
+  border-color: var(--border-focus);
+  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+}
+
+/* ---------- SRS deck settings / create deck modal ---------- */
+.srs-deck-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.srs-deck-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 420px;
+  max-width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 18px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: var(--shadow-panel);
+}
+
+.srs-deck-modal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.srs-deck-modal-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 750;
+}
+
+.srs-deck-modal-head span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.srs-deck-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.srs-deck-field > span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  overflow-wrap: normal;
+}
+
+.srs-deck-field input,
+.srs-deck-field select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.srs-deck-field select option {
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.srs-deck-field input:focus,
+.srs-deck-field select:focus {
+  border-color: var(--border-focus);
+}
+
+.srs-deck-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.srs-deck-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.srs-deck-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+
+.srs-deck-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.srs-deck-toggle strong {
+  font-size: 0.88rem;
+}
+
+.srs-deck-toggle small {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.srs-deck-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.srs-deck-modal-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.srs-deck-delete {
+  margin-right: auto;
+  border: 1px solid color-mix(in srgb, var(--srs-again) 40%, transparent);
+  background: none;
+  color: var(--srs-again);
+}
+
+.srs-deck-cancel {
+  border: 1px solid var(--border-light);
+  background: none;
+  color: var(--text-main);
+}
+
+.srs-deck-save {
+  border: none;
+  background: var(--primary);
+  color: var(--srs-on-primary);
+}
+
+/* Recommended dictionaries installing in the background (DictionaryInstallToast) */
+.dict-install-toast {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(84px + var(--yoru-safe-bottom, 0px));
+  z-index: 100000;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--surface-raised, #1a2028);
+  border: 1px solid var(--border-light, rgba(255, 255, 255, 0.1));
+  box-shadow: var(--shadow-panel, 0 12px 32px rgba(0, 0, 0, 0.4));
+  color: var(--text-muted, #a4adb8);
+  font-size: 0.78rem;
+}
+
+.dict-install-toast-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dict-install-toast-row svg {
+  color: var(--primary, #f2c866);
+  flex-shrink: 0;
+}
+
+.dict-install-toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dict-install-toast-pct {
+  font-variant-numeric: tabular-nums;
+}
+
+.dict-install-toast-row button {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+}
+
+.dict-install-toast-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.dict-install-toast-track div {
+  height: 100%;
+  background: var(--primary, #f2c866);
+  transition: width 0.3s ease;
+}
+
+/* Recommended set on the dictionary step of the guide */
+.guide-pack-list {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: rgba(236, 236, 242, 0.85);
+}
+
+.guide-pack-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guide-pack-check {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(236, 236, 242, 0.5);
+}
+
+.guide-pack-check.ready {
+  background: rgba(143, 209, 158, 0.18);
+  color: #8fd19e;
+}
+
+.guide-pack-size {
+  font-size: 0.75rem;
+  color: rgba(236, 236, 242, 0.55);
+}
+
+/* Dictionary settings (settings/DictionarySettings.tsx) */
+.dict-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.dict-settings-pack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(242, 200, 102, 0.3);
+  background: linear-gradient(160deg, rgba(242, 200, 102, 0.1), rgba(242, 200, 102, 0.02));
+}
+
+.dict-settings-pack.ready {
+  border-color: var(--border-light);
+  background: var(--surface-soft);
+}
+
+.dict-settings-pack-title {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.92rem;
+}
+
+.dict-settings-pack-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.dict-settings-check {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(143, 209, 158, 0.16);
+  color: #8fd19e;
+}
+
+.dict-settings-check.missing {
+  background: transparent;
+  border: 1.5px dashed var(--text-dark);
+}
+
+.dict-settings-primary {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #1b1407;
+  font-weight: 700;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.dict-settings-primary span {
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.dict-settings-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.dict-settings-progress.standalone {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-light);
+}
+
+.dict-settings-progress.error {
+  color: var(--yoru-danger, #ef7d7d);
+}
+
+.dict-settings-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dict-settings-progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.dict-settings-progress-track div {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.25s ease;
+}
+
+.dict-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dict-settings-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dark);
+}
+
+.dict-settings-group-head span:last-child:not(:first-child) {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dict-settings-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  color: var(--text-main);
+  text-align: left;
+  font: inherit;
+}
+
+.dict-settings-item.off .dict-settings-item-text {
+  opacity: 0.5;
+}
+
+.dict-settings-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.dict-settings-item-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dict-settings-item-desc {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dict-settings-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: none;
+  background: var(--bg-card-hover);
+  box-shadow: inset 0 0 0 1px var(--border-light);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.dict-settings-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-dark);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.dict-settings-switch.on {
+  background: var(--primary);
+  box-shadow: none;
+}
+
+.dict-settings-switch.on::after {
+  transform: translateX(16px);
+  background: #1b1407;
+}
+
+.dict-settings-switch:focus-visible,
+.dict-settings-icon-btn:focus-visible,
+.dict-settings-add:focus-visible,
+.dict-settings-chip-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.dict-settings-icon-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dict-settings-icon-btn:hover {
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.dict-settings-menu-wrap {
+  position: relative;
+}
+
+.dict-settings-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel);
+}
+
+.dict-settings-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dict-settings-menu button:hover {
+  background: var(--surface-soft);
+}
+
+.dict-settings-menu button.danger {
+  color: var(--yoru-danger, #ef7d7d);
+}
+
+.dict-settings-empty {
+  display: flex;
+  justify-content: center;
+  padding: 22px;
+  border: 1px dashed var(--border-light);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.dict-settings-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-light);
+  background: transparent;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.dict-settings-add:hover {
+  background: var(--surface-soft);
+}
+
+.dict-settings-chip-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #1b1407;
+  font-weight: 700;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.dict-settings-chip-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.dict-settings-chip-btn.done {
+  opacity: 1;
+  background: rgba(143, 209, 158, 0.14);
+  color: #8fd19e;
+}
+
+.dict-settings-file {
+  cursor: pointer;
+}
+
+.dict-settings-file svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.dict-settings-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.dict-settings-sheet {
+  width: 520px;
+  max-width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.dict-settings-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 12px 18px;
+  border-bottom: 1px solid var(--border-light);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-main);
+}
+
+.dict-settings-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+@media (max-width: 767px) {
+  .dict-settings-sheet-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dict-settings-sheet {
+    width: 100%;
+    max-height: 88vh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: var(--yoru-safe-bottom, 0px);
+  }
+}
+
+
+/* ==========================================================================
+   Compact shell on a big screen (v1.4.6) — tablets
+   --------------------------------------------------------------------------
+   The phone chrome (top app bar, bottom tab bar, drawer) is now gated on
+   `html.yoru-compact` instead of `@media (max-width: 768px)`, so an Android
+   tablet gets the same shell as a phone instead of the phone markup under the
+   desktop stylesheet. frontend/utils/platform.ts sets that class, together with
+   `yoru-phone` / `yoru-tablet` / `yoru-desktop` for the size.
+
+   The rules below only scale that shell up: wider gutters, more columns, bigger
+   bars and type. Nothing here touches the phone (`yoru-phone` is excluded) or
+   the desktop frame (which needs `:not(.yoru-compact)`).
+   ========================================================================== */
+
+html.yoru-compact:not(.yoru-phone) {
+  --yoru-gutter: clamp(20px, 3.4vw, 44px);
+  --yoru-topbar-h: 64px;
+  --yoru-tabbar-h: 72px;
+}
+
+/* ---- Top app bar: same shape, room to breathe ---- */
+html.yoru-compact:not(.yoru-phone) .mobile-top-app-bar {
+  grid-template-columns: 52px minmax(0, 1fr) 116px;
+  gap: 12px;
+  min-height: var(--yoru-topbar-h);
+  padding:
+    max(10px, var(--yoru-safe-top, 0px))
+    max(var(--yoru-gutter), var(--yoru-safe-right, 0px))
+    10px
+    max(var(--yoru-gutter), var(--yoru-safe-left, 0px)) !important;
+}
+
+html.yoru-compact:not(.yoru-phone) .mobile-top-title {
+  font-size: 1.34rem;
+}
+
+html.yoru-compact:not(.yoru-phone) .mobile-icon-btn {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 16px;
+}
+
+/* ---- Content: the gutters grow with the screen, the column stays readable ---- */
+html.yoru-compact:not(.yoru-phone) .library-main-content,
+html.yoru-compact:not(.yoru-phone) .mas-screen-container,
+html.yoru-compact:not(.yoru-phone) .stats-tab-content,
+html.yoru-compact:not(.yoru-phone) .progress-dashboard,
+html.yoru-compact:not(.yoru-phone) .srs-view-panel {
+  padding-left: max(var(--yoru-gutter), var(--yoru-safe-left, 0px));
+  padding-right: max(var(--yoru-gutter), var(--yoru-safe-right, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .library-main-content {
+  padding-top: 26px;
+  padding-bottom: calc(var(--yoru-tabbar-h) + 28px + var(--yoru-safe-bottom, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .library-layout-wrapper {
+  padding-right: 0;
+}
+
+html.yoru-compact:not(.yoru-phone) .library-container {
+  padding-bottom: calc(var(--yoru-tabbar-h) + var(--yoru-safe-bottom, 0px)) !important;
+}
+
+/* ---- Book cards: the same row card, several per row ---- */
+html.yoru-compact:not(.yoru-phone) .books-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+html.yoru-compact:not(.yoru-phone) .book-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-height: 124px;
+  gap: 14px;
+}
+
+html.yoru-compact:not(.yoru-phone) .section-title {
+  font-size: 1.6rem;
+}
+
+html.yoru-compact:not(.yoru-phone) .section-header::before {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  font-size: 1.15rem;
+}
+
+/* ---- Bottom tab bar: taller, and the tabs stay together instead of
+   stretching to the far corners of a 1280 px screen ---- */
+html.yoru-compact:not(.yoru-phone) .bottom-navigation-bar {
+  height: calc(var(--yoru-tabbar-h) + var(--yoru-safe-bottom, 0px));
+  justify-content: center;
+  gap: clamp(28px, 9vw, 140px);
+  padding: 6px max(var(--yoru-gutter), var(--yoru-safe-left, 0px)) max(6px, var(--yoru-safe-bottom, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .bottom-tab-btn {
+  flex: 0 0 auto;
+  min-width: 128px;
+  min-height: 56px;
+  border-radius: 16px;
+}
+
+html.yoru-compact:not(.yoru-phone) .bottom-tab-btn span {
+  font-size: 0.78rem;
+}
+
+/* ---- Drawer: wider, and it still covers the page below the bar ---- */
+html.yoru-compact:not(.yoru-phone) .library-sidebar {
+  width: 340px;
+  top: calc(var(--yoru-topbar-h) + var(--yoru-safe-top, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .sidebar-overlay {
+  top: calc(var(--yoru-topbar-h) + var(--yoru-safe-top, 0px));
+}
+
+html.yoru-compact:not(.yoru-phone) .sidebar-item {
+  min-height: 48px;
+  font-size: 0.97rem;
+}
+
+/* ---- Nothing may scroll sideways, whatever the width ---- */
+html.yoru-compact body,
+html.yoru-compact #root {
+  overflow-x: clip;
+}
+
+/* ---- Touch on a wide screen: no hover-only affordances ---- */
+@media (hover: none) {
+  .book-card:hover {
+    transform: none;
+  }
 }

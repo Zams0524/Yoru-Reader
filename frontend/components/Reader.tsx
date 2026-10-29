@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ExternalLink, Plus, Volume2, X } from 'lucide-react';
+import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
 import { lookupWord } from '../utils/dictionary';
 import { db } from '../utils/db';
@@ -13,9 +14,9 @@ import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
 import { syncJitenReview } from '../utils/jitenSync';
 
 // Direct reader engine imports
-import ReaderEngine, { type ReaderEngineApi } from './reader/ReaderEngine';
-import NativeReaderHost from './reader/NativeReaderHost';
-import { isNativeReaderAvailable } from '../utils/nativeReader';
+import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reader/ReaderEngine';
+import NativeReaderHost, { type NativeTextSelection } from './reader/NativeReaderHost';
+import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
@@ -31,11 +32,13 @@ import {
 } from '../utils/highlights';
 import { blockText, offsetInBlock, rangeForOffsets, setNamedHighlight } from '../utils/readerText';
 import { useReadAloud } from './reader/useReadAloud';
+import { useReadAloudPlayer } from './reader/useReadAloudPlayer';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
 import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
+import { isPhoneUI } from '../utils/platform';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
@@ -48,16 +51,20 @@ const ENGINE_PAGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDo
 interface PitchAccentGraphProps {
   reading: string;
   position: number;
+  // Small line without mora labels, next to the reading in the popup.
+  compact?: boolean;
 }
 
 // Beautiful Interactive SVG Pitch Accent Graph
-function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
+function PitchAccentGraph({ reading, position, compact = false }: PitchAccentGraphProps) {
   const morae = getPitchMorae(reading);
   if (morae.length === 0) return null;
 
-  const nodeSpacing = 30;
-  const height = 50;
-  const padding = 12;
+  const nodeSpacing = compact ? 13 : 30;
+  const height = compact ? 20 : 50;
+  const padding = compact ? 5 : 12;
+  const highY = compact ? 5 : 12;
+  const lowY = compact ? 15 : 28;
   const width = morae.length * nodeSpacing + padding * 2;
 
   const getLevel = (idx: number) => {
@@ -76,7 +83,7 @@ function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
   const points = morae.map((mora, idx) => {
     const x = padding + idx * nodeSpacing;
     const level = getLevel(idx);
-    const y = level === 1 ? 12 : 28; // High node at 12, Low node at 28
+    const y = level === 1 ? highY : lowY;
     return { x, y, mora, idx, level };
   });
 
@@ -84,8 +91,22 @@ function PitchAccentGraph({ reading, position }: PitchAccentGraphProps) {
   if (position > 0 && position <= morae.length) {
     const lastHighPoint = points[position - 1];
     const nextX = lastHighPoint.x + nodeSpacing / 2;
-    const dropY = 28; // Drop to low level (28)
+    const dropY = lowY;
     dropLine = { x1: lastHighPoint.x, y1: lastHighPoint.y, x2: nextX, y2: dropY };
+  }
+
+  if (compact) {
+    return (
+      <svg width={width} height={height} style={{ overflow: 'visible', flexShrink: 0 }} aria-label={`${reading} [${position}]`}>
+        {points.slice(1).map((pt, idx) => (
+          <line key={`line-${idx}`} x1={points[idx].x} y1={points[idx].y} x2={pt.x} y2={pt.y} stroke="#38bdf8" strokeWidth="1.5" />
+        ))}
+        {dropLine && <line x1={dropLine.x1} y1={dropLine.y1} x2={dropLine.x2} y2={dropLine.y2} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="2 2" />}
+        {points.map(pt => (
+          <circle key={`node-${pt.idx}`} cx={pt.x} cy={pt.y} r="2.5" fill={pt.level === 1 ? '#38bdf8' : '#1e293b'} stroke="#38bdf8" strokeWidth="1.2" />
+        ))}
+      </svg>
+    );
   }
 
   return (
@@ -398,6 +419,9 @@ export default function Reader({
 
   const [selectedWord, setSelectedWord] = useState<any | null>(null);
   const [dictEntry, setDictEntry] = useState<any | null>(null);
+  const [showAllSenses, setShowAllSenses] = useState(false);
+  const [showAllFreqs, setShowAllFreqs] = useState(false);
+  const popupSwipeRef = useRef<number | null>(null);
   const [dictLoading, setDictLoading] = useState(false);
   const [ankiCardExists, setAnkiCardExists] = useState(false);
   const [srsCard, setSrsCard] = useState<any | null>(null);
@@ -420,6 +444,10 @@ export default function Reader({
 
   const engineApiRef = useRef<ReaderEngineApi | null>(null);
   const [isReadAloudOpen, setIsReadAloudOpen] = useState(false);
+  // Height the read-aloud player takes at the bottom: the page leaves it free while it is open. The
+  // web reader follows the player up when the bars show; the native page keeps its low place (a
+  // relayout there takes about half a second, and the page bar covers that strip anyway).
+  const [readAloudReach, setReadAloudReach] = useState({ current: 0, low: 0 });
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -432,6 +460,8 @@ export default function Reader({
     }, 3500);
   }, []);
 
+  // The last read-aloud error, for the player in the notification (cleared when the voice goes on).
+  const [readAloudError, setReadAloudError] = useState('');
   const readAloud = useReadAloud({
     apiRef: engineApiRef,
     voice: settings.audioVoiceOption,
@@ -449,7 +479,22 @@ export default function Reader({
           : (es ? 'No hay voz japonesa en este equipo. Elige Nanami o Keita en los ajustes de voz.' : 'No Japanese voice on this computer. Pick Nanami or Keita in the voice settings.');
       }
       showToast(message, 'error');
+      setReadAloudError(message);
     },
+  });
+  useEffect(() => {
+    if (readAloud.status === 'playing') setReadAloudError('');
+  }, [readAloud.status]);
+  useReadAloudPlayer({
+    readAloud,
+    open: isReadAloudOpen,
+    book,
+    chapter: engineApiRef.current?.getSections()[currentProgress.currSection]?.title || '',
+    settings,
+    lang,
+    error: readAloudError,
+    onClose: () => { readAloud.stop(); setIsReadAloudOpen(false); },
+    onReturn: (message) => showToast(message, 'info'),
   });
 
   const toggleFullscreen = useCallback(() => {
@@ -658,7 +703,7 @@ export default function Reader({
     });
     
     try {
-      const entry = await lookupWord(word, reading);
+      const entry = await lookupWord(word, reading, wordSpan.getAttribute('data-pos') || '');
       if (requestId !== dictionaryLookupRequestRef.current) return;
       setDictEntry(entry);
     } catch (error) {
@@ -670,6 +715,26 @@ export default function Reader({
       if (requestId === dictionaryLookupRequestRef.current) setDictLoading(false);
     }
   }, [selectedWord]);
+
+  // "Also" chips in the popup: show another word with the same spelling or reading.
+  const lookupAlternative = useCallback(async (term: string, reading: string) => {
+    const requestId = ++dictionaryLookupRequestRef.current;
+    setDictLoading(true);
+    setSelectedWord((current: any) => current ? { ...current, basicForm: term, reading } : current);
+    try {
+      const entry = await lookupWord(term, reading);
+      if (requestId === dictionaryLookupRequestRef.current) setDictEntry(entry);
+    } catch (error) {
+      if (requestId === dictionaryLookupRequestRef.current) setDictEntry(null);
+    } finally {
+      if (requestId === dictionaryLookupRequestRef.current) setDictLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setShowAllSenses(false);
+    setShowAllFreqs(false);
+  }, [selectedWord?.basicForm, selectedWord?.reading]);
 
   React.useLayoutEffect(() => {
     const popup = dictPopupRef.current;
@@ -689,8 +754,8 @@ export default function Reader({
       const available = wordInUpperHalf
         ? window.innerHeight - safeBottom - popupPos.targetBottom - gap - margin
         : popupPos.targetTop - safeTop - gap - margin;
-      // About a third of the screen, so most of the page (and the highlighted word) stays in view.
-      const maxHeight = Math.max(150, Math.min(Math.round(window.innerHeight * 0.34), available));
+      // Under a third of the screen, so most of the page (and the highlighted word) stays in view.
+      const maxHeight = Math.max(140, Math.min(Math.round(window.innerHeight * 0.28), available));
       const top = wordInUpperHalf ? window.innerHeight - safeBottom - margin : safeTop + margin;
       setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
       setPopupPos(current => current.x === margin && current.y === top && current.anchorBottom === wordInUpperHalf
@@ -792,12 +857,45 @@ export default function Reader({
     };
   }, [handleSelection, triggerWordLookup]);
 
+  // A selection made on the native page (long press) is not a DOM selection: the plugin draws it.
+  const nativeSelectionRef = useRef(false);
+  /** Ends the text selection, in the WebView or on the native page, and hides its toolbar. */
+  const endSelection = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    if (nativeSelectionRef.current) {
+      nativeSelectionRef.current = false;
+      void NativeReader.clearSelection().catch(() => {});
+    }
+    setSelection(null);
+  }, []);
+
+  const handleNativeSelection = useCallback((sel: NativeTextSelection | null) => {
+    if (!sel) {
+      if (nativeSelectionRef.current) {
+        nativeSelectionRef.current = false;
+        setSelection(null);
+      }
+      return;
+    }
+    nativeSelectionRef.current = true;
+    setSelectedWord(null);
+    setSelection({
+      visible: true,
+      native: true,
+      rect: { x: (sel.rect.left + sel.rect.right) / 2, y: sel.rect.top, bottom: sel.rect.bottom },
+      paragraphId: sel.paragraphId,
+      text: sel.text,
+      offsets: sel.offsets,
+      visibleText: sel.visibleText,
+    });
+  }, []);
+
   const handleCopyText = useCallback(() => {
     if (!selection) return;
     navigator.clipboard.writeText(selection.text);
     showToast(lang === 'es' ? 'Texto copiado al portapapeles' : 'Text copied to clipboard', 'success');
-    window.getSelection()?.removeAllRanges();
-  }, [selection, lang]);
+    endSelection();
+  }, [selection, lang, endSelection]);
 
   const handleToggleBookmark = useCallback((paragraphId: number, content: string) => {
     let next;
@@ -812,6 +910,39 @@ export default function Reader({
     setBookmarks(next);
     db.saveBookBookmarks(book.id, next);
   }, [bookmarks, book.id, lang]);
+
+  // ── Page bookmarks (ReadEra-style ribbons) ──
+  // A page is bookmarked when a bookmark sits on the paragraph at its top (the one progress keeps).
+  const pageParagraph = currentProgress.lastIndex;
+  const isPageBookmarked = bookmarks.some((b) => b.paragraphId === pageParagraph);
+  const handleTogglePageBookmark = useCallback(() => {
+    const exists = bookmarks.some((b) => b.paragraphId === pageParagraph);
+    const next = exists
+      ? bookmarks.filter((b) => b.paragraphId !== pageParagraph)
+      : [...bookmarks, { paragraphId: pageParagraph, content: bookParagraphText(book, pageParagraph).slice(0, 120), page: true, createdAt: new Date().toISOString() }];
+    showToast(exists ? (lang === 'es' ? 'Marcador eliminado' : 'Bookmark removed') : (lang === 'es' ? 'Página marcada' : 'Page bookmarked'), 'success');
+    setBookmarks(next);
+    db.saveBookBookmarks(book.id, next);
+  }, [bookmarks, pageParagraph, book, lang, showToast]);
+  const handleRemoveBookmark = useCallback((bm: { paragraphId: number }) => {
+    const next = bookmarks.filter((b) => b.paragraphId !== bm.paragraphId);
+    setBookmarks(next);
+    db.saveBookBookmarks(book.id, next);
+  }, [bookmarks, book.id]);
+  // Where each bookmark is on the page bar (characters before its paragraph).
+  const bookChapters = book.chapters;
+  const paragraphChars = useMemo(() => bookParagraphChars({ chapters: bookChapters }), [bookChapters]);
+  const bookmarkMarks = useMemo(() => Array.from(new Set(
+    bookmarks.map((b) => paragraphChars[b.paragraphId]).filter((chars): chars is number => Number.isFinite(chars)),
+  )), [bookmarks, paragraphChars]);
+  const describeBookmark = useCallback((bm: { paragraphId: number }) => {
+    const sections = engineApiRef.current?.getSections() || [];
+    const section = sections.find((s) => bm.paragraphId >= s.startParagraphId && bm.paragraphId <= s.lastIndex);
+    const percent = currentProgress.totalChars > 0 && Number.isFinite(paragraphChars[bm.paragraphId])
+      ? ` · ${Math.floor((paragraphChars[bm.paragraphId] / currentProgress.totalChars) * 100)} %`
+      : '';
+    return `${section?.title || (lang === 'es' ? 'Marcador' : 'Bookmark')}${percent}`;
+  }, [paragraphChars, currentProgress.totalChars, lang]);
 
   // ── Highlights & notes ──
   const [highlights, setHighlights] = useState<BookHighlight[]>(() => (book as any).highlights || []);
@@ -845,16 +976,33 @@ export default function Reader({
     const item = highlightFromSelection(color);
     if (!item) return;
     saveHighlights(withHighlight(highlights, item));
-    window.getSelection()?.removeAllRanges();
+    endSelection();
     showToast(lang === 'es' ? 'Subrayado guardado' : 'Highlight saved', 'success');
-  }, [highlightFromSelection, saveHighlights, withHighlight, highlights, lang, showToast]);
+  }, [highlightFromSelection, saveHighlights, withHighlight, highlights, lang, showToast, endSelection]);
 
   const handleNoteSelection = useCallback(() => {
     const item = highlightFromSelection('yellow');
     if (!item) return;
-    window.getSelection()?.removeAllRanges();
-    setNoteDraft({ highlight: item, isNew: true });
-  }, [highlightFromSelection]);
+    endSelection();
+    // Selecting inside a saved highlight edits its note (a long press on it, on the phone).
+    const existing = highlights.find((h) => h.paragraphId === item.paragraphId && h.start < item.end && item.start < h.end);
+    if (existing) setNoteDraft({ highlight: existing, isNew: false });
+    else setNoteDraft({ highlight: item, isNew: true });
+  }, [highlightFromSelection, endSelection, highlights]);
+
+  /** Reads aloud from the selected text instead of from the top of the page (like ReadEra). */
+  const handleReadFromSelection = useCallback(() => {
+    if (!selection) return;
+    const from = { paragraphId: selection.paragraphId, offset: selection.offsets?.start ?? 0 };
+    endSelection();
+    setIsReadAloudOpen(true);
+    if (readAloud.status === 'idle') readAloud.start(from);
+    else {
+      // The native reader builds what it reads from the page on screen once reading is idle.
+      readAloud.stop();
+      window.setTimeout(() => readAloud.start(from), 150);
+    }
+  }, [selection, endSelection, readAloud]);
 
   // Draw saved highlights on whatever paragraphs are rendered; redraw when the page content changes.
   useEffect(() => {
@@ -913,20 +1061,21 @@ export default function Reader({
   const handleBookmarkSelection = useCallback(() => {
     if (!selection) return;
     handleToggleBookmark(selection.paragraphId, selection.text);
-    window.getSelection()?.removeAllRanges();
-  }, [selection, handleToggleBookmark]);
+    endSelection();
+  }, [selection, handleToggleBookmark, endSelection]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
       const selectionObj = window.getSelection();
       if (!selectionObj || selectionObj.isCollapsed || !selectionObj.rangeCount) {
-        setSelection(null);
+        // The native page's selection is not in the DOM: an empty DOM selection says nothing about it.
+        if (!nativeSelectionRef.current) setSelection(null);
         return;
       }
       
       const text = selectionObj.toString().trim();
       if (!text) {
-        setSelection(null);
+        if (!nativeSelectionRef.current) setSelection(null);
         return;
       }
 
@@ -1125,7 +1274,8 @@ export default function Reader({
 
   const checkAnkiCardExists = async (word: string) => {
     setAnkiCardExists(false);
-    if (!word) return;
+    // AnkiConnect needs Anki on the same computer: never on a phone.
+    if (!word || isPhoneUI()) return;
 
     const savedV2 = localStorage.getItem('anki_settings_v2');
     const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
@@ -1215,6 +1365,7 @@ export default function Reader({
   };
 
   const handleMineToAnki = async () => {
+    if (isPhoneUI()) return;
     if (!selectedWord) return;
 
     const uploadMediaToAnki = async (host: string, filename: string, base64Data: string) => {
@@ -1827,7 +1978,11 @@ export default function Reader({
 
   const handleSrsReview = (word: string, grade: number, preview?: any) => {
     const currentCard = db.getSrsCard(word);
-    const intervals = preview ? { repeats: preview } : calculateSrsIntervals(currentCard);
+    // A preview from the popup only carries the scheduled repeats; the readable labels
+    // (again/hard/good/easy) come from the same card, so reuse the memoized intervals.
+    const intervals = preview
+      ? { ...(preview === selectedSrsIntervals.repeats ? selectedSrsIntervals : calculateSrsIntervals(currentCard)), repeats: preview }
+      : calculateSrsIntervals(currentCard);
     const updatedCard = { 
       ...currentCard,
       ...(intervals.repeats as any)[grade] 
@@ -1985,24 +2140,24 @@ export default function Reader({
     const themeName: string = readerSettings.theme || 'dark';
     return {
       light: {
-        bg: '#ffffff',
-        headerBg: '#ffffff',
-        border: 'rgba(0, 0, 0, 0.08)',
-        textMain: '#000000',
-        textMuted: '#8e8e93',
-        cardBg: '#f6f6f6',
+        bg: '#f4f2ed',
+        headerBg: '#f4f2ed',
+        border: 'rgba(0, 0, 0, 0.09)',
+        textMain: '#1c1b19',
+        textMuted: '#7c7a75',
+        cardBg: '#eae7e0',
         accent: '#5c35db',
-        popoverBg: '#ffffff',
+        popoverBg: '#f4f2ed',
       },
       sepia: {
-        bg: '#fcfaf2',
-        headerBg: '#fcfaf2',
-        border: 'rgba(92, 75, 55, 0.15)',
-        textMain: '#5c4b37',
-        textMuted: 'rgba(92, 75, 55, 0.65)',
-        cardBg: '#f4eedb',
+        bg: '#efe2c6',
+        headerBg: '#efe2c6',
+        border: 'rgba(74, 56, 38, 0.18)',
+        textMain: '#4a3826',
+        textMuted: 'rgba(74, 56, 38, 0.68)',
+        cardBg: '#e6d6b5',
         accent: '#8b5a2b',
-        popoverBg: '#fcfaf2',
+        popoverBg: '#efe2c6',
       },
       dark: {
         bg: '#08080a',
@@ -2025,14 +2180,14 @@ export default function Reader({
         popoverBg: '#000000',
       },
       'sepia-contrast': {
-        bg: '#f4ecd8',
-        headerBg: '#f4ecd8',
-        border: 'rgba(59, 42, 24, 0.2)',
-        textMain: '#2e1f0f',
-        textMuted: 'rgba(46, 31, 15, 0.7)',
-        cardBg: '#ebe0c4',
-        accent: '#7a4a1c',
-        popoverBg: '#f4ecd8',
+        bg: '#e8d9b9',
+        headerBg: '#e8d9b9',
+        border: 'rgba(59, 42, 24, 0.22)',
+        textMain: '#24170a',
+        textMuted: 'rgba(36, 23, 10, 0.72)',
+        cardBg: '#ddcba5',
+        accent: '#6e4118',
+        popoverBg: '#e8d9b9',
       },
       twilight: {
         bg: '#1c2230',
@@ -2246,6 +2401,8 @@ export default function Reader({
         onToggleReadingSpeed={handleToggleReadingMeasurement}
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenNotes={() => setSidebarMode('notes')}
+        isPageBookmarked={isPageBookmarked}
+        onTogglePageBookmark={handleTogglePageBookmark}
         bookAuthor={book?.author || ''}
         sectionTitle={engineApiRef.current?.getSections()[currentProgress.currSection]?.title || ''}
         isReadingAloud={isReadAloudOpen}
@@ -2338,7 +2495,19 @@ export default function Reader({
         lang={lang}
         accent={colors.accent}
         rtl={readerSettings.vertical}
+        marks={bookmarkMarks}
       />
+
+      {isPageBookmarked && !isHeaderVisible && (
+        <button
+          type="button"
+          className="reader-page-ribbon"
+          style={{ '--ribbon-color': colors.accent } as React.CSSProperties}
+          onClick={handleTogglePageBookmark}
+          aria-label={lang === 'es' ? 'Quitar marcador de esta página' : 'Remove page bookmark'}
+          title={lang === 'es' ? 'Quitar marcador de esta página' : 'Remove page bookmark'}
+        />
+      )}
 
       {isReadAloudOpen && (
         <ReadAloudBar
@@ -2355,6 +2524,8 @@ export default function Reader({
           onSleep={readAloud.setSleepMinutes}
           onSettings={() => setIsVoiceSettingsOpen(true)}
           raised={isHeaderVisible}
+          autoHide={readAloud.status === 'playing' && !isHeaderVisible}
+          onReach={setReadAloudReach}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
         />
       )}
@@ -2391,6 +2562,10 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
+          lang={lang}
+          bottomReserve={isReadAloudOpen ? readAloudReach.low : 0}
+          highlights={highlights}
+          onSelection={handleNativeSelection}
         />
       ) : (
         <ReaderEngine
@@ -2405,6 +2580,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
+          bottomReserve={isReadAloudOpen ? readAloudReach.current : 0}
         />
       )}
 
@@ -2729,6 +2905,7 @@ export default function Reader({
           onBookmark={handleBookmarkSelection}
           onHighlight={selection.offsets ? handleHighlightSelection : undefined}
           onNote={selection.offsets ? handleNoteSelection : undefined}
+          onReadAloud={handleReadFromSelection}
           colors={colors}
           lang={lang}
         />
@@ -2827,7 +3004,7 @@ export default function Reader({
         <ReaderSidebar
           mode={sidebarMode}
           onClose={() => setSidebarMode(null)}
-          sections={book.chapters.map((ch: any, idx: number) => ({ id: `chapter-${idx}`, title: ch.title, isFromToc: ch.isFromToc }))}
+          sections={book.chapters.map((ch: any, idx: number) => ({ id: `chapter-${idx}`, title: chapterDisplayTitle(ch.title, idx, lang), isFromToc: ch.isFromToc }))}
           currSection={currentProgress.currSection}
           onGoToSection={(idx: number) => {
             skipNextReadingPositionRef.current = true;
@@ -2836,6 +3013,8 @@ export default function Reader({
           }}
           bookmarks={bookmarks}
           onGoToBookmark={(bm: any) => goToParagraphAnywhere(bm.paragraphId)}
+          onToggleBookmark={handleRemoveBookmark}
+          describeBookmark={describeBookmark}
           onModeChange={setSidebarMode}
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
@@ -2852,6 +3031,18 @@ export default function Reader({
         <div 
           ref={dictPopupRef}
           className="dict-popup"
+          onTouchStart={(e) => {
+            const popup = e.currentTarget;
+            popupSwipeRef.current = popup.scrollTop <= 0 ? e.touches[0].clientY : null;
+          }}
+          onTouchEnd={(e) => {
+            // Phones: drag the sheet toward its screen edge to close it.
+            const startY = popupSwipeRef.current;
+            popupSwipeRef.current = null;
+            if (startY === null || window.innerWidth >= 768) return;
+            const dy = e.changedTouches[0].clientY - startY;
+            if (popupPos.anchorBottom ? dy > 60 : dy < -60) setSelectedWord(null);
+          }}
           style={{ 
             position: 'fixed',
             left: `${popupPos.x}px`, 
@@ -2859,13 +3050,13 @@ export default function Reader({
             zIndex: 99999,
             transform: popupPos.anchorBottom ? 'translateY(-100%)' : 'none',
             maxHeight: `${popupMaxHeight}px`,
-            width: 'min(360px, calc(100vw - 24px))',
+            width: window.innerWidth < 768 ? 'calc(100vw - 24px)' : 'min(380px, calc(100vw - 24px))',
             boxSizing: 'border-box',
             background: colors.popoverBg,
             border: `1px solid ${colors.border}`,
-            borderRadius: '12px',
-            padding: window.innerWidth < 768 ? '8px 10px' : '12px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+            borderRadius: '16px',
+            padding: window.innerWidth < 768 ? '8px 12px' : '14px',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
             display: 'flex',
             flexDirection: 'column',
             overflowY: 'auto',
@@ -2881,10 +3072,258 @@ export default function Reader({
             const isLearning = wordStatus === 'learning';
             const isKnown = wordStatus === 'known';
             const isIgnored = wordStatus === 'ignored';
+            const es = lang === 'es';
+            const headword = (!dictLoading && dictEntry?.isFromYomitan && dictEntry?.word) || selectedWord.surface;
+            const headReading = (!dictLoading && dictEntry?.isFromYomitan && dictEntry?.reading) || selectedWord.reading;
+            const badges = dictLoading ? [] : frequencyBadges(dictEntry?.frequencies, lang);
+            const senses: any[] = !dictLoading && dictEntry?.definitions ? dictEntry.definitions : [];
+            const phone = window.innerWidth < 768;
+            const senseLimit = phone ? 2 : 3;
+            const visibleSenses = showAllSenses ? senses : senses.slice(0, senseLimit);
+            const alternatives: any[] = !dictLoading && dictEntry?.alternatives ? dictEntry.alternatives : [];
+            // Only the pitch of the reading shown (御 has お, ご, おん… and the popup shows ご).
+            const hira = (text: string) => (text || '').replace(/[\u30a1-\u30f6]/g, char => String.fromCharCode(char.charCodeAt(0) - 0x60));
+            const pitchReading = hira(headReading || '');
+            const pitchEntries = (dictEntry?.pitches || []).filter((item: any) => !pitchReading || hira(item?.reading) === pitchReading);
+            const accent = dictLoading ? null : getPitchAccent(pitchEntries, pitchReading);
+            const chip: React.CSSProperties = {
+              fontSize: '0.7rem', padding: '2px 8px', borderRadius: '999px', whiteSpace: 'nowrap',
+              border: `1px solid ${colors.border || 'rgba(255,255,255,0.1)'}`, color: colors.textMuted, background: 'transparent'
+            };
+            const action = (active: boolean, tint: string): React.CSSProperties => ({
+              flex: 1, minWidth: 0, padding: '7px 4px', borderRadius: '10px', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'all 0.15s',
+              background: active ? `${tint}26` : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${active ? `${tint}99` : 'rgba(255,255,255,0.1)'}`,
+              color: active ? tint : colors.textMuted
+            });
+            let previousDictionary = '';
 
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', gap: '5px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: phone ? '6px' : '8px' }}>
+                {phone && (
+                  <div aria-hidden="true" style={{ width: '34px', height: '4px', borderRadius: '2px', background: colors.border || 'rgba(255,255,255,0.15)', alignSelf: 'center', marginTop: '-2px' }} />
+                )}
+
+                {/* Word, reading and audio */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: phone ? '1.35rem' : '1.75rem', fontWeight: 700, lineHeight: 1.05, color: colors.textMain }}>
+                    {headword}
+                  </span>
+                  {headReading && headReading !== headword && (
+                    <span style={{ fontSize: '0.88rem', color: colors.textMuted, lineHeight: 1.4 }}>{headReading}</span>
+                  )}
+                  {accent && <PitchAccentGraph compact reading={accent.reading || selectedWord.reading} position={accent.position} />}
+                  <button
+                    type="button"
+                    onClick={playSelectedWordAudio}
+                    style={{
+                      marginLeft: 'auto', width: '30px', height: '30px', flexShrink: 0, borderRadius: '50%',
+                      background: 'transparent', border: `1px solid ${colors.border || 'rgba(255,255,255,0.1)'}`,
+                      color: colors.textMuted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}
+                    title={es ? 'Escuchar pronunciación' : 'Listen pronunciation'}
+                    aria-label={es ? 'Escuchar pronunciación' : 'Listen pronunciation'}
+                  >
+                    <Volume2 size={16} />
+                  </button>
+                </div>
+
+                {/* How common the word is */}
+                {badges.length > 0 && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {(showAllFreqs ? badges : badges.slice(0, 1)).map((badge, index) => (
+                      <button
+                        key={badge.dictionary}
+                        type="button"
+                        onClick={() => setShowAllFreqs(value => !value)}
+                        title={`${badge.dictionary} ${badge.display}`}
+                        style={{
+                          ...chip,
+                          cursor: badges.length > 1 ? 'pointer' : 'default',
+                          ...(index === 0 ? { color: '#f2c866', borderColor: 'rgba(242,200,102,0.35)', background: 'rgba(242,200,102,0.1)' } : {})
+                        }}
+                      >
+                        <span style={{ letterSpacing: '1px' }}>{'★'.repeat(badge.stars)}<span style={{ opacity: 0.3 }}>{'★'.repeat(5 - badge.stars)}</span></span>
+                        {' '}{index === 0 ? `${badge.label} · ` : `${frequencyListName(badge.dictionary)} `}{badge.display}
+                        {index === 0 && badges.length > 1 && !showAllFreqs && <span style={{ opacity: 0.6 }}> · +{badges.length - 1}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Senses */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {dictLoading ? (
+                    <p style={{ margin: 0, color: colors.textMuted, fontSize: '0.85rem' }}>{t('dictLoading', lang)}</p>
+                  ) : senses.length === 0 ? (
+                    <p style={{ margin: 0, color: colors.textMuted, fontSize: '0.82rem' }}>{t('dictNoDefinitions', lang)}</p>
+                  ) : visibleSenses.map((def: any, idx: number) => {
+                    // The "nothing found" entry from lookupWord is shown in the app's language.
+                    const glossary = dictEntry.isFallback
+                      ? t('noDefFound', lang)
+                      : typeof def === 'string' ? def : (def?.glossary || '');
+                    const dictionary = typeof def === 'string' ? '' : (def?.dictionary || '');
+                    const showDictionary = dictionary !== previousDictionary && (idx > 0 || senses.some((other: any) => other?.dictionary && other.dictionary !== dictionary));
+                    previousDictionary = dictionary;
+                    const pos = typeof def === 'string' ? [] : (def?.partsOfSpeech || []);
+                    return (
+                      <React.Fragment key={idx}>
+                        {showDictionary && (
+                          <div style={{ fontSize: '0.66rem', color: '#f2c866', opacity: 0.85, marginTop: idx > 0 ? '4px' : 0 }}>
+                            {dictionary.replace(/\s*\[[^\]]*\]$/, '')}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px', fontSize: phone ? '0.84rem' : '0.88rem', lineHeight: 1.35, color: colors.textMain }}>
+                          {senses.length > 1 && <span style={{ color: colors.textMuted, fontSize: '0.72rem', minWidth: '12px', paddingTop: '2px' }}>{idx + 1}</span>}
+                          <div style={{ minWidth: 0 }}>
+                            <span dangerouslySetInnerHTML={{ __html: sanitizeDictionaryHtml(glossary) }} />
+                            {pos.length > 0 && <span style={{ marginLeft: '6px', fontSize: '0.68rem', color: colors.textMuted, fontStyle: 'italic' }}>{pos.slice(0, 3).join(' ')}</span>}
+                            {def?.note && <div style={{ fontSize: '0.74rem', color: colors.textMuted, marginTop: '1px' }}>{def.note}</div>}
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                  {senses.length > senseLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSenses(value => !value)}
+                      style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#f2c866', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {showAllSenses ? (es ? 'Ver menos' : 'Show less') : (es ? `Ver más (${senses.length - senseLimit})` : `Show more (${senses.length - senseLimit})`)}
+                    </button>
+                  )}
+                </div>
+
+                {/* Other words written or read the same way */}
+                {alternatives.length > 0 && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${colors.border || 'rgba(255,255,255,0.08)'}`, paddingTop: '7px', fontSize: '0.74rem', color: colors.textMuted }}>
+                    <span>{es ? 'También' : 'Also'}</span>
+                    {alternatives.map((alt: any) => (
+                      <button
+                        key={`${alt.term}:${alt.reading}`}
+                        type="button"
+                        onClick={() => void lookupAlternative(alt.term, alt.reading)}
+                        title={`${alt.term}【${alt.reading}】 ${alt.glossary}`}
+                        style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '6px', padding: '2px 8px', color: colors.textMain, fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {alt.term === headword ? alt.reading : alt.term}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {isLearning && (() => {
+                  const intervals = selectedSrsIntervals;
+                  return (
+                    <div style={{ display: 'flex', gap: '5px', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSrsReview(selectedWord.basicForm, 1, intervals.repeats)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          background: 'rgba(239, 68, 68, 0.06)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          color: '#f87171',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        again <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.again})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSrsReview(selectedWord.basicForm, 2, intervals.repeats)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          background: 'rgba(249, 115, 22, 0.06)',
+                          border: '1px solid rgba(249, 115, 22, 0.25)',
+                          color: '#fb923c',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        hard <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.hard})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSrsReview(selectedWord.basicForm, 3, intervals.repeats)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          background: 'rgba(168, 85, 247, 0.06)',
+                          border: '1px solid rgba(168, 85, 247, 0.25)',
+                          color: '#c084fc',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        good <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.good})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSrsReview(selectedWord.basicForm, 4, intervals.repeats)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          background: 'rgba(34, 197, 94, 0.06)',
+                          border: '1px solid rgba(34, 197, 94, 0.25)',
+                          color: '#4ade80',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        easy <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.easy})</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {srsCard && (
+                  <div style={{
+                    fontSize: '0.68rem',
+                    color: colors.textMuted,
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '4px',
+                    padding: '3px 6px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: '2px'
+                  }}>
+                    <span>Intervalo: {srsCard.interval ?? srsCard.scheduled_days ?? 0}d</span>
+                    <span>Ease: {(srsCard.ease ?? 2.5).toFixed(2)}</span>
+                    <span>Reps: {srsCard.repetitions ?? srsCard.reps ?? 0}</span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm)}
+                    style={isLearning ? action(true, '#60a5fa') : { ...action(false, ''), background: '#f2c866', color: '#1b1407', border: '1px solid transparent' }}
+                  >
+                    {isLearning ? (es ? 'En el mazo' : 'In deck') : (es ? '＋ Mazo' : '＋ Deck')}
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2898,69 +3337,28 @@ export default function Reader({
                         onSetWordStatus(selectedWord.basicForm, 'known', wordData);
                       }
                     }}
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      borderRadius: '5px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      background: isKnown ? 'rgba(74, 117, 36, 0.22)' : 'rgba(255,255,255,0.02)',
-                      border: isKnown ? '1.5px solid rgba(74, 117, 36, 0.7)' : '1px solid rgba(255,255,255,0.1)',
-                      color: isKnown ? '#a3e635' : '#84cc16',
-                      whiteSpace: 'nowrap'
-                    }}
+                    style={action(isKnown, '#8fd19e')}
                   >
-                    {lang === 'es' ? 'Nunca olvidar' : 'Never forget'}
+                    {isKnown ? (es ? '✓ La sé' : '✓ Known') : (es ? 'Ya la sé' : 'Known')}
                   </button>
-
                   <button
                     type="button"
-                    onClick={() => {
-                      if (isIgnored) {
-                        onSetWordStatus(selectedWord.basicForm, 'new');
-                      } else {
-                        onSetWordStatus(selectedWord.basicForm, 'ignored');
-                      }
-                    }}
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      borderRadius: '5px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      background: isIgnored ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
-                      border: isIgnored ? '1.5px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                      color: isIgnored ? '#fff' : '#a1a1aa',
-                      whiteSpace: 'nowrap'
-                    }}
+                    onClick={() => onSetWordStatus(selectedWord.basicForm, isIgnored ? 'new' : 'ignored')}
+                    style={action(isIgnored, '#e4e4e7')}
                   >
-                    Blacklist
+                    {es ? 'Ignorar' : 'Ignore'}
                   </button>
+                  {!isPhoneUI() && <button
+                    type="button"
+                    onClick={ankiCardExists ? handleOpenInAnki : handleMineToAnki}
+                    title={ankiCardExists ? (es ? 'Ver en Anki' : 'View in Anki') : (es ? 'Añadir a Anki' : 'Add to Anki')}
+                    style={{ ...action(ankiCardExists, '#a78bfa'), flex: '0 0 auto', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                  >
+                    {ankiCardExists ? <ExternalLink size={11} /> : <Plus size={11} />}
+                    Anki
+                  </button>}
+                </div>
 
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm);
-                      }}
-                      style={{
-                        padding: '4px 10px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                        background: isLearning ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.02)',
-                        border: isLearning ? '1.5px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                        color: isLearning ? '#60a5fa' : '#3b82f6',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {isLearning ? 'Deck -' : 'Deck +'}
-                    </button>
-                    
                     {deckSelectorWord === selectedWord.basicForm && (() => {
                       const srsData = db.getSrsData();
                       const deckNamesSet = new Set<string>();
@@ -2994,22 +3392,28 @@ export default function Reader({
                           source: trimmed
                         };
                         
-                        const card = updatedSrs[selectedWord.basicForm] || {
+                        // A word that is not being learned yet may still carry an old card (imported
+                        // from Anki, marked known, or removed from a deck) with a due date weeks away.
+                        // Mining it again must start a fresh card due now, or it never shows up today.
+                        const nowIso = new Date().toISOString();
+                        const existingCard = updatedSrs[selectedWord.basicForm];
+                        const card = existingCard && isLearning ? existingCard : {
                           word: selectedWord.basicForm,
                           reading: wordData.reading,
                           sentence: wordData.sentence,
                           state: 0,
-                          dueDate: new Date().toISOString(),
-                          due: new Date().toISOString()
+                          dueDate: nowIso,
+                          due: nowIso
                         };
                         card.source = trimmed;
                         updatedSrs[selectedWord.basicForm] = card;
-                        
+
                         db.saveSrsData(updatedSrs);
                         setSrsCard(card);
                         onSetWordStatus(selectedWord.basicForm, 'learning', wordData);
                         setDeckSelectorWord(null);
                         setNewDeckInput('');
+                        showToast(lang === 'es' ? `Añadida al mazo «${trimmed}»` : `Added to deck "${trimmed}"`, 'success');
                       };
 
                       const handleDeleteDeck = (e: React.MouseEvent, deckName: string) => {
@@ -3029,10 +3433,7 @@ export default function Reader({
 
                       return (
                         <div style={{
-                          position: 'absolute',
-                          top: '100%',
-                          right: 0,
-                          marginTop: '6px',
+                          marginTop: '2px',
                           background: 'rgba(20, 20, 24, 0.98)',
                           backdropFilter: 'blur(12px)',
                           WebkitBackdropFilter: 'blur(12px)',
@@ -3040,8 +3441,7 @@ export default function Reader({
                           borderRadius: '10px',
                           padding: '12px',
                           zIndex: 100,
-                          minWidth: '200px',
-                          maxWidth: '260px',
+                          
                           boxShadow: '0 12px 28px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.4)'
                         }}>
                           <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -3165,6 +3565,9 @@ export default function Reader({
                             <button
                               type="button"
                               onClick={() => {
+                                // Drop the card too: otherwise it stays counted in its deck.
+                                db.saveSrsCard(selectedWord.basicForm, null);
+                                setSrsCard(null);
                                 onSetWordStatus(selectedWord.basicForm, 'new');
                                 setDeckSelectorWord(null);
                               }}
@@ -3195,243 +3598,9 @@ export default function Reader({
                         </div>
                       );
                     })()}
-                  </div>
-                </div>
-
-                {isLearning && (() => {
-                  const intervals = selectedSrsIntervals;
-                  return (
-                    <div style={{ display: 'flex', gap: '5px', marginTop: '4px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 1, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(239, 68, 68, 0.06)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          color: '#f87171',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        again <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.again})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 2, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(249, 115, 22, 0.06)',
-                          border: '1px solid rgba(249, 115, 22, 0.25)',
-                          color: '#fb923c',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        hard <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.hard})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 3, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(168, 85, 247, 0.06)',
-                          border: '1px solid rgba(168, 85, 247, 0.25)',
-                          color: '#c084fc',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        good <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.good})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 4, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(34, 197, 94, 0.06)',
-                          border: '1px solid rgba(34, 197, 94, 0.25)',
-                          color: '#4ade80',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        easy <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.easy})</span>
-                      </button>
-                    </div>
-                  );
-                })()}
-
-                {srsCard && (
-                  <div style={{
-                    fontSize: '0.68rem',
-                    color: colors.textMuted,
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '4px',
-                    padding: '3px 6px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginTop: '2px'
-                  }}>
-                    <span>Intervalo: {srsCard.interval ?? srsCard.scheduled_days ?? 0}d</span>
-                    <span>Ease: {(srsCard.ease ?? 2.5).toFixed(2)}</span>
-                    <span>Reps: {srsCard.repetitions ?? srsCard.reps ?? 0}</span>
-                  </div>
-                )}
               </div>
             );
           })()}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: window.innerWidth < 768 ? '1.15rem' : '1.4rem', fontWeight: 'bold', color: colors.textMain }}>
-                {selectedWord.surface}
-              </span>
-              <button
-                type="button"
-                onClick={playSelectedWordAudio}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: colors.textMuted,
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '4px',
-                  transition: 'background 0.15s, color 0.15s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                  e.currentTarget.style.color = '#f2c866';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = colors.textMuted;
-                }}
-                title={lang === 'es' ? 'Escuchar pronunciación' : 'Listen pronunciation'}
-              >
-                <Volume2 size={16} />
-              </button>
-            </div>
-            {selectedWord.reading && selectedWord.reading !== selectedWord.surface && (
-              <span style={{ fontSize: '0.9rem', color: colors.textMuted }}>
-                {selectedWord.reading}
-              </span>
-            )}
-          </div>
-
-          {/* Pitch Accent Graph */}
-          {(() => {
-            const accent = getPitchAccent(dictEntry?.pitches, selectedWord.reading || dictEntry?.reading);
-            return accent ? <PitchAccentGraph reading={accent.reading || selectedWord.reading} position={accent.position} /> : null;
-          })()}
-
-          {/* Anki button small footprint */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-            {ankiCardExists ? (
-              <button 
-                onClick={handleOpenInAnki}
-                style={{
-                  background: 'rgba(92, 53, 219, 0.1)',
-                  border: '1px solid rgba(92, 53, 219, 0.35)',
-                  color: '#a78bfa',
-                  padding: '3px 8px',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  width: 'fit-content'
-                }}
-              >
-                <ExternalLink size={11} />
-                {lang === 'es' ? 'Ver en Anki' : 'View in Anki'}
-              </button>
-            ) : (
-              <button 
-                onClick={handleMineToAnki}
-                style={{
-                  background: 'rgba(242, 200, 102, 0.05)',
-                  border: '1px solid rgba(242, 200, 102, 0.25)',
-                  color: '#f2c866',
-                  padding: '3px 8px',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  width: 'fit-content'
-                }}
-              >
-                <Plus size={11} />
-                {lang === 'es' ? 'Anki' : 'Anki'}
-              </button>
-            )}
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {!dictLoading ? (
-              dictEntry && dictEntry.definitions && dictEntry.definitions.length > 0 ? (
-                dictEntry.definitions.map((def: any, idx: number) => {
-                  const glossary = typeof def === 'string' ? def : (def?.glossary || '');
-                  return (
-                  <div key={idx} style={{ marginBottom: '8px', fontSize: '0.85rem', lineHeight: '1.4', color: colors.textMain }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                      <span style={{ 
-                        fontSize: '0.68rem', 
-                        background: 'rgba(242, 200, 102, 0.1)', 
-                        color: '#f2c866', 
-                        padding: '1px 5px', 
-                        borderRadius: '3px',
-                        fontWeight: 600
-                      }}>
-                        {(typeof def === 'string' ? '' : def?.dictionary) || 'Glosario'}
-                      </span>
-                      {typeof def !== 'string' && def?.partsOfSpeech && def.partsOfSpeech.map((pos: string, pIdx: number) => (
-                        <span key={pIdx} style={{ fontSize: '0.62rem', color: colors.textMuted, fontStyle: 'italic' }}>
-                          {pos}
-                        </span>
-                      ))}
-                    </div>
-                    <div dangerouslySetInnerHTML={{ __html: sanitizeDictionaryHtml(glossary) }} />
-                  </div>
-                  );
-                })
-              ) : (
-                <p style={{ color: colors.textMuted, fontSize: '0.82rem' }}>
-                  {t('dictNoDefinitions', lang)}
-                </p>
-              )
-            ) : (
-              <p style={{ color: colors.textMuted }}>{t('dictLoading', lang)}</p>
-            )}
-          </div>
         </div>
       )}
 

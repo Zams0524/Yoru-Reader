@@ -1,14 +1,21 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { X, Database, Upload, Download, RefreshCw, FileText, BarChart3, AlertTriangle } from 'lucide-react';
+import { X, Database, Upload, Download, RefreshCw, FileText, BarChart3, AlertTriangle, ChevronRight, ChevronLeft, Layers, ListOrdered, Archive, Link2 } from 'lucide-react';
 import { db } from '../utils/db';
 import { tokenizeText } from '../utils/japanese';
 import { useConfirm } from './ConfirmModal';
 import { getInstalledDictionaries, getTopWordsFromFrequencyDict } from '../utils/yomitanDB';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import type { ApkgRawCard } from '../utils/apkgImport';
+import { isPhoneUI } from '../utils/platform';
+import { chooseAnkiWordField, findReplacedAnkiCards, planAnkiImport, type AnkiImportCard, type AnkiImportPlan, type AnkiReview } from '../utils/ankiCardImport';
+import type { ApkgStep } from '../utils/apkgImport';
+import { srsWordOfKey } from '../utils/srsCardKeys';
 
 type AnkiFieldValue = string | { value?: unknown } | null | undefined;
 type AnkiCardInfo = {
+  cardId?: number;
+  note?: number;
+  /** Anki queue: -1 suspended, -2/-3 buried, 0 new, 1 learning, 2 review, 3 day-learning. */
+  queue?: number;
   deckName?: string;
   modelName?: string;
   interval?: number;
@@ -56,6 +63,12 @@ const normalizeAnkiText = (value: string) => value
   .replace(/\s+/g, ' ')
   .trim();
 
+const normalizeFieldName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+const READING_FIELD_PREFERENCES = ['reading', 'vocabulary-kana', 'kana', 'furigana'];
+
+/** One Anki card before its word is picked: its fields as plain text, plus its scheduling data. */
+type RawAnkiImportCard = { fields: Record<string, string>; base: Omit<AnkiImportCard, 'word' | 'reading'> };
+
 interface VocabularyModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -67,10 +80,12 @@ export default function VocabularyModal({
   isOpen, 
   onClose, 
   initialTab = 'summary', 
-  initialImportMethod = 'anki-connect' 
+  initialImportMethod = ''
 }: VocabularyModalProps) {
+  // AnkiConnect needs Anki running on the same computer, which a phone never has.
+  const ankiConnectAvailable = !isPhoneUI();
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [importMethod, setImportMethod] = useState(initialImportMethod);
+  const [importMethod, setImportMethod] = useState(initialImportMethod === 'anki-connect' && !ankiConnectAvailable ? '' : initialImportMethod);
   
   const { showConfirm, confirmModal } = useConfirm();
   const lang = db.getSettings().appLanguage || 'en';
@@ -314,6 +329,105 @@ export default function VocabularyModal({
     return (parts[0] || '').trim();
   };
 
+  /**
+   * Picks each Anki card's word (and reading) from its fields. Every card becomes its own Yoru card,
+   * even when another card has the same word, so the deck keeps Anki's card count. Sentence
+   * fields, when "parse sentences" is on, are split into words instead (one card per word).
+   */
+  const collectAnkiImportCards = async (
+    rawCards: RawAnkiImportCard[],
+    options: { effectiveWordField: string; fallbackFieldNames: string[]; readingField: string; parseWords: boolean }
+  ) => {
+    const cards: AnkiImportCard[] = [];
+    const sentenceCards: AnkiImportCard[] = [];
+    const sentenceHistory: { word: string; reviews?: AnkiReview[] }[] = [];
+    let skipped = 0;
+    for (const raw of rawCards) {
+      const fieldNames = Object.keys(raw.fields);
+      let valueField = options.effectiveWordField;
+      let val = raw.fields[valueField] || '';
+      if (!val) {
+        for (const candidate of options.fallbackFieldNames) {
+          val = raw.fields[candidate] || '';
+          if (val) { valueField = candidate; break; }
+        }
+      }
+      if (!val) {
+        // A copy keeps every card: fall back to the first field that has text.
+        const first = fieldNames.find((name) => normalizeAnkiText(raw.fields[name] || ''));
+        if (first) { valueField = first; val = raw.fields[first]; }
+      }
+      const sourceText = normalizeAnkiText(val || '');
+      const cleaned = cleanWord(sourceText);
+      if (!cleaned) { skipped += 1; continue; }
+
+      const readingFields = [
+        options.readingField,
+        ...READING_FIELD_PREFERENCES.map((name) => fieldNames.find((field) => normalizeFieldName(field) === normalizeFieldName(name))),
+      ].filter((field): field is string => Boolean(field) && field !== valueField);
+      let reading = '';
+      for (const field of readingFields) {
+        const candidate = cleanWord(raw.fields[field] || '');
+        if (candidate && /^[\u3040-\u30ffー]+$/.test(candidate)) { reading = candidate; break; }
+      }
+
+      const isVocabularyField = /vocabulary|word|kanji|kana/i.test(valueField);
+      const isSentenceField = /sentence|example|context|cloze/i.test(valueField);
+      const looksLikeSentence = /[。？！]/.test(sourceText) ||
+        (sourceText.length > 24 && /[\u3040-\u309F](?:は|が|を|に|で|と|も|の|へ)/.test(sourceText));
+      const isSentence = options.parseWords && !isVocabularyField && (isSentenceField || looksLikeSentence);
+      if (isSentence && sourceText.length > 3) {
+        const words: string[] = [];
+        try {
+          const paragraphs = await tokenizeText(sourceText);
+          paragraphs.flat().forEach((tok) => {
+            if (tok && tok.isWord && tok.basicForm) {
+              const subClean = cleanWord(tok.basicForm);
+              if (subClean && !words.includes(subClean)) words.push(subClean);
+            }
+          });
+        } catch {
+          // Keep the source word when the local parser cannot handle a field.
+        }
+        if (words.length > 0) {
+          words.forEach((word) => sentenceCards.push({ ...raw.base, word, reviews: [] }));
+          sentenceHistory.push({ word: words[0], reviews: raw.base.reviews });
+          continue;
+        }
+      }
+      cards.push({ ...raw.base, word: cleaned, reading: reading || undefined });
+    }
+    return { cards, sentenceCards, sentenceHistory, skipped };
+  };
+
+  /** What an import will leave in Yoru, by state, for the confirmation and result dialogs. */
+  const describeAnkiImport = (plan: AnkiImportPlan, ankiCardCount: number, skipped: number) => {
+    const c = plan.counts;
+    const days = Object.keys(plan.reviewDays).length;
+    return lang === 'es'
+      ? `Anki: ${ankiCardCount} tarjetas. En Yoru: ${c.total} tarjetas (${c.new} nuevas, ${c.learning} aprendiendo, ${c.relearning} reaprendiendo, ${c.young} jóvenes, ${c.mature} maduras${c.suspended ? `; ${c.suspended} suspendidas` : ''}). Historial: ${plan.reviewCount} repasos en ${days} días.${skipped ? ` ${skipped} tarjetas no tienen texto utilizable y se omiten.` : ''}`
+      : `Anki: ${ankiCardCount} cards. In Yoru: ${c.total} cards (${c.new} new, ${c.learning} learning, ${c.relearning} relearning, ${c.young} young, ${c.mature} mature${c.suspended ? `; ${c.suspended} suspended` : ''}). History: ${plan.reviewCount} reviews over ${days} days.${skipped ? ` ${skipped} cards have no usable text and are skipped.` : ''}`;
+  };
+
+  /**
+   * Saves an import plan: its cards, their words as "learning", and the review history. `replaced`
+   * are earlier cards the import takes the place of (findReplacedAnkiCards), removed in the same save.
+   */
+  const commitAnkiImport = (plan: AnkiImportPlan, replaced: string[] = []) => {
+    const updated = { ...db.getWordStatuses() };
+    Object.keys(plan.cards).forEach((key) => {
+      // 'known' would hide the word from the reader and exclude it from SRS review: imported
+      // Anki cards still need both, regardless of how mature they are in Anki.
+      updated[srsWordOfKey(key)] = 'learning';
+    });
+    const entries: Record<string, any> = {};
+    replaced.forEach((key) => { entries[key] = null; });
+    db.saveSrsCardsBatch({ ...entries, ...plan.cards });
+    db.saveWordStatuses(updated);
+    db.mergeImportedSrsReviewDays(plan.reviewDays);
+    loadVocabStats();
+  };
+
   // --- AnkiConnect Import Execution ---
   const handleImportAnki = async () => {
     setIsLoading(true);
@@ -365,16 +479,8 @@ export default function VocabularyModal({
       if (!infoData.result?.length) throw new Error(lang === 'es' ? 'Anki no devolvió los datos de las tarjetas.' : 'Anki returned no card details.');
 
       setProgressMsg(lang === 'es' ? 'Procesando y extrayendo vocabulario...' : 'Processing and extracting vocabulary...');
-      const wordsMap: Record<string, { interval: number; reps: number; lapses: number; factor: number; type: number; due?: number; mod?: number; deck: string }> = {};
       const allFieldNames = Array.from(new Set(infoData.result.flatMap(card => Object.keys(card.fields || {}))));
-      const recommendedWordField = preferredAnkiField(allFieldNames, ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression']);
-      const hasDedicatedVocabularyField = allFieldNames.some(name => /vocabulary|word|kanji/i.test(name));
-      const selectedLooksLikeSentenceField = /sentence|example|context|cloze|expression/i.test(wordField);
-      const shouldMigrateOldDefault = ankiSettings.importWordFieldManual !== true && hasDedicatedVocabularyField && selectedLooksLikeSentenceField;
-      const effectiveWordField = allFieldNames.includes(wordField)
-        && !shouldMigrateOldDefault
-        ? wordField
-        : recommendedWordField;
+      const effectiveWordField = chooseAnkiWordField(allFieldNames, wordField, ankiSettings.importWordFieldManual === true);
       const fallbackFieldNames = [
         effectiveWordField,
         ...['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression'].map(name =>
@@ -390,79 +496,46 @@ export default function VocabularyModal({
         saveAnkiSettings({ ...ankiSettings, importWordField: effectiveWordField, importWordFieldManual: false });
       }
 
-      const recordWord = (word: string, card: AnkiCardInfo, cardDeck: string) => {
-        if (!word) return;
-        const interval = card.interval || 0;
-        if (!wordsMap[word] || interval > wordsMap[word].interval) {
-          wordsMap[word] = {
-            interval,
-            reps: card.reps || 0,
-            lapses: card.lapses || 0,
-            factor: card.factor || 2500,
-            type: card.type ?? (interval > 0 ? 2 : 0),
-            due: card.due,
-            mod: card.mod,
-            deck: card.deckName || cardDeck
-          };
+      // Review history (revlog) for the heatmap, streak and FSRS memory state. Older AnkiConnect
+      // versions lack getReviewsOfCards; the import then goes ahead without history.
+      const reviewsByCard: Record<string, any[]> = {};
+      try {
+        const cardIds = infoData.result.map(card => card.cardId).filter((id): id is number => Number.isFinite(id));
+        for (let i = 0; i < cardIds.length; i += 500) {
+          const reviews = await ankiConnectRequest<Record<string, any[]>>(ankiSettings.host, {
+            action: 'getReviewsOfCards',
+            version: 6,
+            params: { cards: cardIds.slice(i, i + 500).map(String) },
+            ...auth
+          });
+          Object.assign(reviewsByCard, reviews.result || {});
         }
-      };
-
-      for (const cardObj of infoData.result) {
-        const fields = cardObj.fields;
-        if (fields) {
-          let valueField = effectiveWordField || wordField;
-          let val = getAnkiFieldValue(fields, valueField);
-          if (!val && readingField) {
-            valueField = readingField;
-            val = getAnkiFieldValue(fields, readingField);
-          }
-          if (!val) {
-            for (const candidate of fallbackFieldNames) {
-              val = getAnkiFieldValue(fields, candidate);
-              if (val) {
-                valueField = candidate;
-                break;
-              }
-            }
-          }
-          if (val) {
-            const sourceText = normalizeAnkiText(val);
-            const cleaned = cleanWord(sourceText);
-            if (cleaned) {
-              const cardDeck = cardObj.deckName || deck;
-              const isVocabularyField = /vocabulary|word|kanji|kana/i.test(valueField);
-              const isSentenceField = /sentence|example|context|cloze/i.test(valueField);
-              const looksLikeSentence = /[。？！]/.test(sourceText) ||
-                (sourceText.length > 24 && /[\u3040-\u309F](?:は|が|を|に|で|と|も|の|へ)/.test(sourceText));
-              const isSentence = parseWords && !isVocabularyField && (isSentenceField || looksLikeSentence);
-              
-              if (isSentence && sourceText.length > 3) {
-                let parsedCount = 0;
-                try {
-                  const paragraphs = await tokenizeText(sourceText);
-                  paragraphs.flat().forEach(tok => {
-                    if (tok && tok.isWord && tok.basicForm) {
-                      const subClean = cleanWord(tok.basicForm);
-                      if (subClean) {
-                        parsedCount += 1;
-                        recordWord(subClean, cardObj, cardDeck);
-                      }
-                    }
-                  });
-                } catch {
-                  // Keep the source word when the local parser cannot handle a field.
-                }
-                if (parsedCount === 0) recordWord(cleaned, cardObj, cardDeck);
-              } else {
-                recordWord(cleaned, cardObj, cardDeck);
-              }
-            }
-          }
-        }
+      } catch (err) {
+        console.warn('Could not read the Anki review history:', err);
       }
 
-      const words = Object.keys(wordsMap);
-      if (words.length === 0) {
+      const rawCards: RawAnkiImportCard[] = infoData.result.map(card => ({
+        fields: Object.fromEntries(Object.keys(card.fields || {}).map(name => [name, getAnkiFieldValue(card.fields, name)])),
+        base: {
+          cardId: card.cardId,
+          noteId: card.note,
+          deck: card.deckName || deck,
+          type: card.type ?? ((card.interval || 0) > 0 ? 2 : 0),
+          queue: card.queue,
+          interval: card.interval || 0,
+          reps: card.reps || 0,
+          lapses: card.lapses || 0,
+          factor: card.factor || 2500,
+          due: card.due,
+          mod: card.mod,
+          reviews: (reviewsByCard[String(card.cardId)] || []).map((r: any) => ({
+            at: Number(r.id), rating: Number(r.ease) || 0, type: Number(r.type) || 0, ivl: Number(r.ivl) || 0
+          })),
+        },
+      }));
+      const collected = await collectAnkiImportCards(rawCards, { effectiveWordField: effectiveWordField || wordField, fallbackFieldNames, readingField, parseWords });
+
+      if (collected.cards.length === 0 && collected.sentenceCards.length === 0) {
         const actualFields = allFieldNames.length > 0 ? allFieldNames.join(', ') : (lang === 'es' ? 'ninguno' : 'none');
         await showConfirm({
           title: lang === 'es' ? 'Extracción fallida' : 'Extraction failed',
@@ -477,7 +550,8 @@ export default function VocabularyModal({
         return;
       }
 
-      const importedWords = new Set(words);
+      const plan = planAnkiImport({ ...collected, crtSeconds: null, existing: db.getSrsData() });
+      const importedKeys = new Set(Object.keys(plan.cards));
       const selectedDeckKey = db.cleanVolumeNumber(deck).toLowerCase();
       const sourceBelongsToDeck = (source: string) => {
         const sourceKey = db.cleanVolumeNumber(source).toLowerCase();
@@ -487,13 +561,13 @@ export default function VocabularyModal({
       const previousDeckEntries = Object.entries(previousSrsData).filter(([word, card]: [string, any]) =>
         !word.startsWith('_deck_') && card?.source && sourceBelongsToDeck(String(card.source))
       );
-      const staleDeckEntries = previousDeckEntries.filter(([word]) => !importedWords.has(word));
+      const staleDeckEntries = previousDeckEntries.filter(([word]) => !importedKeys.has(word));
 
       const ok = await showConfirm({
         title: lang === 'es' ? '¿Sincronizar palabras?' : 'Sync words?',
-        message: lang === 'es' 
-          ? `Anki encontró ${data.result.length} tarjetas maduras y ${words.length} palabras únicas. ${data.result.length - words.length > 0 ? `${data.result.length - words.length} tarjetas repetían una palabra y se consolidaron.` : ''} Yoru ya tiene ${previousDeckEntries.length} tarjetas de este mazo${staleDeckEntries.length ? `, ${staleDeckEntries.length} no aparecen en esta importación` : ''}. ¿Deseas continuar?`
-          : `Anki found ${data.result.length} mature cards and ${words.length} unique words. ${data.result.length - words.length > 0 ? `${data.result.length - words.length} cards shared a spelling and were consolidated.` : ''} Yoru already has ${previousDeckEntries.length} cards from this deck${staleDeckEntries.length ? `, ${staleDeckEntries.length} are absent from this import` : ''}. Continue?`,
+        message: lang === 'es'
+          ? `${describeAnkiImport(plan, infoData.result.length, collected.skipped)} Yoru ya tiene ${previousDeckEntries.length} tarjetas de este mazo${staleDeckEntries.length ? `, ${staleDeckEntries.length} no aparecen en esta importación` : ''}. ¿Deseas continuar?`
+          : `${describeAnkiImport(plan, infoData.result.length, collected.skipped)} Yoru already has ${previousDeckEntries.length} cards from this deck${staleDeckEntries.length ? `, ${staleDeckEntries.length} are absent from this import` : ''}. Continue?`,
         type: 'info',
         confirmText: lang === 'es' ? 'Importar' : 'Import'
       });
@@ -511,35 +585,17 @@ export default function VocabularyModal({
             cancelText: lang === 'es' ? 'Conservar anteriores' : 'Keep previous'
           });
           if (replacePrevious) {
-            const reconciledSrsData = { ...db.getSrsData() };
-            staleDeckEntries.forEach(([word]) => { delete reconciledSrsData[word]; });
-            db.saveSrsData(reconciledSrsData);
+            db.saveSrsCardsBatch(Object.fromEntries(staleDeckEntries.map(([word]) => [word, null])));
             removedStaleCount = staleDeckEntries.length;
           }
         }
 
-        const current = db.getWordStatuses();
-        const updated = { ...current };
-
-        const cardsToSave: Record<string, any> = {};
-        words.forEach(w => {
-          // 'known' would hide the word from the reader and exclude it from SRS review
-          // (see SrsReviewModal/Reader): imported Anki cards still need both, regardless
-          // of how mature they are in Anki.
-          updated[w] = 'learning';
-
-          const details = wordsMap[w];
-          if (details) cardsToSave[w] = buildAnkiSrsCardData(w, details);
-        });
-        db.saveSrsCardsBatch(cardsToSave);
-        
-        db.saveWordStatuses(updated);
-        loadVocabStats();
+        commitAnkiImport(plan);
         await showConfirm({
           title: lang === 'es' ? 'Completado' : 'Success',
           message: lang === 'es'
-            ? `Importadas ${words.length} palabras únicas desde ${data.result.length} tarjetas de Anki.${removedStaleCount ? ` Se quitaron ${removedStaleCount} tarjetas obsoletas de la importación anterior.` : staleDeckEntries.length ? ` Se conservaron ${staleDeckEntries.length} tarjetas anteriores.` : ''}`
-            : `Imported ${words.length} unique words from ${data.result.length} Anki cards.${removedStaleCount ? ` Removed ${removedStaleCount} stale cards from the previous import.` : staleDeckEntries.length ? ` Kept ${staleDeckEntries.length} previous cards.` : ''}`,
+            ? `Importación terminada. ${describeAnkiImport(plan, infoData.result.length, collected.skipped)}${removedStaleCount ? ` Se quitaron ${removedStaleCount} tarjetas obsoletas de la importación anterior.` : staleDeckEntries.length ? ` Se conservaron ${staleDeckEntries.length} tarjetas anteriores.` : ''}`
+            : `Import finished. ${describeAnkiImport(plan, infoData.result.length, collected.skipped)}${removedStaleCount ? ` Removed ${removedStaleCount} stale cards from the previous import.` : staleDeckEntries.length ? ` Kept ${staleDeckEntries.length} previous cards.` : ''}`,
           type: 'info',
           confirmText: 'OK',
           cancelText: ''
@@ -560,48 +616,33 @@ export default function VocabularyModal({
     }
   };
 
-  /** Builds the Yoru SRS card fields from a raw Anki card (same state/due-date mapping used for both the AnkiConnect and the direct .apkg file import paths). */
-  const buildAnkiSrsCardData = (word: string, details: { interval: number; reps: number; lapses: number; factor: number; type: number; due?: number; mod?: number; deck: string }) => {
-    // Anki card type maps 1:1 to FSRS state: 0 New, 1 Learning, 2 Review, 3 Relearning.
-    const state = [0, 1, 2, 3].includes(details.type) ? details.type : (details.interval > 0 ? 2 : 0);
-
-    let dueDate: Date | null = null;
-    if ((state === 1 || state === 3) && details.due) {
-      // Learning/Relearning: Anki's `due` is the next-review time, in epoch seconds.
-      dueDate = new Date(details.due * 1000);
-    } else if (state === 2) {
-      // Review: Anki's raw `due` for review cards is days since the collection was created,
-      // which can't be resolved to a calendar date without the collection's creation time.
-      // Approximate instead from the last review (`mod`, epoch seconds) plus the interval,
-      // rather than always treating the card as due from today.
-      const lastReviewMs = details.mod ? details.mod * 1000 : Date.now();
-      dueDate = new Date(lastReviewMs + 1000 * 60 * 60 * 24 * Math.max(0, details.interval || 0));
-    }
-
-    const cardData: Record<string, any> = {
-      state,
-      reps: details.reps || 0,
-      lapses: details.lapses || 0,
-      interval: details.interval || 0,
-      scheduled_days: details.interval || 0,
-      ease: Math.max(1.3, Math.min(5, (details.factor || 2500) / 1000)),
-      source: details.deck,
-      word
-    };
-    if (dueDate) {
-      cardData.dueDate = dueDate.toISOString();
-      if (details.mod) cardData.lastReview = new Date(details.mod * 1000).toISOString();
-    }
-    return cardData;
-  };
-
   // --- Direct .apkg/.colpkg file import (no AnkiConnect needed) ---
   const handleImportApkgFile = async (file: File) => {
     setIsLoading(true);
     setProgressMsg(lang === 'es' ? 'Leyendo el archivo de Anki...' : 'Reading the Anki file...');
     try {
-      const { parseApkgFile } = await import('../utils/apkgImport');
-      const cards = await parseApkgFile(file);
+      const sizeMb = file.size ? ` (${Math.max(1, Math.round(file.size / 1048576))} MB)` : '';
+      const stepLabels: Record<ApkgStep, string> = lang === 'es'
+        ? { reading: `Leyendo el archivo de Anki${sizeMb}...`, decompressing: 'Descomprimiendo la colección...', opening: 'Abriendo la colección...', cards: 'Leyendo las tarjetas...', history: 'Leyendo el historial de repasos...' }
+        : { reading: `Reading the Anki file${sizeMb}...`, decompressing: 'Decompressing the collection...', opening: 'Opening the collection...', cards: 'Reading the cards...', history: 'Reading the review history...' };
+      const { parseApkgCollection, ApkgStepError } = await import('../utils/apkgImport');
+      let parsed: Awaited<ReturnType<typeof parseApkgCollection>>;
+      try {
+        parsed = await parseApkgCollection(file, (step) => setProgressMsg(stepLabels[step]));
+      } catch (err) {
+        if (err instanceof Error && err.message === 'apkg-unreadable') {
+          throw new Error(lang === 'es'
+            ? 'No se pudo leer la colección dentro del archivo. Vuelve a exportar el mazo desde Anki como "Paquete de mazo de Anki (.apkg)" e inténtalo de nuevo.'
+            : 'The collection inside the file could not be read. Export the deck again from Anki as an "Anki Deck Package (.apkg)" and try again.');
+        }
+        if (err instanceof ApkgStepError) {
+          throw new Error(lang === 'es'
+            ? `La importación se detuvo en el paso "${stepLabels[err.step]}" porque tardó demasiado. Si elegiste el archivo desde Google Drive u otra nube, descárgalo primero al teléfono y elígelo desde Descargas.`
+            : `The import stopped at "${stepLabels[err.step]}" because it took too long. If you picked the file from Google Drive or another cloud, download it to the phone first and pick it from Downloads.`);
+        }
+        throw err;
+      }
+      const { cards, crtSeconds } = parsed;
       if (cards.length === 0) {
         await showConfirm({
           title: lang === 'es' ? 'Sin tarjetas' : 'No cards found',
@@ -619,8 +660,9 @@ export default function VocabularyModal({
       const readingField = ankiSettings.importReadingField || '';
       const parseWords = ankiSettings.importParseWords !== false;
       const allFieldNames = Array.from(new Set(cards.flatMap((c) => Object.keys(c.fields))));
-      const recommendedWordField = preferredAnkiField(allFieldNames, ['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression']);
-      const effectiveWordField = allFieldNames.includes(wordField) ? wordField : recommendedWordField;
+      // The word field set for the AnkiConnect deck is for another deck: only keep it if it
+      // does not look like a sentence field, as "Expression" (the old default) does.
+      const effectiveWordField = chooseAnkiWordField(allFieldNames, wordField, false);
       const fallbackFieldNames = [
         effectiveWordField,
         ...['vocabulary-kanji', 'vocabulary-kana', 'word', 'kanji', 'vocabulary', 'front', 'expression'].map((name) =>
@@ -632,64 +674,27 @@ export default function VocabularyModal({
         )
       ].filter((field, index, list): field is string => Boolean(field) && list.indexOf(field) === index);
 
-      const wordsMap: Record<string, { interval: number; reps: number; lapses: number; factor: number; type: number; due?: number; mod?: number; deck: string }> = {};
-      const recordWord = (word: string, card: ApkgRawCard) => {
-        if (!word) return;
-        if (!wordsMap[word] || card.interval > wordsMap[word].interval) {
-          wordsMap[word] = {
-            interval: card.interval,
-            reps: card.reps,
-            lapses: card.lapses,
-            factor: card.factor,
-            type: card.type,
-            due: card.due,
-            mod: card.mod,
-            deck: card.deckName
-          };
-        }
-      };
-
-      for (const card of cards) {
-        let valueField = effectiveWordField;
-        let val = card.fields[valueField] || '';
-        if (!val) {
-          for (const candidate of fallbackFieldNames) {
-            val = card.fields[candidate] || '';
-            if (val) { valueField = candidate; break; }
-          }
-        }
-        if (!val) continue;
-        const sourceText = normalizeAnkiText(val);
-        const cleaned = cleanWord(sourceText);
-        if (!cleaned) continue;
-
-        const isVocabularyField = /vocabulary|word|kanji|kana/i.test(valueField);
-        const isSentenceField = /sentence|example|context|cloze/i.test(valueField);
-        const looksLikeSentence = /[。？！]/.test(sourceText) ||
-          (sourceText.length > 24 && /[぀-ゟ](?:は|が|を|に|で|と|も|の|へ)/.test(sourceText));
-        const isSentence = parseWords && !isVocabularyField && (isSentenceField || looksLikeSentence);
-
-        if (isSentence && sourceText.length > 3) {
-          let parsedCount = 0;
-          try {
-            const paragraphs = await tokenizeText(sourceText);
-            paragraphs.flat().forEach((tok) => {
-              if (tok && tok.isWord && tok.basicForm) {
-                const subClean = cleanWord(tok.basicForm);
-                if (subClean) { parsedCount += 1; recordWord(subClean, card); }
-              }
-            });
-          } catch {
-            // Keep the source word when the local parser cannot handle a field.
-          }
-          if (parsedCount === 0) recordWord(cleaned, card);
-        } else {
-          recordWord(cleaned, card);
-        }
-      }
-
-      const words = Object.keys(wordsMap);
-      if (words.length === 0) {
+      const rawCards: RawAnkiImportCard[] = cards.map((card) => ({
+        fields: card.fields,
+        base: {
+          cardId: card.cardId,
+          noteId: card.noteId,
+          deck: card.deckName,
+          type: card.type,
+          queue: card.queue,
+          interval: card.interval,
+          reps: card.reps,
+          lapses: card.lapses,
+          factor: card.factor,
+          due: card.due,
+          mod: card.mod,
+          memory: card.memory,
+          lastReviewSeconds: card.lastReviewSeconds,
+          reviews: card.reviews,
+        },
+      }));
+      const collected = await collectAnkiImportCards(rawCards, { effectiveWordField, fallbackFieldNames, readingField, parseWords });
+      if (collected.cards.length === 0 && collected.sentenceCards.length === 0) {
         const actualFields = allFieldNames.length > 0 ? allFieldNames.join(', ') : (lang === 'es' ? 'ninguno' : 'none');
         await showConfirm({
           title: lang === 'es' ? 'Extracción fallida' : 'Extraction failed',
@@ -704,33 +709,32 @@ export default function VocabularyModal({
         return;
       }
 
+      const existing = db.getSrsData();
+      const plan = planAnkiImport({ ...collected, crtSeconds, existing });
+      // The file is the whole deck: earlier cards of its decks that it does not bring back would
+      // stay on top of it and the deck would no longer match Anki, so they are replaced.
+      const replaced = findReplacedAnkiCards(plan, [...collected.cards, ...collected.sentenceCards], existing,
+        (name) => db.cleanVolumeNumber(name.replace(/\x1f/g, '::')).toLowerCase());
+      const replacedNote = replaced.length
+        ? (lang === 'es'
+          ? ` Se quitarán ${replaced.length} tarjetas de importaciones anteriores de este mazo que no están en el archivo.`
+          : ` ${replaced.length} cards from earlier imports of this deck that are not in the file will be removed.`)
+        : '';
       const ok = await showConfirm({
         title: lang === 'es' ? '¿Importar mazo?' : 'Import deck?',
-        message: lang === 'es'
-          ? `Se encontraron ${cards.length} tarjetas y ${words.length} palabras únicas. ¿Deseas continuar?`
-          : `Found ${cards.length} cards and ${words.length} unique words. Continue?`,
+        message: `${describeAnkiImport(plan, cards.length, collected.skipped)}${replacedNote} ${lang === 'es' ? '¿Deseas continuar?' : 'Continue?'}`,
         type: 'info',
         confirmText: lang === 'es' ? 'Importar' : 'Import'
       });
 
       if (ok) {
-        const current = db.getWordStatuses();
-        const updated = { ...current };
-        const cardsToSave: Record<string, any> = {};
-        words.forEach((w) => {
-          // 'known' would hide the word from the reader and exclude it from SRS review: imported
-          // Anki cards still need both, regardless of how mature they are in Anki.
-          updated[w] = 'learning';
-          cardsToSave[w] = buildAnkiSrsCardData(w, wordsMap[w]);
-        });
-        db.saveSrsCardsBatch(cardsToSave);
-        db.saveWordStatuses(updated);
-        loadVocabStats();
+        commitAnkiImport(plan, replaced);
+        const removedNote = replaced.length
+          ? (lang === 'es' ? ` Se quitaron ${replaced.length} tarjetas anteriores.` : ` Removed ${replaced.length} earlier cards.`)
+          : '';
         await showConfirm({
           title: lang === 'es' ? 'Completado' : 'Success',
-          message: lang === 'es'
-            ? `Importadas ${words.length} palabras únicas desde ${cards.length} tarjetas.`
-            : `Imported ${words.length} unique words from ${cards.length} cards.`,
+          message: `${lang === 'es' ? 'Importación terminada.' : 'Import finished.'} ${describeAnkiImport(plan, cards.length, collected.skipped)}${removedNote}`,
           type: 'info',
           confirmText: 'OK',
           cancelText: ''
@@ -1309,40 +1313,68 @@ export default function VocabularyModal({
             {activeTab === 'import' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 
-                {/* Method selector */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '8px' }}>
-                  {[
-                    { id: 'anki-connect', label: 'AnkiConnect' },
-                    { id: 'jpdb', label: 'JPDB' },
-                    { id: 'anki-file', label: lang === 'es' ? 'Archivo' : 'File' },
-                    { id: 'frequency', label: lang === 'es' ? 'Frecuencia' : 'Frequency' },
-                    { id: 'backup', label: lang === 'es' ? 'Copia JSON' : 'Backup JSON' }
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => setImportMethod(m.id)}
-                      style={{
-                        background: importMethod === m.id ? 'var(--primary)' : 'rgba(255,255,255,0.02)',
-                        border: importMethod === m.id ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '6px',
-                        color: importMethod === m.id ? '#000' : '#fff',
-                        padding: '8px 4px',
-                        fontSize: '0.74rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
+                {/* Method list: one row per way to import; picking one shows only its panel. */}
+                {!importMethod ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[
+                      { id: 'anki-file', icon: Layers, highlight: true,
+                        title: lang === 'es' ? 'Mazo de Anki (.apkg)' : 'Anki deck (.apkg)',
+                        desc: lang === 'es' ? 'Copia tus tarjetas con su progreso, fechas e historial.' : 'Copies your cards with their progress, due dates and history.' },
+                      ...(ankiConnectAvailable ? [{ id: 'anki-connect', icon: Link2, highlight: false,
+                        title: lang === 'es' ? 'Anki abierto (AnkiConnect)' : 'Running Anki (AnkiConnect)',
+                        desc: lang === 'es' ? 'Lee un mazo directamente de Anki en esta computadora.' : 'Reads a deck straight from Anki on this computer.' }] : []),
+                      { id: 'word-list', icon: FileText, highlight: false,
+                        title: lang === 'es' ? 'Lista de palabras' : 'Word list',
+                        desc: lang === 'es' ? 'Archivo .txt o .csv, una palabra por línea.' : 'A .txt or .csv file, one word per line.' },
+                      { id: 'jpdb', icon: Database, highlight: false,
+                        title: 'JPDB',
+                        desc: lang === 'es' ? 'Tu vocabulario de jpdb.io.' : 'Your jpdb.io vocabulary.' },
+                      { id: 'frequency', icon: ListOrdered, highlight: false,
+                        title: lang === 'es' ? 'Lista de frecuencia' : 'Frequency list',
+                        desc: lang === 'es' ? 'Marca como conocidas las palabras más comunes.' : 'Marks the most common words as known.' },
+                      { id: 'backup', icon: Archive, highlight: false,
+                        title: lang === 'es' ? 'Copia de Yoru (JSON)' : 'Yoru backup (JSON)',
+                        desc: lang === 'es' ? 'Restaura una copia de tu vocabulario.' : 'Restores a copy of your vocabulary.' },
+                    ].map(m => {
+                      const Icon = m.icon;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setImportMethod(m.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'left',
+                            padding: '14px', borderRadius: '12px', cursor: 'pointer',
+                            background: m.highlight ? 'rgba(242, 200, 102, 0.08)' : 'var(--bg-card-hover)',
+                            border: m.highlight ? '1px solid var(--primary)' : '1px solid var(--border-light)',
+                            color: 'var(--text-main)'
+                          }}
+                        >
+                          <Icon size={20} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '0.92rem', fontWeight: 700 }}>{m.title}</span>
+                            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>{m.desc}</span>
+                          </span>
+                          <ChevronRight size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setImportMethod(''); setVocabFile(null); }}
+                    style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: '4px 0', color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    <ChevronLeft size={16} />
+                    {lang === 'es' ? 'Otras formas de importar' : 'Other ways to import'}
+                  </button>
+                )}
 
                 {/* Sub-panels */}
                 
                 {/* 2a. AnkiConnect Panel */}
-                {importMethod === 'anki-connect' && (
+                {importMethod === 'anki-connect' && ankiConnectAvailable && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.4', marginBottom: '8px' }}>
                       {lang === 'es' 
@@ -1637,27 +1669,88 @@ export default function VocabularyModal({
                   </div>
                 )}
 
-                {/* 2c. Archivo Panel */}
+                {/* 2c. Anki deck (.apkg) Panel */}
                 {importMethod === 'anki-file' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {lang === 'es' ? 'Importar un mazo de Anki' : 'Import an Anki deck'}
+                    </div>
+                    <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                      <li>{lang === 'es' ? <>En Anki: <b>Archivo › Exportar</b>, formato <b>Paquete de mazo de Anki (.apkg)</b>.</> : <>In Anki: <b>File › Export</b>, format <b>Anki Deck Package (.apkg)</b>.</>}</li>
+                      <li>{lang === 'es' ? <>Marca <b>Incluir información de programación</b> para conservar tu progreso.</> : <>Tick <b>Include scheduling information</b> to keep your progress.</>}</li>
+                      <li>{isPhoneUI()
+                        ? (lang === 'es' ? 'Pasa el archivo a este teléfono y elígelo abajo.' : 'Copy the file to this phone and choose it below.')
+                        : (lang === 'es' ? 'Elige el archivo abajo.' : 'Choose the file below.')}</li>
+                    </ol>
+
+                    <label
+                      className="reset-filter-btn"
+                      style={{
+                        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: isLoading ? 'default' : 'pointer',
+                        padding: '14px', fontSize: '0.92rem', fontWeight: 700,
+                        background: 'var(--primary)', borderColor: 'var(--primary)', color: '#000', opacity: isLoading ? 0.6 : 1
+                      }}
+                    >
+                      <Upload size={16} />
+                      <span>{lang === 'es' ? 'Elegir mazo (.apkg)' : 'Choose deck (.apkg)'}</span>
+                      <input
+                        type="file"
+                        // Android's picker turns accept into MIME types; .apkg has none, so any
+                        // accept list would grey the deck out. The name is checked after picking.
+                        accept={isPhoneUI() ? undefined : '.apkg,.colpkg'}
+                        disabled={isLoading}
+                        style={{ display: 'none' }}
+                        onChange={async e => {
+                          const file = e.target.files?.[0] || null;
+                          e.target.value = '';
+                          if (!file) return;
+                          if (!/\.(apkg|colpkg)$/i.test(file.name)) {
+                            await showConfirm({
+                              title: lang === 'es' ? 'No es un mazo de Anki' : 'Not an Anki deck',
+                              message: lang === 'es'
+                                ? `"${file.name}" no es un archivo .apkg. Expórtalo desde Anki como "Paquete de mazo de Anki".`
+                                : `"${file.name}" is not an .apkg file. Export it from Anki as an "Anki Deck Package".`,
+                              type: 'warning',
+                              confirmText: 'OK',
+                              cancelText: ''
+                            });
+                            return;
+                          }
+                          await handleImportApkgFile(file);
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                      {lang === 'es'
+                        ? 'Antes de guardar verás cuántas tarjetas quedan en cada estado. Si ya importaste este mazo, sus tarjetas se actualizan con el estado de Anki.'
+                        : 'Before saving you will see how many cards end up in each state. If you imported this deck before, its cards are updated to their state in Anki.'}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2c'. Word list Panel (.txt/.csv) */}
+                {importMethod === 'word-list' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
                       {lang === 'es'
-                        ? 'Carga un mazo de Anki exportado (.apkg/.colpkg) para importarlo con su progreso real, sin necesitar Anki abierto. También acepta texto plano (.txt) o delimitado por comas (.csv), leyendo la primera columna de cada línea como una palabra.'
-                        : 'Upload an exported Anki deck (.apkg/.colpkg) to import it with its real progress, without needing Anki open. Also accepts plain text (.txt) or comma-separated (.csv) files, reading the first column of each line as a word.'}
+                        ? 'Texto plano (.txt) o separado por comas (.csv): se lee la primera columna de cada línea como una palabra.'
+                        : 'Plain text (.txt) or comma-separated (.csv): the first column of each line is read as a word.'}
                     </div>
 
                     <label className="reset-filter-btn" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}>
                       <Upload size={14} />
-                      <span>{vocabFile ? vocabFile.name : (lang === 'es' ? 'Seleccionar archivo .apkg, .txt o .csv' : 'Select .apkg, .txt or .csv file')}</span>
+                      <span>{vocabFile ? vocabFile.name : (lang === 'es' ? 'Elegir archivo .txt o .csv' : 'Choose a .txt or .csv file')}</span>
                       <input
                         type="file"
-                        accept=".txt,.csv,.apkg,.colpkg"
+                        // Android's picker turns accept into MIME types and greys out the rest.
+                        accept={isPhoneUI() ? undefined : '.txt,.csv'}
                         style={{ display: 'none' }}
                         onChange={e => setVocabFile(e.target.files?.[0] || null)}
                       />
                     </label>
 
-                    {!/\.(apkg|colpkg)$/i.test(vocabFile?.name || '') && (
+                    {(
                       <div className="yomitan-anki-row" style={{ padding: '4px 0' }}>
                         <div className="yomitan-anki-row-left" style={{ paddingRight: '12px' }}>
                           <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff' }}>{lang === 'es' ? 'Analizar y lematizar líneas' : 'Parse and lemmatize lines'}</div>

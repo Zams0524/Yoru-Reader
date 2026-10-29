@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } f
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isPhoneUI } from '../../utils/platform';
+import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 
 export interface Chapter {
@@ -72,6 +73,8 @@ export interface ReaderEngineProps {
   targetCharPosition?: number | null;
   wordStatuses?: Record<string, string>;
   colors: any;
+  /** Px at the bottom of the screen the text leaves free (the read-aloud player covers them). */
+  bottomReserve?: number;
 }
 
 export function sanitizeJapaneseText(text: string): string {
@@ -94,6 +97,18 @@ export function countJapaneseChars(text: string): number {
   const regex = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf々ー]/g;
   const matches = text.match(regex);
   return matches ? matches.length : 0;
+}
+
+/** Pictures uncovered with a tap while "Hide images" is on (by src), for this session. */
+const revealedSpoilers = new Set<string>();
+
+/** A tap on a covered picture uncovers it (and does nothing else). */
+function revealSpoiler(target: HTMLElement | null): boolean {
+  const img = target?.closest?.('img.yoru-book-img');
+  if (!(img instanceof HTMLImageElement) || img.classList.contains('is-revealed') || !img.closest('.reader-hide-images')) return false;
+  img.classList.add('is-revealed');
+  revealedSpoilers.add(img.getAttribute('src') || '');
+  return true;
 }
 
 function escapeHtmlAttribute(value: string): string {
@@ -141,7 +156,7 @@ function renderSectionContent(
 
     if (line.startsWith('{img:') && line.endsWith('}')) {
       const src = line.substring(5, line.length - 1);
-      const html = `<img index="${paragraphId}" characumm="${charAccum}" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`;
+      const html = `<img class="yoru-book-img" index="${paragraphId}" characumm="${charAccum}" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`;
       paragraphId++;
       return html;
     }
@@ -149,7 +164,7 @@ function renderSectionContent(
     const sanitized = sanitizeJapaneseText(line);
     const processed = sanitized.replace(
       /\{img:([^{}]+)\}/gi,
-      (_match, src) => `<img src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`,
+      (_match, src) => `<img class="yoru-book-img" src="${escapeHtmlAttribute(src)}" loading="lazy" decoding="async" style="max-width:100%; max-height:var(--reader-image-height,85vh); object-fit:contain; display:block; margin:1em auto;" />`,
     );
     const plainText = line
       .replace(/\{img:[^{}]*\}/gi, '')
@@ -208,6 +223,22 @@ export async function prepareLineWords(line: string): Promise<void> {
 }
 
 /**
+ * A chapter's name as the reader shows it: untitled chapters are named in the app's language, and
+ * so are the Spanish names the importer (fileImport.ts) stores for them ("Capítulo 3", "Portada").
+ */
+export function chapterDisplayTitle(title: string | undefined, chapterIdx: number, appLanguage?: string): string {
+  let lang = appLanguage || 'en';
+  if (!appLanguage) {
+    try { lang = localStorage.getItem('app_language') || 'en'; } catch { /* no storage */ }
+  }
+  const chapterWord = t('chapter', lang);
+  if (!title) return `${chapterWord} ${chapterIdx + 1}`;
+  if (lang !== 'en') return title;
+  if (title === 'Portada') return 'Cover';
+  return title.replace(/^Capítulo (\d+)$/, `${chapterWord} $1`);
+}
+
+/**
  * Splits the book into sections of about 3000 characters (chapter boundaries kept) and numbers
  * its paragraphs the way renderSectionContent does (the `index` attribute of each block).
  */
@@ -260,7 +291,7 @@ export function computeSections(book: Book): Section[] {
       if (sectionCharCount >= 3000) {
         resultSections.push({
           id: `chapter-${chapterIdx}-${subSectionIdx}`,
-          title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+          title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
           chapterIndex: chapterIdx,
           startOffset: sectionStartOffset,
           endOffset: lineEndOffset,
@@ -284,7 +315,7 @@ export function computeSections(book: Book): Section[] {
     if (sectionHasContent || resultSections.length === 0) {
       resultSections.push({
         id: `chapter-${chapterIdx}-${subSectionIdx}`,
-        title: chapter.title ? (subSectionIdx === 0 ? chapter.title : `${chapter.title} (${subSectionIdx + 1})`) : `Capítulo ${chapterIdx + 1}`,
+        title: subSectionIdx === 0 || !chapter.title ? chapterDisplayTitle(chapter.title, chapterIdx) : `${chapterDisplayTitle(chapter.title, chapterIdx)} (${subSectionIdx + 1})`,
         chapterIndex: chapterIdx,
         startOffset: sectionStartOffset,
         endOffset: chapterContent.length,
@@ -318,6 +349,7 @@ function ReaderEngineComponent({
   targetCharPosition,
   wordStatuses = {},
   colors,
+  bottomReserve = 0,
 }: ReaderEngineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -411,13 +443,15 @@ function ReaderEngineComponent({
     const vpPx = Math.max(10, window.innerHeight * (verticalPadding / 100));
     const vp = `${vpPx}px`;
     const hp = `${Math.max(10, window.innerWidth * (horizontalPadding / 100))}px`;
+    // The bottom margin grows to clear the read-aloud player while it is open.
+    const bottomPx = Math.max(vpPx, bottomReserve);
 
     const base: React.CSSProperties = {
       margin: 'auto',
       fontFamily: fontFamily !== '__default__' ? `"${fontFamily}", serif` : 'inherit',
       fontSize: `${fontSize}px`,
       lineHeight: `${lineHeight}`,
-      padding: `${vp} ${hp}`,
+      padding: `${vp} ${hp} ${bottomPx}px`,
       backgroundColor: colors.bg,
       color: colors.textMain,
       boxSizing: 'border-box',
@@ -437,8 +471,8 @@ function ReaderEngineComponent({
         // In vertical-rl a column's width is its height and columns stack downwards: each column
         // fills the page between the top and bottom margins, and the gap spans both margins, so
         // page N starts exactly at N * page height.
-        columnGap: `${vpPx * 2}px`,
-        columnWidth: `${Math.max(120, boxHeight - vpPx * 2)}px`,
+        columnGap: `${vpPx + bottomPx}px`,
+        columnWidth: `${Math.max(120, boxHeight - vpPx - bottomPx)}px`,
         columnFill: 'auto',
       };
     } else if (paginated && !vertical) {
@@ -472,7 +506,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, bottomReserve]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
@@ -1107,6 +1141,7 @@ function ReaderEngineComponent({
       // TAP ZONES (Short touch without drag)
       if (deltaTime < 350 && absX < 15 && absY < 15) {
         const target = e.target as HTMLElement;
+        if (revealSpoiler(target)) return;
         // Don't trigger page turn if tapping a word, ruby or interactive element
         if (target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button, .dict-popup')) {
           return;
@@ -1274,8 +1309,17 @@ function ReaderEngineComponent({
     });
   }, [currentHtml, jitenEnabled, paginated, sections, currSection]);
 
+  // Pictures already uncovered stay uncovered when their section is drawn again.
+  useEffect(() => {
+    if (revealedSpoilers.size === 0) return;
+    contentRef.current?.querySelectorAll('img.yoru-book-img').forEach((img) => {
+      if (revealedSpoilers.has(img.getAttribute('src') || '')) img.classList.add('is-revealed');
+    });
+  }, [currentHtml]);
+
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    if (revealSpoiler(target)) return;
     const onWord = !!target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button');
     // After a touch, touchend already turned the page or toggled the bars: the emulated click only opens words.
     if (Date.now() - lastTouchEndRef.current < 800) {
@@ -1315,7 +1359,7 @@ function ReaderEngineComponent({
       ref={containerRef}
       style={{ ...containerStyle, ...maxWidthStyle }}
       onClick={handleContentClick}
-      className={`reader-engine-container book-content ${vertical ? 'book-content--writing-vertical-rl' : 'book-content--writing-horizontal-tb'}`}
+      className={`reader-engine-container book-content ${vertical ? 'book-content--writing-vertical-rl' : 'book-content--writing-horizontal-tb'}${readerSettings.hideImages ? ' reader-hide-images' : ''}`}
     >
       {/* In-App Reader Brightness Overlay (Yoru Feature) */}
       {typeof readerSettings.readerBrightness === 'number' && readerSettings.readerBrightness < 100 && (
@@ -1354,6 +1398,7 @@ export const ReaderEngine = React.memo(ReaderEngineComponent, (prevProps, nextPr
     prevProps.readerSettings.fontWeight === nextProps.readerSettings.fontWeight &&
     prevProps.readerSettings.textAlign === nextProps.readerSettings.textAlign &&
     prevProps.readerSettings.hyphenation === nextProps.readerSettings.hyphenation &&
+    prevProps.readerSettings.hideImages === nextProps.readerSettings.hideImages &&
     prevProps.readerSettings.fontFamily === nextProps.readerSettings.fontFamily &&
     prevProps.readerSettings.verticalPadding === nextProps.readerSettings.verticalPadding &&
     prevProps.readerSettings.horizontalPadding === nextProps.readerSettings.horizontalPadding &&
@@ -1361,7 +1406,8 @@ export const ReaderEngine = React.memo(ReaderEngineComponent, (prevProps, nextPr
     prevProps.targetParagraphId === nextProps.targetParagraphId &&
     prevProps.targetCharPosition === nextProps.targetCharPosition &&
     prevProps.wordStatuses === nextProps.wordStatuses &&
-    prevProps.colors === nextProps.colors
+    prevProps.colors === nextProps.colors &&
+    prevProps.bottomReserve === nextProps.bottomReserve
   );
 });
 

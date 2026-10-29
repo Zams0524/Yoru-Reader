@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import './index.css'
 import './yoru-design-system.css'
 import App from './App'
+import { applyDeviceClasses, watchDeviceClass } from './utils/platform'
 import { applyLocalWordStyles } from './utils/parserSettingsStore'
 import { notifyWebBundleReady } from './hooks/useAppUpdater'
 import { installBackButton } from './hooks/useBackButton'
@@ -14,6 +15,12 @@ if ((Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') || p
   document.documentElement.classList.add('platform-android')
 }
 
+// The shell and the stylesheet read the screen from the same place: <html>
+// carries yoru-compact plus yoru-phone / yoru-tablet / yoru-desktop from the
+// first paint, and follows rotation, split screen and window resizing.
+applyDeviceClasses()
+watchDeviceClass(applyDeviceClasses)
+
 // Word-state styles chosen in the Yoru Parser settings (kept locally where there is no extension).
 applyLocalWordStyles()
 
@@ -21,6 +28,10 @@ function saveRuntimeIssue(kind: string, message: string, stack = '') {
   try {
     const report = `[${new Date().toISOString()}] ${kind}\n${message}${stack ? `\n${stack}` : ''}`;
     localStorage.setItem('yoru_last_runtime_issue', report.slice(0, 30000));
+    // The last few issues too, so a QA run (docs/AUDITORIA_QA.md) sees every error, not only the last one.
+    const recent: string[] = JSON.parse(localStorage.getItem('yoru_runtime_issues') || '[]');
+    recent.push(report.slice(0, 4000));
+    localStorage.setItem('yoru_runtime_issues', JSON.stringify(recent.slice(-20)));
   } catch {
     // Diagnostics must never interfere with startup or error recovery.
   }

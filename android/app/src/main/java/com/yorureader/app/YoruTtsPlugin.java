@@ -22,6 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Japanese text-to-speech through the Android system engine. The WebView has no
  * speechSynthesis voices, so word audio had no way to play on Android.
+ *
+ * Reading a book aloud uses a queue (speakQueue): the reader hands over the sentences of the
+ * section ahead and the engine speaks them one after another on its own, reporting each one as
+ * it starts. Android stops running the page while the screen is off, so a loop in the page that
+ * asked for one sentence at a time fell silent there.
  */
 @CapacitorPlugin(name = "YoruTts")
 public class YoruTtsPlugin extends Plugin {
@@ -30,6 +35,13 @@ public class YoruTtsPlugin extends Plugin {
     private boolean initFailed = false;
     private final List<PluginCall> waitingCalls = new ArrayList<>();
     private final Map<String, PluginCall> pendingUtterances = new ConcurrentHashMap<>();
+
+    private static final String QUEUE_PREFIX = "q:";
+    /** Sentences of the read-aloud queue by utterance id: text and where it sits in its section (for the player). */
+    private final Map<String, JSObject> queuedSentences = new ConcurrentHashMap<>();
+    private volatile String lastQueuedId = null;
+    /** Read aloud stops after the sentence that ends past this time (0 = no sleep timer). */
+    private volatile long sleepAt = 0;
 
     @Override
     public void load() {
@@ -44,22 +56,36 @@ public class YoruTtsPlugin extends Plugin {
                     ready = true;
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                         @Override
-                        public void onStart(String utteranceId) {}
+                        public void onStart(String utteranceId) {
+                            if (utteranceId.startsWith(QUEUE_PREFIX)) onQueuedStart(utteranceId);
+                        }
 
                         @Override
                         public void onDone(String utteranceId) {
+                            if (utteranceId.startsWith(QUEUE_PREFIX)) {
+                                onQueuedDone(utteranceId);
+                                return;
+                            }
                             PluginCall call = pendingUtterances.remove(utteranceId);
                             if (call != null) call.resolve();
                         }
 
                         @Override
                         public void onError(String utteranceId) {
+                            if (utteranceId.startsWith(QUEUE_PREFIX)) {
+                                onQueuedError(utteranceId);
+                                return;
+                            }
                             PluginCall call = pendingUtterances.remove(utteranceId);
                             if (call != null) call.reject("TTS_ERROR");
                         }
 
                         @Override
                         public void onStop(String utteranceId, boolean interrupted) {
+                            if (utteranceId.startsWith(QUEUE_PREFIX)) {
+                                queuedSentences.remove(utteranceId);
+                                return;
+                            }
                             PluginCall call = pendingUtterances.remove(utteranceId);
                             if (call != null) call.resolve();
                         }
@@ -189,8 +215,115 @@ public class YoruTtsPlugin extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
+        clearQueue();
         if (tts != null) tts.stop();
         call.resolve();
+    }
+
+    // ---- Read-aloud queue ----
+
+    /**
+     * items: [{id, text, positionMs, durationMs}]. replace: true flushes what is playing and starts
+     * with these; false adds them after what is queued (the next section, read ahead).
+     */
+    @PluginMethod
+    public void speakQueue(PluginCall call) {
+        synchronized (waitingCalls) {
+            if (!ready) {
+                if (initFailed) {
+                    call.reject("TTS_UNAVAILABLE");
+                } else {
+                    bridge.execute(() -> {
+                        try { Thread.sleep(500); } catch (InterruptedException ignored) { }
+                        speakQueue(call);
+                    });
+                }
+                return;
+            }
+        }
+        int languageStatus = tts.setLanguage(Locale.JAPAN);
+        if (languageStatus == TextToSpeech.LANG_MISSING_DATA || languageStatus == TextToSpeech.LANG_NOT_SUPPORTED) {
+            call.reject("JAPANESE_VOICE_MISSING");
+            return;
+        }
+        boolean replace = Boolean.TRUE.equals(call.getBoolean("replace", true));
+        if (replace) {
+            clearQueue();
+            pickVoice(call.getString("voice", ""));
+            Float rate = call.getFloat("rate", 1.0f);
+            tts.setSpeechRate(rate == null ? 1.0f : Math.max(0.25f, Math.min(3.0f, rate)));
+            tts.setPitch(1.0f);
+        }
+        JSArray items = call.getArray("items", new JSArray());
+        int mode = replace ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD;
+        for (int i = 0; i < items.length(); i++) {
+            org.json.JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String text = item.optString("text", "");
+            if (text.trim().isEmpty()) continue;
+            String utteranceId = QUEUE_PREFIX + item.optLong("id");
+            JSObject info = new JSObject();
+            info.put("id", item.optLong("id"));
+            info.put("text", text);
+            info.put("positionMs", item.optLong("positionMs"));
+            info.put("durationMs", item.optLong("durationMs"));
+            queuedSentences.put(utteranceId, info);
+            lastQueuedId = utteranceId;
+            if (tts.speak(text, mode, null, utteranceId) != TextToSpeech.SUCCESS) {
+                queuedSentences.remove(utteranceId);
+                call.reject("TTS_ERROR");
+                return;
+            }
+            mode = TextToSpeech.QUEUE_ADD;
+        }
+        call.resolve();
+    }
+
+    /** The sleep timer, so it works while the page is not running: stop after the sentence that ends past `at` (0 = off). */
+    @PluginMethod
+    public void setSleep(PluginCall call) {
+        sleepAt = call.getData().optLong("at", 0L);
+        call.resolve();
+    }
+
+    private void clearQueue() {
+        queuedSentences.clear();
+        lastQueuedId = null;
+    }
+
+    private void onQueuedStart(String utteranceId) {
+        JSObject info = queuedSentences.get(utteranceId);
+        if (info == null) return;
+        // The player follows the voice even while the page is not running.
+        ReadAloudService.advance(info.optString("text"), info.optLong("positionMs"), info.optLong("durationMs"));
+        JSObject event = new JSObject();
+        event.put("id", info.optLong("id"));
+        notifyListeners("queueSentence", event);
+    }
+
+    private void onQueuedDone(String utteranceId) {
+        JSObject info = queuedSentences.remove(utteranceId);
+        if (info == null) return;
+        JSObject event = new JSObject();
+        event.put("id", info.optLong("id"));
+        if (sleepAt > 0 && System.currentTimeMillis() >= sleepAt) {
+            sleepAt = 0;
+            clearQueue();
+            tts.stop();
+            ReadAloudService.pausedBySleep();
+            notifyListeners("queueSleep", event);
+            return;
+        }
+        if (utteranceId.equals(lastQueuedId)) notifyListeners("queueDone", event);
+    }
+
+    private void onQueuedError(String utteranceId) {
+        JSObject info = queuedSentences.remove(utteranceId);
+        if (info == null) return;
+        clearQueue();
+        JSObject event = new JSObject();
+        event.put("id", info.optLong("id"));
+        notifyListeners("queueError", event);
     }
 
     @PluginMethod

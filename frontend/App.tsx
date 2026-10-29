@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import DictionaryInstallToast from './components/DictionaryInstallToast';
 import { Capacitor } from '@capacitor/core';
+import { isPhoneUI } from './utils/platform';
 const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
@@ -9,6 +11,7 @@ import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
+import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
 
 const isNewerAppVersion = (remoteVersion: string, localVersion: string) => {
   if (!remoteVersion || !localVersion) return false;
@@ -31,6 +34,23 @@ declare global {
 interface BookVocabCache {
   uniqueWords: Set<string>;
   sentenceWordSets: Set<string>[];
+}
+
+/**
+ * Resolves once the reader shows the book's first page ('yoru-reader-opened'), or after timeoutMs.
+ * Analysing the whole book for its vocabulary stats competes with opening it (Kuromoji on the main
+ * thread), so it waits for this.
+ */
+function afterReaderOpened(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      window.removeEventListener('yoru-reader-opened', done);
+      window.clearTimeout(timer);
+      resolve();
+    };
+    const timer = window.setTimeout(done, timeoutMs);
+    window.addEventListener('yoru-reader-opened', done);
+  });
 }
 
 async function buildBookVocabCache(book: any): Promise<BookVocabCache> {
@@ -79,6 +99,18 @@ export default function App() {
   const [books, setBooks] = useState<any[]>([]);
   const [activeBook, setActiveBook] = useState<any | null>(null);
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
+  // The reader's code loads while the library sits idle, so opening the first book does not wait
+  // for it ("Loading reader..." before the book's own loading screen).
+  useEffect(() => {
+    const preload = () => { void import('./components/Reader').catch(() => {}); };
+    const idle = (window as any).requestIdleCallback as ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    if (idle) {
+      const handle = idle(preload, { timeout: 4000 });
+      return () => (window as any).cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(preload, 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [libraryTab, setLibraryTab] = useState('library');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
@@ -94,6 +126,38 @@ export default function App() {
   const [readyUpdateKind, setReadyUpdateKind] = useState<string | null>(null);
 
   const { showConfirm, confirmModal } = useConfirm();
+
+  // Android notifications. The SRS reminder is worked out again when the app opens, when it is
+  // left (after reviewing) and shortly after settings change; update notices follow the settings.
+  const [libraryNav, setLibraryNav] = useState<{ tab: string; section?: string; nonce: number } | null>(null);
+  const notificationSettingsRef = useRef(settings);
+  notificationSettingsRef.current = settings;
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    void configureUpdateNotices(settings);
+    const timer = window.setTimeout(() => { void refreshSrsReminders(notificationSettingsRef.current); }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [settings]);
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    const onVisibility = () => { void refreshSrsReminders(notificationSettingsRef.current); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  // A tapped notification opens the SRS or the updates section.
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    const go = (action: LaunchAction | null) => {
+      if (action !== 'srs' && action !== 'updates') return;
+      const target = action === 'srs' ? { tab: 'srs' } : { tab: 'settings', section: 'sec-updates' };
+      setActiveBook(null);
+      setLibraryTab(target.tab);
+      setLibraryNav({ ...target, nonce: Date.now() });
+    };
+    void YoruNotifications.getLaunchAction().then(({ action }) => go(action)).catch(() => {});
+    const listener = YoruNotifications.addListener('launchAction', ({ action }) => go(action));
+    return () => { void listener.then((handle) => handle.remove()); };
+  }, []);
 
   const uniqueWordsCacheRef = useRef<Record<string, BookVocabCache>>({});
   const vocabCacheInFlightRef = useRef(new Set<string>());
@@ -276,11 +340,13 @@ export default function App() {
         console.log("[App] Running background yomitan database maintenance...");
         const {
           migrateEnglishDictName,
+          upgradeTruncatedEnglishJmdict,
           migrateDictFlags,
           cleanOrphanedEntries,
           ensureDefaultDictionaries
         } = await import('./utils/yomitanDB');
         await migrateEnglishDictName();
+        await upgradeTruncatedEnglishJmdict();
         await migrateDictFlags();
         // This full-store sweep can walk millions of dictionary rows. Android
         // manages dictionary records through explicit install/delete actions,
@@ -291,7 +357,8 @@ export default function App() {
         // Install the bundled lookup and pitch data on first launch. Existing
         // dictionaries and explicit disabled-dictionary preferences are kept.
         try {
-          if (localStorage.getItem('yoru_bundled_dictionary_setup_v1') !== 'done') {
+          // First run: the welcome guide installs them once the language is chosen.
+          if (db.getProfiles().length > 0 && localStorage.getItem('yoru_bundled_dictionary_setup_v1') !== 'done') {
             await ensureDefaultDictionaries(lang === 'es' ? 'es' : 'en');
             localStorage.setItem('yoru_bundled_dictionary_setup_v1', 'done');
           }
@@ -386,7 +453,9 @@ export default function App() {
         if (!cached) {
           if (!vocabCacheInFlightRef.current.has(bookId)) {
             vocabCacheInFlightRef.current.add(bookId);
-            void buildBookVocabCache(activeBook)
+            void afterReaderOpened(5000)
+              .then(() => new Promise((resolve) => window.setTimeout(resolve, 1500)))
+              .then(() => buildBookVocabCache(activeBook))
               .then((bookCache) => {
                 uniqueWordsCacheRef.current[bookId] = bookCache;
                 setVocabCacheRevision((revision) => revision + 1);
@@ -542,6 +611,8 @@ export default function App() {
   // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
   // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
   const handleSelectBook = async (book: any, startChapter?: number) => {
+    // Start of an open, for the timing line the native reader logs.
+    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
     const target = typeof startChapter === 'number'
       ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
       : book;
@@ -632,7 +703,8 @@ export default function App() {
       }
     }
 
-    if (status !== 'known') return;
+    // Syncing the mark to Anki goes through AnkiConnect, which a phone can't reach.
+    if (status !== 'known' || isPhoneUI()) return;
 
     const savedAnki = localStorage.getItem('anki_settings_v2');
     if (!savedAnki) return;
@@ -864,6 +936,7 @@ export default function App() {
           }}
           initialTab={libraryTab}
           libraryProps={{
+            navigateTo: libraryNav,
             onAddBooks: handleAddBooks,
             onDeleteBook: handleDeleteBook,
             onBulkDeleteBooks: handleBulkDeleteBooks,
@@ -880,6 +953,8 @@ export default function App() {
           />
         )}
       </React.Suspense>
+
+      {profiles.length > 0 && <DictionaryInstallToast lang={lang} />}
 
       {/* Manual Guide Modal */}
       <React.Suspense fallback={null}>

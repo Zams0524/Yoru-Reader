@@ -55,11 +55,17 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
     heatmap: lang === 'es' ? 'Mapa de calor' : 'Heatmap',
     heatmapDesc: lang === 'es' ? 'Tiempo de lectura diario a lo largo de la ventana seleccionada.' : 'Daily reading time across the selected window.',
     recentSessions: lang === 'es' ? 'Sesiones recientes' : 'Recent sessions',
-    noSessions: lang === 'es' ? 'Aún no hay sesiones registradas. ¡Comienza a leer un libro!' : 'No sessions yet. Start reading a book!',
+    noSessions: lang === 'es'
+      ? 'Aún no hay sesiones registradas. En el lector, abre «Sesión de lectura» y pulsa «Iniciar sesión» para medir tu lectura.'
+      : 'No sessions yet. In the reader, open "Reading session" and tap "Start session" to track your reading.',
     byBook: lang === 'es' ? 'Por libro' : 'By book',
     bookTotalsDesc: lang === 'es' ? 'Los totales de cada libro aparecerán aquí.' : 'Book totals appear after you finish or pause sessions.',
     shown: lang === 'es' ? 'mostrados' : 'shown',
     allTime: lang === 'es' ? 'Todo el tiempo' : 'All Time',
+    windowAll: lang === 'es' ? 'Todo' : 'All',
+    windowDays: lang === 'es' ? 'días' : 'days',
+    windowTime: (n: string) => (lang === 'es' ? `${n} DÍAS` : `${n} DAYS`),
+    timeWindowLabel: lang === 'es' ? 'Periodo' : 'Time window',
     days: lang === 'es' ? 'días' : 'days',
     day: lang === 'es' ? 'día' : 'day',
   };
@@ -110,7 +116,15 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
     return [hrs, mins, secs].map((v) => v.toString().padStart(2, '0')).join(':');
   };
 
-  const todayTimeStr = useMemo(() => formatDuration(todaySeconds), [todaySeconds]);
+  // Headline totals read better as "1 h 05 min" than as a 00:00:00 stopwatch.
+  const formatCompactDuration = (totalSecs: number) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    if (hrs > 0) return `${hrs} h ${mins.toString().padStart(2, '0')} min`;
+    return `${mins} min`;
+  };
+
+  const todayTimeStr = useMemo(() => formatCompactDuration(todaySeconds), [todaySeconds]);
   const todaySpeedVal = useMemo(() => (todaySeconds >= 10 && todayChars > 0 ? Math.round((todayChars / todaySeconds) * 3600) : 0), [todayChars, todaySeconds]);
   const todaySessionsCount = useMemo(() => todayStats.reduce((total, stat) => {
     if (typeof stat.sessionsCount === 'number') return total + stat.sessionsCount;
@@ -161,7 +175,7 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
 
   const windowChars = useMemo(() => windowStats.reduce((acc, s) => acc + (s.charactersRead || 0), 0), [windowStats]);
   const windowSeconds = useMemo(() => windowStats.reduce((acc, s) => acc + (s.readingTime || 0), 0), [windowStats]);
-  const windowTimeStr = useMemo(() => formatDuration(windowSeconds), [windowSeconds]);
+  const windowTimeStr = useMemo(() => formatCompactDuration(windowSeconds), [windowSeconds]);
 
   // 4. HEATMAP GRID CELL GENERATION
   const heatmapCells = useMemo(() => {
@@ -263,33 +277,26 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
   return (
     <div className="progress-dashboard-root" style={{ padding: '16px', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-main)', background: 'transparent', minHeight: '100vh', fontFamily: "'Outfit', 'Inter', sans-serif", boxSizing: 'border-box' }}>
       {/* HEADER SECTION */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+      <div className="progress-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div>
           <h1 className="progress-page-heading" style={{ fontSize: '1.75rem', fontWeight: 850, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>{t.progress}</h1>
           <p className="progress-page-subtitle" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>{t.subtitle}</p>
         </div>
 
         {/* TIME WINDOW PICKER */}
-        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-light)', padding: '4px', borderRadius: '10px' }}>
+        <div className="progress-window-picker" role="radiogroup" aria-label={t.timeWindowLabel}>
           {(['7D', '30D', '90D', 'All'] as const).map((opt) => {
             const active = timeWindow === opt;
             return (
               <button
                 key={opt}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                className={active ? 'is-active' : ''}
                 onClick={() => setTimeWindow(opt)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  background: active ? 'var(--primary)' : 'transparent',
-                  color: active ? '#000000' : 'var(--text-muted)',
-                }}
               >
-                {opt === 'All' ? t.allTime : opt}
+                {opt === 'All' ? t.windowAll : `${parseInt(opt, 10)} ${t.windowDays}`}
               </button>
             );
           })}
@@ -297,26 +304,26 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
       </div>
 
       {/* GRID OF 4 CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+      <div className="progress-kpi-grid">
         {/* CARD 1: TODAY */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '16px' }}>
+        <div className="progress-kpi-card">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
             <Clock size={14} style={{ color: 'var(--primary)' }} />
             <span>{t.today}</span>
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: '8px 0' }}>{todayTimeStr}</div>
+          <div className="progress-kpi-value">{todayTimeStr}</div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             {todayChars.toLocaleString()} <span style={{ opacity: 0.6 }}>{t.chars}</span>
           </div>
         </div>
 
         {/* CARD 2: TODAY SPEED */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '20px' }}>
+        <div className="progress-kpi-card">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
             <RefreshCw size={14} style={{ color: 'var(--primary)' }} />
             <span>{t.todaySpeed}</span>
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: '8px 0' }}>
+          <div className="progress-kpi-value">
             {todaySpeedVal} <span style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 700 }}>{t.charSpeed}</span>
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -325,24 +332,24 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
         </div>
 
         {/* CARD 3: STREAK */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '20px' }}>
+        <div className="progress-kpi-card">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
             <Flame size={14} style={{ color: 'var(--primary)' }} />
             <span>{t.streak}</span>
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: '8px 0' }}>
+          <div className="progress-kpi-value">
             {streakDays} <span style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 700 }}>{streakDays === 1 ? t.day : t.days}</span>
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t.consecutiveDays}</div>
         </div>
 
         {/* CARD 4: WINDOW TIME */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '20px' }}>
+        <div className="progress-kpi-card">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
             <Calendar size={14} style={{ color: 'var(--primary)' }} />
-            <span>{timeWindow === 'All' ? t.allTime.toUpperCase() : `${timeWindow} TIME`}</span>
+            <span>{timeWindow === 'All' ? t.allTime.toUpperCase() : t.windowTime(String(parseInt(timeWindow, 10)))}</span>
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: '8px 0' }}>{windowTimeStr}</div>
+          <div className="progress-kpi-value">{windowTimeStr}</div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             {windowChars.toLocaleString()} <span style={{ opacity: 0.6 }}>{t.chars}</span>
           </div>

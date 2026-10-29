@@ -3,8 +3,7 @@ import { Camera, User, Globe } from 'lucide-react';
 import { t } from '../utils/i18n';
 import JSZip from 'jszip';
 import { db } from '../utils/db';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
-import { Capacitor } from '@capacitor/core';
+import { googleDriveService, signInWithGoogle, LAST_SYNC_STORAGE_KEY } from '../utils/googleDriveService';
 import { useConfirm } from './ConfirmModal';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DictionaryStep, GuideDots, SlideView, featureSlides, useArrowKeys, useDictionaryInstall, useSwipe } from './onboarding/GuideSlides';
@@ -185,6 +184,9 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
               }
             }
           }
+
+          const { importMetaPacksFromZip } = await import('../utils/yomitanDB');
+          await importMetaPacksFromZip(zip);
         }
 
         showToast(lang === 'es' ? '✅ Copia de seguridad restaurada con éxito. Reiniciando...' : '✅ Backup restored successfully. Restarting...', 'success');
@@ -222,99 +224,41 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleRestoreDriveBackup = async () => {
-    const defaultClientId = DEFAULT_GDRIVE_CLIENT_ID;
-    const defaultClientSecret = DEFAULT_GDRIVE_CLIENT_SECRET;
-
-    const clientId = localStorage.getItem('gdrive_client_id') !== null ? localStorage.getItem('gdrive_client_id')! : defaultClientId;
-    const clientSecret = localStorage.getItem('gdrive_client_secret') !== null ? localStorage.getItem('gdrive_client_secret')! : defaultClientSecret;
-
+  // Sign in with Google: brings back the progress synced from another device (or the last full
+  // backup) and keeps syncing from now on. With nothing in Drive yet, the user creates a profile
+  // and its progress starts being saved there.
+  const handleGoogleSignIn = async () => {
     try {
       setIsSyncing(true);
       document.body.style.cursor = 'wait';
+      const session = await signInWithGoogle(setCanCancelDriveAuth);
 
-      if (Capacitor.getPlatform() === 'android') {
-        const androidClientId = GDRIVE_ANDROID_CLIENT_ID;
-        const tokens = await authorizeGoogleDriveNative();
-        localStorage.setItem('gdrive_client_id', androidClientId);
-        localStorage.removeItem('gdrive_client_secret');
-        localStorage.setItem('gdrive_tokens', JSON.stringify(tokens));
+      const syncData = await googleDriveService.downloadSyncFile(session.tokens, session.clientId, session.clientSecret);
+      if (syncData) {
+        await db.importFullDatabase(syncData);
+        localStorage.setItem(LAST_SYNC_STORAGE_KEY, new Date().toISOString());
+        localStorage.setItem('yoru_tutorial_seen_v1', 'true');
+        showToast(lang === 'es' ? 'Progreso recuperado de Google Drive. Reiniciando...' : 'Progress restored from Google Drive. Restarting...', 'success');
+        setTimeout(() => window.location.reload(), 1200);
+        return;
+      }
 
-        const info = await googleDriveService.getUserInfo(tokens, androidClientId, '');
-        localStorage.setItem('gdrive_user_email', info.email);
-        const zipBlob = await googleDriveService.downloadBlobFile(
-          tokens, androidClientId, 'yoru_reader_full_backup.zip', ''
-        );
-        if (!zipBlob) {
-          showToast(lang === 'es'
-            ? 'No se encontró ningún archivo de copia de seguridad (yoru_reader_full_backup.zip) en Google Drive.'
-            : 'No backup file (yoru_reader_full_backup.zip) was found in your Google Drive.', 'error');
-          return;
-        }
+      const zipBlob = await googleDriveService.downloadBlobFile(
+        session.tokens, session.clientId, 'yoru_reader_full_backup.zip', session.clientSecret
+      );
+      if (zipBlob) {
         const fileObj = new File([zipBlob], 'yoru_reader_full_backup.zip', { type: 'application/zip' });
         await handleImportLocalBackup({ target: { files: [fileObj] } });
         return;
       }
 
-      if (!window.electronAPI || !window.electronAPI.startGoogleOauth) {
-        throw new Error(lang === 'es'
-          ? 'La restauración de Google Drive solo está disponible en la app de Android o de escritorio.'
-          : 'Google Drive restore is only available in the Android or desktop app.');
-      }
-
-      localStorage.setItem('gdrive_client_id', clientId.trim());
-      localStorage.setItem('gdrive_client_secret', clientSecret.trim());
-
-      // 1. Authenticate / get tokens
-      setCanCancelDriveAuth(true);
-      const oauthResult = await window.electronAPI.startGoogleOauth(clientId.trim());
-      setCanCancelDriveAuth(false);
-      if (!oauthResult || !oauthResult.code) {
-        throw new Error('No authorization code returned from loopback server');
-      }
-
-      const tokens = await googleDriveService.exchangeCodeForTokens(
-        oauthResult.code,
-        oauthResult.redirectUri,
-        clientId.trim(),
-        clientSecret.trim(),
-        oauthResult.codeVerifier
-      );
-
-      if (!tokens) {
-        showToast(lang === 'es' ? 'Error al conectar con Google Drive.' : 'Failed to connect to Google Drive.', 'error');
-        return;
-      }
-
-      localStorage.setItem('gdrive_tokens', JSON.stringify(tokens));
-
-      // Fetch connected user info
-      const info = await googleDriveService.getUserInfo(tokens, clientId.trim(), clientSecret.trim());
-      localStorage.setItem('gdrive_user_email', info.email);
-
-      // 2. Download backup zip from Drive
-      const zipBlob = await googleDriveService.downloadBlobFile(
-        tokens,
-        clientId.trim(),
-        'yoru_reader_full_backup.zip',
-        clientSecret.trim()
-      );
-
-      if (!zipBlob) {
-        showToast(lang === 'es'
-          ? 'No se encontró ningún archivo de copia de seguridad (yoru_reader_full_backup.zip) en Google Drive.'
-          : 'No backup file (yoru_reader_full_backup.zip) was found in your Google Drive.', 'error');
-        return;
-      }
-
-      // Convert Blob to File object to reuse local import logic
-      const fileObj = new File([zipBlob], 'yoru_reader_full_backup.zip', { type: 'application/zip' });
-      await handleImportLocalBackup({ target: { files: [fileObj] } });
-
+      showToast(lang === 'es'
+        ? `Sesión iniciada como ${session.email}. Crea tu perfil y tu progreso se guardará en tu Google Drive.`
+        : `Signed in as ${session.email}. Create your profile and your progress will be saved to your Google Drive.`, 'success');
     } catch (e: any) {
       console.error(e);
       if (!String(e?.message || '').toLowerCase().includes('cancelled')) {
-        showToast((lang === 'es' ? 'Error al restaurar desde Drive: ' : 'Error restoring from Drive: ') + e.message, 'error');
+        showToast((lang === 'es' ? 'No se pudo iniciar sesión con Google: ' : 'Google sign-in failed: ') + e.message, 'error');
       }
     } finally {
       setCanCancelDriveAuth(false);
@@ -388,10 +332,10 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
   const dictionary = useDictionaryInstall(guideLang);
   const goNext = () => setStep((value) => Math.min(lastGuideStep + 1, value + 1));
   const goPrev = () => setStep((value) => Math.max(0, value - 1));
-  const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep && !dictionary.installing) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
+  const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
   const es = lang === 'es';
   useArrowKeys(
-    () => { if (step <= lastGuideStep && !dictionary.installing) goNext(); },
+    () => { if (step <= lastGuideStep) goNext(); },
     () => { if (step > 0 && step <= lastGuideStep) goPrev(); },
     step <= lastGuideStep,
   );
@@ -443,15 +387,15 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
               <SlideView slide={slides[step - 1]} />
             ) : (
               <div className="guide-slide">
-                <h2 className="guide-title">{dictionary.hasDictionary ? (es ? 'Diccionario listo' : 'Dictionary ready') : (es ? 'Instala el diccionario' : 'Install the dictionary')}</h2>
+                <h2 className="guide-title">{dictionary.complete ? (es ? 'Diccionario listo' : 'Dictionary ready') : (es ? 'Instala el diccionario' : 'Install the dictionary')}</h2>
                 <DictionaryStep lang={guideLang} state={dictionary} />
               </div>
             )}
             <div className="guide-bottom">
-              <button type="button" className="guide-primary" onClick={goNext} disabled={dictionary.installing}>
+              <button type="button" className="guide-primary" onClick={goNext}>
                 {step < lastGuideStep
                   ? (es ? 'Siguiente' : 'Next')
-                  : dictionary.hasDictionary ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
+                  : dictionary.hasDictionary || dictionary.installing ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
                 <ChevronRight size={18} />
               </button>
             </div>
@@ -634,7 +578,7 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
         <div style={{ margin: '16px 0 12px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <hr style={{ flex: 1, border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
           <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {lang === 'es' ? '¿Tienes una copia?' : 'Have a backup?'}
+            {lang === 'es' ? '¿Ya usas Yoru?' : 'Already use Yoru?'}
           </span>
           <hr style={{ flex: 1, border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
         </div>
@@ -679,7 +623,7 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
           {/* Restaurar Google Drive */}
           <button 
             type="button"
-            onClick={canCancelDriveAuth ? cancelDriveSignIn : handleRestoreDriveBackup}
+            onClick={canCancelDriveAuth ? cancelDriveSignIn : handleGoogleSignIn}
             disabled={isSyncing && !canCancelDriveAuth}
             className="welcome-submit-btn" 
             style={{ 
@@ -704,8 +648,8 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
             ☁️ {isSyncing 
               ? canCancelDriveAuth
                 ? (lang === 'es' ? 'Cancelar inicio de sesión' : 'Cancel sign-in')
-                : (lang === 'es' ? 'Restaurando...' : 'Restoring...')
-              : (lang === 'es' ? 'Google Drive' : 'Google Drive')}
+                : (lang === 'es' ? 'Entrando...' : 'Signing in...')
+              : (lang === 'es' ? 'Entrar con Google' : 'Sign in with Google')}
           </button>
         </div>
       </div>

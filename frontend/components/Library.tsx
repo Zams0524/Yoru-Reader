@@ -1,21 +1,29 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Library as LibraryIcon } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
+import DictionarySettings from './settings/DictionarySettings';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import { importYomitanZip, installBundledDictionary, getInstalledDictionaries, deleteDictionary, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
+import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
+import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
-import { authorizeGoogleDriveNative, googleDriveService, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, GDRIVE_ANDROID_CLIENT_ID } from '../utils/googleDriveService';
+import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
 import { updateDiscordLibrary } from '../utils/discordRpc';
 import { isNewSrsCard } from '../utils/fsrs';
+import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
+import { hasDesktopIntegrations, isPhoneUI } from '../utils/platform';
+import { useDeviceClass } from '../hooks/useDeviceClass';
 import AppAbout from './AppAbout';
 import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
+import { ensureNotificationPermission, getNotificationPermission, hasYoruNotifications, notificationSettings, YoruNotifications } from '../utils/yoruNotifications';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -46,6 +54,8 @@ interface LibraryProps {
   initialTab?: string;
   /** Cuando el shell nuevo la monta dentro de su lienzo: sin cabecera ni barra inferior propias. */
   embedded?: boolean;
+  /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
+  navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
 
 const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
@@ -108,7 +118,8 @@ const Library = React.memo(function Library({
   onSaveSettings,
   wordStatuses = {},
   initialTab,
-  embedded = false
+  embedded = false,
+  navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
   const fileInputRef = useRef(null);
@@ -265,38 +276,37 @@ const Library = React.memo(function Library({
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [previewBook, setPreviewBook] = useState(null);
   
-  // Mobile responsive layout states
-  const checkIsMobileDevice = () => {
-    if (typeof window === 'undefined') return false;
-    const isAndroidApp = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
-    return isAndroidApp || window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-  };
-  const [isMobile, setIsMobile] = useState(checkIsMobileDevice());
+  // The compact (phone) shell — top app bar, bottom tab bar, drawer — on every
+  // Android screen and on any touch-only small one. The stylesheet reads the
+  // same decision from html.yoru-compact, and deviceClass only scales it up for
+  // tablets (see frontend/utils/platform.ts).
+  const { deviceClass, compact: isMobile } = useDeviceClass();
+  // Discord RPC, keyboard shortcuts and other desktop-only integrations: a
+  // tablet is a wide screen without any of them.
+  const showDesktopIntegrations = hasDesktopIntegrations();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSettingsSectionOpen, setMobileSettingsSectionOpen] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
+  // The drawer belongs to the compact shell: leaving it must not strand it open.
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = checkIsMobileDevice();
-      setIsMobile(mobile);
-      if (!mobile) setIsSidebarOpen(false);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (!isMobile) setIsSidebarOpen(false);
+  }, [isMobile]);
 
   const handleTouchStart = (e) => {
+    if (!isMobile) return;
     touchStartX.current = e.changedTouches[0].screenX;
     touchEndX.current = e.changedTouches[0].screenX;
   };
 
   const handleTouchMove = (e) => {
+    if (!isMobile) return;
     touchEndX.current = e.changedTouches[0].screenX;
   };
 
   const handleTouchEnd = () => {
+    if (!isMobile) return;
     const diffX = touchEndX.current - touchStartX.current;
     
     // 1. Left Sidebar Navigation Drawer
@@ -307,8 +317,8 @@ const Library = React.memo(function Library({
       setIsSidebarOpen(false);
     }
     
-    // 2. Right Display Settings Drawer (Option Q)
-    if (diffX < -70 && touchStartX.current > window.innerWidth - 60 && !isDisplaySettingsOpen) {
+    // 2. Right Display Settings Drawer (Option Q); on phones these options live in the ⋮ menu
+    if (diffX < -70 && touchStartX.current > window.innerWidth - 60 && !isDisplaySettingsOpen && window.innerWidth > 768) {
       setIsDisplaySettingsOpen(true);
     }
     if (diffX > 70 && isDisplaySettingsOpen) {
@@ -383,10 +393,12 @@ const Library = React.memo(function Library({
   const [selectedDeckFilter, setSelectedDeckFilter] = useState<string | null>(null);
   const [srsSubTab, setSrsSubTab] = useState<'decks' | 'stats' | 'notes' | 'history' | 'settings'>('decks');
   const [isDeckPromptOpen, setIsDeckPromptOpen] = useState(false);
-  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename' | 'merge'>('create');
+  const [deckPromptMode, setDeckPromptMode] = useState<'create' | 'rename'>('create');
   const [deckPromptTargetId, setDeckPromptTargetId] = useState<string | null>(null);
   const [deckPromptValue, setDeckPromptValue] = useState('');
-  const [srsCalendarYear, setSrsCalendarYear] = useState(new Date().getFullYear());
+  const [deckOptionsDraft, setDeckOptionsDraft] = useState<SrsDeckOptions>({});
+  // 0 = the window of weeks that ends today; each step goes one window back.
+  const [srsCalendarPage, setSrsCalendarPage] = useState(0);
   const [separateSuspended, setSeparateSuspended] = useState(false);
   const [notesSearch, setNotesSearch] = useState('');
   const [notesFilterStatus, setNotesFilterStatus] = useState('all');
@@ -404,20 +416,32 @@ const Library = React.memo(function Library({
 
   // Yomitan DB states
   const [installedDicts, setInstalledDicts] = useState([]);
-  const [dictImportProgress, setDictImportProgress] = useState(0);
-  const [dictImportMsg, setDictImportMsg] = useState('');
-  const [isImportingDict, setIsImportingDict] = useState(false);
-  const [dictImportSuccess, setDictImportSuccess] = useState(false);
-  const [freqImportProgress, setFreqImportProgress] = useState(0);
-  const [freqImportMsg, setFreqImportMsg] = useState('');
-  const [isImportingFreq, setIsImportingFreq] = useState(false);
-  const [freqImportSuccess, setFreqImportSuccess] = useState(false);
-  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<false | 'dict' | 'freq'>(false);
-  const [installingBundledAsset, setInstallingBundledAsset] = useState(null);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
+  // Android: whether Yoru may post notifications, shown in Settings → Notifications.
+  const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null);
+  useEffect(() => {
+    if (!hasYoruNotifications() || activeSettingsSection !== 'sec-notifications') return;
+    const refresh = () => { void getNotificationPermission().then(setNotificationPermission); };
+    refresh();
+    // Coming back from Android's settings.
+    document.addEventListener('visibilitychange', refresh);
+    return () => document.removeEventListener('visibilitychange', refresh);
+  }, [activeSettingsSection]);
+
+  // A tapped notification asks for the SRS or the updates section.
+  useEffect(() => {
+    if (!navigateTo) return;
+    setActiveTab(navigateTo.tab);
+    if (navigateTo.section) {
+      setActiveSettingsSection(navigateTo.section);
+      setSettingsSearchQuery('');
+      if (isMobile) setMobileSettingsSectionOpen(true);
+    }
+  }, [navigateTo?.nonce]);
   const [activeMenuBookId, setActiveMenuBookId] = useState(null);
   const [menuOpenLeft, setMenuOpenLeft] = useState(false); // true = dropdown opens to the left of trigger
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null); // phones: the menu floats above the page
   const [activeHeaderDropdown, setActiveHeaderDropdown] = useState(null); // null | 'import' | 'database' | 'theme' | 'more'
   const [dynamicCoverage, setDynamicCoverage] = useState(null);
 
@@ -549,580 +573,6 @@ const Library = React.memo(function Library({
     }
   };
 
-  const handleYomitanUpload = async (e, isFreq = false) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const setMsg = isFreq ? setFreqImportMsg : setDictImportMsg;
-    const setProg = isFreq ? setFreqImportProgress : setDictImportProgress;
-    const setIsImporting = isFreq ? setIsImportingFreq : setIsImportingDict;
-    const setSuccess = isFreq ? setFreqImportSuccess : setDictImportSuccess;
-
-    setIsImporting(true);
-    setSuccess(false);
-    setProg(0);
-    setMsg('Iniciando...');
-    try {
-      await importYomitanZip(file, (msg, prog) => {
-        setMsg(msg);
-        setProg(prog);
-      }, lang === 'es' ? 'es' : 'en');
-
-      // Show success state briefly, then hide bar and reload in background
-      setSuccess(true);
-      setMsg('¡Instalado correctamente!');
-      setProg(100);
-      setTimeout(() => {
-        setIsImporting(false);
-        setSuccess(false);
-        setProg(0);
-        setMsg('');
-        loadInstalledDicts();
-      }, 1500);
-    } catch (err) {
-      setMsg('Error: ' + err.message);
-      setIsImporting(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleDeleteDict = async (title) => {
-    const ok = await showConfirm({
-      title: lang === 'es' ? '¿Eliminar diccionario?' : 'Delete dictionary?',
-      message: lang === 'es' ? `¿Seguro que quieres borrar el diccionario "${title}"?` : `Are you sure you want to delete the dictionary "${title}"?`,
-      type: 'danger',
-      confirmText: lang === 'es' ? 'Borrar' : 'Delete',
-    });
-    if (ok) {
-      // Immediately remove from state so the UI updates instantly
-      setInstalledDicts(prev => prev.filter(d => d.title !== title));
-      try {
-        await deleteDictionary(title);
-      } catch (err) {
-        console.error('Error deleting dictionary:', err);
-        // Reload on error to restore correct state
-        await loadInstalledDicts();
-      }
-    }
-  };
-
-  const handleToggleDict = (title) => {
-    const disabled = settings.disabledDictionaries || [];
-    let newDisabled;
-    if (disabled.includes(title)) {
-      newDisabled = disabled.filter(t => t !== title);
-    } else {
-      newDisabled = [...disabled, title];
-    }
-    onSaveSettings({
-      ...settings,
-      disabledDictionaries: newDisabled
-    });
-  };
-
-  const [draggingIdx, setDraggingIdx] = useState(null);
-  const [draggingCategory, setDraggingCategory] = useState(null);
-
-  const handleDragStart = (e, index, category) => {
-    setDraggingIdx(index);
-    setDraggingCategory(category);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e, targetIdx, category) => {
-    e.preventDefault();
-    if (draggingIdx === null || draggingCategory !== category || draggingIdx === targetIdx) return;
-    
-    const isFreq = category === 'freq';
-    const categoryDicts = installedDicts.filter(d => isFreq ? isFreqDict(d) : isTermDict(d));
-    const otherDicts = installedDicts.filter(d => isFreq ? isTermDict(d) : isFreqDict(d));
-    
-    const reordered = [...categoryDicts];
-    const [removed] = reordered.splice(draggingIdx, 1);
-    reordered.splice(targetIdx, 0, removed);
-    
-    const newAll = [];
-    let catCounter = 0;
-    let otherCounter = 0;
-    
-    installedDicts.forEach(d => {
-      if (isFreq ? isFreqDict(d) : isTermDict(d)) {
-        newAll.push(reordered[catCounter++]);
-      } else {
-        newAll.push(otherDicts[otherCounter++]);
-      }
-    });
-    
-    setInstalledDicts(newAll);
-    
-    onSaveSettings({
-      ...settings,
-      dictionaryOrder: newAll.map(d => d.title)
-    });
-    
-    setDraggingIdx(targetIdx);
-  };
-
-  const handleDragEnd = () => {
-    setDraggingIdx(null);
-    setDraggingCategory(null);
-  };
-
-  const handleInstallBundledDict = async (assetName, isFreq = false) => {
-    const setMsg = isFreq ? setFreqImportMsg : setDictImportMsg;
-    const setProg = isFreq ? setFreqImportProgress : setDictImportProgress;
-    const setIsImporting = isFreq ? setIsImportingFreq : setIsImportingDict;
-    const setSuccess = isFreq ? setFreqImportSuccess : setDictImportSuccess;
-
-    setInstallingBundledAsset(assetName);
-    setIsImporting(true);
-    setSuccess(false);
-    setMsg(lang === 'es' ? 'Cargando archivo integrado...' : 'Loading bundled file...');
-    setProg(0);
-    
-    try {
-      setProg(5);
-      setMsg(lang === 'es' ? 'Instalando diccionario integrado...' : 'Installing bundled dictionary...');
-      await installBundledDictionary(assetName, lang === 'es' ? 'es' : 'en', (msg, prog) => {
-        setMsg(msg);
-        setProg(prog);
-      });
-      
-      // Show success, then hide bar and reload dicts
-      setSuccess(true);
-      setMsg(lang === 'es' ? '¡Instalado correctamente!' : 'Installed successfully!');
-      setProg(100);
-      setIsLibraryModalOpen(false);
-      // Reload dicts immediately so they appear in the list right away
-      await loadInstalledDicts();
-      setTimeout(() => {
-        setIsImporting(false);
-        setSuccess(false);
-        setProg(0);
-        setMsg('');
-        setInstallingBundledAsset(null);
-      }, 1500);
-    } catch (err) {
-      alert((lang === 'es' ? 'Error instalando diccionario: ' : 'Dictionary install failed: ') + err.message);
-      setIsImporting(false);
-      setInstallingBundledAsset(null);
-    }
-  };
-
-  const renderDictList = (isFreq) => {
-    const list = installedDicts.filter(d => isFreq ? isFreqDict(d) : isTermDict(d));
-    if (list.length === 0) {
-      return (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px', border: '1px dashed var(--border-light)', borderRadius: '8px', fontSize: '0.85rem' }}>
-          {lang === 'es' ? 'Ningún elemento instalado' : 'No items installed'}
-        </div>
-      );
-    }
-    
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {list.map((dict, idx) => {
-          const isDisabled = settings.disabledDictionaries?.includes(dict.title);
-          const isDragging = draggingCategory === (isFreq ? 'freq' : 'term') && draggingIdx === idx;
-          
-          return (
-            <div 
-              key={dict.title}
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx, isFreq ? 'freq' : 'term')}
-              onDragOver={(e) => handleDragOver(e, idx, isFreq ? 'freq' : 'term')}
-              onDragEnd={handleDragEnd}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: isDragging ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-card)',
-                border: isDragging ? '1px dashed #6366f1' : '1px solid var(--border-light)',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                cursor: 'grab',
-                opacity: isDragging ? 0.6 : 1,
-                transition: 'background 0.2s, border 0.2s'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                <div style={{ color: 'var(--text-muted)', cursor: 'grab', display: 'flex', alignItems: 'center' }}>
-                  <ArrowUpDown size={16} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {dict.title}
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {dict.description || (lang === 'es' ? 'Sin descripción disponible.' : 'No description available.')}
-                  </div>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px' }}>
-                <button 
-                  onClick={() => handleToggleDict(dict.title)}
-                  style={{
-                    background: isDisabled ? 'var(--bg-card-hover)' : '#8b5cf6',
-                    border: isDisabled ? '1px solid var(--border-light)' : 'none',
-                    color: isDisabled ? 'var(--text-muted)' : '#fff',
-                    borderRadius: '16px',
-                    minWidth: '32px',
-                    height: '32px',
-                    padding: '0 10px',
-                    gap: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    marginRight: '8px',
-                    transition: 'all 0.2s'
-                  }}
-                  title={isDisabled ? (lang === 'es' ? 'Activar diccionario' : 'Enable dictionary') : (lang === 'es' ? 'Desactivar diccionario' : 'Disable dictionary')}
-                  aria-label={isDisabled ? (lang === 'es' ? 'Activar diccionario' : 'Enable dictionary') : (lang === 'es' ? 'Desactivar diccionario' : 'Disable dictionary')}
-                >
-                  <BookOpen size={14} />
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{isDisabled ? (lang === 'es' ? 'Inactivo' : 'Off') : (lang === 'es' ? 'Activo' : 'On')}</span>
-                </button>
-                
-                <button 
-                  onClick={() => handleDeleteDict(dict.title)}
-                  style={{
-                    background: 'var(--bg-card-hover)',
-                    border: '1px solid var(--border-light)',
-                    color: '#ef4444',
-                    borderRadius: '50%',
-                    width: '32px',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  title={lang === 'es' ? 'Eliminar' : 'Delete'}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderActions = (isFreq) => {
-    const isImporting = isFreq ? isImportingFreq : isImportingDict;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => setIsLibraryModalOpen(isFreq ? 'freq' : 'dict')}
-          style={{
-            background: 'linear-gradient(135deg, #ff5e62, #ff9966)',
-            border: 'none',
-            borderRadius: '9999px',
-            color: '#fff',
-            padding: '8px 20px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            boxShadow: '0 4px 6px -1px rgba(255, 94, 98, 0.2)',
-            transition: 'all 0.2s'
-          }}
-        >
-          <span>{lang === 'es' ? 'Instalar desde nuestra biblioteca' : 'Install from our library'}</span>
-        </button>
-
-        <label 
-          style={{
-            background: '#8b5cf6',
-            border: 'none',
-            borderRadius: '9999px',
-            color: '#fff',
-            padding: '8px 20px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            cursor: isImporting ? 'not-allowed' : 'pointer',
-            opacity: isImporting ? 0.6 : 1,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            transition: 'all 0.2s'
-          }}
-        >
-          <span>{lang === 'es' ? 'Instalar desde archivo' : 'Install from file'}</span>
-          <input 
-            type="file" 
-            accept=".zip"
-            onChange={(e) => handleYomitanUpload(e, isFreq)}
-            disabled={isImporting}
-            style={{ display: 'none' }}
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={() => alert(lang === 'es' ? 'Puedes importar aquí un paquete de diccionario (.zip) que ya tengas en tu equipo.' : 'You can import a dictionary package (.zip) already stored on your device.')}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: 'none',
-            borderRadius: '50%',
-            width: '32px',
-            height: '32px',
-            color: 'rgba(255,255,255,0.6)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            marginLeft: 'auto',
-            transition: 'all 0.2s'
-          }}
-        >
-          <Info size={16} />
-        </button>
-      </div>
-    );
-  };
-
-  const renderLibraryModal = () => {
-    const showDicts = isLibraryModalOpen === 'dict';
-    const showFreqs = isLibraryModalOpen === 'freq';
-
-    const presetDicts = [
-      {
-        title: 'JMdict (Español)',
-        matchTitle: 'JMdict (Spanish)',
-        desc: lang === 'es' ? 'Diccionario integrado de japonés a español.' : 'Bundled Japanese to Spanish dictionary.',
-        asset: 'JMdict_spanish.zip'
-      },
-      {
-        title: 'JMdict (English)',
-        matchTitle: 'JMdict [',
-        desc: lang === 'es' ? 'Diccionario integrado de japonés a inglés.' : 'Bundled Japanese to English dictionary.',
-        asset: 'JMdict_english.zip'
-      }
-    ];
-
-    const presetFreqs = [
-      {
-        title: 'Netflix Frecuencias',
-        matchTitle: 'Netflix',
-        desc: 'Frecuencia basada en diálogos y subtítulos de Netflix Japón.',
-        asset: 'frequency-netflix.zip'
-      },
-      {
-        title: 'Jiten (Anime) Frecuencias',
-        matchTitle: 'Jiten (Anime)',
-        desc: 'Frecuencia de vocabulario usado en anime.',
-        asset: 'frequency-jiten-anime.zip'
-      },
-      {
-        title: 'Novelas Frecuencias',
-        matchTitle: 'Novels',
-        desc: 'Frecuencia de vocabulario en novelas literarias y ligeras.',
-        asset: 'frequency-novels.zip'
-      },
-      {
-        title: 'Novelas Visuales (VN) Frecuencias',
-        matchTitle: 'VN Freq',
-        desc: 'Frecuencia de términos de novelas visuales japonesas.',
-        asset: 'frequency-visual-novels.zip'
-      },
-      {
-        title: 'YouTube Frecuencias',
-        matchTitle: 'Youtube',
-        desc: 'Frecuencias de diálogos de vlogs y videos populares de YouTube Japón.',
-        asset: 'frequency-youtube.zip'
-      },
-      {
-        title: 'Acento tonal japonés',
-        matchTitle: 'アクセント辞典',
-        desc: lang === 'es' ? 'Datos locales de acento tonal para mostrar sus gráficos en el popup.' : 'Local pitch accent data used by the reading popup.',
-        asset: 'pitch-accent-japanese.zip'
-      }
-    ];
-
-    return (
-      <div 
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setIsLibraryModalOpen(false);
-        }}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 99999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}
-      >
-        <div style={{
-          background: '#121214',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '12px',
-          width: '540px',
-          maxWidth: '100%',
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-          overflow: 'hidden'
-        }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
-              {lang === 'es' ? 'Biblioteca de Recursos' : 'Resource Library'}
-            </h3>
-            <button 
-              onClick={() => setIsLibraryModalOpen(false)}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            {/* Dictionaries Section */}
-            {showDicts && (
-              <div>
-                <h4 style={{ color: '#8b5cf6', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', marginTop: 0 }}>
-                  {lang === 'es' ? '📖 Diccionarios de Traducción' : '📖 Translation Dictionaries'}
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 0, marginBottom: '12px', lineHeight: '1.4' }}>
-                  {lang === 'es'
-                    ? 'Los archivos ya vienen dentro de la app y funcionan sin conexión. Pulsa «Añadir» para importarlos a tu biblioteca local.'
-                    : 'The files are already included in the app and work offline. Select “Add” to import them into your local library.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {presetDicts.map(d => {
-                    const isInstalling = installingBundledAsset === d.asset;
-                    const isInstalled = installedDicts.some(installed => installed.title.toLowerCase().startsWith(d.matchTitle.toLowerCase()));
-
-                    return (
-                      <div key={d.title} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>{d.title}</div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '3px' }}>{d.desc}</div>
-                        </div>
-                        <button
-                          disabled={isImportingDict || isInstalled}
-                          onClick={() => handleInstallBundledDict(d.asset, false)}
-                          style={{
-                            background: isInstalling 
-                              ? 'rgba(255,255,255,0.1)' 
-                              : isInstalled 
-                                ? 'rgba(52, 211, 153, 0.15)' 
-                                : 'var(--primary)',
-                            color: isInstalled ? '#34d399' : '#fff',
-                            border: isInstalled ? '1px solid rgba(52, 211, 153, 0.3)' : 'none',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            cursor: isInstalled 
-                              ? 'default' 
-                              : isImportingDict 
-                                ? 'not-allowed' 
-                                : 'pointer',
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isInstalling
-                            ? (lang === 'es' ? `${dictImportProgress}%` : `${dictImportProgress}%`)
-                            : isInstalled 
-                              ? (lang === 'es' ? '✓ Instalado' : '✓ Installed') 
-                              : (lang === 'es' ? 'Añadir' : 'Add')}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Frequencies Section */}
-            {showFreqs && (
-              <div>
-                <h4 style={{ color: '#ff9966', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', marginTop: 0 }}>
-                  {lang === 'es' ? '📊 Listas de Palabras Frecuentes' : '📊 Frequency Word Lists'}
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 0, marginBottom: '12px', lineHeight: '1.4' }}>
-                  {lang === 'es' 
-                    ? 'Estas listas vienen incluidas con la aplicación. Instala solo las que quieras usar.'
-                    : 'These lists are bundled with the app. Install only the ones you want to use.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {presetFreqs.map(d => {
-                    const isInstalling = installingBundledAsset === d.asset;
-                    const isInstalled = installedDicts.some(installed => installed.title.toLowerCase().startsWith(d.matchTitle.toLowerCase()));
-
-                    return (
-                      <div key={d.title} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>{d.title}</div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '3px' }}>{d.desc}</div>
-                        </div>
-                        <button
-                          disabled={isImportingFreq || isInstalled}
-                          onClick={() => handleInstallBundledDict(d.asset, true)}
-                          style={{
-                            background: isInstalling 
-                              ? 'rgba(255,255,255,0.1)' 
-                              : isInstalled 
-                                ? 'rgba(52, 211, 153, 0.15)' 
-                                : 'var(--primary)',
-                            color: isInstalled ? '#34d399' : '#fff',
-                            border: isInstalled ? '1px solid rgba(52, 211, 153, 0.3)' : 'none',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            cursor: isInstalled 
-                              ? 'default' 
-                              : isImportingFreq 
-                                ? 'not-allowed' 
-                                : 'pointer',
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isInstalling
-                            ? `${freqImportProgress}%`
-                            : isInstalled 
-                              ? (lang === 'es' ? '✓ Instalado' : '✓ Installed') 
-                              : (lang === 'es' ? 'Añadir' : 'Add')}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // Synchronize CSS variable for card width and cover fit
   useEffect(() => {
     document.documentElement.style.setProperty('--card-width', `${cardWidth}px`);
@@ -1222,8 +672,16 @@ const Library = React.memo(function Library({
   const [gDriveTokens, setGDriveTokens] = useState(localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null);
   const [gDriveUserEmail, setGDriveUserEmail] = useState(localStorage.getItem('gdrive_user_email') || '');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(localStorage.getItem('gdrive_autosync_enabled') === 'true');
-  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem('gdrive_last_sync_time') || '');
+  const [lastSyncTime, setLastSyncTime] = useState(localStorage.getItem(LAST_SYNC_STORAGE_KEY) || '');
   const [gDriveSyncStatus, setGDriveSyncStatus] = useState(localStorage.getItem('gdrive_tokens') ? 'authorized' : 'disconnected'); // 'disconnected', 'authorized', 'syncing'
+  const cloudSyncInFlightRef = useRef(false);
+  const lastBackgroundSyncRef = useRef(0);
+
+  const markCloudSynced = () => {
+    const iso = new Date().toISOString();
+    localStorage.setItem(LAST_SYNC_STORAGE_KEY, iso);
+    setLastSyncTime(iso);
+  };
 
   // Load and check token on startup, run sync if auto-sync is enabled
   useEffect(() => {
@@ -1238,13 +696,15 @@ const Library = React.memo(function Library({
           localStorage.setItem('gdrive_user_email', info.email);
           
           if (localStorage.getItem('gdrive_autosync_enabled') === 'true') {
-            // Perform automatic background restore if cloud file is newer
-            await performCloudSync(tokens, 'download-only');
+            // The library mounts again when a book is closed: give the reader a moment to save
+            // its last position, then merge with Drive in both directions
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await performCloudSync(tokens, 'bidirectional');
           }
         } catch (err) {
           console.warn('Failed to validate startup Google Drive tokens:', err);
-          // Don't auto-disconnect if it's just offline (no network)
-          if (navigator.onLine) {
+          // Keep the session through temporary failures; sign out only when Google revoked it
+          if (isGoogleSessionRevoked(err)) {
             setGDriveSyncStatus('disconnected');
             setGDriveUserEmail('');
             localStorage.removeItem('gdrive_tokens');
@@ -1259,65 +719,18 @@ const Library = React.memo(function Library({
   // Connect Google Drive Folder via loopback OAuth Flow
   const handleConnectGDrive = async () => {
     try {
-      if (!gDriveClientId.trim()) {
-        alert(lang === 'es' ? 'Introduce tu Client ID para continuar.' : 'Please enter your Client ID to continue.');
-        return;
-      }
       setGDriveSyncStatus('syncing');
-
-      if (Capacitor.getPlatform() === 'android') {
-        const androidClientId = GDRIVE_ANDROID_CLIENT_ID;
-        const nativeTokens = await authorizeGoogleDriveNative();
-        localStorage.setItem('gdrive_client_id', androidClientId);
-        localStorage.removeItem('gdrive_client_secret');
-        localStorage.setItem('gdrive_tokens', JSON.stringify(nativeTokens));
-        setGDriveClientId(androidClientId);
-        setGDriveClientSecret('');
-        setGDriveTokens(nativeTokens);
-
-        const info = await googleDriveService.getUserInfo(nativeTokens, androidClientId, '');
-        localStorage.setItem('gdrive_user_email', info.email);
-        setGDriveUserEmail(info.email);
-        setGDriveSyncStatus('authorized');
-        alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
-        await performCloudSync(nativeTokens, 'bidirectional');
-        return;
-      }
-
-      if (!window.electronAPI || !window.electronAPI.startGoogleOauth) {
-        throw new Error(lang === 'es'
-          ? 'Conecta Google Drive desde la app de Android o desde la app de escritorio.'
-          : 'Connect Google Drive from the Android app or the desktop app.');
-      }
-
-      // 1. Run local loopback callback server and open browser
-      const oauthResult = await window.electronAPI.startGoogleOauth(gDriveClientId.trim());
-      if (!oauthResult || !oauthResult.code) {
-        throw new Error('No authorization code returned from loopback server');
-      }
-
-      // 2. Exchange authorization code + PKCE verifier for access + refresh token
-      const tokenData = await googleDriveService.exchangeCodeForTokens(
-        oauthResult.code,
-        oauthResult.redirectUri,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim(),
-        oauthResult.codeVerifier
-      );
-
-      // 3. Fetch connected user information
-      const info = await googleDriveService.getUserInfo(tokenData, gDriveClientId.trim(), gDriveClientSecret.trim());
-      setGDriveUserEmail(info.email);
-
-      // Save credentials & tokens
-      localStorage.setItem('gdrive_client_id', gDriveClientId.trim());
-      localStorage.setItem('gdrive_client_secret', gDriveClientSecret.trim());
-      localStorage.setItem('gdrive_tokens', JSON.stringify(tokenData));
-      localStorage.setItem('gdrive_user_email', info.email);
-
-      setGDriveTokens(tokenData);
+      const session = await signInWithGoogle();
+      setGDriveClientId(session.clientId);
+      setGDriveClientSecret(session.clientSecret);
+      setGDriveTokens(session.tokens);
+      setGDriveUserEmail(session.email);
+      setIsAutoSyncEnabled(true);
       setGDriveSyncStatus('authorized');
-      alert(lang === 'es' ? `¡Cuenta conectada con éxito! (${info.email})` : `Account successfully connected! (${info.email})`);
+      showToast(lang === 'es'
+        ? `Sesión iniciada como ${session.email}. Tu progreso se guardará en tu Google Drive.`
+        : `Signed in as ${session.email}. Your progress will be saved to your Google Drive.`, 'success');
+      await performCloudSync(session.tokens, 'bidirectional');
     } catch (err) {
       setGDriveSyncStatus(gDriveTokens ? 'authorized' : 'disconnected');
       console.error('Google OAuth connection failed:', err);
@@ -1378,9 +791,7 @@ const Library = React.memo(function Library({
         gDriveClientSecret.trim()
       );
 
-      const timeStr = new Date().toLocaleString();
-      setLastSyncTime(timeStr);
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
+      markCloudSynced();
       setGDriveSyncStatus('authorized');
       alert(lang === 'es'
         ? `✅ Copia de seguridad completa subida a Google Drive con éxito.\nArchivo: yoru_reader_full_backup.zip`
@@ -1512,9 +923,10 @@ const Library = React.memo(function Library({
         }
       }
 
-      const timeStr = new Date().toLocaleString();
-      localStorage.setItem('gdrive_last_sync_time', timeStr);
-      setLastSyncTime(timeStr);
+      const { importMetaPacksFromZip } = await import('../utils/yomitanDB');
+      await importMetaPacksFromZip(zip);
+
+      markCloudSynced();
 
       showToast(lang === 'es'
         ? '✅ Copia de seguridad restaurada con éxito. Reiniciando...'
@@ -1532,58 +944,84 @@ const Library = React.memo(function Library({
   };
 
 
-  // Generic background sync helper using API
-  const performCloudSync = async (tokens, mode = 'full') => {
+  // Background sync of the JSON database with Google Drive. Never replaces one side with the
+  // other: both are merged (mergeDatabaseExports), this device's copy is backed up before the
+  // merge is written, and an upload that would leave Drive with fewer books is refused.
+  // 'bidirectional': apply the merge here (reloading if anything changed) and upload it.
+  // 'upload-only': upload the merge when Drive lacks something; never touches local data.
+  const performCloudSync = async (tokens, mode: 'bidirectional' | 'upload-only' = 'bidirectional') => {
+    if (cloudSyncInFlightRef.current) return;
+    cloudSyncInFlightRef.current = true;
+    // Read the client from storage: right after signing in, the state above is not updated yet
+    const clientId = (localStorage.getItem('gdrive_client_id') ?? gDriveClientId).trim();
+    const clientSecret = (localStorage.getItem('gdrive_client_secret') ?? (clientId === DEFAULT_GDRIVE_CLIENT_ID ? DEFAULT_GDRIVE_CLIENT_SECRET : '')).trim();
     try {
-      const importedData = await googleDriveService.downloadSyncFile(
-        tokens,
-        gDriveClientId.trim(),
-        gDriveClientSecret.trim()
-      );
+      const cloudData = await googleDriveService.downloadSyncFile(tokens, clientId, clientSecret);
+      const localData = await db.exportFullDatabase();
 
-      if (!importedData) {
-        // If file doesn't exist and not download-only, upload current db
-        if (mode !== 'download-only') {
-          const fullExport = await db.exportFullDatabase();
-          await googleDriveService.uploadSyncFile(
-            tokens,
-            gDriveClientId.trim(),
-            fullExport,
-            gDriveClientSecret.trim()
-          );
-        }
+      if (!cloudData) {
+        await googleDriveService.uploadSyncFile(tokens, clientId, localData, clientSecret);
+        markCloudSynced();
         return;
       }
 
-      // Check modification timestamps if available in backup object
-      const cloudTime = importedData.exportDate ? new Date(importedData.exportDate).getTime() : 0;
-      const localLastTimeStr = localStorage.getItem('gdrive_last_sync_time');
-      const localLastTime = localLastTimeStr ? new Date(localLastTimeStr).getTime() : 0;
+      const cloudTime = cloudData.exportDate ? Date.parse(cloudData.exportDate) || 0 : 0;
+      const { merged, localChanged, cloudChanged } = mergeDatabaseExports(localData, cloudData, cloudTime > readLastSyncMs());
 
-      if (cloudTime > localLastTime) {
-        // Cloud has newer data, auto-restore
-        await db.importFullDatabase(importedData);
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        console.log("Auto-sincronizada base de datos desde Google Drive.");
-        window.location.reload();
-      } else if (mode !== 'download-only') {
-        // Local is newer, upload current state
-        const fullExport = await db.exportFullDatabase();
-        await googleDriveService.uploadSyncFile(
-          tokens,
-          gDriveClientId.trim(),
-          fullExport,
-          gDriveClientSecret.trim()
-        );
-        const timeStr = new Date().toLocaleString();
-        localStorage.setItem('gdrive_last_sync_time', timeStr);
-        setLastSyncTime(timeStr);
+      if (localChanged && mode === 'bidirectional') {
+        await db.saveSyncBackup(localData);
+        await db.importFullDatabase(merged);
+      }
+      if (cloudChanged) {
+        if (countLiveBooks(merged) < countLiveBooks(cloudData)) {
+          throw new Error('Refusing to upload a library with fewer books than the copy in Google Drive');
+        }
+        await googleDriveService.uploadSyncFile(tokens, clientId, merged, clientSecret);
+      }
+      if (mode === 'bidirectional' || !localChanged) markCloudSynced();
+
+      // Reload to show what came from Drive, at most once a minute so a bad merge cannot loop
+      if (localChanged && mode === 'bidirectional') {
+        const lastReload = Number(sessionStorage.getItem('yoru_sync_reload_at')) || 0;
+        if (Date.now() - lastReload > 60_000) {
+          sessionStorage.setItem('yoru_sync_reload_at', String(Date.now()));
+          console.log("Progreso combinado con Google Drive.");
+          window.location.reload();
+        }
       }
     } catch (err) {
       console.error('Background cloud sync failed:', err);
+    } finally {
+      cloudSyncInFlightRef.current = false;
     }
   };
+
+  // Upload progress when the app goes to the background (switching apps, closing the window),
+  // and every few minutes while it stays open
+  useEffect(() => {
+    const BACKGROUND_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+    const PERIODIC_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    const syncInBackground = () => {
+      if (localStorage.getItem('gdrive_autosync_enabled') !== 'true') return;
+      const tokens = localStorage.getItem('gdrive_tokens') ? JSON.parse(localStorage.getItem('gdrive_tokens')) : null;
+      if (!tokens) return;
+      const now = Date.now();
+      if (now - lastBackgroundSyncRef.current < BACKGROUND_SYNC_MIN_INTERVAL_MS) return;
+      lastBackgroundSyncRef.current = now;
+      performCloudSync(tokens, 'upload-only');
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') syncInBackground();
+    };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') syncInBackground();
+    }, PERIODIC_SYNC_INTERVAL_MS);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gDriveClientId, gDriveClientSecret]);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -1919,6 +1357,27 @@ const Library = React.memo(function Library({
   const [editDescription, setEditDescription] = useState('');
 
   // Android back button: close the top-most panel, then return to the library tab.
+  // Title shown in the phone top bar while a settings section is open.
+  const settingsSectionTitle = (sectionId: string) => {
+    const titles = {
+      'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
+      'sec-dicts': ['Diccionarios', 'Dictionaries'],
+      'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
+      'sec-text-style': ['Estilo de texto', 'Text Style'],
+      'sec-stats': ['Estadísticas', 'Statistics'],
+      'sec-reading-day': ['Día de lectura', 'Reading Day'],
+      'sec-vocab-manage': ['Vocabulario y Anki', 'Vocabulary & Anki'],
+      'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
+      'sec-discord': ['Discord', 'Discord'],
+      'sec-backup': ['Copias de seguridad', 'Backups'],
+      'sec-updates': ['Actualizaciones', 'Updates'],
+      'sec-about': ['Acerca de', 'About'],
+      'sec-danger': ['Zona de peligro', 'Danger Zone'],
+    }[sectionId];
+    if (!titles) return lang === 'es' ? 'Configuración' : 'Settings';
+    return lang === 'es' ? titles[0] : titles[1];
+  };
+
   const libraryBackSteps: [boolean, () => void][] = [
     [Boolean(bindingKeyAction), () => setBindingKeyAction(null)],
     [Boolean(activeMenuBookId), () => setActiveMenuBookId(null)],
@@ -1937,6 +1396,7 @@ const Library = React.memo(function Library({
     [isDisplaySettingsOpen, () => setIsDisplaySettingsOpen(false)],
     [isSidebarOpen, () => setIsSidebarOpen(false)],
     [selectMode, () => { setSelectMode(false); setSelectedBookIds([]); }],
+    [activeTab === 'settings' && isMobile && mobileSettingsSectionOpen, () => setMobileSettingsSectionOpen(false)],
     [activeTab !== 'library', () => setActiveTab('library')],
   ];
   useBackHandler(libraryBackSteps.some(([open]) => open), () => {
@@ -2404,7 +1864,7 @@ const Library = React.memo(function Library({
       );
       tooltip = 'Completado';
     } else if (status === 'reading') {
-      color = '#3b82f6'; // blue
+      color = 'var(--primary)';
       icon = (
         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
           <path d="M8 5v14l11-7z"></path>
@@ -2445,22 +1905,8 @@ const Library = React.memo(function Library({
     return (
       <div 
         title={tooltip}
-        style={{
-          position: 'absolute',
-          top: '8px',
-          right: '40px',
-          width: '20px',
-          height: '20px',
-          borderRadius: '50%',
-          backgroundColor: color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-          zIndex: 10,
-          border: '1px solid rgba(255,255,255,0.1)'
-        }}
+        className="book-status-badge"
+        style={{ color }}
       >
         {icon}
       </div>
@@ -2471,9 +1917,21 @@ const Library = React.memo(function Library({
     if (selectMode) return null;
     
     const isMenuOpen = activeMenuBookId === book.id;
+
+    // On phones the menu is portalled and fixed so it never hides behind the bottom bar or the
+    // screen edge: it opens downward from the ⋮ or, in the lower half, upward.
+    let floatingStyle: React.CSSProperties | null = null;
+    if (isMenuOpen && isMobile && menuAnchor) {
+      const width = Math.min(248, window.innerWidth - 24);
+      const left = Math.min(Math.max(12, menuAnchor.right - width), window.innerWidth - 12 - width);
+      floatingStyle = menuAnchor.bottom > window.innerHeight * 0.55
+        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - 64px)` }
+        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - 84px - var(--yoru-safe-bottom, 0px))` };
+    }
+    const placeMenu = (node) => (floatingStyle ? createPortal(node, document.body) : node);
     
     return (
-      <div className="card-menu-wrapper" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: isMenuOpen ? 9999 : 50 }}>
+      <div className="card-menu-wrapper" style={{ zIndex: isMenuOpen ? 9999 : 50 }}>
         <button 
           className="card-menu-trigger-btn"
           onClick={(e) => {
@@ -2481,77 +1939,50 @@ const Library = React.memo(function Library({
             // Detect if trigger is in the right half of screen - open dropdown to the left, else to the right
             const rect = e.currentTarget.getBoundingClientRect();
             setMenuOpenLeft(rect.right > window.innerWidth / 2);
+            setMenuAnchor(rect);
             setActiveMenuBookId(isMenuOpen ? null : book.id);
           }}
-          style={{
-            background: 'rgba(28, 28, 32, 0.75)',
-            backdropFilter: 'blur(4px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '50%',
-            width: '28px',
-            height: '28px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'rgba(255, 255, 255, 0.85)',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-          }}
+          aria-label={lang === 'es' ? 'Opciones del libro' : 'Book options'}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
         >
           <MoreVertical size={14} />
         </button>
 
-        {isMenuOpen && (
+        {/* Opening "to the left" means anchoring the menu's right edge to the button. */}
+        {isMenuOpen && placeMenu(
           <div 
-            className="book-context-menu-dropdown"
+            className={`book-context-menu-dropdown${floatingStyle ? ' is-floating' : ''}`}
+            role="menu"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              top: '32px',
-              // Opening "to the left" means anchoring the menu's right edge to the button.
-              ...(menuOpenLeft ? { right: '0' } : { left: '0' }),
-              width: '190px',
-              maxWidth: 'calc(100vw - 24px)',
-              maxHeight: '420px',
-              overflowY: 'auto',
-              background: 'rgba(28, 28, 35, 0.98)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              padding: '6px 0',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-              animation: 'tabViewFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-              zIndex: 1000
-            }}
+            style={floatingStyle || (menuOpenLeft ? { right: 0 } : { left: 0 })}
           >
-            <button 
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
+              onClick={() => {
+                setActiveMenuBookId(null);
+                onSelectBook(book);
+              }}
+            >
+              <Play size={16} /> {lang === 'es' ? 'Seguir leyendo' : 'Continue reading'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
               onClick={() => {
                 setActiveMenuBookId(null);
                 onOpenInfo(book);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-main)',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease'
-              }}
-              className="context-menu-item-btn"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Info size={14} style={{ color: 'rgba(255, 255, 255, 0.7)' }} /> {lang === 'es' ? 'Ver detalles' : 'Show details'}
-              </div>
+              <Info size={16} /> {lang === 'es' ? 'Ver detalles' : 'Show details'}
             </button>
-            
-            <button 
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn"
               onClick={() => {
                 setActiveMenuBookId(null);
                 setEditingBook(book);
@@ -2559,73 +1990,44 @@ const Library = React.memo(function Library({
                 setEditHideCover(book.hideCover === true);
                 setEditDescription(book.description || '');
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease'
-              }}
-              className="context-menu-item-btn"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Pencil size={14} style={{ color: 'rgba(255, 255, 255, 0.7)' }} /> {lang === 'es' ? 'Editar título' : 'Edit title'}
-              </div>
+              <Pencil size={16} /> {lang === 'es' ? 'Editar título' : 'Edit title'}
             </button>
 
-            <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />
-            <div style={{ padding: '2px 0' }}>
-              <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', padding: '4px 12px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{lang === 'es' ? 'Estado' : 'Status'}</div>
-              {[
-                { key: 'reading', label: lang === 'es' ? 'En progreso' : 'In progress', color: '#3b82f6', icon: <Play size={12} fill="currentColor" /> },
-                { key: 'completed', label: lang === 'es' ? 'Completado' : 'Completed', color: '#10b981', icon: <Check size={12} strokeWidth={3} /> },
-                { key: 'paused', label: lang === 'es' ? 'Pausado' : 'Paused', color: '#f59e0b', icon: <Pause size={12} fill="currentColor" /> },
-                { key: 'planning', label: lang === 'es' ? 'Planeado' : 'Planned', color: '#a855f7', icon: <Clock size={12} /> },
-                { key: 'dropped', label: lang === 'es' ? 'Dropeado' : 'Dropped', color: '#9ca3af', icon: <X size={12} strokeWidth={3} /> },
-                { key: 'unread', label: lang === 'es' ? 'Sin iniciar' : 'Not started', color: '#ef4444', icon: <RotateCcw size={12} /> }
-              ].map(opt => {
-                const isCurrent = book.status === opt.key || (opt.key === 'unread' && !book.status);
-                return (
-                  <button 
-                    key={opt.key}
-                    onClick={async () => {
-                      setActiveMenuBookId(null);
-                      await onUpdateBookDetails(book.id, { status: opt.key });
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      width: '100%',
-                      padding: '5px 12px',
-                      background: isCurrent ? 'rgba(255,255,255,0.06)' : 'none',
-                      border: 'none',
-                      color: isCurrent ? opt.color : 'rgba(255,255,255,0.8)',
-                      fontWeight: isCurrent ? 600 : 400,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'background 0.15s ease'
-                    }}
-                    className="context-menu-item-btn"
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', color: isCurrent ? opt.color : 'rgba(255,255,255,0.4)' }}>{opt.icon}</span>
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            <div className="context-menu-separator" />
+            <div className="context-menu-label">{lang === 'es' ? 'Estado' : 'Status'}</div>
+            {[
+              { key: 'reading', label: lang === 'es' ? 'Leyendo' : 'Reading' },
+              { key: 'completed', label: lang === 'es' ? 'Terminado' : 'Completed' },
+              { key: 'paused', label: lang === 'es' ? 'En pausa' : 'Paused' },
+              { key: 'planning', label: lang === 'es' ? 'Pendiente' : 'Planned' },
+              { key: 'dropped', label: lang === 'es' ? 'Abandonado' : 'Dropped' },
+              { key: 'unread', label: lang === 'es' ? 'Sin empezar' : 'Not started' }
+            ].map(opt => {
+              const isCurrent = book.status === opt.key || (opt.key === 'unread' && !book.status);
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isCurrent}
+                  className={`context-menu-item-btn context-menu-status${isCurrent ? ' is-current' : ''}`}
+                  onClick={async () => {
+                    setActiveMenuBookId(null);
+                    await onUpdateBookDetails(book.id, { status: opt.key });
+                  }}
+                >
+                  <span className="context-menu-radio" aria-hidden="true" />
+                  {opt.label}
+                </button>
+              );
+            })}
 
-
-
-            <button 
+            <div className="context-menu-separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="context-menu-item-btn is-danger"
               onClick={async () => {
                 setActiveMenuBookId(null);
                 const ok = await showConfirm({
@@ -2638,23 +2040,8 @@ const Library = React.memo(function Library({
                   onDeleteBook(book.id);
                 }
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                color: '#ef4444',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s ease',
-                gap: '8px'
-              }}
-              className="context-menu-item-btn"
             >
-              <Trash2 size={14} /> {lang === 'es' ? 'Eliminar' : 'Delete'}
+              <Trash2 size={16} /> {lang === 'es' ? 'Eliminar…' : 'Delete…'}
             </button>
           </div>
         )}
@@ -2728,9 +2115,6 @@ const Library = React.memo(function Library({
               {/* Card Context Menu Trigger and Popup */}
               {renderBookCardMenu(book)}
 
-              {/* Status Badge overlay */}
-              {!selectMode && renderStatusBadge(book)}
-
               {/* Checkbox overlay when selectMode is active */}
               {selectMode && (
                 <div className="card-checkbox-container">
@@ -2764,6 +2148,9 @@ const Library = React.memo(function Library({
                     <span>{book.title}</span>
                   </div>
                 )}
+
+                {/* Status badge at the bottom right of the cover, clear of the title */}
+                {!selectMode && renderStatusBadge(book)}
 
                 {/* Progress badge at top left of cover */}
                 {showCardProgress && book.progress.percent > 0 && (
@@ -3290,7 +2677,7 @@ const Library = React.memo(function Library({
     const showDiagnostics = Capacitor.getPlatform() === 'android'
       && (settings.profileName || '').trim().toLowerCase() === 'zams';
     // Phones have no physical keyboard: hide the shortcuts section there.
-    const showKeyboardShortcuts = !isMobile && Capacitor.getPlatform() !== 'android';
+    const showKeyboardShortcuts = showDesktopIntegrations;
     const handleSliderChange = (val) => {
       onSaveSettings({ ...settings, fontSize: val });
     };
@@ -3405,11 +2792,14 @@ const Library = React.memo(function Library({
       return terms.every(term => tagsStr.toLowerCase().includes(term));
     };
 
-    const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords) => {
+    const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords, description = '', danger = false) => {
       if (!matchesSearch(searchKeywords)) return null;
-      const isActive = activeSettingsSection === sectionId;
+      // On phones the list is a menu, not a sidebar: no "current section" highlight.
+      const isActive = !isMobile && activeSettingsSection === sectionId;
       return (
         <button
+          type="button"
+          className={`settings-nav-item${isActive ? ' is-active' : ''}${danger ? ' is-danger' : ''}`}
           onClick={() => {
             setActiveSettingsSection(sectionId);
             setSettingsSearchQuery('');
@@ -3419,25 +2809,17 @@ const Library = React.memo(function Library({
               scrollToSection(sectionId);
             }
           }}
-          style={{
-            background: isActive ? 'rgba(242, 200, 102, 0.08)' : 'none',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '8px 10px',
-            borderRadius: '6px',
-            fontSize: '0.86rem',
-            color: isActive ? 'var(--primary)' : 'var(--text-muted)',
-            width: '100%',
-            textAlign: 'left',
-            cursor: 'pointer',
-            fontWeight: isActive ? '600' : '500',
-            transition: 'all 0.15s ease'
-          }}
         >
-          {IconComponent && <IconComponent size={15} style={{ color: isActive ? 'var(--primary)' : 'var(--text-muted)', flexShrink: 0 }} />}
-          <span>{label}</span>
+          {IconComponent && (
+            <span className="settings-nav-icon" aria-hidden="true">
+              <IconComponent size={isMobile ? 18 : 15} />
+            </span>
+          )}
+          <span className="settings-nav-text">
+            <span className="settings-nav-label">{label}</span>
+            {isMobile && description && <span className="settings-nav-desc">{description}</span>}
+          </span>
+          {isMobile && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
         </button>
       );
     };
@@ -3466,53 +2848,54 @@ const Library = React.memo(function Library({
               {!isMobile && <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '2px 5px', borderRadius: '4px', border: '1px solid var(--border-light)', fontWeight: 'bold' }}>CTRL F</span>}
             </div>
   
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            <div className="settings-nav-groups">
               {/* General Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Settings size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'General' : 'General'}</span>
+                <div className="settings-nav-group-title">
+                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'General' : 'General'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e Idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general')}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip')}
-                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
+                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
+                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
+                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
                 </div>
               </div>
   
               {/* Reading Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <BookOpen size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
+                <div className="settings-nav-group-title">
+                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights')}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled')}
-                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
+                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
+                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno', lang === 'es' ? 'A qué hora empieza tu día' : 'When your day starts')}
                 </div>
               </div>
 
               {/* Integration Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Plug size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
+                <div className="settings-nav-group-title">
+                  <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management', Database, 'vocabulario vocabulary import export jpdb anki file frequency')}
-                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync')}
-                  {!isMobile && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
+                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
+                  {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
               </div>
   
               {/* Data Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#888899', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  <Database size={13} style={{ color: 'rgba(255,255,255,0.4)' }} /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
+                <div className="settings-nav-group-title">
+                  <Database size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad')}
-                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta')}
-                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS)}
-                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage')}
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library')}
+                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions')}
+                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics')}
+                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
                 </div>
               </div>
             </div>
@@ -3549,30 +2932,6 @@ const Library = React.memo(function Library({
         {/* Right Content Pane */}
         {showContent && (
           <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: '100px' }}>
-            {isMobile && (
-              <button 
-                type="button"
-                className="settings-back-btn" 
-                onClick={() => setMobileSettingsSectionOpen(false)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  marginBottom: '16px',
-                  alignSelf: 'flex-start',
-                  fontWeight: 600
-                }}
-              >
-                ← {lang === 'es' ? 'Volver' : 'Back'}
-              </button>
-            )}
           
           {showDiagnostics && matchesSearch(ABOUT_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-about') && (
             <div id="sec-about" className="settings-section-card" style={{ minWidth: 0 }}>
@@ -4004,8 +3363,8 @@ const Library = React.memo(function Library({
                   onChange={(e) => onSaveSettings({ ...settings, writingMode: e.target.value })}
                   className="migaku-select"
                 >
-                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (Escritura japonesa)' : 'Vertical (Japanese layout)'}</option>
-                  <option value="horizontal-tb">{lang === 'es' ? 'Horizontal (Escritura occidental)' : 'Horizontal (Western layout)'}</option>
+                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (japonés)' : 'Vertical (Japanese)'}</option>
+                  <option value="horizontal-tb">Horizontal</option>
                 </select>
               </div>
 
@@ -4277,6 +3636,105 @@ const Library = React.memo(function Library({
             </div>
           )}
 
+          {/* Card: Notificaciones (Android) */}
+          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (() => {
+            const es = lang === 'es';
+            const options = notificationSettings(settings);
+            const setOption = (key: string, value: boolean | number) => {
+              onSaveSettings({ ...settings, [key]: value });
+              if (value === true) {
+                void ensureNotificationPermission(true).then(() => getNotificationPermission()).then(setNotificationPermission);
+              }
+            };
+            const renderToggle = (key: string, checked: boolean, label: string, hint: string) => (
+              <div className="settings-row-control" key={key}>
+                <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>{label}</span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>{hint}</span>
+                </span>
+                <label className="migaku-switch">
+                  <input type="checkbox" checked={checked} onChange={(e) => setOption(key, e.target.checked)} />
+                  <span className="migaku-switch-slider"></span>
+                </label>
+              </div>
+            );
+            const groupTitle = (text: string) => (
+              <div style={{ fontSize: '0.72rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-dark)', margin: '16px 0 4px' }}>{text}</div>
+            );
+            return (
+              <div id="sec-notifications" className="settings-section-card">
+                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bell size={18} style={{ color: 'var(--primary)' }} />
+                  <span>{es ? 'Notificaciones' : 'Notifications'}</span>
+                </h3>
+                <p className="settings-card-desc">{es
+                  ? 'Cada grupo también se puede silenciar desde los ajustes de notificaciones de Android.'
+                  : 'Each group can also be silenced from Android\'s notification settings.'}</p>
+
+                {notificationPermission && notificationPermission !== 'granted' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', margin: '12px 0 4px', borderRadius: '10px', background: 'var(--yoru-gold-soft, rgba(242,200,102,0.13))' }}>
+                    <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-main)' }}>{es
+                      ? 'Android tiene apagadas las notificaciones de Yoru. El reproductor de lectura sigue funcionando, pero los avisos no.'
+                      : 'Android has Yoru\'s notifications off. The read-aloud player still works, the notices don\'t.'}</span>
+                    <button
+                      type="button"
+                      className="yoru-btn yoru-btn-primary"
+                      style={{ flexShrink: 0, padding: '6px 12px', fontSize: '0.8rem' }}
+                      onClick={async () => {
+                        if (notificationPermission === 'prompt' && await ensureNotificationPermission(true)) {
+                          setNotificationPermission('granted');
+                        } else {
+                          void YoruNotifications.openNotificationSettings().catch(() => {});
+                        }
+                      }}
+                    >{es ? 'Activar' : 'Turn on'}</button>
+                  </div>
+                )}
+
+                {groupTitle(es ? 'Lectura en voz alta' : 'Read aloud')}
+                {renderToggle('notifyReadAloudBackground', options.readAloudBackground,
+                  es ? 'Seguir leyendo fuera de la app' : 'Keep reading outside the app',
+                  es ? 'Con el reproductor en la notificación y la pantalla de bloqueo' : 'With the player in the notification and on the lock screen')}
+                {renderToggle('notifyReadAloudSentence', options.readAloudSentence,
+                  es ? 'Mostrar la oración actual' : 'Show the current sentence',
+                  es ? 'Si lo apagas, se ve el título del libro' : 'When off, the book title is shown')}
+
+                {groupTitle(es ? 'Repaso' : 'Reviews')}
+                {renderToggle('notifySrsDaily', options.srsDaily,
+                  es ? 'Avisar del nuevo día de repaso' : 'Notify when a new review day starts',
+                  es ? 'Solo si hay tarjetas pendientes; sin sonido' : 'Only when cards are due; silent')}
+                {options.srsDaily && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span className="settings-label-text">{es ? 'Hora del aviso' : 'Reminder time'}</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        {String(options.srsHour).padStart(2, '0')}:00
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="23"
+                      step="1"
+                      value={options.srsHour}
+                      onChange={(e) => setOption('notifySrsHour', parseInt(e.target.value, 10))}
+                      aria-label={es ? 'Hora del aviso de repaso' : 'Review reminder time'}
+                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                    />
+                  </div>
+                )}
+
+                {groupTitle(es ? 'Actualizaciones' : 'Updates')}
+                {renderToggle('notifyAppUpdates', options.appUpdates,
+                  es ? 'Avisar de versiones nuevas' : 'Notify about new versions',
+                  es ? 'Se buscan una vez al día' : 'Checked once a day')}
+                {renderToggle('notifyOtaUpdates', options.otaUpdates,
+                  es ? 'Avisar de mejoras automáticas' : 'Notify about automatic improvements',
+                  es ? 'Se instalan solas igualmente' : 'They install themselves anyway')}
+              </div>
+            );
+          })()}
+
           {/* Card: Día de lectura */}
           {matchesSearch('reading day dia lectura start hours limites horas nocturno') && (settingsSearchQuery || activeSettingsSection === 'sec-reading-day') && (
             <div id="sec-reading-day" className="settings-section-card">
@@ -4370,7 +3828,7 @@ const Library = React.memo(function Library({
                   className="reset-filter-btn"
                   style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Vincular Google Drive' : 'Link Google Drive')}</span>
+                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
                 </button>
 
                 {gDriveTokens && (
@@ -4397,7 +3855,7 @@ const Library = React.memo(function Library({
                     </div>
                     {lastSyncTime && (
                       <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
+                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
                       </span>
                     )}
                   </div>
@@ -4407,7 +3865,7 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Discord Rich Presence */}
-          {!isMobile && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
+          {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
             <div id="sec-discord" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MessageSquare size={18} style={{ color: 'var(--primary)' }} />
@@ -4539,9 +3997,13 @@ const Library = React.memo(function Library({
                 <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
               </h3>
               <p className="settings-card-desc">
-                {lang === 'es'
-                  ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
-                  : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.'}
+                {isPhoneUI()
+                  ? (lang === 'es'
+                    ? 'Importa, exporta y gestiona tus palabras. Importa mazos de Anki (.apkg), JPDB, listas de palabras o listas de frecuencia.'
+                    : 'Import, export and manage your words. Import Anki decks (.apkg), JPDB, word lists or frequency lists.')
+                  : (lang === 'es'
+                    ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
+                    : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.')}
               </p>
               <button 
                 type="button" 
@@ -4587,90 +4049,20 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Dictionaries */}
-          {matchesSearch('diccionario dictionary offline jmdict frecuencia meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
+          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
             <div id="sec-dicts" style={{ display: 'flex', flexDirection: 'column', gap: '28px', width: '100%' }}>
-              
-              {/* Card 1: Dictionaries */}
               <div className="settings-section-card">
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                   <span>{lang === 'es' ? 'Diccionarios' : 'Dictionaries'}</span>
                 </h3>
                 <p className="settings-card-desc">
-                  {lang === 'es' 
-                    ? 'Los diccionarios son útiles para buscar el significado de las palabras y añadirlas a tus tarjetas de estudio. Arrastra y suelta los elementos de la siguiente lista para cambiar el orden de aparición de tus diccionarios en los resultados de búsqueda.'
-                    : 'Dictionaries are useful for looking up word meanings and adding them to your study cards. Drag and drop the items in the list below to change the order in which your dictionaries appear in search results.'}
-                </p>
-                
-                {isImportingDict && (
-                  <div style={{ margin: '16px 0', background: dictImportSuccess ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: dictImportSuccess ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent', transition: 'all 0.3s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: dictImportSuccess ? '#4ade80' : 'var(--text-muted)' }}>
-                      <span>{dictImportSuccess ? '✓ ' : ''}{dictImportMsg}</span>
-                      <span>{dictImportProgress}%</span>
-                    </div>
-                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${dictImportProgress}%`, height: '100%', background: dictImportSuccess ? '#4ade80' : 'var(--primary)', transition: 'width 0.2s, background 0.3s' }}></div>
-                    </div>
-                    {!dictImportSuccess && (
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center', lineHeight: '1.3' }}>
-                        {lang === 'es' 
-                          ? '⏳ Esto puede tardar de 1 a 2 minutos para diccionarios grandes. Por favor, no cierres la aplicación.' 
-                          : '⏳ This may take 1-2 minutes for large dictionaries. Please do not close the application.'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ marginTop: '16px' }}>
-                  {renderDictList(false)}
-                </div>
-
-                {renderActions(false)}
-              </div>
-
-              {/* Card 2: Frequencies */}
-              <div className="settings-section-card">
-                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ListChecks size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Listas de palabras frecuentes' : 'Frequency Word Lists'}</span>
-                </h3>
-                <p className="settings-card-desc">
                   {lang === 'es'
-                    ? 'Asignamos a las palabras puntuaciones de 1 a 5 estrellas para mostrar con qué frecuencia se utilizan en diferentes contextos.'
-                    : 'We assign words 1 to 5 star ratings to show how frequently they are used in different contexts.'}
+                    ? 'Lo que ves al tocar una palabra: significados, cuánto se usa y su acento tonal. Todo funciona sin conexión.'
+                    : 'What you see when you tap a word: meanings, how common it is and its pitch accent. Everything works offline.'}
                 </p>
-                <div style={{ background: 'rgba(99, 102, 241, 0.05)', borderLeft: '3px solid #8b5cf6', padding: '10px 14px', borderRadius: '4px', margin: '12px 0', fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', lineHeight: '1.4' }}>
-                  <strong>{lang === 'es' ? 'Nota:' : 'Note:'}</strong> {lang === 'es' 
-                    ? 'utilizamos la lista de palabras frecuentes más importante para las estadísticas de la página y para resaltar palabras en las oraciones recomendadas.'
-                    : 'we use the most important frequency list for page statistics and to highlight words in recommended sentences.'}
-                </div>
-
-                {isImportingFreq && (
-                  <div style={{ margin: '16px 0', background: freqImportSuccess ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: freqImportSuccess ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent', transition: 'all 0.3s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: freqImportSuccess ? '#4ade80' : 'var(--text-muted)' }}>
-                      <span>{freqImportSuccess ? '✓ ' : ''}{freqImportMsg}</span>
-                      <span>{freqImportProgress}%</span>
-                    </div>
-                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${freqImportProgress}%`, height: '100%', background: freqImportSuccess ? '#4ade80' : 'var(--primary)', transition: 'width 0.2s, background 0.3s' }}></div>
-                    </div>
-                    {!freqImportSuccess && (
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', textAlign: 'center', lineHeight: '1.3' }}>
-                        {lang === 'es' 
-                          ? '⏳ Esto puede tardar un momento. Por favor, no cierres la aplicación.' 
-                          : '⏳ This may take a moment. Please do not close the application.'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ marginTop: '16px' }}>
-                  {renderDictList(true)}
-                </div>
-
-                {renderActions(true)}
+                <DictionarySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} confirm={showConfirm} />
               </div>
-
             </div>
           )}
 
@@ -4680,10 +4072,11 @@ const Library = React.memo(function Library({
             const latest = updaterState.latest;
             const appOutdated = Boolean(latest) && isNewerVersion(latest.appVersion, updaterState.current.appVersion);
             // When the installer is outdated, the new interface comes inside it.
-            const uiOutdated = Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
+            const uiNeedsApk = Boolean(latest?.needsApk);
+            const uiOutdated = !uiNeedsApk && Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
             const ready = updaterState.status === 'ready';
             const canUpdate = updateAvailable && !updating;
-            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false) => (
+            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false, needsApk = false) => (
               <div style={{
                 background: 'var(--bg-card)',
                 border: `1px solid ${outdated ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-light)'}`,
@@ -4702,8 +4095,10 @@ const Library = React.memo(function Library({
                     {lang === 'es' ? 'Última: ' : 'Latest: '}{latestVersion || '—'}
                   </div>
                 </div>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: outdated ? '#10b981' : '#3b82f6' }}>
-                  {outdated
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: needsApk ? '#f59e0b' : outdated ? '#10b981' : '#3b82f6', textAlign: 'right' }}>
+                  {needsApk
+                    ? (lang === 'es' ? 'Llega con la próxima app' : 'Comes with the next app')
+                    : outdated
                     ? (lang === 'es' ? 'Disponible' : 'Available')
                     : latest ? (lang === 'es' ? 'Actualizado' : 'Up to date') : '—'}
                 </span>
@@ -4778,7 +4173,8 @@ const Library = React.memo(function Library({
                   lang === 'es' ? 'Interfaz (actualización rápida)' : 'Interface (quick update)',
                   updaterState.current.hotVersion,
                   latest?.hotVersion,
-                  uiOutdated
+                  uiOutdated,
+                  uiNeedsApk
                 )}
 
                 {/* Progress Bar */}
@@ -4910,6 +4306,14 @@ const Library = React.memo(function Library({
     setIsDeckPromptOpen(true);
   };
 
+  const openDeckSettings = (deckName: string) => {
+    setDeckPromptMode('rename');
+    setDeckPromptTargetId(deckName);
+    setDeckPromptValue(deckName);
+    setDeckOptionsDraft({ ...getDeckOptions(settings, deckName) });
+    setIsDeckPromptOpen(true);
+  };
+
   const handleDeckPromptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = deckPromptValue.trim();
@@ -4952,42 +4356,19 @@ const Library = React.memo(function Library({
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo renombrado' : 'Deck renamed', 'success');
       }
-    } else if (deckPromptMode === 'merge' && deckPromptTargetId) {
-      const sourceName = deckPromptTargetId;
-      const targetName = trimmed;
-      if (sourceName !== targetName) {
-        if (confirm(lang === 'es'
-          ? `¿Estás seguro de que deseas fusionar todo el contenido del mazo "${sourceName}" dentro del mazo "${targetName}"? El mazo "${sourceName}" será eliminado.`
-          : `Are you sure you want to merge all content from deck "${sourceName}" into deck "${targetName}"? The deck "${sourceName}" will be deleted.`
-        )) {
-          // Delete placeholder of source mazo
-          db.saveSrsCard(`_deck_${sourceName}`, null);
-          
-          // Ensure target mazo has a placeholder card if not the default
-          if (targetName !== 'Yoru Reader') {
-            db.saveSrsCard(`_deck_${targetName}`, {
-              word: `_deck_${targetName}`,
-              source: targetName,
-              state: 0,
-              dueDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              due: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              isPlaceholder: true
-            });
-          }
+    }
 
-          // Move all cards from source to target
-          const srsData = db.getSrsData();
-          Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-            if (card && card.source === sourceName) {
-              card.source = targetName;
-              db.saveSrsCard(word, card);
-            }
-          });
-
-          setSrsUpdateTrigger(t => t + 1);
-          showToast(lang === 'es' ? 'Mazos fusionados con éxito' : 'Decks merged successfully', 'success');
-        }
-      }
+    if (deckPromptMode === 'rename' && deckPromptTargetId) {
+      // Save the deck's own options under its (possibly new) name; empty fields fall back to the global settings.
+      const cleaned: SrsDeckOptions = {};
+      if (deckOptionsDraft.newPerDay !== undefined) cleaned.newPerDay = deckOptionsDraft.newPerDay;
+      if (deckOptionsDraft.reviewsPerDay !== undefined) cleaned.reviewsPerDay = deckOptionsDraft.reviewsPerDay;
+      if (deckOptionsDraft.cardFront) cleaned.cardFront = deckOptionsDraft.cardFront;
+      if (deckOptionsDraft.paused) cleaned.paused = true;
+      let next = withDeckOptions(settings, deckPromptTargetId, null);
+      next = withDeckOptions(next, trimmed, Object.keys(cleaned).length > 0 ? cleaned : null);
+      onSaveSettings(next);
+      if (trimmed === deckPromptTargetId) showToast(lang === 'es' ? 'Ajustes del mazo guardados' : 'Deck settings saved', 'success');
     }
 
     setIsDeckPromptOpen(false);
@@ -5007,6 +4388,7 @@ const Library = React.memo(function Library({
           }
         });
         db.saveSrsData(srsData);
+        onSaveSettings(withDeckOptions(settings, deckName, null));
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo eliminado' : 'Deck deleted', 'info');
         setIsDeckPromptOpen(false);
@@ -5018,6 +4400,7 @@ const Library = React.memo(function Library({
     const statuses = db.getWordStatuses();
     const srsData = db.getSrsData();
     const now = new Date();
+    const LEARN_AHEAD_MS = 20 * 60 * 1000;
     const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const getCardDueDate = (card: any): Date | null => {
       for (const value of [card?.due, card?.dueDate]) {
@@ -5028,43 +4411,37 @@ const Library = React.memo(function Library({
       return null;
     };
     
-    const getYearCalendarCells = (year: number) => {
-      const yearCells = [];
-      const jan1 = new Date(year, 0, 1);
-      const startDay = jan1.getDay();
-      const alignOffset = (startDay + 6) % 7;
-      const startDate = new Date(year, 0, 1);
-      startDate.setDate(startDate.getDate() - alignOffset);
-
-      const tempDate = new Date(startDate);
-      for (let col = 0; col < 54; col++) {
-        const weekCells = [];
+    // Activity heatmap: a window of whole weeks (Monday first) that ends with the
+    // current week, so today is always visible without scrolling sideways.
+    const calendarWeekCount = isMobile ? 18 : 53;
+    const getCalendarWeeks = (page: number) => {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const start = new Date(today);
+      start.setDate(start.getDate() - ((today.getDay() + 6) % 7) - (calendarWeekCount - 1 + page * calendarWeekCount) * 7);
+      const todayYmd = localDate(today);
+      const weeks: { ymd: string; date: Date; count: number; level: number; isFuture: boolean; isToday: boolean }[][] = [];
+      const cursor = new Date(start);
+      for (let col = 0; col < calendarWeekCount; col++) {
+        const week = [];
         for (let row = 0; row < 7; row++) {
-          const ymd = localDate(tempDate);
-          const cellYear = tempDate.getFullYear();
-          const isActive = cellYear === year && activity.activityDays.includes(ymd);
-          weekCells.push({ ymd, isActive, date: new Date(tempDate), isCurrentYear: cellYear === year });
-          tempDate.setDate(tempDate.getDate() + 1);
+          const ymd = localDate(cursor);
+          const count = activity.activityCounts[ymd] || 0;
+          const level = count <= 0 ? 0 : count < 5 ? 1 : count < 15 ? 2 : count < 30 ? 3 : 4;
+          week.push({ ymd, date: new Date(cursor), count, level, isFuture: cursor > today, isToday: ymd === todayYmd });
+          cursor.setDate(cursor.getDate() + 1);
         }
-        if (weekCells.some(c => c.isCurrentYear)) {
-          yearCells.push(weekCells);
-        }
+        weeks.push(week);
       }
-      return yearCells;
+      return weeks;
     };
 
-    const getYearMonthLabels = (yearCells: any[][]) => {
+    const getCalendarMonthLabels = (weeks: { date: Date }[][]) => {
       const labels: { colIndex: number; label: string }[] = [];
-      let lastMonth = -1;
-      yearCells.forEach((week, colIndex) => {
-        const firstOfMonth = week.find(cell => cell.isCurrentYear && cell.date.getDate() === 1);
-        if (!firstOfMonth) return;
-        const m = firstOfMonth.date.getMonth();
-        if (m !== lastMonth) {
-          lastMonth = m;
-          const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' });
-          labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
-        }
+      weeks.forEach((week, colIndex) => {
+        const firstOfMonth = week.find(cell => cell.date.getDate() === 1);
+        if (!firstOfMonth || colIndex > weeks.length - 2) return;
+        const name = firstOfMonth.date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', { month: 'short' }).replace('.', '');
+        labels.push({ colIndex, label: name.charAt(0).toUpperCase() + name.slice(1) });
       });
       return labels;
     };
@@ -5080,8 +4457,12 @@ const Library = React.memo(function Library({
       totalRelearning: number;
       totalYoung: number;
       totalMature: number;
+      paused?: boolean;
     }> = {};
     let totalDueCount = 0;
+    // New cards that are due but held back by a daily limit, so the dashboard can say why
+    // freshly mined cards are not showing up instead of claiming everything is done.
+    let newHeldByLimit = 0;
     
     const todayStr = localDate(now);
     const history = db.getSrsHistory();
@@ -5105,6 +4486,9 @@ const Library = React.memo(function Library({
     const reviewsLeftToday = Math.max(0, maxReviewsLimit - reviewsDoneToday);
     let newCardsRemainingToday = newCardsLeftToday;
     let reviewsRemainingToday = reviewsLeftToday;
+    const deckLimits = getDeckLimitsLeft(settings, srsData, todayHistory, newCardsStudiedToday);
+    const deckNewLeft: Record<string, number> = {};
+    const deckReviewsLeft: Record<string, number> = {};
 
     const initDeck = (name: string) => {
       if (!decks[name]) {
@@ -5117,8 +4501,11 @@ const Library = React.memo(function Library({
           totalLearning: 0,
           totalRelearning: 0,
           totalYoung: 0,
-          totalMature: 0
+          totalMature: 0,
+          paused: deckLimits.isPaused(name)
         };
+        deckNewLeft[name] = deckLimits.newLeft(name);
+        deckReviewsLeft[name] = deckLimits.reviewsLeft(name);
       }
     };
 
@@ -5127,7 +4514,7 @@ const Library = React.memo(function Library({
       if (word.startsWith('_deck_')) {
         const deckName = word.substring(6).trim();
         if (deckName) initDeck(deckName);
-      } else if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      } else if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (deckName) initDeck(deckName);
       }
@@ -5136,7 +4523,7 @@ const Library = React.memo(function Library({
     // 2. Process all cards that are in 'learning' status
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_')) return;
-      if (card && !['known', 'ignored', 'blacklisted'].includes(statuses[word])) {
+      if (card && !isSrsCardInactive(word, card, statuses)) {
         const deckName = (card.source || 'Yoru Reader').trim();
         if (!deckName) return;
         initDeck(deckName);
@@ -5165,22 +4552,29 @@ const Library = React.memo(function Library({
 
         // Count due cards
         const dueDate = getCardDueDate(card);
-        const isDue = !dueDate || dueDate <= now;
-        if (isDue) {
+        // Like Anki's 20-minute Learn Ahead Limit: a learning step a few minutes away already
+        // counts, so a card just mined and failed once doesn't leave the deck at "All caught up".
+        const isLearningStep = !isNewCard && (state === 1 || state === 3);
+        const isDue = !dueDate || dueDate.getTime() <= now.getTime() + (isLearningStep ? LEARN_AHEAD_MS : 0);
+        if (isDue && !decks[deckName].paused) {
           if (isNewCard) {
-            if (newCardsRemainingToday > 0) {
+            if (newCardsRemainingToday > 0 && deckNewLeft[deckName] > 0) {
               decks[deckName].newCount++;
               totalDueCount++;
               newCardsRemainingToday--;
+              deckNewLeft[deckName]--;
+            } else {
+              newHeldByLimit++;
             }
           } else if (state === 1 || state === 3) {
             decks[deckName].learningCount++;
             totalDueCount++;
           } else {
-            if (reviewsRemainingToday > 0) {
+            if (reviewsRemainingToday > 0 && deckReviewsLeft[deckName] > 0) {
               totalDueCount++;
               decks[deckName].reviewCount++;
               reviewsRemainingToday--;
+              deckReviewsLeft[deckName]--;
             }
           }
         }
@@ -5204,14 +4598,21 @@ const Library = React.memo(function Library({
     // Fetch studied history activity and streak
     const activity = (() => {
       const activityDays = new Set<string>();
+      const activityCounts: Record<string, number> = {};
       let cardsStudiedToday = 0;
 
       const dailyReviews = db.getSrsDailyReviews();
       Object.entries(dailyReviews).forEach(([ymd, count]) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !(Number(count) > 0)) return;
         const date = new Date(`${ymd}T00:00:00`);
-        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) activityDays.add(ymd);
+        if (Number.isFinite(date.getTime()) && localDate(date) === ymd) {
+          activityDays.add(ymd);
+          activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, Number(count));
+        }
       });
+
+      // Days that only show up through a card's last review still count as active.
+      const lastReviewCounts: Record<string, number> = {};
 
       const studiedToday = new Set<string>();
       Object.entries(srsData).forEach(([word, card]: [string, any]) => {
@@ -5222,7 +4623,11 @@ const Library = React.memo(function Library({
         if (!Number.isFinite(reviewDate.getTime())) return;
         const ymd = localDate(reviewDate);
         activityDays.add(ymd);
+        lastReviewCounts[ymd] = (lastReviewCounts[ymd] || 0) + 1;
         if (ymd === todayStr) studiedToday.add(word);
+      });
+      Object.entries(lastReviewCounts).forEach(([ymd, count]) => {
+        activityCounts[ymd] = Math.max(activityCounts[ymd] || 0, count);
       });
       cardsStudiedToday = studiedToday.size;
       
@@ -5250,127 +4655,114 @@ const Library = React.memo(function Library({
           break;
         }
       }
-      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays) };
+      return { cardsStudiedToday, streak, activityDays: Array.from(activityDays), activityCounts };
     })();
 
 
-    const renderActivityCalendar = () => (
-      <div 
-        style={{ 
-          background: 'var(--bg-card)', 
-          border: '1px solid var(--border-light)', 
-          borderRadius: '16px', 
-          padding: '24px', 
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
-          marginTop: '24px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-          <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📅</span>
-            <span>{lang === 'es' ? 'Calendario de Actividad' : 'Activity Calendar'}</span>
-          </h3>
-          
-          {/* Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y - 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &lt;
-            </button>
-            <span style={{ fontSize: '0.85rem', fontWeight: 850, color: '#fff', minWidth: '40px', textAlign: 'center' }}>{srsCalendarYear}</span>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setSrsCalendarYear(y => y + 1); }}
-              style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-light)', borderRadius: '6px', color: '#fff', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-            >
-              &gt;
-            </button>
-          </div>
+    const renderActivityCalendar = () => {
+      const weeks = getCalendarWeeks(srsCalendarPage);
+      const monthLabels = getCalendarMonthLabels(weeks);
+      const visibleDays = weeks.flat().filter(cell => !cell.isFuture);
+      const activeInRange = visibleDays.filter(cell => cell.count > 0).length;
+      const locale = lang === 'es' ? 'es-ES' : 'en-US';
+      const firstDay = visibleDays[0]?.date;
+      const lastDay = visibleDays[visibleDays.length - 1]?.date;
+      const monthName = (date?: Date) => {
+        const name = date ? date.toLocaleDateString(locale, { month: 'short' }).replace('.', '') : '';
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      };
+      const rangeLabel = firstDay && lastDay
+        ? (firstDay.getFullYear() === lastDay.getFullYear()
+          ? `${monthName(firstDay)} – ${monthName(lastDay)} ${lastDay.getFullYear()}`
+          : `${monthName(firstDay)} ${firstDay.getFullYear()} – ${monthName(lastDay)} ${lastDay.getFullYear()}`)
+        : '';
+      const dayLetters = lang === 'es' ? ['L', '', 'X', '', 'V', '', 'D'] : ['M', '', 'W', '', 'F', '', 'S'];
+      const gridColumns = { gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` };
+      const cardsWord = (n: number) => lang === 'es' ? (n === 1 ? 'tarjeta' : 'tarjetas') : (n === 1 ? 'card' : 'cards');
 
-          <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-            <span>
-              {lang === 'es' ? 'Racha actual: ' : 'Current streak: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.streak} {lang === 'es' ? 'días' : 'days'}</span>
-            </span>
-            <span>•</span>
-            <span>
-              {lang === 'es' ? 'Repasadas hoy: ' : 'Reviewed today: '}
-              <span style={{ color: '#c084fc', fontWeight: 800 }}>{activity.cardsStudiedToday}</span>
-            </span>
-          </div>
-        </div>
-        
-        {/* Year Heatmap Grid */}
-        <div className="srs-calendar-scroll" style={{ overflowX: 'auto', padding: '10px 0 5px 0' }}>
-          <div style={{ minWidth: '680px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            
-            {/* Month Labels aligned to 54 columns */}
-            <div style={{ display: 'flex', position: 'relative', height: '16px', marginLeft: '18px', marginBottom: '4px' }}>
-              {(() => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                const monthLabels = getYearMonthLabels(yearCells);
-                return monthLabels.map((lbl, idx) => (
-                  <span 
-                    key={idx} 
-                    style={{ 
-                      position: 'absolute', 
-                      left: `${lbl.colIndex * 12.2}px`, 
-                      fontSize: '0.62rem', 
-                      color: 'var(--text-muted)', 
-                      fontWeight: 800, 
-                      textTransform: 'uppercase' 
-                    }}
-                  >
-                    {lbl.label}
-                  </span>
-                ));
-              })()}
+      return (
+        <section className="srs-cal">
+          <div className="srs-cal-head">
+            <h3 className="srs-section-title">{lang === 'es' ? 'Actividad' : 'Activity'}</h3>
+            <div className="srs-cal-nav">
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => p + 1); }}
+                aria-label={lang === 'es' ? 'Semanas anteriores' : 'Earlier weeks'}
+              >
+                <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
+              </button>
+              <span className="srs-cal-range">{rangeLabel}</span>
+              <button
+                type="button"
+                className="srs-cal-nav-btn"
+                disabled={srsCalendarPage === 0}
+                onClick={(e) => { e.stopPropagation(); setSrsCalendarPage(p => Math.max(0, p - 1)); }}
+                aria-label={lang === 'es' ? 'Semanas siguientes' : 'Later weeks'}
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
+          </div>
 
-            {/* Calendar Grid cells */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              {Array.from({ length: 7 }).map((_, rowIndex) => {
-                const yearCells = getYearCalendarCells(srsCalendarYear);
-                return (
-                  <div key={rowIndex} style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', width: '12px', textAlign: 'right', marginRight: '6px', fontWeight: 'bold' }}>
-                      {rowIndex === 0 ? 'L' : rowIndex === 2 ? 'M' : rowIndex === 4 ? 'V' : rowIndex === 6 ? 'D' : ''}
-                    </span>
-                    {yearCells.map((week, colIndex) => {
-                      const cell = week[rowIndex];
-                      if (!cell) return <div key={colIndex} style={{ width: '9px', height: '9px' }} />;
-                      return (
-                        <div 
-                          key={colIndex} 
-                          title={cell.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + (cell.isActive ? ' (Activo)' : ' (Inactivo)')}
-                          style={{
-                            width: '9px',
-                            height: '9px',
-                            borderRadius: '2px',
-                            background: cell.isActive ? 'rgba(168, 85, 247, 0.85)' : 'rgba(255, 255, 255, 0.03)',
-                            border: cell.isActive ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255, 255, 255, 0.02)',
-                            transition: 'all 0.15s ease',
-                            opacity: cell.isCurrentYear ? 1 : 0.15
-                          }}
-                        />
-                      );
-                    })}
+          <div className="srs-cal-stats">
+            <div>
+              <div className="srs-cal-stat-value is-accent">{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Racha' : 'Streak'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activity.cardsStudiedToday}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Repasadas hoy' : 'Reviewed today'}</div>
+            </div>
+            <div>
+              <div className="srs-cal-stat-value">{activeInRange}</div>
+              <div className="srs-cal-stat-label">{lang === 'es' ? 'Días activos' : 'Active days'}</div>
+            </div>
+          </div>
+
+          <div className="srs-cal-body">
+            <div className="srs-cal-months" style={gridColumns}>
+              {monthLabels.map(lbl => (
+                <span key={lbl.colIndex} style={{ gridColumn: `${lbl.colIndex + 1} / span 4` }}>{lbl.label}</span>
+              ))}
+            </div>
+            <div className="srs-cal-grid-row">
+              <div className="srs-cal-days">
+                {dayLetters.map((letter, i) => <span key={i}>{letter}</span>)}
+              </div>
+              <div className="srs-cal-grid" style={gridColumns}>
+                {weeks.map((week, colIndex) => (
+                  <div key={colIndex} className="srs-cal-week">
+                    {week.map(cell => (
+                      <div
+                        key={cell.ymd}
+                        className={`srs-cal-cell level-${cell.level}${cell.isToday ? ' is-today' : ''}${cell.isFuture ? ' is-future' : ''}`}
+                        title={cell.isFuture ? undefined : `${cell.date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}: ${cell.count} ${cardsWord(cell.count)}`}
+                      />
+                    ))}
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-
           </div>
-        </div>
-      </div>
-    );
+
+          <div className="srs-cal-foot">
+            <span>
+              {lang === 'es' ? 'Hoy' : 'Today'}: {now.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} · {activity.cardsStudiedToday} {cardsWord(activity.cardsStudiedToday)}
+            </span>
+            <div className="srs-cal-legend" aria-hidden="true">
+              <span>{lang === 'es' ? 'Menos' : 'Less'}</span>
+              <i className="srs-cal-cell level-0" />
+              <i className="srs-cal-cell level-1" />
+              <i className="srs-cal-cell level-2" />
+              <i className="srs-cal-cell level-4" />
+              <span>{lang === 'es' ? 'Más' : 'More'}</span>
+            </div>
+          </div>
+        </section>
+      );
+    };
 
     // --- Study Stats Calculations ---
     const studyTimeTodaySeconds = Number(localStorage.getItem(`yoru_reader_srs_study_time_${todayStr}`) || 0);
@@ -5426,10 +4818,7 @@ const Library = React.memo(function Library({
     Object.entries(srsData).forEach(([word, card]: [string, any]) => {
       if (word.startsWith('_deck_') || !card) return;
       
-      if (separateSuspended) {
-        const status = statuses[word];
-        if (status === 'ignored' || status === 'known' || status === 'blacklisted') return;
-      }
+      if (separateSuspended && isSrsCardInactive(word, card, statuses)) return;
 
       const state = card.state;
       if (isNewSrsCard(card)) {
@@ -5641,51 +5030,55 @@ const Library = React.memo(function Library({
 
         {srsSubTab === 'decks' && (
           <>
-            {/* Header Dashboard Card */}
-            <div className="vocab-dashboard-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', padding: '20px', borderRadius: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-light)' }}>
-              <div>
-                <h2 style={{ margin: '0 0 4px 0', fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {lang === 'es' ? 'Repaso de Yoru SRS' : 'Yoru SRS Reviews'}
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  {lang === 'es' ? `Tienes ${totalDueCount} tarjetas pendientes hoy` : `You have ${totalDueCount} reviews pending today`}
-                </p>
+            {/* Today summary */}
+            <section className="srs-today">
+              <div className="srs-today-head">
+                <span>{lang === 'es' ? 'Para hoy' : 'Due today'}</span>
+                <span>
+                  {lang === 'es' ? 'Racha ' : 'Streak '}
+                  <strong>{activity.streak} {lang === 'es' ? (activity.streak === 1 ? 'día' : 'días') : (activity.streak === 1 ? 'day' : 'days')}</strong>
+                </span>
               </div>
-              
-              {totalDueCount > 0 && (
-                <button
-                  type="button"
-                  className="vocab-action-btn"
-                  onClick={() => {
-                    setSelectedDeckFilter(null);
-                    setIsSrsReviewOpen(true);
-                  }}
-                  style={{
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    border: 'none',
-                    color: '#ffffff',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 14px rgba(168, 85, 247, 0.3)'
-                  }}
-                >
-                  <Zap size={15} fill="rgba(255,255,255,0.2)" />
-                  <span>{lang === 'es' ? 'Repasar Todo' : 'Review All'}</span>
-                </button>
+              <div className="srs-today-counts">
+                <div className="srs-today-count is-new">
+                  <strong>{totalNewCount}</strong>
+                  <span>{lang === 'es' ? 'Nuevas' : 'New'}</span>
+                </div>
+                <div className="srs-today-count is-learn">
+                  <strong>{totalLearnCount}</strong>
+                  <span>{lang === 'es' ? 'Aprendiendo' : 'Learning'}</span>
+                </div>
+                <div className="srs-today-count is-review">
+                  <strong>{totalReviewCount}</strong>
+                  <span>{lang === 'es' ? 'Repaso' : 'Review'}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="srs-today-cta"
+                disabled={totalDueCount === 0}
+                onClick={() => {
+                  setSelectedDeckFilter(null);
+                  setIsSrsReviewOpen(true);
+                }}
+              >
+                {totalDueCount > 0
+                  ? (lang === 'es' ? `Repasar todo (${totalDueCount})` : `Review all (${totalDueCount})`)
+                  : (lang === 'es' ? 'Estás al día' : 'All caught up')}
+              </button>
+              {newHeldByLimit > 0 && (
+                <p className="srs-today-limit-note">
+                  {lang === 'es'
+                    ? `${newHeldByLimit} ${newHeldByLimit === 1 ? 'tarjeta nueva espera' : 'tarjetas nuevas esperan'} a mañana por el límite diario de nuevas. Puedes subirlo en Ajustes o en los ajustes del mazo.`
+                    : `${newHeldByLimit} new ${newHeldByLimit === 1 ? 'card is' : 'cards are'} waiting for tomorrow because of the daily new-card limit. You can raise it in Settings or in the deck's settings.`}
+                </p>
               )}
-            </div>
+            </section>
 
             {/* Deck List (Mazos) */}
-            <div className="srs-deck-list" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px' }}>
-                🗂️ {lang === 'es' ? 'Mazos de Aprendizaje' : 'Learning Decks'}
-              </h3>
-              
+            <section className="srs-deck-list">
+              <h3 className="srs-section-title">{lang === 'es' ? 'Mis mazos' : 'My decks'}</h3>
+
               {deckList.length === 0 ? (
                 <div className="srs-empty-state" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-card-hover)', border: '1px dashed var(--border-light)', borderRadius: '12px' }}>
                   <Zap size={24} style={{ color: 'rgba(255,255,255,0.1)', marginBottom: '8px' }} />
@@ -5699,98 +5092,51 @@ const Library = React.memo(function Library({
                   </p>
                 </div>
               ) : (
-                <div className="srs-deck-table-wrap" style={{ overflowX: 'auto' }}>
-                  <table className="srs-deck-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <th style={{ textAlign: 'left', padding: '0 0 10px 0', fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Mazo' : 'Deck'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Nuevas' : 'New'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Aprender' : 'Learn'}
-                        </th>
-                        <th style={{ textAlign: 'right', padding: '0 14px 10px 14px', fontSize: '0.76rem', fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          {lang === 'es' ? 'Programadas' : 'Review'}
-                        </th>
-                        <th style={{ width: '1%', padding: '0 0 10px 0' }} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deckList.map((deck) => {
-                        const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
-                        return (
-                          <tr
-                            key={deck.name}
-                            className="srs-deck-row"
-                            onClick={() => {
-                              if (!isDue) return;
-                              setSelectedDeckFilter(deck.name);
-                              setIsSrsReviewOpen(true);
+                <div className="srs-deck-cards">
+                  {deckList.map((deck) => {
+                    const isDue = deck.newCount > 0 || deck.learningCount > 0 || deck.reviewCount > 0;
+                    return (
+                      <div key={deck.name} className={`srs-deck-item${isDue ? ' is-due' : ''}`}>
+                        <button
+                          type="button"
+                          className="srs-deck-main"
+                          disabled={!isDue}
+                          onClick={() => {
+                            setSelectedDeckFilter(deck.name);
+                            setIsSrsReviewOpen(true);
+                          }}
+                          aria-label={lang === 'es' ? `Repasar ${deck.name}` : `Review ${deck.name}`}
+                        >
+                          <span className="srs-deck-name" title={deck.name}>
+                            <FolderOpen size={15} aria-hidden="true" />
+                            <span>{deck.name}</span>
+                          </span>
+                          <span className="srs-deck-pills">
+                            {deck.paused && <span className="srs-pill is-zero">{lang === 'es' ? 'En pausa' : 'Paused'}</span>}
+                            <span className={`srs-pill is-new${deck.newCount > 0 ? '' : ' is-zero'}`}>{deck.newCount} {lang === 'es' ? 'nuevas' : 'new'}</span>
+                            <span className={`srs-pill is-learn${deck.learningCount > 0 ? '' : ' is-zero'}`}>{deck.learningCount} {lang === 'es' ? 'aprend.' : 'learn'}</span>
+                            <span className={`srs-pill is-review${deck.reviewCount > 0 ? '' : ' is-zero'}`}>{deck.reviewCount} {lang === 'es' ? 'repaso' : 'review'}</span>
+                          </span>
+                        </button>
+                        <div className="srs-deck-actions">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeckSettings(deck.name);
                             }}
-                            style={{
-                              borderBottom: '1px solid var(--border-light)',
-                              cursor: (deck.totalCards > 0 && isDue) ? 'pointer' : 'default',
-                              transition: 'background 0.15s'
-                            }}
+                            title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
+                            aria-label={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
                           >
-                            <td style={{ padding: '12px 14px 12px 0' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                <FolderOpen size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deck.name}>
-                                  {deck.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.newCount > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
-                              {deck.newCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.learningCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                              {deck.learningCount}
-                            </td>
-                            <td style={{ textAlign: 'right', padding: '12px 14px', fontSize: '0.86rem', fontWeight: 700, color: deck.reviewCount > 0 ? '#22c55e' : 'var(--text-muted)' }}>
-                              {deck.reviewCount}
-                            </td>
-                            <td style={{ padding: '12px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('rename');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue(deck.name);
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Opciones de mazo' : 'Deck options'}
-                              >
-                                <Settings size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeckPromptMode('merge');
-                                  setDeckPromptTargetId(deck.name);
-                                  setDeckPromptValue('');
-                                  setIsDeckPromptOpen(true);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                title={lang === 'es' ? 'Fusionar con otro mazo' : 'Merge with another deck'}
-                              >
-                                <Layers size={13} />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            <Settings size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Heatmap below decks list */}
             {renderActivityCalendar()}
@@ -5802,7 +5148,7 @@ const Library = React.memo(function Library({
         {srsSubTab === 'stats' && (
           <>
             {/* 2-Column Layout: Hoy + Pronóstico */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
               
               {/* Column 1: Hoy */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '180px' }}>
@@ -6016,42 +5362,32 @@ const Library = React.memo(function Library({
 
               return (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', overflow: 'hidden' }}>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.01)' }}>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Palabra' : 'Word'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Mazo' : 'Deck'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Calificación' : 'Grade'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Intervalo' : 'Interval'}</th>
-                          <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700 }}>{lang === 'es' ? 'Fecha' : 'Date'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {history.map((entry: any, idx: number) => {
-                          const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
-                          const relativeTime = (() => {
-                            const diff = Date.now() - new Date(entry.timestamp).getTime();
-                            const mins = Math.floor(diff / 60000);
-                            const hours = Math.floor(mins / 60);
-                            if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
-                            if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
-                            if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
-                            return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
-                          })();
-                          return (
-                            <tr key={idx} style={{ borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
-                              <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '0.95rem' }}>{displayWord}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>{entry.deckName}</td>
-                              <td style={{ padding: '12px 16px' }}>{getGradeBadge(entry.grade)}</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-main)', fontWeight: 650 }}>{entry.interval}d</td>
-                              <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>{relativeTime}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  {history.map((entry: any, idx: number) => {
+                    const displayWord = entry.word.includes(':') ? entry.word.split(':')[0] : entry.word;
+                    const relativeTime = (() => {
+                      const diff = Date.now() - new Date(entry.timestamp).getTime();
+                      const mins = Math.floor(diff / 60000);
+                      const hours = Math.floor(mins / 60);
+                      if (mins < 1) return lang === 'es' ? 'Hace un momento' : 'Just now';
+                      if (mins < 60) return lang === 'es' ? `Hace ${mins}m` : `${mins}m ago`;
+                      if (hours < 24) return lang === 'es' ? `Hace ${hours}h` : `${hours}h ago`;
+                      return new Date(entry.timestamp).toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
+                    })();
+                    // One row per review: word and grade on top, deck · interval · date below.
+                    return (
+                      <div key={idx} style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px', borderBottom: idx < history.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <span style={{ fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-japanese)', fontSize: '1rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayWord}</span>
+                          <span style={{ flexShrink: 0 }}>{getGradeBadge(entry.grade)}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {entry.deckName && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{entry.deckName}</span>}
+                          <span style={{ whiteSpace: 'nowrap' }}>{lang === 'es' ? 'Intervalo' : 'Interval'} {entry.interval}d</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{relativeTime}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -6118,7 +5454,9 @@ const Library = React.memo(function Library({
               <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {lang === 'es' ? 'Parámetros del Algoritmo FSRS-6' : 'FSRS-6 Algorithm Parameters'}
               </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Two columns on wide screens; on a phone each field gets the full width so the
+                  number and its label are not squeezed by the slider. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '6px' }}>
                     {lang === 'es' ? 'Retención solicitada (FSRS)' : 'Requested retention (FSRS)'}
@@ -6170,6 +5508,52 @@ const Library = React.memo(function Library({
                 <label htmlFor="enableFuzzCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
                   {lang === 'es' ? 'Habilitar Fuzz (dispersión aleatoria de intervalos para evitar acumulación)' : 'Enable Fuzz (randomly disperse intervals to prevent study spikes)'}
                 </label>
+              </div>
+            </div>
+
+            {/* Review card Section */}
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {lang === 'es' ? 'Tarjeta de repaso' : 'Review card'}
+              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="checkbox"
+                  id="srsShowAudioButtonCheckbox"
+                  checked={settings.srsShowAudioButton !== false}
+                  onChange={(e) => onSaveSettings({ ...settings, srsShowAudioButton: e.target.checked })}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                <label htmlFor="srsShowAudioButtonCheckbox" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, cursor: 'pointer' }}>
+                  {lang === 'es' ? 'Mostrar el botón de escuchar la palabra' : 'Show the play-word button'}
+                </label>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-main)', fontWeight: 700 }}>
+                  {lang === 'es' ? '¿Qué ves antes de la respuesta?' : 'What do you see before the answer?'}
+                </span>
+                <div className="srs-front-modes" role="radiogroup" aria-label={lang === 'es' ? 'Frente de la tarjeta' : 'Card front'}>
+                  {([
+                    ['word', lang === 'es' ? 'Solo la palabra' : 'Word only', lang === 'es' ? 'Lees la palabra y recuerdas su significado.' : 'Read the word and recall its meaning.'],
+                    ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence', lang === 'es' ? 'Ves la oración del libro con la palabra marcada.' : 'See the book sentence with the word marked.'],
+                    ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only', lang === 'es' ? 'Suena la palabra sin mostrarla; la ves al girar la tarjeta.' : 'The word plays without being shown; you see it when you flip the card.'],
+                  ] as const).map(([mode, title, hint]) => {
+                    const selected = (settings.srsCardFront || 'word') === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`srs-front-mode${selected ? ' is-selected' : ''}`}
+                        onClick={() => onSaveSettings({ ...settings, srsCardFront: mode })}
+                      >
+                        <strong>{title}</strong>
+                        <span>{hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -6263,6 +5647,20 @@ const Library = React.memo(function Library({
       } else if (status === 'ignored') {
         statusText = lang === 'es' ? 'Ignorado' : 'Ignored';
         statusClass = 'ignored';
+      }
+      // A word still being learned shows its SRS card state, so it matches History and Stats.
+      const card = srsData[word];
+      if (status === 'learning' && card) {
+        if (isNewSrsCard(card)) {
+          statusText = lang === 'es' ? 'Nueva' : 'New';
+          statusClass = 'new';
+        } else if (card.state === 2) {
+          statusText = lang === 'es' ? 'Repaso' : 'Review';
+          statusClass = 'known';
+        } else if (card.state === 3) {
+          statusText = lang === 'es' ? 'Reaprendiendo' : 'Relearning';
+          statusClass = 'learning';
+        }
       }
       return { word, status, statusText, statusClass };
     });
@@ -6365,6 +5763,13 @@ const Library = React.memo(function Library({
             {lang === 'es' ? 'Mis Tarjetas' : 'My Cards'}
             <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500 }}>({countAll})</span>
           </h2>
+          {allSrsCards.length !== countAll && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {lang === 'es'
+                ? `${countAll} palabras guardadas · ${allSrsCards.length} con tarjeta de repaso`
+                : `${countAll} saved words · ${allSrsCards.length} with a review card`}
+            </div>
+          )}
         </div>
 
         {/* Jiten Filter Pills Row */}
@@ -6482,7 +5887,7 @@ const Library = React.memo(function Library({
               {sortedWords.slice(0, visibleVocabCount).map((item, idx) => (
                 <div key={idx} className="note-word-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span className="note-word-text">{item.word}</span>
+                    <span className="note-word-text">{srsWordOfKey(item.word)}</span>
                     <span className={`note-word-status-badge ${item.statusClass}`}>{item.statusText}</span>
                   </div>
                   <div className="note-word-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -6492,7 +5897,7 @@ const Library = React.memo(function Library({
                       onClick={async () => {
                         const ok = await showConfirm({
                           title: lang === 'es' ? '¿Eliminar palabra?' : 'Delete word?',
-                          message: lang === 'es' ? `¿Quieres eliminar "${item.word}" de tu vocabulario?` : `Do you want to delete "${item.word}" from your vocabulary?`,
+                          message: lang === 'es' ? `¿Quieres eliminar "${srsWordOfKey(item.word)}" de tu vocabulario?` : `Do you want to delete "${srsWordOfKey(item.word)}" from your vocabulary?`,
                           type: 'danger',
                           confirmText: lang === 'es' ? 'Eliminar' : 'Delete',
                         });
@@ -6529,7 +5934,8 @@ const Library = React.memo(function Library({
 
   return (
     <div 
-      className={`library-container${embedded ? ' is-embedded' : ''}`}
+      className={`library-container device-${deviceClass}${embedded ? ' is-embedded' : ''}`}
+      data-device={deviceClass}
       aria-busy={isSectionPending}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -6575,7 +5981,7 @@ const Library = React.memo(function Library({
           {activeTab === 'settings' ? (
             <button
               className="mobile-icon-btn mobile-leading-btn"
-              onClick={() => setActiveTab('library')}
+              onClick={() => (mobileSettingsSectionOpen ? setMobileSettingsSectionOpen(false) : setActiveTab('library'))}
               title={lang === 'es' ? 'Volver' : 'Back'}
               aria-label={lang === 'es' ? 'Volver' : 'Back'}
             >
@@ -6599,6 +6005,7 @@ const Library = React.memo(function Library({
             {activeTab === 'library' ? (lang === 'es' ? 'Novelas' : 'Novel') :
              activeTab === 'srs' ? 'Yoru SRS' :
              activeTab === 'statistics' ? (lang === 'es' ? 'Estadísticas' : 'Progress') :
+             mobileSettingsSectionOpen ? settingsSectionTitle(activeSettingsSection) :
              (lang === 'es' ? 'Configuración' : 'Settings')}
           </h1>
           <div className="mobile-top-actions">
@@ -6622,11 +6029,6 @@ const Library = React.memo(function Library({
             {activeTab === 'srs' && (
               <button className="mobile-icon-btn" onClick={() => setActiveTab('settings')} title="Settings">
                 <Settings size={20} />
-              </button>
-            )}
-            {activeTab === 'statistics' && (
-              <button className="mobile-icon-btn" onClick={() => setIsDetailsDropdownOpen(!isDetailsDropdownOpen)} title="Options">
-                <MoreVertical size={20} />
               </button>
             )}
           </div>
@@ -6983,168 +6385,70 @@ const Library = React.memo(function Library({
 
 
 
-      {/* Yomitan style Select Mode Panel */}
-      {activeTab === 'library' && selectMode && (
-        <div 
-          className="yomitan-select-mode-panel"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            width: '320px',
-            background: 'rgba(22, 22, 28, 0.95)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '12px',
-            padding: '16px',
-            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
-            zIndex: 9999,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px'
-          }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-              <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>{lang === 'es' ? 'Modo Selección' : 'Select Mode'}</span>
-              <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>
-                {selectedBookIds.length} {lang === 'es' ? (selectedBookIds.length === 1 ? 'libro seleccionado' : 'libros seleccionados') : (selectedBookIds.length === 1 ? 'book selected' : 'books selected')}
-              </span>
+      {/* Select mode: compact action panel that sits above the bottom navigation */}
+      {activeTab === 'library' && selectMode && (() => {
+        const count = selectedBookIds.length;
+        const none = count === 0;
+        const actions = [
+          { key: 'series', onClick: handleSetSeries, Icon: Layers, label: lang === 'es' ? 'Serie' : 'Series' },
+          { key: 'author', onClick: handleSetAuthor, Icon: User, label: lang === 'es' ? 'Autor' : 'Author' },
+          { key: 'add-tags', onClick: handleAddTags, Icon: Tag, label: lang === 'es' ? 'Añadir etiquetas' : 'Add tags' },
+          { key: 'remove-tags', onClick: handleRemoveTags, Icon: CircleSlash, label: lang === 'es' ? 'Quitar etiquetas' : 'Remove tags' },
+          { key: 'blur', onClick: handleBlurCovers, Icon: EyeOff, label: lang === 'es' ? 'Difuminar portada' : 'Blur covers' },
+          { key: 'unread', onClick: handleMarkAsUnread, Icon: RotateCcw, label: lang === 'es' ? 'Marcar no leído' : 'Mark unread' },
+          { key: 'export', onClick: handleExportSelection, Icon: Download, label: lang === 'es' ? 'Exportar' : 'Export' },
+          { key: 'stats', onClick: handleOpenStatistics, Icon: BarChart3, label: lang === 'es' ? 'Estadísticas' : 'Statistics' },
+          { key: 'clear-stats', onClick: handleDeleteStatistics, Icon: Calendar, label: lang === 'es' ? 'Borrar estadísticas' : 'Clear stats' },
+        ];
+        return (
+          <div className="yomitan-select-mode-panel" role="toolbar" aria-label={lang === 'es' ? 'Acciones de selección' : 'Selection actions'}>
+            <div className="select-panel-head">
+              <div className="select-panel-title">
+                <strong>
+                  {none
+                    ? (lang === 'es' ? 'Toca libros para elegirlos' : 'Tap books to select them')
+                    : lang === 'es'
+                      ? `${count} ${count === 1 ? 'libro seleccionado' : 'libros seleccionados'}`
+                      : `${count} ${count === 1 ? 'book selected' : 'books selected'}`}
+                </strong>
+                <span className="select-panel-links">
+                  <button type="button" onClick={handleSelectAllVisible}>{lang === 'es' ? 'Seleccionar todos' : 'Select all'}</button>
+                  {!none && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <button type="button" onClick={handleClearSelection}>{lang === 'es' ? 'Limpiar' : 'Clear'}</button>
+                    </>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="panel-close-btn"
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelectedBookIds([]);
+                }}
+                aria-label={lang === 'es' ? 'Salir del modo selección' : 'Exit select mode'}
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button 
-              onClick={() => {
-                setSelectMode(false);
-                setSelectedBookIds([]);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '4px',
-                borderRadius: '4px',
-                transition: 'all 0.15s ease'
-              }}
-              className="panel-close-btn"
-            >
-              <X size={16} />
+
+            <div className="select-panel-grid">
+              {actions.map(({ key, onClick, Icon, label }) => (
+                <button key={key} type="button" className="select-panel-action-btn" onClick={onClick} disabled={none}>
+                  <Icon size={18} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+
+            <button type="button" className="select-panel-delete-btn" onClick={handleBulkDelete} disabled={none}>
+              <Trash2 size={16} /> {lang === 'es' ? 'Eliminar seleccionados' : 'Delete selected'}
             </button>
           </div>
-
-          {/* Grid Actions */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <button 
-              onClick={handleSelectAllVisible}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <Check size={14} style={{ color: 'var(--primary)' }} /> {lang === 'es' ? 'Seleccionar visibles' : 'Select visible'}
-            </button>
-
-            <button 
-              onClick={handleClearSelection}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <CircleSlash size={14} style={{ color: 'rgba(255,255,255,0.5)' }} /> {lang === 'es' ? 'Limpiar' : 'Clear'}
-            </button>
-
-            <button 
-              onClick={handleSetSeries}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <BookOpen size={14} style={{ color: '#60a5fa' }} /> {lang === 'es' ? 'Establecer serie' : 'Set series'}
-            </button>
-
-            <button 
-              onClick={handleSetAuthor}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <User size={14} style={{ color: '#a78bfa' }} /> {lang === 'es' ? 'Establecer autor' : 'Set author'}
-            </button>
-
-            <button 
-              onClick={handleAddTags}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Tag size={14} style={{ color: '#34d399' }} /> {lang === 'es' ? 'Añadir etiquetas' : 'Add tags'}
-            </button>
-
-            <button 
-              onClick={handleRemoveTags}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Tag size={14} style={{ color: '#f87171' }} /> {lang === 'es' ? 'Quitar etiquetas' : 'Remove tags'}
-            </button>
-
-            <button 
-              onClick={handleBlurCovers}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <EyeOff size={14} style={{ color: '#fbbf24' }} /> {lang === 'es' ? 'Desenfocar portadas' : 'Blur covers'}
-            </button>
-
-            <button 
-              onClick={handleMarkAsUnread}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <RotateCcw size={14} style={{ color: '#38bdf8' }} /> {lang === 'es' ? 'Marcar como no leído' : 'Mark as unread'}
-            </button>
-
-            <button 
-              onClick={handleExportSelection}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Download size={14} style={{ color: '#fb7185' }} /> {lang === 'es' ? 'Exportar selección' : 'Export selection'}
-            </button>
-
-            <button 
-              onClick={handleOpenStatistics}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <BarChart3 size={14} style={{ color: '#fb923c' }} /> {lang === 'es' ? 'Ver estadísticas' : 'View statistics'}
-            </button>
-
-            <button 
-              onClick={handleDeleteStatistics}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Calendar size={14} style={{ color: '#f43f5e' }} /> {lang === 'es' ? 'Borrar estadísticas' : 'Clear statistics'}
-            </button>
-
-            <button 
-              onClick={handleBulkDelete}
-              disabled={selectedBookIds.length === 0}
-              className="select-panel-action-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', opacity: selectedBookIds.length === 0 ? 0.4 : 1, pointerEvents: selectedBookIds.length === 0 ? 'none' : 'auto' }}
-            >
-              <Trash2 size={14} /> {lang === 'es' ? 'Eliminar seleccionados' : 'Delete selected'}
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 2. Two-column Sidebar + Main Content Layout */}
       {activeTab === 'library' && (
@@ -7600,7 +6904,10 @@ const Library = React.memo(function Library({
             { key: 'status', label: lang === 'es' ? 'Estado' : 'Status', value: showCardStatus, onChange: setShowCardStatus },
           ]}
           onSelectBooks={() => { if (!selectMode) toggleSelectMode(); }}
-          onMoreOptions={() => setIsDisplaySettingsOpen(true)}
+          coverFit={coverFit}
+          onCoverFit={setCoverFit}
+          cardWidth={cardWidth}
+          onCardWidth={setCardWidth}
           onClose={() => setIsLibraryMenuOpen(false)}
         />
       )}
@@ -8197,145 +7504,96 @@ const Library = React.memo(function Library({
         </div>
       )}
 
-      {/* Google Drive / Cloud Sync Modal */}
+      {/* Google Drive / Cloud Sync: bottom sheet on phones, centered dialog on desktop */}
       {isGDriveSyncOpen && (
-        <div className="modal-overlay" onClick={() => setIsGDriveSyncOpen(false)} style={{ zIndex: 1200 }}>
-          <div className="settings-modal" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '420px', padding: '24px', background: 'var(--bg-app)', border: '1px solid var(--border-light)' }}>
-            <div className="modal-header" style={{ marginBottom: '20px' }}>
-              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
-                <Cloud size={20} style={{ color: '#4285F4' }} />
-                <span>{lang === 'es' ? 'Sincronización Google Drive' : 'Google Drive Sync'}</span>
-              </h3>
-              <button className="close-modal-btn" onClick={() => setIsGDriveSyncOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.5, marginBottom: '20px' }}>
-              {lang === 'es' 
-                ? 'Sincroniza tus libros, progreso y vocabulario directamente con tu cuenta de Google Drive utilizando la API oficial.' 
-                : 'Sync your books, progress, and vocabulary directly with your Google Drive account using the official API.'}
-            </div>
-
-            {/* Connection Status Card */}
-            <div style={{ 
-              background: 'var(--bg-card)', 
-              border: '1px solid var(--border-light)', 
-              borderRadius: '12px', 
-              padding: '16px', 
-              marginBottom: '20px' 
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                  {lang === 'es' ? 'ESTADO' : 'STATUS'}
-                </span>
-                <span style={{ 
-                  fontSize: '0.75rem', 
-                  fontWeight: 700, 
-                  textTransform: 'uppercase',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: gDriveSyncStatus === 'authorized' ? 'rgba(52, 211, 153, 0.1)' : gDriveSyncStatus === 'syncing' ? 'rgba(251, 191, 36, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  color: gDriveSyncStatus === 'authorized' ? '#34d399' : gDriveSyncStatus === 'syncing' ? '#fbbf24' : '#f87171'
-                }}>
+        <div className="yoru-sheet-overlay" onClick={() => setIsGDriveSyncOpen(false)}>
+          <div
+            className="yoru-sheet gdrive-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdrive-sheet-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="yoru-sheet-handle" aria-hidden="true" />
+            <div className="gdrive-sheet-head">
+              <span className="gdrive-sheet-icon" aria-hidden="true"><Cloud size={22} /></span>
+              <div className="gdrive-sheet-heading">
+                <h3 id="gdrive-sheet-title">
+                  {gDriveTokens ? 'Google Drive' : (lang === 'es' ? 'Guarda tu progreso' : 'Save your progress')}
+                </h3>
+                <span className={`yoru-status-pill is-${gDriveSyncStatus === 'authorized' ? 'ok' : gDriveSyncStatus === 'syncing' ? 'busy' : 'idle'}`}>
+                  <i aria-hidden="true" />
                   {gDriveSyncStatus === 'authorized' ? (lang === 'es' ? 'Conectado' : 'Connected') :
-                   gDriveSyncStatus === 'syncing' ? (lang === 'es' ? 'Sincronizando...' : 'Syncing...') :
-                   (lang === 'es' ? 'Desconectado' : 'Disconnected')}
+                   gDriveSyncStatus === 'syncing' ? (lang === 'es' ? 'Sincronizando…' : 'Syncing…') :
+                   (lang === 'es' ? 'Sin conectar' : 'Not connected')}
                 </span>
               </div>
-
-              {gDriveTokens ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>✅</span> <span>{lang === 'es' ? 'Cuenta vinculada' : 'Account linked'}</span>
-                  </div>
-                  {lastSyncTime && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {lastSyncTime}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  {lang === 'es' ? 'Ninguna cuenta conectada' : 'No account connected'}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-              <button 
-                type="button"
-                onClick={handleConnectGDrive}
-                disabled={gDriveSyncStatus === 'syncing'}
-                className="vocab-action-btn"
-                style={{ width: '100%', padding: '12px', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
-              >
-                <span>🔑</span> {gDriveTokens ? (lang === 'es' ? 'Re-conectar cuenta' : 'Re-connect account') : (lang === 'es' ? 'Conectar cuenta' : 'Connect account')}
-              </button>
-
-              {gDriveTokens && (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <button 
-                      type="button"
-                      onClick={handleUploadGDrive}
-                      disabled={gDriveSyncStatus === 'syncing'}
-                      className="vocab-action-btn"
-                      style={{ padding: '12px', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', background: 'rgba(66, 133, 244, 0.1)', color: '#4285F4', border: '1px solid rgba(66, 133, 244, 0.2)' }}
-                    >
-                      <span>📤</span> {lang === 'es' ? 'Subir copia completa' : 'Upload full backup'}
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={handleDownloadGDrive}
-                      disabled={gDriveSyncStatus === 'syncing'}
-                      className="vocab-action-btn"
-                      style={{ padding: '12px', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.2)' }}
-                    >
-                      <span>📥</span> {lang === 'es' ? 'Descargar' : 'Download'}
-                    </button>
-                  </div>
-
-                  {/* Auto-Sync Toggle Option */}
-                  <label style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    padding: '12px', 
-                    borderRadius: '8px',
-                    background: 'rgba(255,255,255,0.01)',
-                    border: '1px solid rgba(255,255,255,0.03)',
-                    cursor: 'pointer',
-                    marginTop: '10px'
-                  }}>
-                    <span style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 600 }}>
-                      {lang === 'es' ? 'Sincronización automática' : 'Auto-Sync on startup'}
-                    </span>
-                    <input 
-                      type="checkbox"
-                      checked={isAutoSyncEnabled}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setIsAutoSyncEnabled(val);
-                        localStorage.setItem('gdrive_autosync_enabled', val ? 'true' : 'false');
-                      }}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                type="button"
-                className="create-profile-cancel"
-                onClick={() => setIsGDriveSyncOpen(false)}
-                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                {lang === 'es' ? 'Cerrar' : 'Close'}
+              <button type="button" className="yoru-sheet-close" onClick={() => setIsGDriveSyncOpen(false)} aria-label={lang === 'es' ? 'Cerrar' : 'Close'}>
+                <X size={18} />
               </button>
             </div>
+
+            {gDriveTokens ? (
+              <p className="gdrive-sheet-text">
+                {lastSyncTime
+                  ? `${lang === 'es' ? 'Última sincronización:' : 'Last sync:'} ${formatSyncTime(lastSyncTime)}`
+                  : (lang === 'es' ? 'Tu cuenta está vinculada. Aún no se ha sincronizado.' : 'Your account is linked. Not synced yet.')}
+              </p>
+            ) : (
+              <>
+                <p className="gdrive-sheet-text">
+                  {lang === 'es'
+                    ? 'Conecta tu cuenta de Google y sigue leyendo donde lo dejaste, en el móvil o en el PC.'
+                    : 'Connect your Google account and pick up where you left off, on your phone or your PC.'}
+                </p>
+                <ul className="gdrive-sheet-list">
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Libros y la página donde vas' : 'Books and the page you are on'}</li>
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Vocabulario y repasos SRS' : 'Vocabulary and SRS reviews'}</li>
+                  <li><Check size={15} aria-hidden="true" />{lang === 'es' ? 'Estadísticas de lectura' : 'Reading statistics'}</li>
+                </ul>
+              </>
+            )}
+
+            {gDriveTokens && (
+              <>
+                <div className="gdrive-sheet-actions">
+                  <button type="button" className="yoru-btn yoru-btn-secondary" onClick={handleUploadGDrive} disabled={gDriveSyncStatus === 'syncing'}>
+                    <Upload size={16} /> {lang === 'es' ? 'Subir copia' : 'Upload backup'}
+                  </button>
+                  <button type="button" className="yoru-btn yoru-btn-secondary" onClick={handleDownloadGDrive} disabled={gDriveSyncStatus === 'syncing'}>
+                    <Download size={16} /> {lang === 'es' ? 'Descargar' : 'Download'}
+                  </button>
+                </div>
+                <label className="yoru-switch-row">
+                  <span>{lang === 'es' ? 'Sincronización automática' : 'Auto-sync'}</span>
+                  <input 
+                    type="checkbox"
+                    checked={isAutoSyncEnabled}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setIsAutoSyncEnabled(val);
+                      localStorage.setItem('gdrive_autosync_enabled', val ? 'true' : 'false');
+                    }}
+                  />
+                </label>
+              </>
+            )}
+
+            <button
+              type="button"
+              className={`yoru-btn ${gDriveTokens ? 'yoru-btn-ghost' : 'yoru-btn-primary'}`}
+              onClick={handleConnectGDrive}
+              disabled={gDriveSyncStatus === 'syncing'}
+            >
+              {gDriveTokens
+                ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again')
+                : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}
+            </button>
+            {!gDriveTokens && (
+              <button type="button" className="yoru-btn yoru-btn-ghost" onClick={() => setIsGDriveSyncOpen(false)}>
+                {lang === 'es' ? 'Ahora no' : 'Not now'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -8391,7 +7649,6 @@ const Library = React.memo(function Library({
       />
 
       {/* Direct Dictionary Resource Library Modal */}
-      {isLibraryModalOpen && renderLibraryModal()}
 
       {/* Custom Toast Notification Styled with App Theme */}
       {toast.show && (
@@ -8424,160 +7681,130 @@ const Library = React.memo(function Library({
           <span>{toast.message}</span>
         </div>
       )}
-      {isDeckPromptOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10001
-        }}>
-          <form 
-            onSubmit={handleDeckPromptSubmit}
-            style={{
-              background: '#16161c',
-              border: '1px solid var(--border-light)',
-              borderRadius: '16px',
-              padding: '24px',
-              width: '380px',
-              maxWidth: '90%',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
-            }}
-          >
-            <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 700 }}>
-              {deckPromptMode === 'create' 
-                ? (lang === 'es' ? 'Crear Nuevo Mazo' : 'Create New Deck')
-                : deckPromptMode === 'rename'
-                  ? (lang === 'es' ? 'Renombrar Mazo' : 'Rename Deck')
-                  : (lang === 'es' ? 'Fusionar Mazo' : 'Merge Decks')
-              }
-            </h3>
+      {isDeckPromptOpen && (() => {
+        const isSettings = deckPromptMode === 'rename';
+        const deckCardCount = isSettings
+          ? Object.entries(db.getSrsData()).filter(([word, card]: [string, any]) => !word.startsWith('_deck_') && card && (card.source || 'Yoru Reader').trim() === deckPromptTargetId).length
+          : 0;
+        const globalNew = Number(settings.srsNewCardsPerDay ?? 20);
+        const globalReviews = Number(settings.srsMaxReviewsPerDay ?? 200);
+        const setLimit = (key: 'newPerDay' | 'reviewsPerDay', raw: string) => {
+          setDeckOptionsDraft(d => {
+            const next = { ...d };
+            if (raw.trim() === '') delete next[key];
+            else next[key] = Math.max(0, Math.floor(Number(raw) || 0));
+            return next;
+          });
+        };
+        const frontOptions: [string, string][] = [
+          ['', lang === 'es' ? 'Usar el ajuste general' : 'Use the general setting'],
+          ['word', lang === 'es' ? 'Solo la palabra' : 'Word only'],
+          ['sentence', lang === 'es' ? 'Palabra en su oración' : 'Word in its sentence'],
+          ['audio', lang === 'es' ? 'Solo escuchar' : 'Listening only'],
+        ];
+        return (
+        <div className="srs-deck-modal-backdrop" onClick={() => setIsDeckPromptOpen(false)}>
+          <form className="srs-deck-modal" onSubmit={handleDeckPromptSubmit} onClick={(e) => e.stopPropagation()}>
+            <div className="srs-deck-modal-head">
+              <h3>
+                {isSettings
+                  ? (lang === 'es' ? 'Ajustes del mazo' : 'Deck settings')
+                  : (lang === 'es' ? 'Crear nuevo mazo' : 'Create new deck')}
+              </h3>
+              {isSettings && (
+                <span>{deckCardCount} {lang === 'es' ? (deckCardCount === 1 ? 'tarjeta' : 'tarjetas') : (deckCardCount === 1 ? 'card' : 'cards')}</span>
+              )}
+            </div>
 
-            {deckPromptMode === 'merge' ? (
-              <select
-                value={deckPromptValue}
-                onChange={(e) => setDeckPromptValue(e.target.value)}
-                required
-                style={{
-                  background: '#1c1c24',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                <option value="" disabled style={{ background: '#16161c' }}>
-                  {lang === 'es' ? 'Seleccionar mazo destino...' : 'Select target deck...'}
-                </option>
-                {(() => {
-                  const srsData = db.getSrsData();
-                  const deckNames = new Set<string>();
-                  Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-                    if (word.startsWith('_deck_')) {
-                      const dName = word.substring(6).trim();
-                      if (dName) deckNames.add(dName);
-                    } else if (card && card.source && !word.startsWith('_')) {
-                      deckNames.add(card.source.trim());
-                    }
-                  });
-                  return Array.from(deckNames)
-                    .filter(name => name !== deckPromptTargetId)
-                    .sort((a, b) => a.localeCompare(b, 'ja'))
-                    .map(name => (
-                      <option key={name} value={name} style={{ background: '#16161c' }}>
-                        {name}
-                      </option>
-                    ));
-                })()}
-              </select>
-            ) : (
-              <input 
+            <label className="srs-deck-field">
+              <span>{lang === 'es' ? 'Nombre' : 'Name'}</span>
+              <input
                 type="text"
                 value={deckPromptValue}
                 onChange={(e) => setDeckPromptValue(e.target.value)}
                 placeholder={lang === 'es' ? 'Nombre del mazo...' : 'Deck name...'}
                 required
-                autoFocus
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  transition: 'border-color 0.2s'
-                }}
+                autoFocus={!isSettings}
               />
+            </label>
+
+            {isSettings && (
+              <>
+                <div className="srs-deck-field-row">
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Nuevas por día' : 'New cards per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.newPerDay ?? ''}
+                      placeholder={lang === 'es' ? `General: ${globalNew}` : `General: ${globalNew}`}
+                      onChange={(e) => setLimit('newPerDay', e.target.value)}
+                    />
+                  </label>
+                  <label className="srs-deck-field">
+                    <span>{lang === 'es' ? 'Repasos por día' : 'Reviews per day'}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={deckOptionsDraft.reviewsPerDay ?? ''}
+                      placeholder={`General: ${globalReviews}`}
+                      onChange={(e) => setLimit('reviewsPerDay', e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <label className="srs-deck-field">
+                  <span>{lang === 'es' ? 'Qué ves antes de la respuesta' : 'What you see before the answer'}</span>
+                  <select
+                    value={deckOptionsDraft.cardFront || ''}
+                    onChange={(e) => {
+                      const value = e.target.value as SrsDeckOptions['cardFront'] | '';
+                      setDeckOptionsDraft(d => {
+                        const next = { ...d };
+                        if (value) next.cardFront = value;
+                        else delete next.cardFront;
+                        return next;
+                      });
+                    }}
+                  >
+                    {frontOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+
+                <label className="srs-deck-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(deckOptionsDraft.paused)}
+                    onChange={(e) => setDeckOptionsDraft(d => ({ ...d, paused: e.target.checked }))}
+                  />
+                  <span>
+                    <strong>{lang === 'es' ? 'Pausar el mazo' : 'Pause this deck'}</strong>
+                    <small>{lang === 'es' ? 'No aparece en los repasos hasta que lo reactives. No se pierde el progreso.' : 'It stays out of reviews until you turn it back on. No progress is lost.'}</small>
+                  </span>
+                </label>
+              </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button
-                type="button"
-                className="create-profile-cancel"
-                onClick={() => setIsDeckPromptOpen(false)}
-                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                {lang === 'es' ? 'Cancelar' : 'Cancel'}
-              </button>
-
-              {deckPromptMode === 'rename' && (
-                <button
-                  type="button"
-                  onClick={handleDeckPromptDelete}
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid #ef4444',
-                    color: '#f87171',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {lang === 'es' ? 'Eliminar' : 'Delete'}
+            <div className="srs-deck-modal-actions">
+              {isSettings && (
+                <button type="button" className="srs-deck-delete" onClick={handleDeckPromptDelete}>
+                  <Trash2 size={15} />
+                  <span>{lang === 'es' ? 'Eliminar mazo' : 'Delete deck'}</span>
                 </button>
               )}
-
-              <button
-                type="submit"
-                style={{
-                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  borderRadius: '8px',
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {deckPromptMode === 'create'
-                  ? (lang === 'es' ? 'Crear' : 'Create')
-                  : deckPromptMode === 'rename'
-                    ? (lang === 'es' ? 'Guardar' : 'Save')
-                    : (lang === 'es' ? 'Fusionar' : 'Merge')
-                }
+              <button type="button" className="srs-deck-cancel" onClick={() => setIsDeckPromptOpen(false)}>
+                {lang === 'es' ? 'Cancelar' : 'Cancel'}
+              </button>
+              <button type="submit" className="srs-deck-save">
+                {isSettings ? (lang === 'es' ? 'Guardar' : 'Save') : (lang === 'es' ? 'Crear' : 'Create')}
               </button>
             </div>
           </form>
         </div>
-      )}
+        );
+      })()}
       {deleteAllState && renderDeleteAllModal()}
       {confirmModal}
     </div>

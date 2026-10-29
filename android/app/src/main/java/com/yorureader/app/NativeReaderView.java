@@ -8,10 +8,12 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -37,6 +39,15 @@ final class NativeReaderView extends View {
          * or 0 in the middle of the page; the listener decides (a word under the finger wins).
          */
         void onTap(float x, float y, int edgeDirection);
+        /** A long press without moving: true if it started a text selection (a letter is under it). */
+        boolean onLongPress(float x, float y);
+        /**
+         * The finger moves while selecting: handle 0 extends the selection begun by the long press,
+         * 1 moves its start, 2 its end. x, y: the point the handle (or finger) points at.
+         */
+        void onSelectionDrag(float x, float y, int handle);
+        /** The finger that was selecting is lifted. */
+        void onSelectionDragEnd();
     }
 
     private final Listener listener;
@@ -46,6 +57,8 @@ final class NativeReaderView extends View {
     private float downX, downY;
     private boolean dragging;
     private ValueAnimator animator;
+    /** A turn asked for while its page was still being drawn: done as soon as the page arrives. */
+    private int pendingTurn = 0;
     private final int touchSlop;
     private final Paint shadowPaint = new Paint();
     private int background = Color.rgb(12, 14, 19);
@@ -58,6 +71,19 @@ final class NativeReaderView extends View {
     private final List<RectF> highlight = new ArrayList<>();
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint dimPaint = new Paint();
+    /** The text selection on the current page (long press), one box per line, and its two handles. */
+    private final List<RectF> selection = new ArrayList<>();
+    private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private PointF startHandle, endHandle;
+    /** Where each handle's knob is drawn: the letter edge it marks plus this offset (px). */
+    private PointF startKnob, endKnob;
+    /** Selecting with the finger down: -1 no, 0 extending after the long press, 1 start handle, 2 end handle. */
+    private int selectingWith = -1;
+    /** Offset from the finger to the letter edge the dragged handle marks (the finger would hide it). */
+    private float grabDx, grabDy;
+    private boolean longPressed;
+    private final Runnable longPress = this::onLongPressTimeout;
 
     NativeReaderView(Context context, Listener listener) {
         super(context);
@@ -66,11 +92,32 @@ final class NativeReaderView extends View {
         shadowPaint.setColor(Color.argb(70, 0, 0, 0));
     }
 
+    /** The finger stayed still for the long-press time: a text selection starts if a letter is under it. */
+    private void onLongPressTimeout() {
+        if (dragging || isAnimating()) return;
+        if (listener.onLongPress(downX, downY)) {
+            longPressed = true;
+            selectingWith = 0;
+            grabDx = grabDy = 0;
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            getParent().requestDisallowInterceptTouchEvent(true);
+        }
+    }
+
     void setPages(Bitmap prev, Bitmap cur, Bitmap next) {
         this.prev = prev;
         this.cur = cur;
         this.next = next;
         invalidate();
+        if (pendingTurn != 0 && incomingFor(pendingTurn) != null) {
+            int direction = pendingTurn;
+            pendingTurn = 0;
+            turn(direction);
+        }
+    }
+
+    private Bitmap incomingFor(int direction) {
+        return direction == 1 ? next : prev;
     }
 
     void setLook(int background, boolean vertical, boolean invertTaps, boolean kindleTaps, int brightness) {
@@ -90,6 +137,36 @@ final class NativeReaderView extends View {
         invalidate();
     }
 
+    /**
+     * The selection's line boxes and the letter edges its handles mark (null hides them).
+     * vertical: the knobs go above the first letter and below the last one; otherwise below both.
+     */
+    void setSelection(List<RectF> rects, PointF start, PointF end, int color, int handleColor) {
+        selection.clear();
+        selection.addAll(rects);
+        selectionPaint.setColor(color);
+        handlePaint.setColor(handleColor);
+        startHandle = start;
+        endHandle = end;
+        float knob = 11 * getResources().getDisplayMetrics().density;
+        startKnob = start == null ? null : vertical ? new PointF(start.x, start.y - knob) : new PointF(start.x - knob * 0.6f, start.y + knob);
+        endKnob = end == null ? null : vertical ? new PointF(end.x, end.y + knob) : new PointF(end.x + knob * 0.6f, end.y + knob);
+        invalidate();
+    }
+
+    boolean hasSelection() {
+        return !selection.isEmpty();
+    }
+
+    /** Handle whose knob is under the point: 1 start, 2 end, 0 none. */
+    private int handleAt(float x, float y) {
+        float reach = 28 * getResources().getDisplayMetrics().density;
+        float ds = startKnob == null ? Float.MAX_VALUE : (float) Math.hypot(x - startKnob.x, y - startKnob.y);
+        float de = endKnob == null ? Float.MAX_VALUE : (float) Math.hypot(x - endKnob.x, y - endKnob.y);
+        if (Math.min(ds, de) > reach) return 0;
+        return ds <= de ? 1 : 2;
+    }
+
     void setHoles(List<Rect> rects) {
         holes.clear();
         holes.addAll(rects);
@@ -107,7 +184,12 @@ final class NativeReaderView extends View {
     }
 
     private Bitmap incoming(float dx) {
-        return directionForDrag(dx) == 1 ? next : prev;
+        return incomingFor(directionForDrag(dx));
+    }
+
+    /** The page can turn that way and its bitmap is ready (sliding in an empty page shows only the background). */
+    private boolean canSlide(int direction) {
+        return listener.canTurn(direction) && incomingFor(direction) != null;
     }
 
     @Override
@@ -132,6 +214,22 @@ final class NativeReaderView extends View {
             canvas.translate(offset, 0);
             for (RectF r : highlight) canvas.drawRoundRect(r, radius, radius, highlightPaint);
             canvas.restore();
+        }
+        if (!selection.isEmpty() && offset == 0) {
+            float radius = 3 * getResources().getDisplayMetrics().density;
+            for (RectF r : selection) canvas.drawRoundRect(r, radius, radius, selectionPaint);
+            float knob = 7 * getResources().getDisplayMetrics().density;
+            float stem = 1.5f * getResources().getDisplayMetrics().density;
+            if (startHandle != null && startKnob != null) {
+                canvas.drawRect(Math.min(startHandle.x, startKnob.x) - stem, Math.min(startHandle.y, startKnob.y) - stem,
+                    Math.max(startHandle.x, startKnob.x) + stem, Math.max(startHandle.y, startKnob.y) + stem, handlePaint);
+                canvas.drawCircle(startKnob.x, startKnob.y, knob, handlePaint);
+            }
+            if (endHandle != null && endKnob != null) {
+                canvas.drawRect(Math.min(endHandle.x, endKnob.x) - stem, Math.min(endHandle.y, endKnob.y) - stem,
+                    Math.max(endHandle.x, endKnob.x) + stem, Math.max(endHandle.y, endKnob.y) + stem, handlePaint);
+                canvas.drawCircle(endKnob.x, endKnob.y, knob, handlePaint);
+            }
         }
         Bitmap other = offset != 0 ? incoming(offset) : null;
         if (other != null) {
@@ -162,28 +260,56 @@ final class NativeReaderView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         switch (e.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_DOWN: {
                 if (animator != null && animator.isRunning()) animator.end();
+                pendingTurn = 0;
                 downX = e.getX();
                 downY = e.getY();
                 dragging = false;
+                longPressed = false;
+                selectingWith = -1;
+                removeCallbacks(longPress);
+                int handle = selection.isEmpty() ? 0 : handleAt(downX, downY);
+                if (handle != 0) {
+                    // Dragging a handle: it points at the letter edge, not at the finger.
+                    PointF edge = handle == 1 ? startHandle : endHandle;
+                    selectingWith = handle;
+                    grabDx = edge.x - downX;
+                    grabDy = edge.y - downY;
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                    return true;
+                }
+                postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
                 return true;
+            }
             case MotionEvent.ACTION_MOVE: {
+                if (selectingWith >= 0) {
+                    listener.onSelectionDrag(e.getX() + grabDx, e.getY() + grabDy, selectingWith);
+                    return true;
+                }
                 float dx = e.getX() - downX;
+                if (Math.abs(dx) > touchSlop || Math.abs(e.getY() - downY) > touchSlop) removeCallbacks(longPress);
                 if (!dragging && Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(e.getY() - downY)) {
                     dragging = true;
                     getParent().requestDisallowInterceptTouchEvent(true);
                 }
                 if (dragging) {
-                    offset = listener.canTurn(directionForDrag(dx)) ? dx : dx / 4;
+                    offset = canSlide(directionForDrag(dx)) ? dx : dx / 4;
                     invalidate();
                 }
                 return true;
             }
             case MotionEvent.ACTION_UP: {
+                removeCallbacks(longPress);
+                if (selectingWith >= 0 || longPressed) {
+                    selectingWith = -1;
+                    longPressed = false;
+                    listener.onSelectionDragEnd();
+                    return true;
+                }
                 if (dragging) {
                     int direction = directionForDrag(offset);
-                    boolean turn = Math.abs(offset) > getWidth() * 0.18f && listener.canTurn(direction);
+                    boolean turn = Math.abs(offset) > getWidth() * 0.18f && canSlide(direction);
                     animateTo(turn ? Math.signum(offset) * getWidth() : 0, turn ? direction : 0);
                 } else if (Math.abs(e.getX() - downX) < touchSlop && Math.abs(e.getY() - downY) < touchSlop) {
                     float x = e.getX();
@@ -201,6 +327,10 @@ final class NativeReaderView extends View {
                 return true;
             }
             case MotionEvent.ACTION_CANCEL:
+                removeCallbacks(longPress);
+                if (selectingWith >= 0 || longPressed) listener.onSelectionDragEnd();
+                selectingWith = -1;
+                longPressed = false;
                 if (dragging) animateTo(0, 0);
                 dragging = false;
                 return true;
@@ -212,6 +342,11 @@ final class NativeReaderView extends View {
     /** Slides to the next (1) or previous (-1) page. */
     void turn(int direction) {
         if (isAnimating() || !listener.canTurn(direction)) return;
+        if (incomingFor(direction) == null) {
+            pendingTurn = direction;
+            return;
+        }
+        pendingTurn = 0;
         // The current page leaves towards where the incoming page is not: vertical next = to the right.
         float sign = vertical ? direction : -direction;
         animateTo(sign * getWidth(), direction);

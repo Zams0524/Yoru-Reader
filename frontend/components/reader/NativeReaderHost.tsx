@@ -6,6 +6,7 @@ import { getLocalWordStyleConfig } from '../../utils/parserSettingsStore';
 import { analyseBookWords, engineWordCss, renderBookWords, type BookWords } from '../../utils/nativeReaderWords';
 import { isFuriganaOnNewWords } from '../../utils/yoruParserNative';
 import { isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
+import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
 import { computeSections, jitenTextOfLine, prepareLineWords, renderLineWords, type Book, type CharsUpdatePayload, type ReaderEngineApi } from './ReaderEngine';
 import {
   NativeReader,
@@ -14,14 +15,50 @@ import {
   cssColorToInt,
   ensureNativeBook,
   exportBookForNativeReader,
+  LINE_END_RESERVE_EM,
   loadNativePosition,
   saveNativePosition,
+  type NativeBookExport,
+  type NativeMark,
   type NativePosition,
+  type NativeSelection,
   type NativeReaderSettings,
   type NativeWordHit,
+  textBlockOfParagraph,
   textOffsetToInnerPath,
   xpathToTextOffset,
 } from '../../utils/nativeReader';
+
+/** A long-press selection on the native page, in the terms the reader's toolbar and highlights use. */
+export interface NativeTextSelection {
+  paragraphId: number;
+  /** Offsets in the paragraph's text without furigana; null for a heading (no highlight there). */
+  offsets: { start: number; end: number } | null;
+  visibleText: string | null;
+  text: string;
+  /** Box of the selection on screen, CSS px. */
+  rect: { left: number; top: number; right: number; bottom: number };
+}
+
+/** Start of the occurrence of needle (whitespace between its letters allowed) nearest to hint, and its end. */
+function findNear(text: string, needle: string, hint: number): { start: number; end: number } | null {
+  const letters = Array.from(needle.replace(/\s+/g, ''));
+  if (!letters.length) return null;
+  const pattern = new RegExp(letters.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'), 'g');
+  let best: { start: number; end: number } | null = null;
+  for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+    if (!best || Math.abs(m.index - hint) < Math.abs(best.start - hint)) best = { start: m.index, end: m.index + m[0].length };
+    pattern.lastIndex = m.index + 1;
+  }
+  return best;
+}
+
+/** Text of an exported block without furigana. */
+function blockPlainText(blockHtml: string): string {
+  const holder = document.createElement('div');
+  holder.innerHTML = `<p>${blockHtml}</p>`;
+  return baseTextNodes(holder).map((t) => t.data).join('');
+}
 
 interface Props {
   apiRef?: React.MutableRefObject<ReaderEngineApi | null>;
@@ -47,9 +84,17 @@ interface Props {
   onError?: (message: string) => void;
   /** Read aloud is not running: its next start reads from the page on screen. */
   readAloudIdle?: boolean;
+  /** UI language ('es', 'en'): texts the plugin draws on the page. */
+  lang?: string;
+  /** CSS px at the bottom of the screen the page leaves free (the read-aloud player covers them). */
+  bottomReserve?: number;
+  /** The book's highlights: painted on the pages. */
+  highlights?: BookHighlight[];
+  /** A long press selected text (null: the selection ended). */
+  onSelection?: (selection: NativeTextSelection | null) => void;
 }
 
-function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']): NativeReaderSettings {
+function nativeSettings(settings: ReaderSettingsState, colors: Props['colors'], lang?: string, bottomReserve = 0): NativeReaderSettings {
   return {
     vertical: settings.vertical,
     fontSize: settings.fontSize,
@@ -63,6 +108,10 @@ function nativeSettings(settings: ReaderSettingsState, colors: Props['colors']):
     invertTaps: !!settings.invertTapZones,
     tapZoneMode: settings.tapZoneMode || 'edge',
     brightness: typeof settings.readerBrightness === 'number' ? settings.readerBrightness : 100,
+    hideImages: !!settings.hideImages,
+    spoilerLabel: lang === 'es' ? 'Imagen oculta · toca para verla' : 'Hidden image · tap to show',
+    lineEndReserve: LINE_END_RESERVE_EM,
+    bottomReserve: Math.round(bottomReserve),
     underlines: [],
   };
 }
@@ -106,12 +155,32 @@ function collectHoles(root: HTMLElement, placeholder: HTMLElement | null): numbe
 }
 
 /**
+ * Whether the next export differs from the open one in what the reader sees now: the page CSS
+ * (word styles, furigana), the blocks, or the markup of a block of this section.
+ */
+function changesSection(
+  opened: NativeBookExport,
+  next: NativeBookExport,
+  section: { startParagraphId: number; lastIndex: number } | undefined,
+): boolean {
+  if (!section || opened.blocks.length !== next.blocks.length) return true;
+  const head = (html: string) => html.slice(0, html.indexOf('<body>'));
+  if (head(opened.html) !== head(next.html)) return true;
+  for (let ordinal = 0; ordinal < next.blocks.length; ordinal++) {
+    const paragraph = next.blockParagraph[ordinal];
+    if (paragraph < section.startParagraphId || paragraph > section.lastIndex) continue;
+    if (opened.blocks[ordinal] !== next.blocks[ordinal]) return true;
+  }
+  return false;
+}
+
+/**
  * Android reader drawn natively (NativeReaderPlugin): this element only reserves the page area
  * and keeps the WebView side in step (position, settings, the reader's bars over the page).
  */
 export default function NativeReaderHost({
   apiRef,
-  book,
+  book: bookProp,
   readerSettings,
   colors,
   rootRef,
@@ -126,11 +195,25 @@ export default function NativeReaderHost({
   targetCharPosition,
   onError,
   readAloudIdle = true,
+  lang,
+  bottomReserve = 0,
+  highlights,
+  onSelection,
 }: Props) {
   const placeholderRef = useRef<HTMLDivElement>(null);
+  // The app replaces the book object when it saves details about it (vocabulary stats, status):
+  // the same book with the same text is not a new book to analyse, export and open again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const book = useMemo(() => bookProp, [bookProp.id, bookProp.chapters]);
+  // How long each step of the first open takes (one line in the log once the page is on screen).
+  const openTimingRef = useRef<{ start: number; marks: string[]; logged: boolean }>({ start: performance.now(), marks: [], logged: false });
+  const markOpen = (step: string) => {
+    const timing = openTimingRef.current;
+    if (!timing.logged) timing.marks.push(`${step} ${Math.round(performance.now() - timing.start)}`);
+  };
   const sections = useMemo(() => computeSections(book), [book]);
   const showFurigana = readerSettings.showFurigana !== false;
-  const settings = nativeSettings(readerSettings, colors);
+  const settings = nativeSettings(readerSettings, colors, lang, bottomReserve);
 
   // Word states. The book's words are analysed once (kept in IndexedDB, so later opens take
   // milliseconds; the first one shows its progress), and the book opens with its colours and
@@ -145,16 +228,16 @@ export default function NativeReaderHost({
   }, []);
   const [jitenRevision, setJitenRevision] = useState(0);
   useEffect(() => onJitenChange(() => setJitenRevision((revision) => revision + 1)), []);
-  // Marking words in the popup changes states one by one: export once they settle. The states
-  // also arrive a moment after the reader mounts: the first open waits for them (statusesReady)
-  // instead of opening with every word "new" and reloading.
+  // Marking words in the popup changes states one by one: export once they settle. On Android the
+  // states are read synchronously when the profile loads, long before a book opens, so the first
+  // open takes them as they are (an empty list is a profile without states, not one still loading).
   const [exportStatuses, setExportStatuses] = useState(wordStatuses);
   const [statusesReady, setStatusesReady] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setExportStatuses(wordStatuses);
       setStatusesReady(true);
-    }, statusesReady ? 700 : 400);
+    }, statusesReady ? 700 : 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wordStatuses]);
@@ -165,53 +248,81 @@ export default function NativeReaderHost({
     let cancelled = false;
     setWords(null);
     setWordsSettled(false);
+    // The part about to be read: the section of the saved position and the next one. A book
+    // analysed for the first time opens once these lines have their words; the rest of the book
+    // is analysed while reading (its new markup is applied as the reader gets there).
+    const paragraph = Number(book.progress?.currentPage) || 0;
+    const from = Math.max(0, sections.findIndex((s) => paragraph >= s.startParagraphId && paragraph <= s.lastIndex));
+    const opening: string[] = [];
+    for (const section of sections.slice(from, from + 2)) {
+      const chapter = book.chapters?.[section.chapterIndex]?.content || '';
+      opening.push(...chapter.slice(section.startOffset, section.endOffset).split(/\r?\n/));
+    }
+    let latest: BookWords | null = null;
+    let started = false;
+    let opened = false;
     // Show the progress only if the analysis is not almost immediate (cached).
-    const showProgress = window.setTimeout(() => { if (!cancelled) setAnalysisProgress(0); }, 250);
-    void analyseBookWords(book, (fraction) => { if (!cancelled) setAnalysisProgress(fraction); }, () => cancelled)
-      .catch(() => null)
-      .then(async (result) => {
+    const showProgress = window.setTimeout(() => { if (!cancelled && !opened) setAnalysisProgress(0); }, 250);
+    const settle = async (result: BookWords | null) => {
+      if (cancelled) return;
+      latest = result;
+      if (started) {
+        if (opened) setWords(latest);
+        return;
+      }
+      started = true;
+      // With Jiten on, its parse of the section being opened comes first (up to a few seconds),
+      // so the book does not open with the local parser's words and reload with Jiten's.
+      if (result && isJitenParserEnabled()) {
+        const texts = opening.map(jitenTextOfLine).filter(Boolean);
+        await Promise.race([
+          parseWithJiten(texts).catch(() => []),
+          new Promise((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
         if (cancelled) return;
-        // With Jiten on, its parse of the section being opened comes first (up to a few seconds),
-        // so the book does not open with the local parser's words and reload with Jiten's.
-        if (result && isJitenParserEnabled()) {
-          const paragraph = Number(book.progress?.currentPage) || 0;
-          const from = sections.findIndex((s) => paragraph >= s.startParagraphId && paragraph <= s.lastIndex);
-          const texts: string[] = [];
-          for (const section of sections.slice(Math.max(0, from), Math.max(0, from) + 2)) {
-            const chapter = book.chapters?.[section.chapterIndex]?.content || '';
-            for (const line of chapter.slice(section.startOffset, section.endOffset).split(/\r?\n/)) {
-              const text = jitenTextOfLine(line);
-              if (text) texts.push(text);
-            }
-          }
-          await Promise.race([
-            parseWithJiten(texts).catch(() => []),
-            new Promise((resolve) => window.setTimeout(resolve, 2500)),
-          ]);
-          if (cancelled) return;
-        }
-        window.clearTimeout(showProgress);
-        setWords(result);
-        setWordsSettled(true);
-        setAnalysisProgress(null);
-      });
+      }
+      opened = true;
+      window.clearTimeout(showProgress);
+      markOpen('words');
+      setWords(latest);
+      setWordsSettled(true);
+      setAnalysisProgress(null);
+    };
+    void analyseBookWords(
+      book,
+      (fraction) => { if (!cancelled && !opened) setAnalysisProgress(fraction); },
+      () => cancelled,
+      new Set(opening),
+      (partial) => { void settle(partial); },
+    )
+      .catch(() => null)
+      .then(settle);
     return () => { cancelled = true; window.clearTimeout(showProgress); };
-  }, [book]);
-  const lineHtml = useMemo(
-    () => (words ? renderBookWords(words, exportStatuses, parserSettings.furiganaOnNew) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, exportStatuses, parserSettings, jitenRevision],
-  );
+  }, [book]);
   const wordStyle = useMemo(
     () => engineWordCss(getLocalWordStyleConfig(), settings.textColor, settings.backgroundColor),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [parserSettings, settings.textColor, settings.backgroundColor],
   );
-  const exported = useMemo(() => exportBookForNativeReader(book, {
-    showFurigana,
-    lineHtml: lineHtml || undefined,
-    wordCss: lineHtml ? wordStyle.css : '',
-  }), [book, showFurigana, lineHtml, wordStyle]);
+  // Which states need a span; the set only changes with the word styles.
+  const styledKey = Array.from(wordStyle.styled).sort().join(',');
+  const lineHtml = useMemo(
+    () => (words ? renderBookWords(words, exportStatuses, parserSettings.furiganaOnNew, wordStyle.styled) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [words, exportStatuses, parserSettings, jitenRevision, styledKey],
+  );
+  const exported = useMemo(() => {
+    const started = performance.now();
+    const result = exportBookForNativeReader(book, {
+      showFurigana,
+      lineHtml: lineHtml || undefined,
+      wordCss: lineHtml ? wordStyle.css : '',
+    });
+    const timing = openTimingRef.current;
+    if (!timing.logged) timing.marks.push(`export ${Math.round(performance.now() - started)}`);
+    return result;
+  }, [book, showFurigana, lineHtml, wordStyle]);
   settings.underlines = lineHtml ? wordStyle.underlines : [];
   const [ready, setReady] = useState(false);
   const positionRef = useRef<NativePosition | null>(null);
@@ -219,9 +330,47 @@ export default function NativeReaderHost({
   const openedExportRef = useRef<typeof exported | null>(null);
   const sectionRef = useRef(0);
   const [currentSection, setCurrentSection] = useState(0);
+  // The export to open. Each reload costs the engine a full layout of the book, so once the book
+  // is open a new export (word states, Jiten parses, the rest of the book analysed) replaces it
+  // only when it changes what is being read: the section on screen or the page CSS. Changes
+  // further on wait until the reader gets to them.
+  const [target, setTarget] = useState(exported);
+  useEffect(() => {
+    const opened = openedExportRef.current;
+    if (!ready || !opened) {
+      setTarget(exported);
+      return undefined;
+    }
+    if (opened.key === exported.key) {
+      // Back to what is open: drop a reload still waiting.
+      setTarget((pending) => (pending.key === exported.key ? pending : exported));
+      return undefined;
+    }
+    if (!changesSection(opened, exported, sections[currentSection])) return undefined;
+    // A moment's wait gathers what changes together (a Jiten parse in several requests).
+    const timer = window.setTimeout(() => setTarget(exported), 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exported, ready, currentSection]);
   const lookupRef = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onCharsUpdate, onTap, onWordTap, onPageTurn, onError });
-  callbacks.current = { onCharsUpdate, onTap, onWordTap, onPageTurn, onError };
+  const callbacks = useRef({ onCharsUpdate, onTap, onWordTap, onPageTurn, onError, onSelection });
+  callbacks.current = { onCharsUpdate, onTap, onWordTap, onPageTurn, onError, onSelection };
+
+  // Saved highlights, for the plugin to paint into the pages: block, offset and text, colour at
+  // 40 % (ARGB). Sent with the open and again whenever they change.
+  const marks = useMemo<NativeMark[]>(() => (highlights || []).map((item) => {
+    const swatch = HIGHLIGHT_COLORS.find((c) => c.id === item.color)?.swatch || '#facc15';
+    return {
+      ordinal: textBlockOfParagraph(exported, item.paragraphId),
+      offset: item.start,
+      text: item.text,
+      color: ((0x66 << 24) | cssColorToInt(swatch, 0xfacc15)) >>> 0,
+      note: !!item.note?.trim(),
+    };
+  }), [highlights, exported]);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const sentMarksRef = useRef('');
   const wordStatusesRef = useRef(wordStatuses);
   wordStatusesRef.current = wordStatuses;
 
@@ -261,7 +410,7 @@ export default function NativeReaderHost({
     const line = open.blockLines[hit.ordinal];
     const blockHtml = open.blocks[hit.ordinal];
     if (line === undefined || blockHtml === undefined) return;
-    await Promise.all([tokenizerReady, prepareLineWords(line)]);
+    await Promise.all([tokenizerReady(), prepareLineWords(line)]);
     const container = lookupRef.current;
     if (!container) return;
     let offset = xpathToTextOffset(blockHtml, hit.xpath);
@@ -314,15 +463,98 @@ export default function NativeReaderHost({
   const ttsHighlightColor = useMemo(() => ((0x40 << 24) | cssColorToInt(colors.accent || '#f2c866', 0xf2c866)) >>> 0, [colors.accent]);
   const ttsHighlightColorRef = useRef(ttsHighlightColor);
   ttsHighlightColorRef.current = ttsHighlightColor;
-  // The local parser (Kuromoji) loads once; until then words would be split by script only.
-  const [tokenizerReady] = useState(() => initTokenizer().catch(() => undefined));
+  // The local parser (Kuromoji) loads once; until then words would be split by script only. Taps
+  // need it, the open does not (a book analysed before is read from IndexedDB): building it on the
+  // main thread while the book opens would slow the open, so it starts once the page is on screen.
+  const tokenizerReady = () => initTokenizer().catch(() => undefined);
+  useEffect(() => { if (ready) void tokenizerReady(); }, [ready]);
   const findWordRef = useRef(findWord);
   findWordRef.current = findWord;
+
+  // Long press: the letters the plugin selected -> paragraph and offsets in its text (the same
+  // ones the WebView reader's highlights use). A long press without dragging selects the word.
+  const handleSelection = async (sel: NativeSelection) => {
+    const open = openedExportRef.current ?? exported;
+    const ordinal = sel.ordinal;
+    const blockHtml = open.blocks[ordinal];
+    const line = open.blockLines[ordinal];
+    if (blockHtml === undefined || line === undefined) return;
+    const plain = blockPlainText(blockHtml);
+    const startGuess = Math.max(0, xpathToTextOffset(blockHtml, sel.startXpath));
+    const endGuess = sel.endOrdinal === ordinal ? xpathToTextOffset(blockHtml, sel.endXpath) + 1 : plain.length;
+    // The engine's offsets can be off by a few characters (whitespace): trust the letters.
+    let range = findNear(plain, sel.text, startGuess);
+    if (!range && endGuess > startGuess) range = { start: startGuess, end: Math.min(plain.length, endGuess) };
+    if (!range) return;
+    const heading = /^\{h[123]:/.test(line);
+    if (sel.expandable && !heading) {
+      await Promise.all([tokenizerReady(), prepareLineWords(line)]);
+      const container = lookupRef.current;
+      if (container) {
+        container.innerHTML = `<p class="chapter-content">${renderLineWords(line, wordStatusesRef.current)}</p>`;
+        const texts = baseTextNodes(container);
+        let at = 0;
+        for (const text of texts) {
+          if (range.start < at + text.length) {
+            const span = text.parentElement?.closest('[data-word], [wordId], .jiten-word') as HTMLElement | null;
+            if (span) {
+              let start = -1;
+              let end = -1;
+              let pos = 0;
+              for (const t of texts) {
+                if (span.contains(t)) {
+                  if (start < 0) start = pos;
+                  end = pos + t.length;
+                }
+                pos += t.length;
+              }
+              if (end - start > 1) {
+                // The plugin selects the word and reports it again (not expandable then).
+                const done = await NativeReader.selectLetters({
+                  page: sel.page,
+                  index: sel.startIndex,
+                  before: Math.max(0, range.start - start),
+                  after: Math.max(0, end - range.start - 1),
+                }).then(() => true, () => false);
+                if (done) return;
+              }
+            }
+            break;
+          }
+          at += text.length;
+        }
+      }
+    }
+    callbacks.current.onSelection?.({
+      paragraphId: open.blockParagraph[ordinal] ?? 0,
+      offsets: heading ? null : range,
+      visibleText: heading ? null : plain.slice(range.start, range.end),
+      text: plain.slice(range.start, range.end) || sel.text,
+      rect: { left: sel.left, top: sel.top, right: sel.right, bottom: sel.bottom },
+    });
+  };
+  const handleSelectionRef = useRef(handleSelection);
+  handleSelectionRef.current = handleSelection;
   const appliedSettingsRef = useRef('');
+  // One loading screen from the moment the reader mounts until the first page is on screen (the
+  // native page fades in over it). It waits a moment so a quick open shows nothing at all.
+  const es = lang === 'es';
+  const [loaderShown, setLoaderShown] = useState(false);
+  const [loaderGone, setLoaderGone] = useState(false);
+  useEffect(() => {
+    if (ready) {
+      const timer = window.setTimeout(() => setLoaderGone(true), 260);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => setLoaderShown(true), 150);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
   // Leaving the reader closes the engine (a reload keeps it and the page on screen).
   useEffect(() => () => { void NativeReader.close().catch(() => {}); }, []);
 
   // Open the book (export it first if this version is not on the device yet), close on leaving.
+  // Before the first open, the latest export; after it, the one chosen to replace it (target).
+  const toOpen = ready ? target : exported;
   useEffect(() => {
     if (!wordsSettled || !statusesReady) return undefined;
     let cancelled = false;
@@ -334,11 +566,15 @@ export default function NativeReaderHost({
       NativeReader.addListener('tap', ({ closePopup }) => callbacks.current.onTap?.(!!closePopup)),
       NativeReader.addListener('word', (hit) => { void findWordRef.current(hit); }),
       NativeReader.addListener('error', ({ message }) => callbacks.current.onError?.(message)),
+      NativeReader.addListener('selection', (sel) => { void handleSelectionRef.current(sel); }),
+      NativeReader.addListener('selectionCleared', () => callbacks.current.onSelection?.(null)),
     ];
     (async () => {
       try {
-        await ensureNativeBook(exported);
+        markOpen('statuses');
+        await ensureNativeBook(toOpen, () => cancelled);
         if (cancelled) return;
+        markOpen('written');
         const paragraph = Number(book.progress?.currentPage) || 0;
         const saved = loadNativePosition(String(book.id));
         // Reloaded here (word states, furigana): the character at the top of the page on screen,
@@ -348,25 +584,35 @@ export default function NativeReaderHost({
         const live = positionRef.current;
         const previous = openedExportRef.current;
         const at = (ordinal: number, offset: number) => {
-          const innerPath = offset >= 0 ? textOffsetToInnerPath(exported.blocks[ordinal] ?? '', offset) : null;
+          const innerPath = offset >= 0 ? textOffsetToInnerPath(toOpen.blocks[ordinal] ?? '', offset) : null;
           return { ordinal, ...(innerPath ? { innerPath } : {}) };
         };
         let place: { xpath?: string; ordinal?: number; innerPath?: string };
         if (live && live.ordinal >= 0 && previous) {
           place = at(live.ordinal, xpathToTextOffset(previous.blocks[live.ordinal] ?? '', live.xpath));
         } else if (saved && saved.paragraph === paragraph) {
-          place = saved.key === exported.key || typeof saved.ordinal !== 'number'
+          place = saved.key === toOpen.key || typeof saved.ordinal !== 'number'
             ? { xpath: saved.xpath }
             : at(saved.ordinal, saved.offset ?? -1);
         } else {
-          place = { ordinal: blockOfParagraph(exported, paragraph) };
+          place = { ordinal: blockOfParagraph(toOpen, paragraph) };
         }
-        const position = await NativeReader.open({ key: exported.key, settings: settingsRef.current, ...place });
-        openedExportRef.current = exported;
+        const position = await NativeReader.open({ key: toOpen.key, settings: settingsRef.current, marks: marksRef.current, ...place });
+        sentMarksRef.current = JSON.stringify(marksRef.current);
+        openedExportRef.current = toOpen;
         if (cancelled) return;
         appliedSettingsRef.current = JSON.stringify(settingsRef.current);
         reportRef.current(position);
         setReady(true);
+        const timing = openTimingRef.current;
+        if (!timing.logged) {
+          timing.logged = true;
+          const since = (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt;
+          const mounted = typeof since === 'number' ? `mount ${Math.round(timing.start - since)}, ` : '';
+          // The WebView's console does not reach the device log: the plugin writes the line.
+          void NativeReader.log({ message: `open: ${mounted}${timing.marks.join(', ')}, shown ${Math.round(performance.now() - timing.start)} ms` }).catch(() => {});
+          window.dispatchEvent(new Event('yoru-reader-opened'));
+        }
       } catch (error) {
         if (!cancelled) callbacks.current.onError?.(error instanceof Error ? error.message : String(error));
       }
@@ -376,7 +622,7 @@ export default function NativeReaderHost({
       handles.forEach((handle) => handle.then((h) => h.remove()).catch(() => {}));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exported.key, wordsSettled, statusesReady]);
+  }, [toOpen.key, wordsSettled, statusesReady]);
 
   // Jiten parses what is being read (this section and the next two), as the WebView reader asks
   // for the paragraphs on its page; each parse brings a new export with Jiten's words and states.
@@ -447,9 +693,9 @@ export default function NativeReaderHost({
     };
   }, [ready, rootRef]);
 
-  const goToParagraph = (paragraph: number) => {
-    void NativeReader.goTo({ ordinal: blockOfParagraph(exported, paragraph) }).catch(() => {});
-  };
+  // Resolves once the engine is on the new page (its pageChanged has been reported).
+  const goToParagraph = (paragraph: number): Promise<void> =>
+    NativeReader.goTo({ ordinal: blockOfParagraph(exported, paragraph) }).catch(() => {});
   const goToParagraphRef = useRef(goToParagraph);
   goToParagraphRef.current = goToParagraph;
 
@@ -492,6 +738,15 @@ export default function NativeReaderHost({
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [ready, readerSettings.volumeKeysNavigation, readerSettings.invertVolumeKeys]);
 
+  // Highlights added, recoloured or removed: the plugin paints the pages again.
+  useEffect(() => {
+    if (!ready) return;
+    const json = JSON.stringify(marks);
+    if (json === sentMarksRef.current) return;
+    sentMarksRef.current = json;
+    void NativeReader.setMarks({ marks }).catch(() => {});
+  }, [ready, marks]);
+
   // Clear the TTS sentence highlight when read-aloud stops.
   useEffect(() => {
     if (readAloudIdle && ready) void NativeReader.clearHighlight().catch(() => {});
@@ -500,7 +755,9 @@ export default function NativeReaderHost({
   // Read aloud works on DOM blocks: an off-screen copy of the open section, from the paragraph on
   // screen to the end of the section, with the WebView reader's block names. The page follows
   // the paragraph being read.
-  const readAloudRef = useRef({ section: -1, lastParagraph: -1 });
+  // jump: the page change asked for the paragraph being read; token: the latest sentence, so a
+  // highlight that waited for a jump is dropped if another sentence came meanwhile.
+  const readAloudRef = useRef({ section: -1, lastParagraph: -1, jump: Promise.resolve(), token: 0 });
   const readAloudIdleRef = useRef(readAloudIdle);
   readAloudIdleRef.current = readAloudIdle;
   const readAloudContentRef = useRef<HTMLDivElement>(null);
@@ -541,43 +798,89 @@ export default function NativeReaderHost({
       const block = range.startContainer.parentElement?.closest('[index]') as HTMLElement | null;
       const paragraph = Number(block?.getAttribute('index'));
       if (!Number.isFinite(paragraph)) return;
-      if (paragraph !== readAloudRef.current.lastParagraph) {
-        readAloudRef.current.lastParagraph = paragraph;
-        goToParagraphRef.current(paragraph);
-      }
-      // Highlight the sentence on the native page.
+      const state = readAloudRef.current;
+      const token = ++state.token;
       const ordinal = Number(block?.dataset.ordinal);
-      if (!block || isNaN(ordinal)) return;
-      const pageStartOrdinal = positionRef.current?.ordinal ?? 0;
-      const relativeBlock = ordinal - pageStartOrdinal;
-      if (relativeBlock < 0) return;
+      if (!block || isNaN(ordinal)) {
+        if (paragraph !== state.lastParagraph) {
+          state.lastParagraph = paragraph;
+          state.jump = goToParagraphRef.current(paragraph);
+        }
+        return;
+      }
       let charOffset = 0;
       let charLength = 0;
+      // The sentence without furigana: the plugin finds it by its letters on the page.
+      let sentenceText = '';
       let beforeStart = true;
       for (const textNode of baseTextNodes(block)) {
         if (beforeStart) {
           if (textNode === range.startContainer) {
             beforeStart = false;
             charOffset += range.startOffset;
-            charLength += (textNode === range.endContainer)
-              ? range.endOffset - range.startOffset
-              : textNode.length - range.startOffset;
+            const end = textNode === range.endContainer ? range.endOffset : textNode.length;
+            charLength += end - range.startOffset;
+            sentenceText += textNode.data.slice(range.startOffset, end);
             if (textNode === range.endContainer) break;
           } else {
             charOffset += textNode.length;
           }
         } else {
-          if (textNode === range.endContainer) { charLength += range.endOffset; break; }
+          if (textNode === range.endContainer) {
+            charLength += range.endOffset;
+            sentenceText += textNode.data.slice(0, range.endOffset);
+            break;
+          }
           charLength += textNode.length;
+          sentenceText += textNode.data;
         }
       }
+      // The page follows the voice. The plugin of APK 1.4.4+ goes to the page of the sentence's
+      // first character (a paragraph can go on over several pages) and clears the highlight when
+      // the page changes; older ones only go to a paragraph's first page.
+      if (positionRef.current?.goToInnerPath) {
+        state.lastParagraph = paragraph;
+        // In the markup of the book the plugin has open (word states may differ from this copy's).
+        const innerPath = textOffsetToInnerPath((openedExportRef.current ?? exported).blocks[ordinal] ?? '', charOffset);
+        state.jump = state.jump.then(() => (innerPath
+          ? NativeReader.goTo({ ordinal, innerPath }).catch(() => {})
+          : goToParagraphRef.current(paragraph)));
+      } else if (paragraph !== state.lastParagraph) {
+        state.lastParagraph = paragraph;
+        // The old page's highlight would stay drawn over the new page (a jump does not clear it
+        // the way a page turn does) until the next sentence.
+        void NativeReader.clearHighlight().catch(() => {});
+        state.jump = goToParagraphRef.current(paragraph);
+      }
       if (charLength <= 0) return;
-      void NativeReader.highlightRange({
-        relativeBlock,
-        charOffset,
-        charLength,
-        color: ttsHighlightColorRef.current,
-      }).catch(() => {});
+      // The engine has no letters for a paragraph's indent (its leading spaces, "　").
+      const indent = /^\s*/.exec(baseTextNodes(block).map((node) => node.data).join(''))![0].length;
+      // Only once the page is the one the sentence is on: its top block and character are known then.
+      void state.jump.then(() => {
+        if (token !== readAloudRef.current.token) return;
+        const position = positionRef.current;
+        const pageStartOrdinal = position && position.ordinal >= 0 ? position.ordinal : 0;
+        const relativeBlock = ordinal - pageStartOrdinal;
+        if (relativeBlock < 0) return;
+        // Characters of the block before the page's first letter: its indent, or all that is on
+        // earlier pages for a paragraph that began on one.
+        let skipped = indent;
+        if (relativeBlock === 0 && position) {
+          const blocks = (openedExportRef.current ?? exported).blocks;
+          skipped = Math.max(indent, xpathToTextOffset(blocks[pageStartOrdinal] ?? '', position.xpath));
+        }
+        let start = charOffset - skipped;
+        let length = charLength;
+        if (start < 0) { length += start; start = 0; }
+        if (length <= 0) return;
+        void NativeReader.highlightRange({
+          relativeBlock,
+          charOffset: start,
+          charLength: length,
+          text: sentenceText,
+          color: ttsHighlightColorRef.current,
+        }).catch(() => {});
+      });
     },
   };
   const readAloudApiRef = useRef(readAloudApi);
@@ -613,11 +916,23 @@ export default function NativeReaderHost({
       className="native-reader-page"
       style={{ flex: 1, width: '100%', height: '100%', background: colors.bg, position: 'relative', overflow: 'hidden' }}
     >
-      {!ready && analysisProgress !== null && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: colors.textMain, opacity: 0.8, fontFamily: 'var(--font-ui), sans-serif', fontSize: 15 }}>
-          <div>Preparando el libro…</div>
-          <div style={{ width: 160, height: 4, borderRadius: 2, background: 'rgba(127,127,127,0.25)', overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round(analysisProgress * 100)}%`, height: '100%', background: colors.accent || '#f2c866', transition: 'width 0.2s' }} />
+      {loaderShown && !loaderGone && (
+        <div
+          className={`native-reader-loading${ready ? ' is-done' : ''}`}
+          role="status"
+          aria-live="polite"
+          style={{ color: colors.textMain, '--native-loading-accent': colors.accent || '#f2c866' } as React.CSSProperties}
+        >
+          {book.title && <div className="native-reader-loading-title">{book.title}</div>}
+          <div className="native-reader-loading-track">
+            {analysisProgress !== null
+              ? <div className="native-reader-loading-fill" style={{ width: `${Math.max(4, Math.round(analysisProgress * 100))}%` }} />
+              : <div className="native-reader-loading-fill is-indeterminate" />}
+          </div>
+          <div className="native-reader-loading-label">
+            {analysisProgress !== null
+              ? `${es ? 'Preparando el libro' : 'Preparing the book'}… ${Math.round(analysisProgress * 100)} %`
+              : es ? 'Abriendo el libro…' : 'Opening the book…'}
           </div>
         </div>
       )}

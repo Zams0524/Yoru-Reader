@@ -11,16 +11,19 @@ interface Props {
   accent: string;
   /** Vertical Japanese reads right to left: the book starts at the right end of the slider. */
   rtl?: boolean;
+  /** Character positions of the page bookmarks: a ribbon on the slider for each. */
+  marks?: number[];
 }
 
 const FALLBACK_CHARS_PER_PAGE = 450;
+const TAP_SLOP_PX = 12;
 
 /**
  * ReadEra-style bottom bar: "page X of N" and a slider over the whole book with chapter ticks.
  * Pages are estimated from how many characters fit on a page of the open section, so the count
  * follows the font size and margins.
  */
-export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent, rtl = false }: Props) {
+export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, onSeek, lang, accent, rtl = false, marks = [] }: Props) {
   const es = lang === 'es';
   const [dragValue, setDragValue] = useState<number | null>(null);
   const charsPerPageRef = useRef(FALLBACK_CHARS_PER_PAGE);
@@ -60,10 +63,22 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
     ? [...sections].reverse().find((section) => section.startChars <= dragValue)
     : null;
 
+  // A tap on the track moves a range input's thumb there: only a drag seeks. The tap that shows
+  // the bars lands on the slider (bottom centre) and jumped to the middle of the book.
+  const pressXRef = useRef<number | null>(null);
+  const tapRef = useRef(false);
+  const press = (x: number) => { pressXRef.current = x; tapRef.current = false; };
   const commit = () => {
     if (dragValue === null) return;
-    onSeek(Math.max(0, Math.min(totalChars, Math.round(dragValue))));
     setDragValue(null);
+    if (!tapRef.current) onSeek(Math.max(0, Math.min(totalChars, Math.round(dragValue))));
+  };
+  // pointerup and touchend both end a touch: the first one decides whether it was a tap.
+  const release = (x: number | undefined) => {
+    const pressX = pressXRef.current;
+    pressXRef.current = null;
+    if (pressX !== null && x !== undefined) tapRef.current = Math.abs(x - pressX) < TAP_SLOP_PX;
+    commit();
   };
 
   if (!visible || totalChars <= 0) return null;
@@ -78,6 +93,23 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
         <div className="reader-pagebar-ticks" aria-hidden="true">
           {ticks.map((left, index) => <span key={index} style={{ left: `${rtl ? 100 - left : left}%` }} />)}
         </div>
+        {marks.length > 0 && (
+          <div className="reader-pagebar-marks">
+            {marks.map((chars) => {
+              const left = Math.min(100, Math.max(0, (chars / totalChars) * 100));
+              return (
+                <button
+                  key={chars}
+                  type="button"
+                  style={{ left: `${rtl ? 100 - left : left}%` }}
+                  onClick={() => onSeek(chars)}
+                  title={es ? `Marcador · página ${pageAt(chars)}` : `Bookmark · page ${pageAt(chars)}`}
+                  aria-label={es ? `Ir al marcador de la página ${pageAt(chars)}` : `Go to the bookmark on page ${pageAt(chars)}`}
+                />
+              );
+            })}
+          </div>
+        )}
         <input
           type="range"
           min={0}
@@ -86,9 +118,16 @@ export default function ReaderPageBar({ visible, currChars, totalChars, apiRef, 
           value={shownChars}
           aria-label={es ? 'Posición en el libro' : 'Position in the book'}
           aria-valuetext={es ? `Página ${pageAt(shownChars)} de ${totalPages}` : `Page ${pageAt(shownChars)} of ${totalPages}`}
-          onChange={(e) => setDragValue(Number(e.target.value))}
-          onPointerUp={commit}
-          onTouchEnd={commit}
+          onChange={(e) => {
+            // A tap's value can arrive after it ended.
+            if (pressXRef.current === null && tapRef.current) return;
+            setDragValue(Number(e.target.value));
+          }}
+          onPointerDown={(e) => press(e.clientX)}
+          onTouchStart={(e) => { if (pressXRef.current === null) press(e.touches[0]?.clientX ?? 0); }}
+          onPointerUp={(e) => release(e.clientX)}
+          onTouchEnd={(e) => release(e.changedTouches[0]?.clientX)}
+          onKeyDown={() => { tapRef.current = false; }}
           onKeyUp={commit}
           onBlur={commit}
         />

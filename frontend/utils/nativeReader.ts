@@ -24,6 +24,14 @@ export interface NativeReaderSettings {
   brightness: number;
   /** Underlines the plugin draws itself (see engineWordCss). */
   underlines: { background: number; color: number; thickness: number; style: string }[];
+  /** Pictures on pages of their own are covered until tapped (spoilers). APK 1.4.5+. */
+  hideImages?: boolean;
+  /** Text drawn on a covered picture. */
+  spoilerLabel?: string;
+  /** The export's line-end padding (LINE_END_RESERVE_EM): the plugin shrinks that margin by as much. APK 1.4.5+. */
+  lineEndReserve?: number;
+  /** CSS px kept free at the bottom of the screen (the read-aloud player). APK 1.4.6+; older ones ignore it. */
+  bottomReserve?: number;
 }
 
 /** A tap on a letter: its engine xpath, block and box on screen (CSS px). */
@@ -40,35 +48,87 @@ export interface NativeWordHit {
   bottom: number;
 }
 
+/**
+ * A text selection made with a long press (APK 1.4.7+): engine xpaths of its first and last
+ * letters, its text without furigana and its box on screen (CSS px). expandable: a long press
+ * without dragging (one letter), which the web side widens to the word with selectLetters.
+ */
+export interface NativeSelection {
+  page: number;
+  startIndex: number;
+  endIndex: number;
+  startLetter: string;
+  endLetter: string;
+  text: string;
+  expandable: boolean;
+  startXpath: string;
+  endXpath: string;
+  ordinal: number;
+  endOrdinal: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** A saved highlight for the plugin to paint: block, offset in its text without furigana, that text, ARGB colour. */
+export interface NativeMark {
+  ordinal: number;
+  offset: number;
+  text: string;
+  color: number;
+  note?: boolean;
+}
+
 export interface NativePosition {
   page: number;
   pages: number;
   xpath: string;
   /** Block of the exported book at the top of the page, -1 if unknown. */
   ordinal: number;
+  /** goTo takes innerPath (APK 1.4.4+). */
+  goToInnerPath?: boolean;
 }
 
 interface NativeReaderPlugin {
   hasBook(options: { key: string }): Promise<{ exists: boolean }>;
   highlight(options: { page: number; index: number; before: number; after: number; color: number }): Promise<void>;
-  writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean }): Promise<void>;
+  /**
+   * images (first chunk): size in bytes of each image of the export; the plugin copies the ones an
+   * earlier export of the book has with that size and lists them in `reused` (APKs before 1.4.3
+   * ignore it and answer nothing).
+   */
+  writeBookChunk(options: { key: string; data: string; first: boolean; last: boolean; images?: Record<string, number> }): Promise<{ reused?: string[] } | void>;
   writeBookImage(options: { key: string; name: string; data: string }): Promise<void>;
   /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
-  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string }): Promise<NativePosition>;
+  /** marks (APK 1.4.7+): the saved highlights, painted from the first page on. */
+  open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string; marks?: NativeMark[] }): Promise<NativePosition>;
   setSettings(options: { settings: Partial<NativeReaderSettings> }): Promise<void>;
-  goTo(options: { ordinal?: number; page?: number }): Promise<void>;
+  /** innerPath (with ordinal, APK 1.4.4+): a place inside that block; already on its page, nothing happens. */
+  goTo(options: { ordinal?: number; page?: number; innerPath?: string }): Promise<void>;
   turnPage(options: { direction: 1 | -1 }): Promise<void>;
   setHoles(options: { rects: number[][] }): Promise<void>;
   setPopupOpen(options: { open: boolean }): Promise<void>;
   /** Highlights a read-aloud sentence. relativeBlock: block index from top of current page. */
-  highlightRange(options: { relativeBlock: number; charOffset: number; charLength: number; color: number }): Promise<void>;
+  /** text: the sentence without furigana; APK 1.4.5+ finds it by its letters on the page. */
+  highlightRange(options: { relativeBlock: number; charOffset: number; charLength: number; text?: string; color: number }): Promise<void>;
   /** Clears any word or sentence highlight on the page. */
   clearHighlight(): Promise<void>;
   close(): Promise<void>;
+  /** The saved highlights changed (APK 1.4.7+; older APKs reject it). */
+  setMarks(options: { marks: NativeMark[] }): Promise<void>;
+  /** Selects a letter with `before`/`after` base letters around it (the word of a long press). APK 1.4.7+. */
+  selectLetters(options: { page: number; index: number; before: number; after: number }): Promise<void>;
+  /** Ends the text selection on the page. APK 1.4.7+. */
+  clearSelection(): Promise<void>;
+  /** One line in the device log (APK 157+; the WebView's console is off in release builds). */
+  log(options: { message: string }): Promise<void>;
   addListener(event: 'pageChanged', listener: (position: NativePosition) => void): Promise<PluginListenerHandle>;
   addListener(event: 'tap', listener: (point: { x: number; y: number; closePopup?: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'word', listener: (hit: NativeWordHit) => void): Promise<PluginListenerHandle>;
   addListener(event: 'error', listener: (error: { message: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'selection', listener: (selection: NativeSelection) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'selectionCleared', listener: () => void): Promise<PluginListenerHandle>;
 }
 
 export const NativeReader = registerPlugin<NativeReaderPlugin>('NativeReader');
@@ -85,9 +145,18 @@ export function isNativeReaderAvailable(): boolean {
  * v4: the plugin swaps those pictures for a page-tall placeholder (pictures.idx). v5: small images
  * (logos) stay in the text (class "si"). v6: words in state spans (nativeReaderWords); the key
  * is a hash of the HTML, so a state change gives a new export. v7: the plugin moves the CSS into
- * style.css and the engine reads it unfiltered.
+ * style.css and the engine reads it unfiltered. v8: blocks padded at the line end
+ * (LINE_END_RESERVE_EM).
  */
-const EXPORT_VERSION = 7;
+const EXPORT_VERSION = 8;
+/**
+ * Padding at the end of every line of the export, in ems. The engine draws a line longer than it
+ * measured when furigana is wider than its base (the base is spread out), and the page margin then
+ * cuts its last characters. With this padding the line breaks earlier; the plugin (APK 1.4.5+,
+ * settings.lineEndReserve) takes as much off that margin, so lines still end where they did.
+ * An older APK just shows a slightly wider margin.
+ */
+export const LINE_END_RESERVE_EM = 1;
 /** Bumped when engine xpaths of earlier exports no longer point to the same place. */
 const POSITION_FORMAT = 2;
 const CHUNK_CHARS = 512 * 1024;
@@ -132,6 +201,45 @@ function lineChars(line: string): number {
     .replace(/[｀`]/g, '、')
     .replace(/[゜°]/g, '。');
   return countJapaneseChars(plainText);
+}
+
+/**
+ * Characters before each paragraph, as the page bar and progress count them (the
+ * `paragraphChars` of the export, without exporting): where bookmarks sit on the page bar.
+ */
+export function bookParagraphChars(book: Pick<Book, 'chapters'>): number[] {
+  const chars: number[] = [];
+  let paragraphId = 0;
+  let charAccum = 0;
+  for (const chapter of book.chapters || []) {
+    for (const line of (chapter.content || '').split(/\r?\n/)) {
+      if (/^\{h[123]:/.test(line) && line.endsWith('}')) continue;
+      chars[paragraphId] = charAccum;
+      if (line.trim() && !(line.startsWith('{img:') && line.endsWith('}'))) charAccum += lineChars(line);
+      paragraphId++;
+    }
+  }
+  chars[paragraphId] = charAccum;
+  return chars;
+}
+
+/** Text of a paragraph without furigana or images (a bookmark's preview), '' if there is none. */
+export function bookParagraphText(book: Book, paragraph: number): string {
+  let paragraphId = 0;
+  for (const chapter of book.chapters || []) {
+    for (const line of (chapter.content || '').split(/\r?\n/)) {
+      if (/^\{h[123]:/.test(line) && line.endsWith('}')) continue;
+      if (paragraphId === paragraph) {
+        return line
+          .replace(/\{img:[^{}]*\}/gi, '')
+          .replace(/\{([^|{}]+)\|[^{}]*\}/g, '$1')
+          .replace(/《[^》]*》/g, '')
+          .trim();
+      }
+      paragraphId++;
+    }
+  }
+  return '';
 }
 
 /**
@@ -221,7 +329,7 @@ export function exportBookForNativeReader(book: Book, options: NativeExportOptio
     + '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja"><head><meta charset="utf-8"/>'
     + `<title>${title}</title><style>`
     + 'body{margin:0;padding:0}'
-    + 'p{margin:0;text-indent:0}'
+    + `p{margin:0;text-indent:0;padding-right:${LINE_END_RESERVE_EM}em}`
     + 'p.ch{page-break-before:always}'
     + 'p.h1{font-size:1.5em;font-weight:bold;margin:1em 0}'
     + 'p.h2{font-size:1.3em;font-weight:bold;margin:0.8em 0}'
@@ -250,16 +358,33 @@ export function exportBookForNativeReader(book: Book, options: NativeExportOptio
   };
 }
 
-/** Writes the exported book to the app's files unless that version is already there. */
-export async function ensureNativeBook(exported: NativeBookExport): Promise<void> {
+/** Bytes of a base64 string. */
+function base64Bytes(data: string): number {
+  const clean = data.replace(/\s/g, '');
+  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+  return Math.floor((clean.length * 3) / 4) - padding;
+}
+
+/**
+ * Writes the exported book to the app's files unless that version is already there. Images an
+ * earlier export of the book already has are copied by the plugin instead of sent again. Stops
+ * (unfinished, so never opened) when isCancelled() turns true: a newer export replaces this one.
+ */
+export async function ensureNativeBook(exported: NativeBookExport, isCancelled: () => boolean = () => false): Promise<void> {
   const { exists } = await NativeReader.hasBook({ key: exported.key });
-  if (exists) return;
+  if (exists || isCancelled()) return;
+  const sizes: Record<string, number> = {};
+  for (const image of exported.images) sizes[image.name] = base64Bytes(image.data);
   // The first call starts a fresh folder; the book counts as written once its HTML is complete.
-  await NativeReader.writeBookChunk({ key: exported.key, data: '', first: true, last: false });
+  const started = await NativeReader.writeBookChunk({ key: exported.key, data: '', first: true, last: false, images: sizes });
+  const reused = new Set((started && started.reused) || []);
   for (const image of exported.images) {
+    if (isCancelled()) return;
+    if (reused.has(image.name)) continue;
     await NativeReader.writeBookImage({ key: exported.key, name: image.name, data: image.data });
   }
   for (let start = 0; start < exported.html.length; start += CHUNK_CHARS) {
+    if (isCancelled()) return;
     await NativeReader.writeBookChunk({
       key: exported.key,
       data: exported.html.slice(start, start + CHUNK_CHARS),
@@ -288,12 +413,36 @@ export function blockOfParagraph(exported: NativeBookExport, paragraph: number):
   return Math.max(0, found);
 }
 
+let inertDocument: Document | null = null;
+
+/**
+ * A block's HTML as a <p> of a document that is never shown: in the page's own document its
+ * <img src="img/n.jpg"> (paths of the exported EPUB) would be fetched from the WebView and fail.
+ */
+function blockElement(blockHtml: string): HTMLElement {
+  if (!inertDocument) inertDocument = document.implementation.createHTMLDocument('');
+  const block = inertDocument.createElement('p');
+  block.innerHTML = blockHtml;
+  return block;
+}
+
 const isFurigana = (node: Node) => !!(node.parentElement && node.parentElement.closest('rt, rp'));
 
 /** Text nodes of an element in reading order, without furigana (<rt>/<rp>). */
+/** Block of a paragraph's own text: like blockOfParagraph, but past the heading that shares its index. */
+export function textBlockOfParagraph(exported: NativeBookExport, paragraph: number): number {
+  let ordinal = blockOfParagraph(exported, paragraph);
+  while (
+    ordinal + 1 < exported.blockParagraph.length
+    && exported.blockParagraph[ordinal + 1] === paragraph
+    && /^\{h[123]:/.test(exported.blockLines[ordinal] || '')
+  ) ordinal++;
+  return ordinal;
+}
+
 export function baseTextNodes(root: Node): Text[] {
   const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = (root.ownerDocument || document).createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (!isFurigana(node)) nodes.push(node as Text);
   }
@@ -315,8 +464,7 @@ export function xpathToTextOffset(blockHtml: string, xpath: string): number {
     offset = Number(offsetMatch[1]);
     tail = tail.slice(0, -offsetMatch[0].length);
   }
-  const block = document.createElement('p');
-  block.innerHTML = blockHtml;
+  const block = blockElement(blockHtml);
   let node: Node = block;
   for (const step of tail.split('/').filter(Boolean)) {
     const stepMatch = /^(text\(\)|[A-Za-z][A-Za-z0-9]*)(?:\[(\d+)\])?$/.exec(step);
@@ -350,8 +498,7 @@ export function xpathToTextOffset(blockHtml: string, xpath: string): number {
  * markup changed. Null if the offset is past the text.
  */
 export function textOffsetToInnerPath(blockHtml: string, offset: number): string | null {
-  const block = document.createElement('p');
-  block.innerHTML = blockHtml;
+  const block = blockElement(blockHtml);
   let total = 0;
   for (const text of baseTextNodes(block)) {
     if (offset < total + text.length) {

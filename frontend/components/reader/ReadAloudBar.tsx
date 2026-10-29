@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Moon, Pause, Play, Settings, SkipBack, SkipForward, X } from 'lucide-react';
 import { READ_ALOUD_RATES, type ReadAloudStatus } from './useReadAloud';
 
@@ -18,13 +18,46 @@ interface Props {
   onClose: () => void;
   /** Sits higher while the page bar is shown at the bottom. */
   raised?: boolean;
+  /**
+   * Slides away after AUTO_HIDE_MS without a touch on it (while reading, with the reader's bars
+   * hidden); tapping the page brings the bars back, and the player with them.
+   */
+  autoHide?: boolean;
+  /**
+   * CSS px from the bottom of the screen up to the top of the player (the page keeps them free):
+   * where it is now, and in its low place (with the reader's bars hidden).
+   */
+  onReach?: (reach: { current: number; low: number }) => void;
 }
 
+const AUTO_HIDE_MS = 4000;
+/** How much higher .read-aloud-bar.is-raised sits (110px - 18px in the CSS). */
+const RAISE_PX = 92;
+
 export default function ReadAloudBar({
-  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false,
+  status, rate, position, sleepEndsAt, lang, accent, onPlay, onPause, onSkip, onRate, onSleep, onSettings, onClose, raised = false, autoHide = false, onReach,
 }: Props) {
   const es = lang === 'es';
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !onReach) return;
+    const bottom = parseFloat(getComputedStyle(bar).bottom);
+    if (!Number.isFinite(bottom)) return;
+    const current = bottom + bar.offsetHeight + 6;
+    onReach({ current, low: current - (raised ? RAISE_PX : 0) });
+  }, [onReach, raised]);
   const [, setNow] = useState(Date.now());
+  const [hidden, setHidden] = useState(false);
+  // Bumped by every touch on the bar: the hide countdown starts again.
+  const [touched, setTouched] = useState(0);
+
+  useEffect(() => {
+    setHidden(false);
+    if (!autoHide) return;
+    const timer = window.setTimeout(() => setHidden(true), AUTO_HIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoHide, touched]);
 
   // Refresh the sleep countdown once a minute.
   useEffect(() => {
@@ -50,7 +83,12 @@ export default function ReadAloudBar({
   const playing = status === 'playing';
 
   return (
-    <div className={`read-aloud-bar${raised ? " is-raised" : ""}`} role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
+    <div
+      ref={barRef}
+      className={`read-aloud-bar${raised ? " is-raised" : ""}${hidden ? " is-hidden" : ""}`}
+      onPointerDown={() => setTouched((n) => n + 1)}
+      aria-hidden={hidden || undefined}
+      role="toolbar" aria-label={es ? 'Lectura en voz alta' : 'Read aloud'} style={{ '--read-aloud-accent': accent } as React.CSSProperties}>
       <button type="button" className="read-aloud-btn" onClick={() => onSkip(-1)} aria-label={es ? 'Frase anterior' : 'Previous sentence'}>
         <SkipBack size={18} />
       </button>

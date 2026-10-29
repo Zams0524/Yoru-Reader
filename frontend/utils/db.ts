@@ -48,6 +48,8 @@ export interface Settings {
   discordShowStats?: string;
   discordBlacklist?: string;
   srsNewCardsPerDay?: number;
+  srsShowAudioButton?: boolean;
+  srsCardFront?: 'word' | 'sentence' | 'audio';
   srsMaxReviewsPerDay?: number;
   fsrsRetentionRate?: number;
   fsrsMaxInterval?: number;
@@ -63,6 +65,9 @@ export interface Profile {
   name: string;
   avatar?: string;
 }
+
+const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';
+const SRS_REMOVALS_KEY = 'yoru_srs_removals';
 
 const STORAGE_KEYS = {
   BOOKS: 'migaku_reader_books',
@@ -171,6 +176,15 @@ function sameTextExceptReadings(current: any[], incoming: any[]): boolean {
   });
 }
 
+let bookAccessQueue: Promise<unknown> = Promise.resolve();
+
+// Runs library reads and writes one at a time, in call order.
+function serializeBookAccess<T>(task: () => Promise<T>): Promise<T> {
+  const run = bookAccessQueue.then(task, task);
+  bookAccessQueue = run.catch(() => undefined);
+  return run;
+}
+
 export const db = {
   async close() {
     await idb.close();
@@ -256,7 +270,18 @@ export const db = {
   },
 
   // --- Books Management (IndexedDB powered) ---
-  async getBooks(): Promise<Book[]> {
+  // The whole library is one IndexedDB value, so every change is read-modify-write. All access
+  // goes through serializeBookAccess so two changes (e.g. the reading position and the reading
+  // stats saved together when leaving a book) never overwrite each other with a stale copy.
+  getBooks(): Promise<Book[]> {
+    return serializeBookAccess(() => this._readBooks());
+  },
+
+  saveBooks(books: Book[]): Promise<void> {
+    return serializeBookAccess(() => this._writeBooks(books));
+  },
+
+  async _readBooks(): Promise<Book[]> {
     try {
       const key = this._getKey(STORAGE_KEYS.BOOKS);
       let books = await idb.get(key);
@@ -295,7 +320,7 @@ export const db = {
     }
   },
 
-  async saveBooks(books: Book[]): Promise<void> {
+  async _writeBooks(books: Book[]): Promise<void> {
     try {
       const key = this._getKey(STORAGE_KEYS.BOOKS);
       await idb.set(key, books);
@@ -304,69 +329,23 @@ export const db = {
     }
   },
 
-  async addBook(book: Partial<Book>): Promise<Book[]> {
-    const books = await this.getBooks();
-    // Check if book already exists by title
-    const existingIdx = books.findIndex(b => b.title === book.title);
-    if (existingIdx !== -1) {
-      if (books[existingIdx].isDeleted
-        || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
-        // Restore a deleted book, or refresh readings without changing text positions.
-        if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
-        books[existingIdx].chapters = book.chapters || [];
-        await this.saveBooks(books);
-      }
-      return books;
-    }
-    const newBook: Book = {
-      id: `book-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: book.title || 'Libro sin título',
-      author: book.author || 'Desconocido',
-      cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      chapters: book.chapters || [],
-      progress: {
-        currentChapter: 0,
-        currentPage: 0,
-        percent: 0,
-        charactersRead: 0,
-        secondsRead: 0
-      },
-      status: 'unread', // 'unread', 'reading', 'completed'
-      createdAt: new Date().toISOString()
-    };
-    books.push(newBook);
-    await this.saveBooks(books);
-    return books;
-  },
-
-  async addBooks(booksList: Partial<Book>[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    console.log("db.addBooks - Libros existentes en DB:", books.map(b => b.title));
-    console.log("db.addBooks - Libros nuevos a añadir:", booksList.map(b => b.title));
-    let addedCount = 0;
-    const now = Date.now();
-    
-    for (let i = 0; i < booksList.length; i++) {
-      const book = booksList[i];
+  addBook(book: Partial<Book>): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      // Check if book already exists by title
       const existingIdx = books.findIndex(b => b.title === book.title);
       if (existingIdx !== -1) {
-        if (books[existingIdx].isDeleted) {
-          // Restore/undelete it!
-          books[existingIdx].isDeleted = false;
+        if (books[existingIdx].isDeleted
+          || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+          // Restore a deleted book, or refresh readings without changing text positions.
+          if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
           books[existingIdx].chapters = book.chapters || [];
-          addedCount++;
-        } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
-          // Refresh readings an older import lost, preserving progress and annotations.
-          books[existingIdx].chapters = book.chapters || [];
-          addedCount++;
-          console.log(`db.addBooks - Lecturas de "${book.title}" actualizadas (mismo texto).`);
-        } else {
-          console.log(`db.addBooks - Saltando "${book.title}" porque ya existe.`);
+          await this._writeBooks(books);
         }
-        continue;
+        return books;
       }
       const newBook: Book = {
-        id: `book-${now}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `book-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         title: book.title || 'Libro sin título',
         author: book.author || 'Desconocido',
         cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -378,64 +357,119 @@ export const db = {
           charactersRead: 0,
           secondsRead: 0
         },
-        status: 'unread',
+        status: 'unread', // 'unread', 'reading', 'completed'
         createdAt: new Date().toISOString()
       };
       books.push(newBook);
-      addedCount++;
-    }
+      await this._writeBooks(books);
+      return books;
+    });
+  },
+
+  addBooks(booksList: Partial<Book>[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      console.log("db.addBooks - Libros existentes en DB:", books.map(b => b.title));
+      console.log("db.addBooks - Libros nuevos a añadir:", booksList.map(b => b.title));
+      let addedCount = 0;
+      const now = Date.now();
     
-    if (addedCount > 0) {
-      console.log("db.addBooks - Guardando libros combinados:", books.map(b => b.title));
-      await this.saveBooks(books);
-    }
-    return books;
-  },
-
-  async updateBookProgress(bookId: string, currentChapter: number, currentPage: number, percent: number): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        const newStatus = percent >= 99 ? 'completed' : (percent > 0 ? 'reading' : book.status);
-        return {
-          ...book,
-          progress: { 
-            ...(book.progress || {}), 
-            currentChapter, 
-            currentPage, 
-            percent 
-          },
-          status: newStatus as 'unread' | 'reading' | 'completed',
-          lastRead: new Date().toISOString()
-        };
-      }
-      return book;
-    });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
-  },
-
-  async incrementReadingStats(bookId: string, charsToAdd: number, secondsToAdd: number): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        const prevProgress = book.progress || {};
-        const prevChars = prevProgress.charactersRead || 0;
-        const prevSeconds = prevProgress.secondsRead || 0;
-        return {
-          ...book,
+      for (let i = 0; i < booksList.length; i++) {
+        const book = booksList[i];
+        const existingIdx = books.findIndex(b => b.title === book.title);
+        if (existingIdx !== -1) {
+          if (books[existingIdx].isDeleted) {
+            // Restore/undelete it!
+            books[existingIdx].isDeleted = false;
+            books[existingIdx].chapters = book.chapters || [];
+            addedCount++;
+          } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
+            // Refresh readings an older import lost, preserving progress and annotations.
+            books[existingIdx].chapters = book.chapters || [];
+            addedCount++;
+            console.log(`db.addBooks - Lecturas de "${book.title}" actualizadas (mismo texto).`);
+          } else {
+            console.log(`db.addBooks - Saltando "${book.title}" porque ya existe.`);
+          }
+          continue;
+        }
+        const newBook: Book = {
+          id: `book-${now}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+          title: book.title || 'Libro sin título',
+          author: book.author || 'Desconocido',
+          cover: book.cover || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          chapters: book.chapters || [],
           progress: {
-            ...prevProgress,
-            charactersRead: prevChars + charsToAdd,
-            secondsRead: prevSeconds + secondsToAdd
+            currentChapter: 0,
+            currentPage: 0,
+            percent: 0,
+            charactersRead: 0,
+            secondsRead: 0
           },
-          lastRead: new Date().toISOString()
+          status: 'unread',
+          createdAt: new Date().toISOString()
         };
+        books.push(newBook);
+        addedCount++;
       }
-      return book;
+    
+      if (addedCount > 0) {
+        console.log("db.addBooks - Guardando libros combinados:", books.map(b => b.title));
+        await this._writeBooks(books);
+      }
+      return books;
     });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  },
+
+  updateBookProgress(bookId: string, currentChapter: number, currentPage: number, percent: number): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          // A finished book stays finished when it is opened again: only the user moves it back to "reading".
+          const newStatus = percent >= 99 || book.status === 'completed' ? 'completed' : (percent > 0 ? 'reading' : book.status);
+          return {
+            ...book,
+            progress: { 
+              ...(book.progress || {}), 
+              currentChapter, 
+              currentPage, 
+              percent 
+            },
+            status: newStatus as 'unread' | 'reading' | 'completed',
+            lastRead: new Date().toISOString()
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
+  },
+
+  incrementReadingStats(bookId: string, charsToAdd: number, secondsToAdd: number): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          const prevProgress = book.progress || {};
+          const prevChars = prevProgress.charactersRead || 0;
+          const prevSeconds = prevProgress.secondsRead || 0;
+          return {
+            ...book,
+            progress: {
+              ...prevProgress,
+              charactersRead: prevChars + charsToAdd,
+              secondsRead: prevSeconds + secondsToAdd
+            },
+            lastRead: new Date().toISOString()
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
   async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0): Promise<void> {
@@ -567,82 +601,94 @@ export const db = {
     });
   },
 
-  async saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => {
-      if (book.id === bookId) {
-        return {
-          ...book,
-          bookmarks
-        };
-      }
-      return book;
+  saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => {
+        if (book.id === bookId) {
+          return {
+            ...book,
+            bookmarks
+          };
+        }
+        return book;
+      });
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
     });
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
   },
 
-  async saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async deleteBook(bookId: string): Promise<Book[]> {
-    const books = await this.getBooks();
-    const settings = this.getSettings();
-    let updatedBooks: Book[];
-    if (settings.keepStatsOnDelete !== false) {
-      updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, chapters: [] } : b);
-    } else {
-      const book = books.find(b => b.id === bookId);
-      if (book && book.title) {
-        await this.deleteReadingStatsForBook(book.title);
+  deleteBook(bookId: string): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const settings = this.getSettings();
+      let updatedBooks: Book[];
+      if (settings.keepStatsOnDelete !== false) {
+        updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, chapters: [] } : b);
+      } else {
+        const book = books.find(b => b.id === bookId);
+        if (book && book.title) {
+          await this.deleteReadingStatsForBook(book.title);
+        }
+        updatedBooks = books.filter(b => b.id !== bookId);
       }
-      updatedBooks = books.filter(b => b.id !== bookId);
-    }
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async deleteBooks(bookIds: string[]): Promise<Book[]> {
-    const books = await this.getBooks();
-    const settings = this.getSettings();
-    let updatedBooks: Book[];
-    if (settings.keepStatsOnDelete !== false) {
-      updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, chapters: [] } : b);
-    } else {
-      const deletedBooks = books.filter(b => bookIds.includes(b.id));
+  deleteBooks(bookIds: string[]): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const settings = this.getSettings();
+      let updatedBooks: Book[];
+      if (settings.keepStatsOnDelete !== false) {
+        updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, chapters: [] } : b);
+      } else {
+        const deletedBooks = books.filter(b => bookIds.includes(b.id));
+        for (const b of deletedBooks) {
+          if (b.title) {
+            await this.deleteReadingStatsForBook(b.title);
+          }
+        }
+        updatedBooks = books.filter(b => !bookIds.includes(b.id));
+      }
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
+  },
+
+  clearDeletedBooks(): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const deletedBooks = books.filter(b => b.isDeleted);
       for (const b of deletedBooks) {
         if (b.title) {
           await this.deleteReadingStatsForBook(b.title);
         }
       }
-      updatedBooks = books.filter(b => !bookIds.includes(b.id));
-    }
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+      const updatedBooks = books.filter(b => !b.isDeleted);
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
-  async clearDeletedBooks(): Promise<Book[]> {
-    const books = await this.getBooks();
-    const deletedBooks = books.filter(b => b.isDeleted);
-    for (const b of deletedBooks) {
-      if (b.title) {
-        await this.deleteReadingStatsForBook(b.title);
-      }
-    }
-    const updatedBooks = books.filter(b => !b.isDeleted);
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
-  },
-
-  async updateBookDetails(bookId: string, data: Partial<Book>): Promise<Book[]> {
-    const books = await this.getBooks();
-    const updatedBooks = books.map(b => b.id === bookId ? { ...b, ...data, updatedAt: new Date().toISOString() } : b);
-    await this.saveBooks(updatedBooks);
-    return updatedBooks;
+  updateBookDetails(bookId: string, data: Partial<Book>): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map(b => b.id === bookId ? { ...b, ...data, updatedAt: new Date().toISOString() } : b);
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
   },
 
   // --- Word Status Management (Migaku state: 'new' | 'learning' | 'known') ---
@@ -658,10 +704,35 @@ export const db = {
 
   saveWordStatuses(statuses: Record<string, string>) {
     try {
+      this._stampWordStatusChanges(this.getWordStatuses(), statuses);
       localStorage.setItem(this._getKey(STORAGE_KEYS.WORD_STATUS), JSON.stringify(statuses));
     } catch (e) {
       console.error('Error saving word statuses:', e);
     }
+  },
+
+  // When each word's status last changed (or was removed), so cloud sync can merge two devices
+  // word by word instead of one side overwriting the other.
+  getWordStatusTimes(): Record<string, string> {
+    try {
+      const data = localStorage.getItem(this._getKey(WORD_STATUS_TIMES_KEY));
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  },
+
+  _stampWordStatusChanges(previous: Record<string, string>, next: Record<string, string>) {
+    const now = new Date().toISOString();
+    const times = this.getWordStatusTimes();
+    let changed = false;
+    for (const word of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+      if (previous[word] !== next[word]) {
+        times[word] = now;
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(this._getKey(WORD_STATUS_TIMES_KEY), JSON.stringify(times));
   },
 
   setWordStatus(word: string, status: string | null) {
@@ -755,7 +826,7 @@ export const db = {
       // Migrate legacy SM-2 card to FSRS-6 in-memory
       const ease = card.ease ?? 2.5;
       const interval = card.interval ?? 0;
-      const reps = card.repetitions ?? 0;
+      const reps = card.reps ?? card.repetitions ?? 0;
       
       const stability = interval > 0 ? interval : 2.3; // Default Good stability
       const difficulty = Math.max(1, Math.min(10, 5.0 + (2.5 - ease) * 3));
@@ -820,6 +891,38 @@ export const db = {
     const srsData = this.getSrsData();
     this._applySrsCardEntry(srsData, word, cardData);
     this.saveSrsData(srsData);
+    this._recordSrsRemovals({ [word]: cardData });
+  },
+
+  /**
+   * When each removed SRS card was removed, by key. Drive sync keeps cards from both devices, so
+   * without this a card removed here would come back from the other device's copy.
+   */
+  getSrsRemovals(): Record<string, string> {
+    try {
+      const raw = localStorage.getItem(this._getKey(SRS_REMOVALS_KEY));
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  },
+
+  /** Notes the removal time of keys saved as null, and forgets it for keys saved with a card. */
+  _recordSrsRemovals(entries: Record<string, any>) {
+    const removals = this.getSrsRemovals();
+    const now = new Date().toISOString();
+    let changed = false;
+    for (const key of Object.keys(entries)) {
+      if (key.startsWith('_deck_')) continue;
+      if (!entries[key]) {
+        removals[key] = now;
+        changed = true;
+      } else if (key in removals) {
+        delete removals[key];
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(this._getKey(SRS_REMOVALS_KEY), JSON.stringify(removals));
   },
 
   /**
@@ -833,6 +936,7 @@ export const db = {
       this._applySrsCardEntry(srsData, word, entries[word]);
     }
     this.saveSrsData(srsData);
+    this._recordSrsRemovals(entries);
   },
 
   // --- Export/Import Database for Cloud/Google Drive Sync ---
@@ -863,17 +967,23 @@ export const db = {
       const statusKey = `migaku_reader_word_status_${p.id}`;
       const statusRaw = localStorage.getItem(statusKey);
       const wordStatuses = statusRaw ? JSON.parse(statusRaw) : null;
+      const timesRaw = localStorage.getItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`);
+      const wordStatusTimes = timesRaw ? JSON.parse(timesRaw) : null;
 
       // 4. SRS Data
       const srsKey = `yoru_reader_srs_data_${p.id}`;
       const srsRaw = localStorage.getItem(srsKey);
       const srsData = srsRaw ? JSON.parse(srsRaw) : null;
+      const removalsRaw = localStorage.getItem(`${SRS_REMOVALS_KEY}_${p.id}`);
+      const srsRemovals = removalsRaw ? JSON.parse(removalsRaw) : null;
 
       dbExport.profileData[p.id] = {
         books,
         settings,
         wordStatuses,
-        srsData
+        wordStatusTimes,
+        srsData,
+        srsRemovals
       };
     }
 
@@ -907,11 +1017,17 @@ export const db = {
           const statusKey = `migaku_reader_word_status_${p.id}`;
           localStorage.setItem(statusKey, JSON.stringify(pData.wordStatuses));
         }
+        if (pData.wordStatusTimes) {
+          localStorage.setItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`, JSON.stringify(pData.wordStatusTimes));
+        }
         // 4. SRS data
         if (pData.srsData) {
           const srsKey = `yoru_reader_srs_data_${p.id}`;
           localStorage.setItem(srsKey, JSON.stringify(pData.srsData));
         if (srsDataCache?.storageKey === srsKey) srsDataCache = null;
+        }
+        if (pData.srsRemovals) {
+          localStorage.setItem(`${SRS_REMOVALS_KEY}_${p.id}`, JSON.stringify(pData.srsRemovals));
         }
       }
     }
@@ -1015,6 +1131,33 @@ export const db = {
     }
   },
 
+  /**
+   * Adds review history from another app (an Anki import) to the daily counters behind the
+   * activity heatmap, streak and daily limits. Each day keeps the larger count, so importing the
+   * same history again does not double it.
+   */
+  mergeImportedSrsReviewDays(days: Record<string, { total: number; reviews: number; newWords: string[] }>) {
+    try {
+      const daily = this.getSrsDailyReviews();
+      const dailyStats = this.getSrsDailyReviewStats();
+      for (const [ymd, day] of Object.entries(days)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+        daily[ymd] = Math.max(Number(daily[ymd]) || 0, day.total);
+        const stats = dailyStats[ymd] && typeof dailyStats[ymd] === 'object' && !Array.isArray(dailyStats[ymd])
+          ? dailyStats[ymd]
+          : { reviews: 0, newWords: [] };
+        dailyStats[ymd] = {
+          reviews: Math.max(Number(stats.reviews) || 0, day.reviews),
+          newWords: Array.from(new Set([...(Array.isArray(stats.newWords) ? stats.newWords : []), ...day.newWords])),
+        };
+      }
+      localStorage.setItem(this._getKey('yoru_reader_srs_daily_reviews'), JSON.stringify(daily));
+      localStorage.setItem(this._getKey('yoru_reader_srs_daily_review_stats'), JSON.stringify(dailyStats));
+    } catch (e) {
+      console.error('Error importing SRS review history:', e);
+    }
+  },
+
   restoreSrsHistoryState(history: any[], dailyReviews: Record<string, number>, dailyReviewStats?: Record<string, { reviews: number; newWords: string[] }>) {
     try {
       localStorage.setItem(this._getKey('yoru_reader_srs_history'), JSON.stringify(history));
@@ -1037,6 +1180,17 @@ export const db = {
     } catch (e) {
       console.error('Error clearing SRS history:', e);
     }
+  },
+
+  // The two most recent copies of this device's data taken right before a cloud sync changed it.
+  async saveSyncBackup(dbExport: any): Promise<void> {
+    const key = 'yoru_sync_backups_v1';
+    const previous = (await idb.get(key)) || [];
+    await idb.set(key, [{ savedAt: new Date().toISOString(), data: dbExport }, ...previous].slice(0, 2));
+  },
+
+  async getSyncBackups(): Promise<{ savedAt: string; data: any }[]> {
+    return (await idb.get('yoru_sync_backups_v1')) || [];
   },
 
   async idbGet(key: string): Promise<any> {
