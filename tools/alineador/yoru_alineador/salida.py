@@ -97,7 +97,8 @@ class Informe:
 FIN_DE_FRASE = "。！？!?" + chr(10)
 
 
-def construir_cues(libro, marco: np.ndarray, fps: float, min_car: int = 12) -> list[Cue]:
+def construir_cues(libro, marco: np.ndarray, fps: float, min_car: int = 12,
+                   desplazamiento_ms: int = 0) -> list[Cue]:
     """Agrupa la lectura en cues por frase y les pone el texto del libro.
 
     Corta donde el libro tiene punto, no donde el modelo oye final de palabra. La
@@ -126,10 +127,13 @@ def construir_cues(libro, marco: np.ndarray, fps: float, min_car: int = 12) -> l
         if len(puestos):
             texto = libro.tramo_original(ini, i + 1).strip()
             if texto:
-                ini_ms = int(puestos.min() / fps * 1000)
-                fin_ms = int(puestos.max() / fps * 1000)
+                # `desplazamiento_ms` es donde empieza el audio que se analizo dentro
+                # del fichero completo. Sin el, un SRT hecho con `--desde 1800` saldria
+                # media hora adelantado y nadie se enteraria.
+                ini_ms = int(puestos.min() / fps * 1000) + desplazamiento_ms
+                fin_ms = int(puestos.max() / fps * 1000) + desplazamiento_ms
                 # adelanta el comienzo, sin pisar el cue anterior
-                suelo = cues[-1].fin_ms if cues else 0
+                suelo = cues[-1].fin_ms if cues else desplazamiento_ms
                 ini_ms = max(suelo, ini_ms - ADELANTO_CTC_MS)
                 if fin_ms - ini_ms < MINIMO_CUE_MS:
                     fin_ms = ini_ms + MINIMO_CUE_MS
@@ -186,7 +190,8 @@ def escribir_srt(cues: list[Cue], ruta: str, inf: "Informe | None" = None) -> No
 
 
 def evaluar(libro, col, cues: list[Cue], fps: float, duracion_s: float,
-            nombre_audio: str, nombre_libro: str, oido_len: int = 0) -> Informe:
+            nombre_audio: str, nombre_libro: str, oido_len: int = 0,
+            desplazamiento_ms: int = 0) -> Informe:
     """Mide la alineacion y dictamina. Sin abrir el audio, sin oir nada."""
     n_lectura = max(1, len(libro.kana))
     cobertura = col.colocados() / n_lectura
@@ -206,7 +211,7 @@ def evaluar(libro, col, cues: list[Cue], fps: float, duracion_s: float,
 
     # cuanto del audio quedo cubierto por cues (uniendo los intervalos que se solapan)
     cubierto_ms = 0
-    fin_previo = -1
+    fin_previo = desplazamiento_ms - 1
     for c in cues:
         ini = max(c.ini_ms, fin_previo)
         if c.fin_ms > ini:
@@ -257,8 +262,10 @@ def evaluar(libro, col, cues: list[Cue], fps: float, duracion_s: float,
         tasa_anclaje=round(tasa, 4),
         cues=len(cues),
         hueco_mas_largo_ms=int(hueco),
-        hueco_inicial_ms=int(cues[0].ini_ms) if cues else 0,
-        hueco_final_ms=int(max(0, duracion_s * 1000 - cues[-1].fin_ms)) if cues else 0,
+        # los huecos de borde van respecto al tramo analizado, no al fichero entero
+        hueco_inicial_ms=int(cues[0].ini_ms - desplazamiento_ms) if cues else 0,
+        hueco_final_ms=int(max(0, desplazamiento_ms + duracion_s * 1000 - cues[-1].fin_ms))
+        if cues else 0,
         inversiones=inversiones,
         kana_por_s_mediana=round(float(np.median(velocidades)), 1) if velocidades else None,
         cues_fuera_de_banda=sum(

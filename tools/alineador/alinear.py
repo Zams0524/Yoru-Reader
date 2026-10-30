@@ -89,9 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     col.anclado = casados
 
     # 5. El resultado, y el portero que decide si esa pareja es pareja.
-    cues = salida.construir_cues(libro, col.marco, em.fps)
+    cues = salida.construir_cues(libro, col.marco, em.fps,
+                                 desplazamiento_ms=int(a.desde * 1000))
+    # el informe mide sobre el tramo analizado, no sobre el fichero entero
     inf = salida.evaluar(libro, col, cues, em.fps, em.duracion_s,
-                         os.path.basename(a.audio), os.path.basename(a.libro), len(oido))
+                         os.path.basename(a.audio), os.path.basename(a.libro), len(oido),
+                         desplazamiento_ms=int(a.desde * 1000))
     salida.escribir_srt(cues, srt, inf)
     salida.escribir_informe(inf, informe_json)
 

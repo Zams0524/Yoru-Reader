@@ -292,12 +292,11 @@ export function buildAlignmentIndex(
   for (const cue of cues) {
     const needle = normalizeForMatch(cue.text);
     if (!needle) continue;
-    let at = libro.indexOf(needle, desde);
-    // Si no aparece de aquí en adelante puede ser que el cue no esté en el libro, o que
-    // nos hayamos pasado por un emparejamiento anterior flojo. Se mira desde el
-    // principio una sola vez; si tampoco está, el cue se queda sin párrafo, que es lo
-    // correcto: antes dejarlo fuera que colgarlo de cualquier sitio.
-    if (at < 0) at = libro.indexOf(needle);
+    // Solo hacia delante. Si de aquí en adelante no aparece, el cue se queda sin
+    // párrafo y punto: buscarlo desde el principio encontraría una frase repetida de
+    // antes, y el lector daría un salto hacia atrás en mitad de la escucha. Antes
+    // dejar un cue fuera que colgarlo del sitio equivocado.
+    const at = libro.indexOf(needle, desde);
     if (at < 0) continue;
 
     const p = paragraphAt(startOf, at);

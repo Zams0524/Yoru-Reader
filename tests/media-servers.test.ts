@@ -262,6 +262,16 @@ async function kavitaTests() {
   check(timeOfParagraph(idxAjeno, 10) === null,
     'Ajeno: no se ofrece «escuchar desde aquí» en el material ajeno');
 
+  // Una frase que se repite no puede mandar al lector hacia atrás: el segundo cue de
+  // «吾輩は猫である» va detrás del primero, no vuelve al párrafo 10.
+  const repetida = buildAlignmentIndex(parseAlignment([
+    '1', '00:00:01,000 --> 00:00:02,000', '名前はまだ無い',
+    '', '2', '00:00:02,000 --> 00:00:03,000', '吾輩は猫である',
+  ].join(String.fromCharCode(10))), parrafos);
+  check(repetida.paragraphOfCue[0] === 11, 'Orden: el primer cue cae donde le toca');
+  check(repetida.paragraphOfCue[1] === -1,
+    'Orden: un cue que solo casa hacia atrás se queda sin colocar, no hace retroceder');
+
   // Downloads: a single EPUB, and a ZIP holding two EPUBs.
   const epub = new JSZip();
   epub.file('mimetype', 'application/epub+zip');
