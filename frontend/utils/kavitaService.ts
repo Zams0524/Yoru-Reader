@@ -253,14 +253,35 @@ export function kavitaVolumeCoverUrl(volumeId: number): string {
 const LOOSE_LEAF_VOLUME = -100000;
 
 /** The volumes of a series as importable books, in reading order. */
+/**
+ * Cómo llamar a un volumen de capítulos sueltos, que es el caso raro.
+ *
+ * Una serie de un solo tomo llega así desde Kavita, y «Especiales» es engañoso: no son
+ * extras, es el libro. Se prefiere el título del capítulo si lo trae, porque suele ser
+ * el nombre de la obra.
+ */
+function looseVolumeLabel(volume: KavitaVolume, totalVolumes: number, es: boolean): string {
+  const chapter = volume.chapters?.[0];
+  const fromChapter = (chapter?.title || chapter?.range || '').trim();
+  if (fromChapter && !/^-?\d+(?:\.\d+)?$/.test(fromChapter)) return fromChapter;
+  if (totalVolumes <= 1) return es ? 'Volumen único' : 'Single volume';
+  return es ? 'Especiales' : 'Specials';
+}
+
 export function kavitaVolumesToBooks(series: KavitaSeries, volumes: KavitaVolume[], es: boolean): KavitaBook[] {
   return [...volumes]
     .sort((a, b) => a.number - b.number)
     .map((volume) => {
       const isLoose = volume.number <= LOOSE_LEAF_VOLUME || volume.number === 0;
-      const volumeLabel = volume.name && !/^\d+(\.\d+)?$/.test(volume.name)
-        ? volume.name
-        : isLoose ? (es ? 'Especiales' : 'Specials') : `${es ? 'Volumen' : 'Volume'} ${volume.number}`;
+      // Kavita no manda aquí un título: manda el número del volumen como texto, y para
+      // los capítulos sueltos manda `-100000`, su valor especial. El signo es justo lo
+      // que se escapaba de la comprobación anterior (`/^\d+/`), así que `-100000`
+      // pasaba por título y se pintaba tal cual en la ficha de la serie.
+      const nameIsNumber = !volume.name || /^-?\d+(?:\.\d+)?$/.test(volume.name.trim());
+      const volumeLabel = nameIsNumber
+        ? (isLoose ? looseVolumeLabel(volume, volumes.length, es)
+          : `${es ? 'Volumen' : 'Volume'} ${volume.number}`)
+        : volume.name;
       return {
         seriesId: series.id,
         seriesName: series.name,

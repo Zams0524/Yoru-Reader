@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AlignLeft, FileText, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, X } from 'lucide-react';
+import { AlignLeft, ChevronDown, ChevronUp, FileText, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
 import type { AudiobookItem, AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
   AUDIOBOOK_AUTO_MATCH_SCORE,
@@ -50,6 +50,7 @@ interface Props {
 /** Speeds for language learners: a bit slower than normal up to double. */
 const AUDIOBOOK_RATES = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 const RATE_KEY = 'yoru_abs_rate';
+const VOLUME_KEY = 'yoru_abs_volume';
 const SYNC_INTERVAL_MS = 15_000;
 const AUTO_HIDE_MS = 4000;
 const RAISE_PX = 92;
@@ -89,6 +90,12 @@ export default function AudioSyncPlayer({
   const barRef = useRef<HTMLDivElement>(null);
   const srtInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: 'matching' });
+  /** El modo reproductor, a pantalla completa. */
+  const [expanded, setExpanded] = useState(false);
+  const [volume, setVolume] = useState(() => {
+    const saved = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(saved) && saved > 0 && saved <= 1 ? saved : 1;
+  });
   const [session, setSession] = useState<AudiobookshelfPlaybackSession | null>(null);
   const [trackIndex, setTrackIndex] = useState(0);
   const [time, setTime] = useState(0);
@@ -163,6 +170,7 @@ export default function AudioSyncPlayer({
     setTrackIndex(index);
     audio.src = target.tracks[index].url;
     audio.playbackRate = rate;
+    audio.volume = volume;
     audio.load();
   }, [rate, trackIndex]);
 
@@ -243,6 +251,7 @@ export default function AudioSyncPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     audio.playbackRate = rate;
+    audio.volume = volume;
     if (pendingSeekRef.current !== null) {
       audio.currentTime = pendingSeekRef.current;
       pendingSeekRef.current = null;
@@ -311,6 +320,12 @@ export default function AudioSyncPlayer({
     seekRef.current = (seconds: number) => seekToRef.current(seconds);
     return () => { seekRef.current = null; };
   }, [seekRef]);
+
+  const changeVolume = (next: number) => {
+    setVolume(next);
+    try { localStorage.setItem(VOLUME_KEY, String(next)); } catch { /* sin sitio: vale para esta sesión */ }
+    if (audioRef.current) audioRef.current.volume = next;
+  };
 
   const changeRate = (next: number) => {
     setRate(next);
@@ -537,7 +552,140 @@ export default function AudioSyncPlayer({
         <button type="button" className="read-aloud-chip" onClick={nextRate} aria-label={es ? 'Velocidad' : 'Speed'}>
           {rate}×
         </button>
+        <button
+          type="button"
+          className="read-aloud-btn"
+          onClick={() => setExpanded(true)}
+          aria-label={es ? 'Abrir el reproductor' : 'Open the player'}
+          title={es ? 'Abrir el reproductor' : 'Open the player'}
+        >
+          <ChevronUp size={18} />
+        </button>
       </div>
+
+      {/*
+        El modo reproductor. Va dentro de este mismo árbol, no en una vista aparte,
+        porque el <audio> de arriba tiene que seguir montado: sacarlo a otra pantalla
+        cortaría la reproducción al abrirlo.
+      */}
+      {expanded && (
+        <div className="audio-full" role="dialog" aria-modal="true"
+             aria-label={es ? 'Reproductor' : 'Player'}>
+          <div className="audio-full-top">
+            <button type="button" className="read-aloud-btn" onClick={() => setExpanded(false)}
+                    aria-label={es ? 'Plegar el reproductor' : 'Collapse the player'}>
+              <ChevronDown size={22} />
+            </button>
+            <button type="button" className="read-aloud-btn" onClick={relink}
+                    aria-label={es ? 'Cambiar audiolibro' : 'Change audiobook'}
+                    title={es ? 'Cambiar audiolibro' : 'Change audiobook'}>
+              <Link2 size={18} />
+            </button>
+          </div>
+
+          <img className="audio-full-cover" src={session.coverUrl} alt=""
+               onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+
+          <h2 className="audio-full-title">{session.title}</h2>
+          {session.author && <p className="audio-full-author">{session.author}</p>}
+
+          {chapters.length > 0 && chapterIndex >= 0 && (
+            <select
+              className="audio-full-chapter"
+              value={chapterIndex}
+              onChange={(e) => seekTo(chapters[Number(e.target.value)].start)}
+              aria-label={es ? 'Capítulo' : 'Chapter'}
+            >
+              {chapters.map((chapter, index) => (
+                <option key={chapter.id} value={index}>{index + 1}. {chapter.title}</option>
+              ))}
+            </select>
+          )}
+
+          <input
+            type="range"
+            className="audio-sync-scrubber audio-full-scrubber"
+            min={0}
+            max={Math.max(1, Math.floor(session.duration))}
+            step={1}
+            value={Math.floor(shownTime)}
+            onChange={(e) => setScrubbing(Number(e.target.value))}
+            onPointerUp={() => { if (scrubbing !== null) { seekTo(scrubbing); setScrubbing(null); } }}
+            onKeyUp={() => { if (scrubbing !== null) { seekTo(scrubbing); setScrubbing(null); } }}
+            aria-label={es ? 'Posición' : 'Position'}
+          />
+          <div className="audio-full-times">
+            <span>{formatTime(shownTime)}</span>
+            {/* Lo que queda del capítulo, no del libro: es lo que uno quiere saber
+                cuando decide si sigue escuchando un rato más. */}
+            <span>
+              {chapterIndex >= 0
+                ? `${es ? 'CAPÍTULO' : 'CHAPTER'}  -${formatTime(Math.max(0, chapters[chapterIndex].end - shownTime))}`
+                : `-${formatTime(session.duration - shownTime)}`}
+            </span>
+          </div>
+
+          <div className="audio-full-controls">
+            <button type="button" className="read-aloud-btn" disabled={chapterIndex <= 0}
+                    onClick={() => seekTo(chapters[chapterIndex - 1].start)}
+                    aria-label={es ? 'Capítulo anterior' : 'Previous chapter'}>
+              <SkipBack size={22} />
+            </button>
+            <button type="button" className="read-aloud-btn" onClick={() => seekTo(time - 10)}
+                    aria-label={es ? 'Atrás 10 segundos' : 'Back 10 seconds'}>
+              <RotateCcw size={26} /><small>10</small>
+            </button>
+            <button type="button" className="audio-full-play" onClick={playing ? pause : play}
+                    aria-label={playing ? (es ? 'Pausar' : 'Pause') : (es ? 'Reproducir' : 'Play')}>
+              {playing ? <Pause size={30} /> : <Play size={30} />}
+            </button>
+            <button type="button" className="read-aloud-btn" onClick={() => seekTo(time + 30)}
+                    aria-label={es ? 'Adelante 30 segundos' : 'Forward 30 seconds'}>
+              <RotateCw size={26} /><small>30</small>
+            </button>
+            <button type="button" className="read-aloud-btn"
+                    disabled={chapterIndex < 0 || chapterIndex >= chapters.length - 1}
+                    onClick={() => seekTo(chapters[chapterIndex + 1].start)}
+                    aria-label={es ? 'Capítulo siguiente' : 'Next chapter'}>
+              <SkipForward size={22} />
+            </button>
+          </div>
+
+          <div className="audio-full-tools">
+            <button type="button" className="read-aloud-chip" onClick={nextRate}
+                    aria-label={es ? 'Velocidad' : 'Speed'}>{rate}×</button>
+
+            <label className="audio-full-volume">
+              <Volume2 size={18} aria-hidden="true" />
+              <input
+                type="range" min={0} max={1} step={0.05} value={volume}
+                onChange={(e) => changeVolume(Number(e.target.value))}
+                aria-label={es ? 'Volumen' : 'Volume'}
+              />
+            </label>
+
+            {/*
+              Aquí vive «el texto sigue al audio»: es donde uno está cuando decide
+              escuchar y leer a la vez, y en la barra pequeña competía por sitio con
+              los controles. En la barra se queda igualmente, para no obligar a abrir
+              el reproductor solo para encenderlo.
+            */}
+            {alignment && (
+              <button
+                type="button"
+                className="read-aloud-chip"
+                onClick={() => onFollowTextChange?.(!followText)}
+                aria-pressed={followText}
+                style={followText ? { color: accent, borderColor: accent } : undefined}
+                title={alignment.notice || undefined}
+              >
+                <AlignLeft size={16} aria-hidden="true" />
+                {es ? 'Seguir el texto' : 'Follow the text'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

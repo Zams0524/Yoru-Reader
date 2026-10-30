@@ -115,6 +115,25 @@ async function kavitaTests() {
 
   const found = await searchKavitaSeries('薬屋');
   check(found[0].id === 7, 'Búsqueda de series');
+  // Un volumen de capítulos sueltos: Kavita manda `-100000` como número y como nombre.
+  // Pintarlo en crudo es lo que hacía que en Explorar saliera un libro titulado
+  // «-100000». Con un solo volumen no son «Especiales»: son el libro.
+  const sueltos = kavitaVolumesToBooks(
+    { id: 1, name: 'serie', libraryId: 1 } as any,
+    [{ id: 9, seriesId: 1, name: '-100000', number: -100000, pages: 18, chapters: [] }] as any,
+    true,
+  );
+  check(sueltos[0].title === 'Volumen único',
+    'Kavita: el volumen especial -100000 no se pinta en crudo');
+  const conTitulo = kavitaVolumesToBooks(
+    { id: 1, name: 'serie', libraryId: 1 } as any,
+    [{ id: 9, seriesId: 1, name: '-100000', number: -100000, pages: 18,
+       chapters: [{ id: 3, title: '嘘つきな私を終わりにする日', pages: 18 }] }] as any,
+    true,
+  );
+  check(conTitulo[0].title === '嘘つきな私を終わりにする日',
+    'Kavita: si el capítulo trae título, ese es el nombre del volumen');
+
   const books = kavitaVolumesToBooks(found[0], await getKavitaVolumes(7), true);
   check(books.map((b) => b.title).join(',') === 'Volumen 1,Volumen 2' && books[0].chapterId === 701, 'Volúmenes ordenados con capítulo');
   check(books[0].coverUrl.includes('volume-cover?volumeId=71&apiKey=key-1'), 'Portada con apiKey en la URL');
