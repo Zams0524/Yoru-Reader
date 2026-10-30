@@ -164,6 +164,26 @@ set FFPROBE=C:\ruta\a\ffprobe.exe
 | `yoru_alineador/alineado.py` | anclaje difuso y alineación forzada por bloques |
 | `yoru_alineador/salida.py` | cues, SRT, y el portero que decide si esa pareja es pareja |
 
+## Si algún día esto tiene que ir dentro de Yoru
+
+Nota, no plan. Nadie ha empezado esto.
+
+**Escritorio (Electron): el camino es ONNX int8, y es el único.** Python no se puede
+embarcar a los usuarios, así que habría que exportar el modelo a ONNX, cuantizarlo a int8
+(1,26 GB → ~320 MB) y correrlo con `onnxruntime-node`. Lo bueno es que la cuantización
+empuja en la misma dirección que el rendimiento: int8 suele dar 2–3× en CPU, lo que
+dejaría las 4,4 h en 1,5–2,5 h. *Sin comprobar.* La alineación forzada en sí habría que
+reescribirla en JS, pero es Viterbi sobre una matriz pequeña y tarda menos de un segundo,
+así que no es el problema.
+
+**Android: probablemente no.** Son horas de CPU a pleno rendimiento; un teléfono se
+calienta, se estrangula y se queda sin batería mucho antes. Y 320 MB de modelo en un APK
+no son razonables. Lo sensato es que Android **nunca** genere: que reciba el SRT ya hecho
+por la vía de sincronización que ya existe.
+
+**Lo que no cambia en ningún caso:** el modelo es el 99,6 % del coste y la alineación es
+gratis. Cualquier diseño que recalcule las emisiones más de una vez por libro está mal.
+
 ## Un detalle que cuesta una tarde
 
 El tokenizador de este modelo declara **88** entradas, pero el modelo emite **86** clases,
