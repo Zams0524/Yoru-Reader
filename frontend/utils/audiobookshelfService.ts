@@ -138,7 +138,20 @@ export function toAudiobookItem(raw: any): AudiobookItem {
     duration: Number(raw.media?.duration) || 0,
     coverUrl: absCoverUrl(raw.id),
     chapters: raw.media?.chapters ? toChapters(raw.media.chapters) : undefined,
+    narrator: text(metadata.narratorName) || (Array.isArray(metadata.narrators) ? metadata.narrators.join(', ') : undefined),
+    publisher: text(metadata.publisher),
+    publishedYear: text(metadata.publishedYear),
+    language: text(metadata.language),
+    isbn: text(metadata.isbn),
+    asin: text(metadata.asin),
+    description: text(metadata.description),
   };
+}
+
+/** Cadena con contenido, o `undefined`: así la ficha no pinta una fila en blanco. */
+function text(value: unknown): string | undefined {
+  const trimmed = typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
+  return trimmed || undefined;
 }
 
 /**
@@ -293,6 +306,17 @@ function getLinks(): Record<string, AudiobookLink> {
 
 export function getAudiobookLink(bookId: string): AudiobookLink | null {
   return getLinks()[bookId] || null;
+}
+
+/**
+ * La vuelta del vínculo: qué libro de la biblioteca apunta a este audiolibro. Es lo
+ * que permite ir del audiolibro al libro, y no solo del libro al audiolibro.
+ */
+export function bookIdForAudiobook(itemId: string): string | null {
+  for (const [bookId, link] of Object.entries(getLinks())) {
+    if (link.itemId === itemId) return bookId;
+  }
+  return null;
 }
 
 export type AudiobookLinkState = 'none' | 'linked' | 'chapters';

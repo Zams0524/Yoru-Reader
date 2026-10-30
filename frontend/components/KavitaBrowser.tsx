@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ArrowLeft, Check, Download, Loader2, Search, Settings, X } from 'lucide-react';
+import { Loader2, Search, Settings, X } from 'lucide-react';
 import type { KavitaBook, KavitaLibrary, KavitaSeries } from '../types/integrations';
 import {
   getKavitaLibraries,
@@ -9,11 +9,14 @@ import {
   importedKavitaVolumeIds,
   isKavitaConfigured,
   kavitaSeriesCoverUrl,
+  kavitaVolumeTitles,
   kavitaVolumesToBooks,
   searchKavitaSeries,
 } from '../utils/kavitaService';
+import { getAudiobookLink } from '../utils/audiobookshelfService';
 import { describeServerError } from '../utils/serverHttp';
 import { useBackHandler } from '../hooks/useBackButton';
+import ServerBookDetail, { type LocalMatch } from './home/ServerBookDetail';
 
 interface Props {
   lang: string;
@@ -27,6 +30,14 @@ interface Props {
   onReadTemporary?: (book: KavitaBook) => Promise<void>;
   /** Montado en el lienzo del shell: sin marco de diálogo ni botón de cerrar. */
   embedded?: boolean;
+  /**
+   * La biblioteca local, para la vuelta: del tomo del servidor al libro ya descargado
+   * y a su audiolibro vinculado. Sin ella la ficha funciona igual, solo que sin esos
+   * dos botones.
+   */
+  libraryBooks?: { id: string; title: string }[];
+  /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
+  onOpenLocalBook?: (bookId: string, listen?: boolean) => void;
 }
 
 const PAGE_SIZE = 30;
@@ -36,7 +47,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -198,73 +209,45 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
     </>
   );
 
+  const volumeTitles = useMemo(() => kavitaVolumeTitles(libraryTitles), [libraryTitles]);
+
+  /**
+   * El libro de la biblioteca que salió de este tomo, si está. El título lo apuntó la
+   * propia descarga, así que no hay que adivinarlo comparando nombres.
+   */
+  const findLocal = useCallback((book: KavitaBook): LocalMatch | null => {
+    const title = volumeTitles.get(book.volumeId);
+    if (!title) return null;
+    const local = (libraryBooks || []).find((entry) => entry.title === title);
+    if (!local) return null;
+    const link = getAudiobookLink(local.id);
+    return {
+      id: local.id,
+      title: local.title,
+      audiobook: link ? { itemId: link.itemId, title: link.title, chapters: link.chapters } : undefined,
+    };
+  }, [volumeTitles, libraryBooks]);
+
+  // Abrir una serie ya no da una lista de tomos: da su ficha, con lo que el servidor
+  // sabe del libro. Leer y Descargar siguen siendo los de aquí.
   const renderSeries = (item: KavitaSeries) => (
-    <div className="media-browser-series">
-      <div className="media-browser-series-head">
-        <span className="media-browser-cover is-large">
-          <img src={kavitaSeriesCoverUrl(item.id)} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
-        </span>
-        <div>
-          <h3>{item.name}</h3>
-          {item.originalName && item.originalName !== item.name && <p>{item.originalName}</p>}
-          {volumes && volumes.length > 1 && (
-            <button type="button" className="media-server-btn is-primary" onClick={importAll}>
-              <Download size={15} /> {es ? `Importar todos (${volumes.length})` : `Import all (${volumes.length})`}
-            </button>
-          )}
-        </div>
-      </div>
-      {!volumes ? (
-        <p className="media-browser-empty"><Loader2 size={16} className="guide-spin" /></p>
-      ) : (
-        <ul className="media-browser-volumes">
-          {volumes.map((book) => {
-            const state = importState[book.volumeId];
-            const alreadyIn = importedVolumes.has(book.volumeId);
-            return (
-              <li key={book.volumeId}>
-                <span className="media-browser-volume-cover">
-                  <img src={book.coverUrl} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
-                </span>
-                <span className="media-browser-volume-text">
-                  <strong>{book.title}</strong>
-                  {book.pages > 0 && <small>{book.pages} {es ? 'págs.' : 'pages'}</small>}
-                </span>
-                {onReadTemporary && !alreadyIn && state !== 'done' && (
-                  <button
-                    type="button"
-                    className="media-server-btn is-primary"
-                    onClick={() => readOne(book)}
-                    disabled={readState[book.volumeId] === 'loading' || state === 'loading'}
-                    aria-label={es ? `Leer ${book.title}` : `Read ${book.title}`}
-                  >
-                    {readState[book.volumeId] === 'loading'
-                      ? <Loader2 size={15} className="guide-spin" />
-                      : <BookOpen size={15} />}
-                    {readState[book.volumeId] === 'loading' ? (es ? 'Abriendo' : 'Opening') : (es ? 'Leer' : 'Read')}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className={`media-server-btn${state === 'done' || alreadyIn || onReadTemporary ? '' : ' is-primary'}`}
-                  onClick={() => importOne(book)}
-                  disabled={state === 'loading'}
-                  aria-label={es ? `Importar ${book.title}` : `Import ${book.title}`}
-                >
-                  {state === 'loading' ? <Loader2 size={15} className="guide-spin" />
-                    : state === 'done' || (alreadyIn && !state) ? <Check size={15} />
-                    : <Download size={15} />}
-                  {state === 'loading' ? (es ? 'Descargando' : 'Downloading')
-                    : state === 'done' || (alreadyIn && !state) ? (es ? 'Importado' : 'Imported')
-                    : state === 'error' ? (es ? 'Reintentar' : 'Retry')
-                    : (es ? 'Importar' : 'Import')}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    <ServerBookDetail
+      series={item}
+      volumes={volumes}
+      libraryName={libraries.find((library) => library.id === item.libraryId)?.name}
+      es={es}
+      importState={importState}
+      readState={readState}
+      importedVolumes={importedVolumes}
+      onBack={() => setOpenSeries(null)}
+      onRead={onReadTemporary ? (book) => { void readOne(book); } : undefined}
+      onImport={(book) => { void importOne(book); }}
+      onImportAll={() => { void importAll(); }}
+      onOpenSeries={setOpenSeries}
+      findLocal={onOpenLocalBook ? findLocal : undefined}
+      onOpenLocal={onOpenLocalBook ? (match) => onOpenLocalBook(match.id) : undefined}
+      onOpenAudiobook={onOpenLocalBook ? (match) => onOpenLocalBook(match.id, true) : undefined}
+    />
   );
 
   return (
@@ -275,9 +258,10 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
       aria-label={es ? 'Explorar Kavita' : 'Explore Kavita'}
     >
       <header className="media-browser-header">
-        {(!embedded || openSeries) && (
-          <button type="button" className="media-browser-icon-btn" onClick={() => (openSeries ? setOpenSeries(null) : onClose())} aria-label={es ? 'Volver' : 'Back'}>
-            {openSeries ? <ArrowLeft size={20} /> : <X size={20} />}
+        {/* La ficha trae su propio «Volver», así que aquí solo queda el cierre del diálogo. */}
+        {!embedded && (
+          <button type="button" className="media-browser-icon-btn" onClick={onClose} aria-label={es ? 'Cerrar' : 'Close'}>
+            <X size={20} />
           </button>
         )}
         <h2>{es ? 'Explorar Kavita' : 'Explore Kavita'}</h2>

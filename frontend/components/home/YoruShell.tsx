@@ -294,13 +294,27 @@ export default function YoruShell({
             showToast={(message: string) => setServerToast(message)}
             onReadTemporary={libraryProps.onReadTemporary}
             embedded
+            libraryBooks={library}
+            onOpenLocalBook={(bookId: string, listen?: boolean) => {
+              const local = books.find((entry) => entry.id === bookId);
+              if (local) onSelectBook(local, undefined, listen || undefined);
+            }}
           />
         </React.Suspense>
       );
     }
 
     if (view === 'audiobooks') {
-      return <AudiobookshelfView es={es} onOpenSettings={() => go('settings')} />;
+      return (
+        <AudiobookshelfView
+          es={es}
+          onOpenSettings={() => go('settings')}
+          onOpenLocalBook={(bookId, listen) => {
+            const local = books.find((entry) => entry.id === bookId);
+            if (local) onSelectBook(local, undefined, listen || undefined);
+          }}
+        />
+      );
     }
 
     if (view === 'statistics') {

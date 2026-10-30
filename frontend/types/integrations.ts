@@ -35,6 +35,9 @@ export interface KavitaSeries {
   wordCount?: number;
   /** Kavita MangaFormat: 3 = EPUB. */
   format?: number;
+  /** Páginas leídas de toda la serie, para el «seguir leyendo» de la ficha. */
+  pagesRead?: number;
+  latestReadDate?: string;
 }
 
 export interface KavitaChapter {
@@ -42,7 +45,14 @@ export interface KavitaChapter {
   title?: string;
   range?: string;
   pages: number;
-  files?: { id: number; filePath?: string; pages?: number; format?: number }[];
+  files?: { id: number; filePath?: string; pages?: number; format?: number; bytes?: number }[];
+  /** Metadatos del fichero, cuando Kavita los sacó del propio EPUB. */
+  isbn?: string;
+  titleName?: string;
+  releaseDate?: string;
+  wordCount?: number;
+  pagesRead?: number;
+  lastReadingProgressUtc?: string;
 }
 
 export interface KavitaVolume {
@@ -52,6 +62,34 @@ export interface KavitaVolume {
   number: number;
   pages: number;
   chapters: KavitaChapter[];
+  /** Páginas que Kavita tiene por leídas de este tomo, y cuándo fue la última vez. */
+  pagesRead?: number;
+  lastReadingProgressUtc?: string;
+  createdUtc?: string;
+}
+
+/**
+ * Los metadatos que Kavita guarda de una serie (`GET /api/Series/metadata`).
+ *
+ * Cada lista puede llegar vacía: Kavita rellena lo que venía en el EPUB o lo que el
+ * usuario haya escrito, y nada más. Por eso la ficha pregunta por cada campo antes de
+ * pintar su fila, en vez de dar por hecho que están.
+ */
+export interface KavitaSeriesMetadata {
+  summary?: string;
+  genres: string[];
+  tags: string[];
+  writers: string[];
+  /** Para novela ligera, el ilustrador: Kavita no tiene campo propio para él. */
+  coverArtists: string[];
+  publishers: string[];
+  translators: string[];
+  releaseYear?: number;
+  /** Etiqueta BCP-47 tal cual la guarda Kavita ("ja", "es"…). */
+  language?: string;
+  /** Kavita PublicationStatus: 0 En curso, 1 Caducada, 2 Completada, 3 Cancelada, 4 Parada. */
+  publicationStatus?: number;
+  webLinks: string[];
 }
 
 /** One downloadable book: a volume of a series, as shown in the browser. */
@@ -64,6 +102,13 @@ export interface KavitaBook {
   title: string;
   pages: number;
   coverUrl: string;
+  /** Lo que Kavita sabe de este tomo en concreto; cada campo puede faltar. */
+  pagesRead?: number;
+  lastReadAt?: string;
+  isbn?: string;
+  releaseDate?: string;
+  wordCount?: number;
+  files?: { name: string; pages?: number; bytes?: number; format?: number }[];
 }
 
 export interface KavitaPage<T> {
@@ -117,6 +162,17 @@ export interface AudiobookItem {
   duration: number;
   coverUrl: string;
   chapters?: Chapter[];
+  /**
+   * Lo que Audiobookshelf guarda del libro y Kavita no tiene. Opcional porque su
+   * servidor rellena solo lo que venía en el fichero o lo que haya buscado.
+   */
+  narrator?: string;
+  publisher?: string;
+  publishedYear?: string;
+  language?: string;
+  isbn?: string;
+  asin?: string;
+  description?: string;
 }
 
 export interface AudioTrack {

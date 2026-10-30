@@ -1385,3 +1385,83 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* ── Ficha del libro del servidor ──────────────────────────────────────── */
+
+.yoru-server-summary { margin-top: 20px; max-width: 760px; }
+.yoru-server-summary p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+/* El resumen largo se corta por líneas, no por caracteres: así no parte palabras. */
+.yoru-server-summary p.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yoru-server-more {
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.yoru-server-more:hover { text-decoration: underline; }
+
+.yoru-server-section { margin: 34px 0 14px; font-size: 16px; }
+
+.yoru-server-link { color: var(--primary); text-decoration: none; word-break: break-all; }
+.yoru-server-link:hover { text-decoration: underline; }
+
+.yoru-server-file { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.yoru-server-file:last-child { margin-bottom: 0; }
+.yoru-server-file-name { word-break: break-all; }
+.yoru-server-file small { color: var(--text-muted); font-size: 12px; }
+
+.yoru-server-volumes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.yoru-server-volume {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--shell-radius);
+  background: var(--surface-raised);
+}
+.yoru-server-volume-cover {
+  position: relative;
+  width: 48px;
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1.45;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+.yoru-server-volume-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-server-volume-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.yoru-server-volume-progress span { display: block; height: 100%; background: var(--primary); }
+.yoru-server-volume-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.yoru-server-volume-text strong { font-size: 14px; font-weight: 700; color: var(--text-main); }
+.yoru-server-volume-text small { font-size: 12px; color: var(--text-muted); }
+.yoru-server-volume-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.yoru-server-volume-actions .yoru-btn { padding: 7px 14px; font-size: 13px; }
+
+@media (max-width: 900px) {
+  .yoru-server-volume { flex-wrap: wrap; }
+  .yoru-server-volume-actions { width: 100%; justify-content: flex-start; }
+}

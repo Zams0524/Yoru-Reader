@@ -6,6 +6,7 @@ import type {
   KavitaLibrary,
   KavitaPage,
   KavitaSeries,
+  KavitaSeriesMetadata,
   KavitaVolume,
 } from '../types/integrations';
 import { describeServerError, normalizeServerUrl, serverDownload, serverRequest, ServerHttpError } from './serverHttp';
@@ -178,7 +179,95 @@ function toSeries(raw: any): KavitaSeries {
     avgHoursToRead: raw.avgHoursToRead,
     wordCount: raw.wordCount,
     format: raw.format,
+    pagesRead: raw.pagesRead,
+    latestReadDate: raw.latestReadDate,
   };
+}
+
+/** Kavita manda las personas como objetos `{ id, name }`; aquí solo interesa el nombre. */
+function personNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry: any) => (typeof entry === 'string' ? entry : entry?.name || ''))
+    .map((name: string) => name.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Los metadatos de la serie. Nunca lanza: la ficha se dibuja igual sin ellos, solo que
+ * con menos filas, y un servidor viejo que no conozca el endpoint no debe dejarla en
+ * blanco.
+ */
+export async function getKavitaSeriesMetadata(seriesId: number): Promise<KavitaSeriesMetadata> {
+  const empty: KavitaSeriesMetadata = {
+    genres: [], tags: [], writers: [], coverArtists: [], publishers: [], translators: [], webLinks: [],
+  };
+  try {
+    const { data } = await kavitaRequest<any>(`/api/Series/metadata?seriesId=${seriesId}`);
+    if (!data) return empty;
+    const links = typeof data.webLinks === 'string'
+      ? data.webLinks.split(',').map((link: string) => link.trim()).filter(Boolean)
+      : personNames(data.webLinks);
+    return {
+      summary: typeof data.summary === 'string' ? data.summary.trim() : undefined,
+      genres: personNames(data.genres),
+      tags: personNames(data.tags),
+      writers: personNames(data.writers),
+      coverArtists: personNames(data.coverArtists),
+      publishers: personNames(data.publishers),
+      translators: personNames(data.translators),
+      releaseYear: Number(data.releaseYear) > 0 ? Number(data.releaseYear) : undefined,
+      language: typeof data.language === 'string' && data.language.trim() ? data.language.trim() : undefined,
+      publicationStatus: Number.isFinite(Number(data.publicationStatus)) ? Number(data.publicationStatus) : undefined,
+      webLinks: links,
+    };
+  } catch (error) {
+    console.warn('[Kavita] Sin metadatos de la serie:', error);
+    return empty;
+  }
+}
+
+/**
+ * La serie entera, con `pagesRead`, que el listado paginado no siempre trae.
+ * Devuelve `null` si el servidor no contesta: la ficha ya tiene lo del listado.
+ */
+export async function getKavitaSeriesById(seriesId: number): Promise<KavitaSeries | null> {
+  try {
+    const { data } = await kavitaRequest<any>(`/api/Series/${seriesId}`);
+    return data ? toSeries(data) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Formato de Kavita (MangaFormat) en palabras. `undefined` si no lo sabemos. */
+export function kavitaFormatLabel(format: number | undefined, es: boolean): string | undefined {
+  switch (format) {
+    case 1: return es ? 'Archivo comprimido' : 'Archive';
+    case 2: return 'PDF';
+    case 3: return 'EPUB';
+    case 4: return es ? 'Imagen' : 'Image';
+    default: return undefined;
+  }
+}
+
+/**
+ * Otras series del mismo autor.
+ *
+ * Kavita no tiene un «dame las series de esta persona» que exista en todas sus
+ * versiones, así que se usa su buscador, que sí empareja por personas, y se descarta la
+ * serie que ya se está mirando. Si no devuelve nada, la fila no se pinta: mejor ausente
+ * que inventada.
+ */
+export async function getKavitaSeriesByAuthor(author: string, excludeSeriesId: number): Promise<KavitaSeries[]> {
+  const name = author.trim();
+  if (!name) return [];
+  try {
+    const found = await searchKavitaSeries(name);
+    return found.filter((item) => item.id !== excludeSeriesId);
+  } catch {
+    return [];
+  }
 }
 
 /** One page (1-based) of a library's series, sorted by name. */
@@ -234,6 +323,9 @@ export async function getKavitaVolumes(seriesId: number): Promise<KavitaVolume[]
     number: raw.minNumber ?? raw.number ?? 0,
     pages: raw.pages ?? 0,
     chapters: Array.isArray(raw.chapters) ? raw.chapters : [],
+    pagesRead: raw.pagesRead,
+    lastReadingProgressUtc: raw.lastReadingProgressUtc,
+    createdUtc: raw.createdUtc ?? raw.created,
   }));
 }
 
@@ -282,6 +374,17 @@ export function kavitaVolumesToBooks(series: KavitaSeries, volumes: KavitaVolume
         ? (isLoose ? looseVolumeLabel(volume, volumes.length, es)
           : `${es ? 'Volumen' : 'Volume'} ${volume.number}`)
         : volume.name;
+      // Los metadatos del fichero (ISBN, fecha de publicación) viven en el capítulo, no
+      // en el volumen: se toma el primero que los traiga.
+      const withIsbn = volume.chapters.find((chapter) => chapter.isbn);
+      const withDate = volume.chapters.find((chapter) => chapter.releaseDate);
+      const files = volume.chapters.flatMap((chapter) => (chapter.files || []).map((file) => ({
+        name: (file.filePath || '').split(/[\\/]/).pop() || '',
+        pages: file.pages,
+        bytes: file.bytes,
+        format: file.format,
+      }))).filter((file) => file.name);
+      const wordCount = volume.chapters.reduce((sum, chapter) => sum + (chapter.wordCount || 0), 0);
       return {
         seriesId: series.id,
         seriesName: series.name,
@@ -291,6 +394,12 @@ export function kavitaVolumesToBooks(series: KavitaSeries, volumes: KavitaVolume
         title: volumeLabel,
         pages: volume.pages || volume.chapters.reduce((sum, chapter) => sum + (chapter.pages || 0), 0),
         coverUrl: kavitaVolumeCoverUrl(volume.id),
+        pagesRead: volume.pagesRead,
+        lastReadAt: volume.lastReadingProgressUtc || volume.chapters.find((chapter) => chapter.lastReadingProgressUtc)?.lastReadingProgressUtc,
+        isbn: withIsbn?.isbn,
+        releaseDate: withDate?.releaseDate,
+        wordCount: wordCount > 0 ? wordCount : undefined,
+        files: files.length ? files : undefined,
       };
     });
 }
@@ -401,6 +510,19 @@ function setKavitaSource(title: string, source: KavitaBookSource): void {
 
 export function getKavitaSource(title: string): KavitaBookSource | null {
   return getKavitaSources()[title] || null;
+}
+
+/**
+ * El título con el que cada volumen de Kavita quedó guardado en la biblioteca. Es lo
+ * que permite ir del tomo del servidor al libro propio (y a su audiolibro vinculado)
+ * sin adivinar el nombre: lo apuntó `importKavitaBook` al descargarlo.
+ */
+export function kavitaVolumeTitles(libraryTitles: Set<string>): Map<number, string> {
+  const titles = new Map<number, string>();
+  for (const [title, source] of Object.entries(getKavitaSources())) {
+    if (libraryTitles.has(title)) titles.set(source.volumeId, title);
+  }
+  return titles;
 }
 
 /** Kavita volumes already in the library (by the titles of the library's books). */
