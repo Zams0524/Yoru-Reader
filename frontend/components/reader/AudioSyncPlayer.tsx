@@ -16,6 +16,7 @@ import {
   updateAudiobookProgress,
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
+import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
 import { db } from '../../utils/db';
 
 interface Props {
@@ -176,8 +177,13 @@ export default function AudioSyncPlayer({
 
   const openSession = useCallback(async (itemId: string) => {
     setPhase({ kind: 'loading' });
+    // Abrir el audiolibro es un tiempo aparte del de abrir el libro: lo que se espera
+    // aqui es que el servidor monte la sesion de escucha.
+    startOpenTiming('audiolibro');
     try {
       const started = await startAudiobookPlayback(itemId);
+      markOpenTiming('sesion del servidor');
+      finishOpenTiming();
       sessionRef.current = started;
       setSession(started);
       timeRef.current = started.currentTime;

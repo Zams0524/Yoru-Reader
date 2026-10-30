@@ -11,6 +11,7 @@ import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
 import { refreshServerCatalog } from './utils/serverCatalog';
+import { markOpenTiming, startOpenTiming } from './utils/openTiming';
 
 /**
  * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
@@ -624,7 +625,7 @@ export default function App() {
   // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
   const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
     // Start of an open, for the timing line the native reader logs.
-    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
+    startOpenTiming(book?.title || 'libro');
     const positioned = typeof startChapter === 'number'
       ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
       : book;
@@ -661,15 +662,21 @@ export default function App() {
    * es lo que necesita el progreso para subir a Kavita.
    */
   const handleReadTemporary = useCallback(async (kavitaBook: any) => {
+    // El cronometro arranca aqui, no al montar el lector: la descarga y el parseo son
+    // justo lo que se espera, y dejarlos fuera de la cuenta era lo que hacia parecer
+    // que abrir del servidor era instantaneo.
+    startOpenTiming(`${kavitaBook?.seriesName || ''} ${kavitaBook?.title || ''}`.trim() || 'volumen del servidor');
     const { importKavitaBook, getKavitaProgressPercent, kavitaChapterForPercent } = await import('./utils/kavitaService');
+    markOpenTiming('modulo');
     const parsed = await importKavitaBook(kavitaBook);
+    markOpenTiming('descarga y parseo');
     const first = parsed[0];
     if (!first) throw new Error('El volumen no trae ningun libro que abrir.');
     // Se retoma por donde lo dejo el servidor. Si no contesta, se empieza de cero.
     const percent = await getKavitaProgressPercent(kavitaBook.chapterId, kavitaBook.pages);
+    markOpenTiming('progreso del servidor');
     const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
     const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
-    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
     setActiveBook({
       ...first,
       id: temporaryBookId(kavitaBook.volumeId),
