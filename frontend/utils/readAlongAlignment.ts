@@ -65,6 +65,16 @@ export interface AlignmentVerdict {
   audioCoverage: number;
   /** Lo que hay que enseñarle a quien lo importa, en sus palabras. */
   notice: string;
+  /**
+   * Tramos de cues que **no son la novela**: portada, aviso legal, índice, colofón,
+   * あとがき. Vienen en pares `[primero, último]` de índice de cue.
+   *
+   * Siguen en el fichero, y a propósito: el narrador los lee, y borrarlos quitaría la
+   * señal de que el audio empieza con medio minuto de título. Lo que no se hace es
+   * subrayarlos mientras se lee ni ofrecer saltar a ellos — nadie quiere el aviso de
+   * copyright resaltado.
+   */
+  aside: [number, number][];
 }
 
 /** Un hueco mayor que esto significa que falta texto, no que haya un silencio. */
@@ -141,6 +151,11 @@ export function parseVerdict(source: string): AlignmentVerdict | null {
       coverage: Number(raw.coverage) || 0,
       audioCoverage: Number(raw.audioCoverage) || 0,
       notice: String(raw.notice || ''),
+      aside: Array.isArray(raw.aside)
+        ? raw.aside
+            .filter((t: unknown) => Array.isArray(t) && t.length === 2)
+            .map((t: [number, number]) => [Number(t[0]), Number(t[1])] as [number, number])
+        : [],
     };
   } catch {
     return null;
@@ -224,6 +239,8 @@ export interface AlignmentIndex {
   paragraphOfCue: Int32Array;
   /** Para cada cue, su sección, o -1. */
   sectionOfCue: Int32Array;
+  /** 1 si ese cue no es la novela (portada, aviso legal, índice, あとがき). */
+  asideOfCue: Uint8Array;
   /** Del id de párrafo al primer cue que cae en él. */
   firstCueOfParagraph: Map<number, number>;
   /** Cuántos cues se pudieron colocar en el libro. */
@@ -249,6 +266,12 @@ export function buildAlignmentIndex(
   const { cues } = alignment;
   const paragraphOfCue = new Int32Array(cues.length).fill(-1);
   const sectionOfCue = new Int32Array(cues.length).fill(-1);
+  const asideOfCue = new Uint8Array(cues.length);
+  for (const [desde, hasta] of alignment.verdict?.aside || []) {
+    for (let i = Math.max(0, desde); i <= Math.min(cues.length - 1, hasta); i++) {
+      asideOfCue[i] = 1;
+    }
+  }
   const firstCueOfParagraph = new Map<number, number>();
 
   // El libro entero como un solo texto normalizado, y de qué párrafo sale cada tramo.
@@ -281,7 +304,8 @@ export function buildAlignmentIndex(
     if (p < 0) continue;
     paragraphOfCue[cue.index] = paragraphs[p].paragraphId;
     sectionOfCue[cue.index] = paragraphs[p].sectionIndex;
-    if (!firstCueOfParagraph.has(paragraphs[p].paragraphId)) {
+    // Un párrafo que solo tiene cues de material ajeno no se ofrece para saltar.
+    if (!asideOfCue[cue.index] && !firstCueOfParagraph.has(paragraphs[p].paragraphId)) {
       firstCueOfParagraph.set(paragraphs[p].paragraphId, cue.index);
     }
     placed++;
@@ -292,6 +316,7 @@ export function buildAlignmentIndex(
     cues,
     paragraphOfCue,
     sectionOfCue,
+    asideOfCue,
     firstCueOfParagraph,
     placed,
     verdict: alignment.verdict,
@@ -330,6 +355,9 @@ export function paragraphAtTime(
   if (!cue) return null;
   // Si el momento cae muy por detrás del final del cue, estamos en un hueco sin alinear.
   if (timeMs > cue.endMs + UNALIGNED_SLACK_MS) return null;
+  // Portada, aviso legal, índice, あとがき: el narrador los lee, pero el texto no los
+  // sigue. Nadie quiere ver el aviso de copyright subrayado mientras lee.
+  if (index.asideOfCue[cue.index]) return null;
   const paragraphId = index.paragraphOfCue[cue.index];
   if (paragraphId < 0) return null;
   return { paragraphId, sectionIndex: index.sectionOfCue[cue.index], cue };

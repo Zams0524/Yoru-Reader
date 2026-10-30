@@ -16,9 +16,13 @@ import {
   testKavitaConnection,
 } from '../frontend/utils/kavitaService';
 import {
+  buildAlignmentIndex,
   cueAt,
   normalizeForMatch,
+  paragraphAtTime,
   parseAlignment,
+  parseVerdict,
+  timeOfParagraph,
   timeOfText,
 } from '../frontend/utils/readAlongAlignment';
 import {
@@ -186,6 +190,77 @@ async function kavitaTests() {
     normalizeForMatch('「吾輩は、猫である。」') === normalizeForMatch('吾輩は猫である'),
     'Alineación: la puntuación japonesa no estorba al comparar'
   );
+  check(
+    normalizeForMatch('ビール') !== normalizeForMatch('ビル'),
+    'Alineación: ー es un sonido, no puntuación (ビール no es ビル)'
+  );
+
+  // ── El veredicto que el generador escribe en el propio SRT ───────────
+  const conVeredicto = [
+    'YORU-ALINEACION v1 {"verdict":"parcial","coverage":0.41,"audioCoverage":0.93,"notice":"solo un tomo"}',
+    '', '1', '00:00:01,000 --> 00:00:02,000', '吾輩は猫である',
+  ].join(String.fromCharCode(10));
+  const conV = parseAlignment(conVeredicto);
+  check(conV.cues.length === 1, 'Veredicto: la cabecera no se cuela como cue');
+  check(conV.verdict?.verdict === 'parcial' && conV.verdict?.coverage === 0.41,
+    'Veredicto: se lee de la cabecera');
+  check(parseAlignment('1\n00:00:01,000 --> 00:00:02,000\nhola').verdict === null,
+    'Veredicto: un SRT de fuera no trae veredicto, y eso no es un error');
+  check(parseVerdict('YORU-ALINEACION v1 {roto') === null,
+    'Veredicto: una cabecera rota no tumba nada');
+
+  // ── El índice cue ↔ párrafo ──────────────────────────────────────────
+  // Sustituye al barrido lineal: el lector hace un salto por página y con decenas de
+  // miles de cues no puede recorrerlos todos cada vez.
+  const parrafos = [
+    { sectionIndex: 0, paragraphId: 10, text: '吾輩は猫である。' },
+    { sectionIndex: 0, paragraphId: 11, text: '名前はまだ無い。' },
+    { sectionIndex: 1, paragraphId: 12, text: 'どこで生れたか頓と見当がつかぬ。' },
+  ];
+  const conParrafos = parseAlignment([
+    '1', '00:00:01,000 --> 00:00:03,000', '吾輩は猫である',
+    '', '2', '00:00:03,000 --> 00:00:05,000', '名前はまだ無い',
+    '', '3', '00:00:20,000 --> 00:00:22,000', 'どこで生れたか頓と見当がつかぬ',
+  ].join(String.fromCharCode(10)));
+  const idx = buildAlignmentIndex(conParrafos, parrafos);
+  check(idx.placed === 3, 'Índice: coloca los tres cues en su párrafo');
+  check(idx.paragraphOfCue[0] === 10 && idx.paragraphOfCue[2] === 12,
+    'Índice: cada cue cae en el párrafo que le toca');
+  check(idx.sectionOfCue[2] === 1, 'Índice: y se queda con su sección');
+  check(timeOfParagraph(idx, 11) === 3000, 'Índice: del párrafo al segundo del audio');
+  check(timeOfParagraph(idx, 99) === null, 'Índice: un párrafo sin alinear no da tiempo');
+  check(paragraphAtTime(idx, 4000)?.paragraphId === 11, 'Índice: del segundo al párrafo');
+  check(paragraphAtTime(idx, 0) === null, 'Índice: antes del primer cue no hay párrafo');
+  // Lo que de verdad importa: en un hueco sin alinear **no se inventa** un párrafo. El
+  // lector se queda quieto en vez de saltar al más cercano.
+  check(paragraphAtTime(idx, 15_000) === null,
+    'Índice: en un tramo sin alinear no devuelve nada, para no saltar a ojo');
+  const ajeno = buildAlignmentIndex(
+    parseAlignment('1\n00:00:01,000 --> 00:00:02,000\nesto no está en el libro'),
+    parrafos,
+  );
+  check(ajeno.placed === 0, 'Índice: un cue que no aparece en el libro no se coloca');
+
+  // ── Material que no es la novela ─────────────────────────────────────
+  // El narrador lee la portada, el aviso de copyright y el índice. Los cues se guardan
+  // —si no, perderíamos la señal de que el audio empieza con medio minuto de título—
+  // pero no se subrayan ni se ofrece saltar a ellos.
+  const conAjeno = parseAlignment([
+    'YORU-ALINEACION v1 {"verdict":"bueno","coverage":1,"audioCoverage":1,"notice":"","aside":[[0,0]]}',
+    '', '1', '00:00:01,000 --> 00:00:03,000', '吾輩は猫である',
+    '', '2', '00:00:03,000 --> 00:00:05,000', '名前はまだ無い',
+  ].join(String.fromCharCode(10)));
+  check(conAjeno.verdict?.aside.length === 1, 'Ajeno: los tramos se leen de la cabecera');
+  const idxAjeno = buildAlignmentIndex(conAjeno, parrafos);
+  check(idxAjeno.cues.length === 2, 'Ajeno: el cue sigue en el fichero, no se borra');
+  check(idxAjeno.asideOfCue[0] === 1 && idxAjeno.asideOfCue[1] === 0,
+    'Ajeno: se marca el que toca y solo ese');
+  check(paragraphAtTime(idxAjeno, 2000) === null,
+    'Ajeno: el texto no sigue al audio en el material ajeno');
+  check(paragraphAtTime(idxAjeno, 4000)?.paragraphId === 11,
+    'Ajeno: pero sí en la novela que viene después');
+  check(timeOfParagraph(idxAjeno, 10) === null,
+    'Ajeno: no se ofrece «escuchar desde aquí» en el material ajeno');
 
   // Downloads: a single EPUB, and a ZIP holding two EPUBs.
   const epub = new JSZip();

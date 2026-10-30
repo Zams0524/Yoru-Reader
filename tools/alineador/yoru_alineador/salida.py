@@ -58,6 +58,11 @@ class Cue:
     ini_ms: int
     fin_ms: int
     texto: str
+    #: No es la novela: portada, aviso legal, indice, colofon, あとがき. Se escribe en el
+    #: SRT como cualquier otro --el narrador lo lee, y borrarlo nos quitaria la senal de
+    #: que el audio empieza con medio minuto de titulo-- pero va marcado para que el
+    #: lector no lo subraye ni ofrezca saltar ahi.
+    ajeno: bool = False
 
 
 @dataclass
@@ -128,7 +133,8 @@ def construir_cues(libro, marco: np.ndarray, fps: float, min_car: int = 12) -> l
                 ini_ms = max(suelo, ini_ms - ADELANTO_CTC_MS)
                 if fin_ms - ini_ms < MINIMO_CUE_MS:
                     fin_ms = ini_ms + MINIMO_CUE_MS
-                cues.append(Cue(ini_ms=ini_ms, fin_ms=fin_ms, texto=texto))
+                cues.append(Cue(ini_ms=ini_ms, fin_ms=fin_ms, texto=texto,
+                                ajeno=libro.es_ajeno(mapa[ini])))
         ini = i + 1
     cues.sort(key=lambda c: c.ini_ms)
     return cues
@@ -154,9 +160,22 @@ def escribir_srt(cues: list[Cue], ruta: str, inf: "Informe | None" = None) -> No
     """
     with open(ruta, "w", encoding="utf-8") as f:
         if inf is not None:
+            # Los cues que no son la novela se marcan **aqui**, no en su texto: asi no
+            # se ensucia el SRT y cualquier otro programa los ve como cues normales.
+            # En tramos (inicio, fin) de indice de cue, que ocupa mucho menos que la
+            # lista suelta y se lee igual de facil.
+            ajenos, ini = [], None
+            for n, c in enumerate(cues):
+                if c.ajeno and ini is None:
+                    ini = n
+                elif not c.ajeno and ini is not None:
+                    ajenos.append([ini, n - 1]); ini = None
+            if ini is not None:
+                ajenos.append([ini, len(cues) - 1])
             cabecera = json.dumps(
                 {"verdict": inf.veredicto, "coverage": inf.cobertura,
-                 "audioCoverage": inf.cobertura_audio, "notice": inf.aviso},
+                 "audioCoverage": inf.cobertura_audio, "notice": inf.aviso,
+                 "aside": ajenos},
                 ensure_ascii=False, separators=(",", ":"),
             )
             f.write(f"YORU-ALINEACION v1 {cabecera}\n\n")

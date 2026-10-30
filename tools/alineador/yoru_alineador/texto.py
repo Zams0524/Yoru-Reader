@@ -56,6 +56,14 @@ class TextoLibro:
     kana_a_orig: list[int] = field(default_factory=list)
     #: (nombre del documento del EPUB, indice en `original` donde empieza)
     partes: list[tuple[str, int]] = field(default_factory=list)
+    #: Tramos de `original` que no son la novela: portada, aviso legal, indice,
+    #: colofon, あとがき. Se alinean igual --el narrador los lee, y ahi esta la senal de
+    #: que el audio empieza con medio minuto de titulo-- pero se marcan, para que el
+    #: lector no los subraye ni ofrezca saltar a ellos.
+    ajenos: list[tuple[int, int]] = field(default_factory=list)
+
+    def es_ajeno(self, pos: int) -> bool:
+        return any(ini <= pos < fin for ini, fin in self.ajenos)
 
     def tramo_original(self, kana_ini: int, kana_fin: int) -> str:
         """El texto del libro, en kanji, que corresponde a un tramo de la lectura.
@@ -116,9 +124,29 @@ class _Extractor(HTMLParser):
             self.trozos.append((data, None))
 
 
-def _documentos(ruta_epub: str) -> list[tuple[str, str]]:
-    """Los documentos del EPUB en el orden en que se leen (el `spine` del OPF)."""
-    salida: list[tuple[str, str]] = []
+#: Lo que el EPUB puede declarar como «esto no es el cuerpo de la obra».
+TIPOS_AJENOS = {"cover", "toc", "titlepage", "copyright-page", "colophon",
+                "frontmatter", "backmatter", "acknowledgements", "loi", "lot"}
+
+#: El aviso de derechos. Hacen falta dos para no marcar una novela que hable de leyes.
+AVISO_LEGAL = ("著作権", "無断複製", "複製・転載",
+               "禁じられ", "電子版")
+
+#: Y lo que un libro japones suele titular asi sin declararlo en ningun sitio.
+PALABRAS_AJENAS = ("あとがき", "奥付", "著作権",
+                   "目次", "解説", "初出")
+
+
+def _documentos(ruta_epub: str) -> list[tuple[str, str, bool]]:
+    """Los documentos del EPUB en orden de lectura, y si cada uno es la novela o no.
+
+    La senal buena es la que da el propio EPUB: el `guide` del OPF y los `landmarks` del
+    documento de navegacion marcan portada, indice y colofon. No todos los libros la
+    traen --en el que probamos, el `guide` marcaba `cover` y `toc` pero no el aviso de
+    copyright-- asi que detras va una regla por titulo para lo que un libro japones
+    llama siempre igual.
+    """
+    salida: list[tuple[str, str, bool]] = []
     with zipfile.ZipFile(ruta_epub) as z:
         cont = ElementTree.fromstring(z.read("META-INF/container.xml"))
         ns = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
@@ -132,15 +160,45 @@ def _documentos(ruta_epub: str) -> list[tuple[str, str]]:
         manifiesto = {
             it.get("id"): it.get("href") for it in opf.findall(".//o:manifest/o:item", on)
         }
+        # lo que el EPUB declara como ajeno al cuerpo
+        ajenos: set[str] = set()
+        for ref in opf.findall(".//o:guide/o:reference", on):
+            if (ref.get("type") or "").lower() in TIPOS_AJENOS:
+                ajenos.add(base + (ref.get("href") or "").split("#")[0])
+        for nombre_nav in [
+            base + (it.get("href") or "")
+            for it in opf.findall(".//o:manifest/o:item", on)
+            if "nav" in (it.get("properties") or "")
+        ]:
+            try:
+                nav = z.read(nombre_nav).decode("utf-8", "replace")
+            except KeyError:
+                continue
+            for tipo, href in re.findall(r'epub:type="([^"]*)"[^>]*href="([^"]*)"', nav):
+                if any(t in TIPOS_AJENOS for t in tipo.lower().split()):
+                    ajenos.add(base + href.split("#")[0])
+
         for ref in opf.findall(".//o:spine/o:itemref", on):
             href = manifiesto.get(ref.get("idref"))
             if not href:
                 continue
             nombre = base + href
             try:
-                salida.append((nombre, z.read(nombre).decode("utf-8", "replace")))
+                html = z.read(nombre).decode("utf-8", "replace")
             except KeyError:
                 continue
+            titulo = " ".join(re.findall(r"<h[1-6][^>]*>(.*?)</h[1-6]>", html[:4000],
+                                         re.S | re.I))
+            titulo = re.sub(r"<[^>]+>", "", titulo)
+            # El aviso legal se escapa de las dos reglas anteriores: el `guide` del
+            # libro que probamos declaraba su documento como cuerpo, y no lleva titulo.
+            # Se reconoce por lo que dice, que en un libro japones es siempre lo mismo.
+            cuerpo = re.sub(r"<[^>]+>", "", html)[:1200]
+            legal = sum(1 for t in AVISO_LEGAL if t in cuerpo) >= 2
+            es_ajeno = (nombre in ajenos
+                        or any(p in titulo for p in PALABRAS_AJENAS)
+                        or legal)
+            salida.append((nombre, html, es_ajeno))
     return salida
 
 
@@ -182,8 +240,9 @@ def leer_epub(ruta_epub: str) -> TextoLibro:
         orig.append(trozo)
         largo += len(trozo)
 
-    for nombre, html in _documentos(ruta_epub):
+    for nombre, html, ajeno in _documentos(ruta_epub):
         libro.partes.append((nombre, largo))
+        inicio_parte = largo
         ex = _Extractor()
         ex.feed(html)
         for texto, lectura in ex.trozos:
@@ -201,6 +260,9 @@ def leer_epub(ruta_epub: str) -> TextoLibro:
                         # propia lectura; para el resto se deja la superficie y que el
                         # filtro de vocabulario decida si aporta algo.
                         emitir(t.surface, t.surface if t.reading == "*" else t.reading)
+
+        if ajeno and largo > inicio_parte:
+            libro.ajenos.append((inicio_parte, largo))
 
     libro.original = "".join(orig)
     libro.kana = "".join(kana)
