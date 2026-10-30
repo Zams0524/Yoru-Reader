@@ -123,16 +123,21 @@ function splitIsbns(volumes: KavitaBook[]): { isbn13: string[]; isbn10: string[]
   return { isbn13, isbn10 };
 }
 
-/** Una fila de la tabla que no existe cuando no hay valor. */
-function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
+/**
+ * Un dato de la rejilla de detalles, que no existe cuando no hay valor.
+ *
+ * La rejilla, y no una tabla de dos columnas, porque los detalles de un libro son
+ * doce datos cortos: en tres columnas se leen de un vistazo y no estiran la página.
+ */
+function MetaCell({ label, value }: { label: string; value: React.ReactNode }) {
   const empty = value === undefined || value === null || value === ''
     || (Array.isArray(value) && value.length === 0);
   if (empty) return null;
   return (
-    <tr>
-      <th>{label}</th>
-      <td>{Array.isArray(value) ? value.join(', ') : value}</td>
-    </tr>
+    <div className="yoru-meta-cell">
+      <span className="yoru-meta-label">{label}</span>
+      <span className="yoru-meta-value">{Array.isArray(value) ? value.join(', ') : value}</span>
+    </div>
   );
 }
 
@@ -376,18 +381,20 @@ export default function ServerBookDetail({
             </div>
           )}
 
-          {summary && (
-            <div className="yoru-server-summary">
-              <p className={longSummary && !summaryOpen ? 'is-clamped' : ''}>{summary}</p>
-              {longSummary && (
-                <button type="button" className="yoru-server-more" onClick={() => setSummaryOpen((open) => !open)}>
-                  {summaryOpen ? (es ? 'Leer menos' : 'Read less') : (es ? 'Leer más' : 'Read more')}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
+
+      {summary && (
+        <section className="yoru-server-summary">
+          <h2 className="yoru-rail-title yoru-server-section">{es ? 'Descripción' : 'Description'}</h2>
+          <p className={longSummary && !summaryOpen ? 'is-clamped' : ''}>{summary}</p>
+          {longSummary && (
+            <button type="button" className="yoru-server-more" onClick={() => setSummaryOpen((open) => !open)}>
+              {summaryOpen ? (es ? 'Leer menos' : 'Read less') : (es ? 'Leer más' : 'Read more')}
+            </button>
+          )}
+        </section>
+      )}
 
       {tabs.length > 1 && (
         <div className="yoru-tabs" role="tablist">
@@ -408,50 +415,44 @@ export default function ServerBookDetail({
 
       {tab === 'summary' && (
         <>
-          <table className="yoru-meta-table">
-            <tbody>
-              <MetaRow label={es ? 'Formato' : 'Format'} value={format} />
-              <MetaRow label={es ? 'Páginas' : 'Pages'} value={pages > 0 ? formatNumber(pages, es) : undefined} />
-              <MetaRow label={es ? 'Palabras' : 'Words'} value={words > 0 ? formatNumber(words, es) : undefined} />
-              <MetaRow label={es ? 'Idioma' : 'Language'} value={languageName(metadata?.language, es)} />
-              <MetaRow label={es ? 'Biblioteca' : 'Library'} value={libraryName} />
-              <MetaRow label={es ? 'Editorial' : 'Publisher'} value={metadata?.publishers} />
-              <MetaRow label={es ? 'Traducción' : 'Translation'} value={metadata?.translators} />
-              <MetaRow label={es ? 'Año' : 'Year'} value={year} />
-              <MetaRow label={es ? 'Publicado' : 'Published'} value={published} />
-              <MetaRow label={es ? 'Estado' : 'Status'} value={status ? (es ? status.es : status.en) : undefined} />
-              <MetaRow label={es ? 'Géneros' : 'Genres'} value={metadata?.genres} />
-              <MetaRow label={es ? 'Etiquetas' : 'Tags'} value={metadata?.tags} />
-            </tbody>
-          </table>
+          <h2 className="yoru-rail-title yoru-server-section is-first">
+            {es ? 'Detalles del libro' : 'Book details'}
+          </h2>
+          <div className="yoru-meta-grid">
+            <MetaCell label={es ? 'Formato' : 'Format'} value={format} />
+            <MetaCell label={es ? 'Páginas' : 'Pages'} value={pages > 0 ? formatNumber(pages, es) : undefined} />
+            <MetaCell label={es ? 'Palabras' : 'Words'} value={words > 0 ? formatNumber(words, es) : undefined} />
+            <MetaCell label={es ? 'Idioma' : 'Language'} value={languageName(metadata?.language, es)} />
+            <MetaCell label={es ? 'Biblioteca' : 'Library'} value={libraryName} />
+            <MetaCell label={es ? 'Editorial' : 'Publisher'} value={metadata?.publishers} />
+            <MetaCell label={es ? 'Traducción' : 'Translation'} value={metadata?.translators} />
+            <MetaCell label={es ? 'Año' : 'Year'} value={year} />
+            <MetaCell label={es ? 'Publicado' : 'Published'} value={published} />
+            <MetaCell label={es ? 'Estado' : 'Status'} value={status ? (es ? status.es : status.en) : undefined} />
+            <MetaCell label={es ? 'Géneros' : 'Genres'} value={metadata?.genres} />
+            <MetaCell label={es ? 'Etiquetas' : 'Tags'} value={metadata?.tags} />
+            <MetaCell
+              label={es ? 'Enlaces' : 'Links'}
+              value={(metadata?.webLinks || []).length > 0
+                ? (
+                  <>
+                    {(metadata?.webLinks || []).map((link) => (
+                      <a key={link} href={link} target="_blank" rel="noreferrer" className="yoru-server-link">{link}</a>
+                    ))}
+                  </>
+                )
+                : undefined}
+            />
+          </div>
 
           {(isbn13.length > 0 || isbn10.length > 0) && (
             <>
               <h2 className="yoru-rail-title yoru-server-section">{es ? 'Identificadores' : 'Identifiers'}</h2>
-              <table className="yoru-meta-table">
-                <tbody>
-                  <MetaRow label="ISBN-13" value={isbn13} />
-                  <MetaRow label="ISBN-10" value={isbn10} />
-                </tbody>
-              </table>
+              <div className="yoru-meta-grid">
+                <MetaCell label="ISBN-13" value={isbn13} />
+                <MetaCell label="ISBN-10" value={isbn10} />
+              </div>
             </>
-          )}
-
-          {(metadata?.webLinks || []).length > 0 && (
-            <table className="yoru-meta-table">
-              <tbody>
-                <tr>
-                  <th>{es ? 'Enlaces' : 'Links'}</th>
-                  <td>
-                    {(metadata?.webLinks || []).map((link) => (
-                      <div key={link}>
-                        <a href={link} target="_blank" rel="noreferrer" className="yoru-server-link">{link}</a>
-                      </div>
-                    ))}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
           )}
         </>
       )}
