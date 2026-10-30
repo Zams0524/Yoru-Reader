@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, X } from 'lucide-react';
+import { AlignLeft, FileText, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, X } from 'lucide-react';
 import type { AudiobookItem, AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
   AUDIOBOOK_AUTO_MATCH_SCORE,
@@ -29,6 +29,22 @@ interface Props {
   autoHide?: boolean;
   /** CSS px from the bottom of the screen up to the top of the player, now and in its low place. */
   onReach?: (reach: { current: number; low: number }) => void;
+
+  // ── Alineación texto-audio ────────────────────────────────────────────
+  // El reproductor no sabe nada del texto: el lector es quien tiene los párrafos. Aquí
+  // solo entran y salen segundos, y el lector decide qué hacer con ellos.
+
+  /** La alineación cargada para este libro, si la hay. */
+  alignment?: { name: string; notice: string } | null;
+  /** El usuario eligió un `.srt`. El lector lo carga y lo guarda. */
+  onImportSrt?: (file: File) => void;
+  /** Dónde va el audio, en ms. Se llama en cada `timeupdate`. */
+  onTimeMs?: (ms: number) => void;
+  /** El lector mete aquí su mando para poder saltar a un segundo del audio. */
+  seekRef?: React.MutableRefObject<((seconds: number) => void) | null>;
+  /** Si el texto debe seguir al audio. Lo decide el usuario. */
+  followText?: boolean;
+  onFollowTextChange?: (value: boolean) => void;
 }
 
 /** Speeds for language learners: a bit slower than normal up to double. */
@@ -64,10 +80,14 @@ type Phase =
  * listening position goes back to Audiobookshelf every few seconds while playing, on pause and on
  * close, so listening carries on from any device.
  */
-export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = false, autoHide = false, onReach }: Props) {
+export default function AudioSyncPlayer({
+  book, lang, accent, onClose, raised = false, autoHide = false, onReach,
+  alignment = null, onImportSrt, onTimeMs, seekRef, followText = false, onFollowTextChange,
+}: Props) {
   const es = lang === 'es';
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const srtInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: 'matching' });
   const [session, setSession] = useState<AudiobookshelfPlaybackSession | null>(null);
   const [trackIndex, setTrackIndex] = useState(0);
@@ -235,6 +255,7 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
     const current = sessionRef.current;
     if (!audio || !current) return;
     const globalTime = (current.tracks[trackIndex]?.startOffset || 0) + audio.currentTime;
+    onTimeMsRef.current?.(globalTime * 1000);
     const now = performance.now();
     if (!audio.paused && lastTickRef.current !== null) {
       // Wall-clock seconds listened, capped so a stall or a seek does not count.
@@ -278,6 +299,18 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
     lastTickRef.current = null;
     loadTrack(session, clamped, playing);
   };
+
+  // El lector salta al audio por aquí. En una ref y no por props para no volver a
+  // montar nada cada vez que cambia el segundo.
+  const onTimeMsRef = useRef(onTimeMs);
+  onTimeMsRef.current = onTimeMs;
+  const seekToRef = useRef(seekTo);
+  seekToRef.current = seekTo;
+  useEffect(() => {
+    if (!seekRef) return undefined;
+    seekRef.current = (seconds: number) => seekToRef.current(seconds);
+    return () => { seekRef.current = null; };
+  }, [seekRef]);
 
   const changeRate = (next: number) => {
     setRate(next);
@@ -434,6 +467,42 @@ export default function AudioSyncPlayer({ book, lang, accent, onClose, raised = 
         ) : (
           <span className="audio-sync-title">{session.title}</span>
         )}
+        {alignment ? (
+          <button
+            type="button"
+            className="read-aloud-btn"
+            onClick={() => onFollowTextChange?.(!followText)}
+            aria-pressed={followText}
+            style={followText ? { color: accent } : undefined}
+            aria-label={es ? 'El texto sigue al audio' : 'Text follows the audio'}
+            title={(es ? 'El texto sigue al audio' : 'Text follows the audio')
+              + (alignment.notice ? ` — ${alignment.notice}` : '')}
+          >
+            <AlignLeft size={16} />
+          </button>
+        ) : onImportSrt ? (
+          <button
+            type="button"
+            className="read-aloud-btn"
+            onClick={() => srtInputRef.current?.click()}
+            aria-label={es ? 'Importar alineación (.srt)' : 'Import alignment (.srt)'}
+            title={es ? 'Importar alineación (.srt) para que el texto siga al audio'
+              : 'Import an alignment (.srt) so the text follows the audio'}
+          >
+            <FileText size={16} />
+          </button>
+        ) : null}
+        <input
+          ref={srtInputRef}
+          type="file"
+          accept=".srt,.vtt,text/plain"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ''; // deja volver a elegir el mismo fichero tras un fallo
+            if (file) onImportSrt?.(file);
+          }}
+        />
         <button type="button" className="read-aloud-btn" onClick={relink} aria-label={es ? 'Cambiar audiolibro' : 'Change audiobook'} title={es ? 'Cambiar audiolibro' : 'Change audiobook'}>
           <Link2 size={16} />
         </button>

@@ -107,7 +107,9 @@ def calcular(
     hilos: int = 0,
     cuerpo_s: float = CUERPO_S,
     borde_s: float = BORDE_S,
-    aviso=print,
+    # Con `flush`: si no, el progreso de un trabajo de horas no aparece hasta el final
+    # cuando la salida va a un fichero en vez de a una consola.
+    aviso=lambda *a: print(*a, flush=True),
 ) -> Emisiones:
     """Calcula (o retoma) las emisiones del audio entero.
 

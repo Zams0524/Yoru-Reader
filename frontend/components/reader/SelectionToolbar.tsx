@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, Bookmark, StickyNote, Volume2 } from 'lucide-react';
+import { Copy, Bookmark, Headphones, StickyNote, Volume2 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, type HighlightColor } from '../../utils/highlights';
 
 interface ReaderColors {
@@ -23,6 +23,12 @@ interface SelectionToolbarProps {
   onNote?: () => void;
   /** Read aloud from the selection. */
   onReadAloud?: () => void;
+  /**
+   * Pone el audiolibro en este punto del texto. Solo aparece cuando el libro tiene
+   * alineación y ese párrafo está alineado: si no lo está, no hay nada que ofrecer, y
+   * mandar el audio a un sitio aproximado sería peor que no ofrecerlo.
+   */
+  onListenFrom?: () => void;
   colors: ReaderColors;
   lang: string;
 }
@@ -41,6 +47,7 @@ export default function SelectionToolbar({
   onHighlight,
   onNote,
   onReadAloud,
+  onListenFrom,
   colors,
   lang,
 }: SelectionToolbarProps) {
@@ -134,6 +141,11 @@ export default function SelectionToolbar({
       {onReadAloud && (
         <button type="button" style={btnStyle} onClick={onReadAloud} aria-label={es ? 'Leer en voz alta desde aquí' : 'Read aloud from here'} title={es ? 'Leer desde aquí' : 'Read from here'} {...hover}>
           <Volume2 size={14} />
+        </button>
+      )}
+      {onListenFrom && (
+        <button type="button" style={btnStyle} onClick={onListenFrom} aria-label={es ? 'Escuchar el audiolibro desde aquí' : 'Play the audiobook from here'} title={es ? 'Escuchar desde aquí' : 'Listen from here'} {...hover}>
+          <Headphones size={14} />
         </button>
       )}
     </div>

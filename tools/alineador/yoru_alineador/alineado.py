@@ -52,28 +52,82 @@ def transcribir(em, id2ch: dict[int, str], blank: int) -> tuple[str, np.ndarray]
     for t, i in enumerate(mejor):
         if i != blank and i != ant:
             c = id2ch.get(int(i))
-            if c and len(c) == 1:
+            # el separador de palabra se tira: ver `texto.pausa()`
+            if c and len(c) == 1 and c != "|":
                 chars.append(c)
                 marcos.append(t)
         ant = i
     return "".join(chars), np.asarray(marcos, dtype=np.int64)
 
 
-def anclar(lectura: str, oido: str, marcos_oido: np.ndarray) -> tuple[list[tuple[int, int]], int]:
+#: Longitud de la semilla para localizar. Doce kana son unas cinco palabras: bastante
+#: raro para no salir por casualidad, bastante corto para sobrevivir a un error del ASR.
+SEMILLA = 12
+
+
+def localizar(lectura: str, oido: str, margen: float = 0.35) -> tuple[int, int]:
+    """Encuentra en que tramo del libro cae este audio, antes de intentar alinearlo.
+
+    Sin este paso, lo que pasa con un libro de verdad es esto: el audio de un capitulo
+    son ~3.500 kana y el tomo entero 161.000, y `difflib` sobre esa desproporcion no
+    devuelve un tramo contiguo sino fragmentos diminutos repartidos por todo el libro.
+    Medido con una pareja real: engancho con el aviso de copyright del final del EPUB y
+    dio el 0,5 % de anclaje. No se vio antes porque en las pruebas el texto y el audio
+    eran del mismo tamano, que es el unico caso en que no hace falta localizar.
+
+    El metodo es contar votos por **desplazamiento**. Si el audio empieza en el caracter
+    X del libro, casi todas las semillas que coincidan lo haran con esa misma distancia
+    entre su sitio en el libro y su sitio en lo oido. Asi que se cuentan las distancias y
+    gana la mas votada. Es una pasada sobre el libro y otra sobre el audio.
+    """
+    if len(lectura) <= len(oido) * 2:
+        return 0, len(lectura)  # el libro no es mucho mayor: no hay nada que localizar
+
+    # Donde esta cada semilla del libro. Las que se repiten muchisimo no distinguen
+    # nada y solo meten ruido, asi que se les pone tope.
+    donde: dict[str, list[int]] = {}
+    for i in range(len(lectura) - SEMILLA + 1):
+        donde.setdefault(lectura[i : i + SEMILLA], []).append(i)
+
+    CUBO = 2000  # los votos se agrupan, porque el desplazamiento exacto no es constante
+    votos: dict[int, int] = {}
+    for j in range(0, len(oido) - SEMILLA + 1, 3):
+        sitios = donde.get(oido[j : j + SEMILLA])
+        if not sitios or len(sitios) > 12:
+            continue
+        for i in sitios:
+            votos[(i - j) // CUBO] = votos.get((i - j) // CUBO, 0) + 1
+
+    if not votos:
+        return 0, len(lectura)  # ni una semilla: que decida el anclaje, y que falle
+    mejor = max(votos, key=lambda k: votos[k]) * CUBO
+
+    ancho = int(len(oido) * (1 + margen)) + CUBO
+    ini = max(0, mejor - int(len(oido) * margen) - CUBO)
+    return ini, min(len(lectura), ini + ancho + int(len(oido) * margen))
+
+
+def anclar(
+    lectura: str, oido: str, marcos_oido: np.ndarray
+) -> tuple[list[tuple[int, int]], int, tuple[int, int]]:
     """Empareja la lectura del libro con lo que se oye, y devuelve (indice, marco).
 
     Solo de los tramos que casan. Lo que no casa no recibe anclaje, y por tanto tampoco
     recibira tiempo: es exactamente lo que queremos.
+
+    Primero localiza el tramo del libro donde cae el audio, y solo compara ahi dentro.
     """
-    sm = difflib.SequenceMatcher(None, lectura, oido, autojunk=False)
+    ini, fin = localizar(lectura, oido)
+    ventana = lectura[ini:fin]
+    sm = difflib.SequenceMatcher(None, ventana, oido, autojunk=False)
     anclas: list[tuple[int, int]] = []
     casados = 0
     for a, b, n in sm.get_matching_blocks():
         casados += n
         for k in range(n):
             if b + k < len(marcos_oido):
-                anclas.append((a + k, int(marcos_oido[b + k])))
-    return anclas, casados
+                anclas.append((ini + a + k, int(marcos_oido[b + k])))
+    return anclas, casados, (ini, fin)
 
 
 def _bloques(anclas, n_marcos: int, marcos_por_bloque: int = MARCOS_POR_BLOQUE):

@@ -81,15 +81,18 @@ def main(argv: list[str] | None = None) -> int:
     vocab, id2ch, blank = acustico.vocabulario(proc, em.datos.shape[1])
     datos = em.datos.astype("float32")
     oido, marcos_oido = alineado.transcribir(datos, id2ch, blank)
-    anclas, casados = alineado.anclar(libro.kana, oido, marcos_oido)
+    anclas, casados, (v_ini, v_fin) = alineado.anclar(libro.kana, oido, marcos_oido)
+    if v_fin - v_ini < len(libro.kana):
+        print(f"  el audio cae en el {100*v_ini/len(libro.kana):.0f}-"
+              f"{100*v_fin/len(libro.kana):.0f} % del libro")
     col = alineado.colocar(datos, libro.kana, vocab, blank, anclas)
     col.anclado = casados
 
     # 5. El resultado, y el portero que decide si esa pareja es pareja.
     cues = salida.construir_cues(libro, col.marco, em.fps)
     inf = salida.evaluar(libro, col, cues, em.fps, em.duracion_s,
-                         os.path.basename(a.audio), os.path.basename(a.libro))
-    salida.escribir_srt(cues, srt)
+                         os.path.basename(a.audio), os.path.basename(a.libro), len(oido))
+    salida.escribir_srt(cues, srt, inf)
     salida.escribir_informe(inf, informe_json)
 
     print()

@@ -20,6 +20,8 @@ import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvai
 import ReadAloudBar from './reader/ReadAloudBar';
 import AudioSyncPlayer from './reader/AudioSyncPlayer';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
+import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
+import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -461,6 +463,19 @@ export default function Reader({
   useEffect(() => {
     if (isReadAloudOpen) setIsAudiobookOpen(false);
   }, [isReadAloudOpen]);
+
+  // ── Alineación texto-audio ──────────────────────────────────────────────
+  // Con alineación, el texto y el audio van juntos: desde una frase se pone el audio
+  // ahí, y si el usuario quiere, el texto va detrás del audio. El índice se reconstruye
+  // al abrir el libro, porque empareja los cues con el texto de ahora y no con el de
+  // cuando se alineó.
+  const [alignment, setAlignment] = useState<LoadedAlignment | null>(null);
+  const [followsAudio, setFollowsAudio] = useState(false);
+  const audioSeekRef = useRef<((seconds: number) => void) | null>(null);
+  /** El último párrafo al que llevó el audio: evita repetir el salto en cada tick. */
+  const lastFollowedRef = useRef<number | null>(null);
+  /** Para avisar una sola vez de que ese tramo no está alineado, y no en cada tick. */
+  const warnedUnalignedRef = useRef(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1048,6 +1063,88 @@ export default function Reader({
   }, []);
 
   /** Opens the section holding a paragraph and turns to it (and to a range inside it, when given). */
+  // Carga la alineación guardada de este libro, si la hay. Hace falta que el motor haya
+  // montado las secciones, porque los cues se emparejan con los párrafos tal como los
+  // numera el lector.
+  const loadAlignment = useCallback(async () => {
+    const sections = engineApiRef.current?.getSections();
+    if (!sections?.length) return;
+    const resultado = await prepareAlignment(book.id, book.chapters || [], sections, lang);
+    if (!resultado) { setAlignment(null); return; }
+    if ('error' in resultado) {
+      setAlignment(null);
+      showToast(resultado.error, 'error');
+      return;
+    }
+    setAlignment(resultado.ok);
+    if (resultado.ok.notice) showToast(resultado.ok.notice, 'info');
+  }, [book.id, book.chapters, lang, showToast]);
+
+  useEffect(() => {
+    if (!isAudiobookOpen || alignment) return;
+    void loadAlignment();
+  }, [isAudiobookOpen, alignment, loadAlignment]);
+
+  /** El usuario eligió el `.srt` que dejó el alineador. */
+  const handleImportSrt = useCallback(async (file: File) => {
+    const sections = engineApiRef.current?.getSections();
+    if (!sections?.length) return;
+    const srt = await file.text();
+    const resultado = buildFromSrt(srt, file.name, book.chapters || [], sections, lang);
+    if ('error' in resultado) {
+      // El veredicto manda: una alineación que su propio generador da por mala no se
+      // guarda siquiera. Más vale no tener audio sincronizado que tenerlo mintiendo.
+      showToast(resultado.error, 'error');
+      return;
+    }
+    await saveAlignmentSrt(book.id, srt, file.name);
+    setAlignment(resultado.ok);
+    setFollowsAudio(true);
+    showToast(
+      resultado.ok.notice
+        || (lang === 'es' ? 'Alineación cargada: el texto ya puede seguir al audio.'
+          : 'Alignment loaded: the text can now follow the audio.'),
+      resultado.ok.notice ? 'info' : 'success',
+    );
+  }, [book.id, book.chapters, lang, showToast]);
+
+  /** El audio avanzó: si el texto va detrás, llevarlo al párrafo que suena. */
+  const handleAudioTime = useCallback((ms: number) => {
+    if (!followsAudio || !alignment) return;
+    const donde = paragraphAtTime(alignment.index, ms);
+    if (!donde) {
+      // Ahí no hay texto alineado. **No se salta a ojo**: el lector se queda donde está
+      // y se dice una vez. Un salto aproximado en un libro para aprender japonés
+      // enseña mal, y es peor que no moverse.
+      if (!warnedUnalignedRef.current) {
+        warnedUnalignedRef.current = true;
+        showToast(lang === 'es' ? 'Este tramo del audio no está alineado.'
+          : 'This stretch of the audio is not aligned.', 'info');
+      }
+      return;
+    }
+    warnedUnalignedRef.current = false;
+    if (lastFollowedRef.current === donde.paragraphId) return;
+    lastFollowedRef.current = donde.paragraphId;
+    goToParagraphAnywhere(donde.paragraphId);
+  }, [followsAudio, alignment, lang, showToast]);
+
+  /** Desde la frase elegida, poner el audiolibro justo ahí. */
+  const handleListenFromSelection = useCallback(() => {
+    if (!alignment || !selection) return;
+    const ms = timeOfParagraph(alignment.index, selection.paragraphId);
+    const saltar = audioSeekRef.current;
+    if (ms === null || !saltar) {
+      showToast(lang === 'es' ? 'Esa parte no tiene audio alineado.'
+        : 'That part has no aligned audio.', 'info');
+      return;
+    }
+    // Mientras el audio va a donde lee el usuario, el texto no debe moverse solo.
+    lastFollowedRef.current = selection.paragraphId;
+    saltar(ms / 1000);
+    endSelection();
+  }, [alignment, selection, lang, showToast, endSelection]);
+
   const goToParagraphAnywhere = useCallback((paragraphId: number, offsets?: { start: number; end: number }) => {
     const api = engineApiRef.current;
     if (!api) return;
@@ -2563,6 +2660,16 @@ export default function Reader({
           autoHide={!isHeaderVisible}
           onReach={setReadAloudReach}
           onClose={() => setIsAudiobookOpen(false)}
+          alignment={alignment ? { name: alignment.name, notice: alignment.notice } : null}
+          onImportSrt={(file) => { void handleImportSrt(file); }}
+          onTimeMs={handleAudioTime}
+          seekRef={audioSeekRef}
+          followText={followsAudio}
+          onFollowTextChange={(value) => {
+            setFollowsAudio(value);
+            lastFollowedRef.current = null;
+            warnedUnalignedRef.current = false;
+          }}
         />
       )}
 
@@ -2942,6 +3049,15 @@ export default function Reader({
           onHighlight={selection.offsets ? handleHighlightSelection : undefined}
           onNote={selection.offsets ? handleNoteSelection : undefined}
           onReadAloud={handleReadFromSelection}
+          onListenFrom={
+            // Solo si hay alineación, el reproductor está abierto y **ese** párrafo
+            // está alineado. Si no lo está no se ofrece: mandar el audio a un sitio
+            // aproximado es peor que no ofrecer nada.
+            alignment && isAudiobookOpen
+              && timeOfParagraph(alignment.index, selection.paragraphId) !== null
+              ? handleListenFromSelection
+              : undefined
+          }
           colors={colors}
           lang={lang}
         />

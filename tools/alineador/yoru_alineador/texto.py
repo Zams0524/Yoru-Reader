@@ -25,8 +25,10 @@ from janome.tokenizer import Tokenizer
 # El vocabulario del modelo: hiragana, la marca de vocal larga y el separador de palabra.
 HIRAGANA = set(chr(c) for c in range(0x3041, 0x3097))
 VOCALES_LARGAS = {"ー"}
+#: El separador de palabra del modelo. **No se usa** en el texto que se alinea: ver la
+#: explicacion en `pausa()`. Se deja nombrado porque el modelo si lo emite.
 SEPARADOR = "|"
-PERMITIDO = HIRAGANA | VOCALES_LARGAS | {SEPARADOR}
+PERMITIDO = HIRAGANA | VOCALES_LARGAS
 
 # Puntuacion que marca una pausa. Se convierte en separador: le da al alineador los
 # mismos puntos de apoyo que tenia el modelo cuando se entreno.
@@ -167,14 +169,18 @@ def leer_epub(ruta_epub: str) -> TextoLibro:
             mapa.append(ini + min(n - 1, i * n // len(util)))
 
     def pausa(trozo: str) -> None:
-        """La puntuacion entra en el original; en la lectura es un separador."""
+        """La puntuacion entra en el original y **no deja nada** en la lectura.
+
+        Parece desaprovechar una pista: el modelo tiene un simbolo de separacion de
+        palabra y las pausas se oyen. Medido, es al reves. El modelo pone separadores
+        donde cree oir final de palabra y el libro los tendria donde hay puntuacion, y
+        esos dos sitios casi nunca coinciden: con separadores, las semillas de 12 kana
+        entre el libro y lo oido coincidian el **0,0 %**; sin ellos, el 31,9 %. Metidos
+        en la cadena, no ayudan a alinear: impiden alinear.
+        """
         nonlocal largo
-        ini = largo
         orig.append(trozo)
         largo += len(trozo)
-        if kana and kana[-1] != SEPARADOR:
-            kana.append(SEPARADOR)
-            mapa.append(ini)
 
     for nombre, html in _documentos(ruta_epub):
         libro.partes.append((nombre, largo))
