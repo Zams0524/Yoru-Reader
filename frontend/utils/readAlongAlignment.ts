@@ -9,6 +9,14 @@
  * que hace el lector — «¿qué texto suena ahora?» y «¿por dónde va el audio si estoy
  * leyendo aquí?».
  *
+ * **Contrato para quien genere los cues: el texto del cue va en kanji, como el libro.**
+ * Un alineador de japonés trabaja en kana, porque un modelo acústico no puede leer kanji
+ * (un kanji no tiene un sonido, tiene varios). Pero ese kana es un andamio interno: si
+ * acaba dentro del cue, `timeOfText` compara `カタオモイノアイテ` contra `片思いの相手`
+ * y no casa nunca, porque `normalizeForMatch` quita puntuación y no convierte lecturas.
+ * Fallaría en todos los libros japoneses, que son todos. El generador alinea en kana,
+ * y al escribir el cue pone el tramo original del libro.
+ *
  * Nota que viene de mirar los servidores de verdad: ni Kavita ni Audiobookshelf dan
  * esto. Un audiolibro con capítulos permite acompañar la lectura a grandes rasgos; para
  * seguirla frase a frase hace falta una alineación como esta.
@@ -132,11 +140,15 @@ export function timeOfText(cues: AlignmentCue[], text: string): number | null {
 /**
  * Quita lo que sobra para comparar: espacios, puntuación japonesa y occidental, y las
  * diferencias de ancho (NFKC pasa katakana y signos de ancho medio a su forma normal).
+ *
+ * `ー` (U+30FC) **no se quita**, aunque al lado de un guion parezca lo mismo: en japonés
+ * es un sonido, la vocal larga. `ビール` (cerveza) y `ビル` (edificio) son palabras
+ * distintas y solo las separa esa marca. Sí se quita `―` (U+2015), la raya de diálogo.
  */
 export function normalizeForMatch(text: string): string {
   return text
     .normalize('NFKC')
     .replace(/[\s　]+/g, '')
-    .replace(/[、。，．,.「」『』（）()［］[\]…―ー!?！？"'’”]/g, '')
+    .replace(/[、。，．,.「」『』（）()［］[\]…―!?！？"'’”]/g, '')
     .toLowerCase();
 }
