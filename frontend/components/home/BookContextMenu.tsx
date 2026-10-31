@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, BookOpen, Info, Play, Tag, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, FolderPlus, Info, Play, Tag, X } from 'lucide-react';
 import type { ShelfBook } from './libraryIndex';
 
 /**
@@ -20,6 +20,8 @@ export interface BookMenuActions {
   /** Las colecciones que ya existen, para poder meter el libro en una. */
   collections: string[];
   onAddToCollection: (book: ShelfBook, collection: string) => void;
+  /** Abre el modal de crear colección, para no dejar el submenú sin salida. */
+  onCreateCollection: () => void;
   /** Aparta el libro de «Continuar» sin tocar su progreso. */
   onHideFromContinue: (book: ShelfBook) => void;
   es: boolean;
@@ -139,22 +141,19 @@ function Menu({
             </button>
 
             {/*
-              «Añadir a colección» solo sale cuando hay alguna. Mientras no exista la
-              forma de crearlas desde aquí, una entrada que abre una lista vacía sería
-              otro botón que no hace nada.
+              Ya siempre sale: si no hay ninguna colección, el submenú ofrece crearla,
+              así que la entrada nunca lleva a una lista vacía.
             */}
-            {actions.collections.length > 0 && (
-              <button
-                type="button"
-                className="yoru-menu-item"
-                role="menuitem"
-                onClick={() => setPage('collections')}
-              >
-                <Tag size={15} />
-                {es ? 'Añadir a colección' : 'Add to collection'}
-                <span className="yoru-menu-more">›</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="yoru-menu-item"
+              role="menuitem"
+              onClick={() => setPage('collections')}
+            >
+              <Tag size={15} />
+              {es ? 'Añadir a colección' : 'Add to collection'}
+              <span className="yoru-menu-more">›</span>
+            </button>
 
             {fromContinue && (
               <>
@@ -194,6 +193,16 @@ function Menu({
                 </button>
               );
             })}
+            {actions.collections.length > 0 && <div className="yoru-menu-sep" />}
+            <button
+              type="button"
+              className="yoru-menu-item"
+              role="menuitem"
+              onClick={run(actions.onCreateCollection)}
+            >
+              <FolderPlus size={15} />
+              {es ? 'Nueva colección…' : 'New collection…'}
+            </button>
           </>
         )}
       </div>

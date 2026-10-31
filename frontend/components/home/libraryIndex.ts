@@ -7,6 +7,8 @@
  * no hace falta ningún servidor.
  */
 
+import { getDynamicCollections, getManualCollections, matchesRule } from '../../utils/collections';
+
 export interface ShelfBook {
   id: string;
   title: string;
@@ -157,8 +159,33 @@ export function authorGroups(books: ShelfBook[]): EntityGroup[] {
   return groupBy(books, (book) => (book.author ? [book.author] : []));
 }
 
+/**
+ * Las colecciones del usuario: las manuales, que son etiquetas de los libros, y las
+ * dinámicas, que son una regla que se recalcula aquí mismo.
+ *
+ * Una manual recién creada sale aunque esté vacía: si no, crear una colección no
+ * tendría ningún efecto visible hasta meterle un libro, y parecería que no funcionó.
+ */
 export function collectionGroups(books: ShelfBook[]): EntityGroup[] {
-  return groupBy(books, (book) => book.tags || []);
+  const visible = visibleBooks(books);
+  const groups = groupBy(books, (book) => book.tags || []);
+  const known = new Set(groups.map((group) => group.key));
+
+  for (const name of getManualCollections()) {
+    if (!known.has(name)) {
+      groups.push({ key: name, name, books: [] });
+      known.add(name);
+    }
+  }
+
+  for (const entry of getDynamicCollections()) {
+    const matched = visible.filter((book) => matchesRule(book, entry.rule));
+    const existing = groups.find((group) => group.key === entry.name);
+    if (existing) existing.books = matched;
+    else groups.push({ key: entry.name, name: entry.name, books: matched });
+  }
+
+  return groups.sort((a, b) => b.books.length - a.books.length || a.name.localeCompare(b.name, 'ja'));
 }
 
 /** Otros volúmenes de la misma serie, ordenados por título para que el tomo 1 vaya primero. */

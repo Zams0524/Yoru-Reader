@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, Headphones, Info, Play } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, Headphones, Info, Play, X } from 'lucide-react';
 import { BookRail, Cover } from './primitives';
 import { bookStatus, sameAuthor, sameSeries, type ShelfBook } from './libraryIndex';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
@@ -43,6 +43,9 @@ export default function BookDetailView({
   onOpenDetail,
   onSetStatus,
   onOpenInfo,
+  collections,
+  onSetTags,
+  onCreateCollection,
 }: {
   book: ShelfBook;
   books: ShelfBook[];
@@ -55,8 +58,17 @@ export default function BookDetailView({
   onOpenDetail: (book: ShelfBook) => void;
   onSetStatus: (book: ShelfBook, status: string) => void;
   onOpenInfo: (book: ShelfBook) => void;
+  /** Las colecciones que existen, para poder meter el libro en una. */
+  collections: string[];
+  onSetTags: (book: ShelfBook, tags: string[]) => void;
+  onCreateCollection: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('summary');
+  /** Las que aún no tiene este libro: ofrecer una en la que ya está es ruido. */
+  const available = useMemo(
+    () => collections.filter((name) => !(book.tags || []).includes(name)),
+    [collections, book.tags]
+  );
 
   const chapters = useMemo(() => (Array.isArray(book.chapters) ? book.chapters : []), [book.chapters]);
   // El audiolibro se vincula desde el lector (⋮ > Escuchar audiolibro); aquí solo se mira.
@@ -206,12 +218,49 @@ export default function BookDetailView({
                   : '—'}
               </td>
             </tr>
-            {(book.tags || []).length > 0 && (
-              <tr>
-                <th>{es ? 'Colecciones' : 'Collections'}</th>
-                <td>{(book.tags || []).join(', ')}</td>
-              </tr>
-            )}
+            {/*
+              Las colecciones se editan aquí, y esto es lo que faltaba para que
+              «Colecciones» y «Descubre colecciones» puedan llenarse alguna vez: antes
+              la ficha las enseñaba y no dejaba tocarlas, y el estado vacío de la vista
+              decía «añádelas desde sus detalles», que era justo lo que no se podía.
+            */}
+            <tr>
+              <th>{es ? 'Colecciones' : 'Collections'}</th>
+              <td>
+                <div className="yoru-tag-editor">
+                  {(book.tags || []).map((tag) => (
+                    <span key={tag} className="yoru-tag">
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => onSetTags(book, (book.tags || []).filter((entry) => entry !== tag))}
+                        aria-label={es ? `Quitar de ${tag}` : `Remove from ${tag}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  {available.length > 0 && (
+                    <select
+                      className="yoru-tag-add"
+                      value=""
+                      onChange={(event) => {
+                        if (!event.target.value) return;
+                        onSetTags(book, [...(book.tags || []), event.target.value]);
+                      }}
+                    >
+                      <option value="">{es ? '+ Añadir a…' : '+ Add to…'}</option>
+                      {available.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button type="button" className="yoru-tag-add is-button" onClick={onCreateCollection}>
+                    {es ? '+ Nueva colección' : '+ New collection'}
+                  </button>
+                </div>
+              </td>
+            </tr>
           </tbody>
         </table>
       ) : (

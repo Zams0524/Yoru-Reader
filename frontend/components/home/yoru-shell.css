@@ -276,6 +276,16 @@
   border: 1.5px dashed var(--border-light);
   color: var(--text-muted);
 }
+/* El respaldo tipográfico, cuando el primer libro del estante no tiene portada. */
+.yoru-shell-shelf-icon .yoru-poster-fallback { font-size: 9px; padding: 3px; }
+/* «Crea tu primera colección»: se distingue de un estante sin pesar como un botón. */
+.yoru-shell-shelf-item.is-new .yoru-shell-shelf-icon {
+  background: transparent;
+  border: 1.5px dashed var(--border-light);
+  color: var(--text-muted);
+}
+.yoru-shell-shelf-item.is-new .yoru-shell-shelf-name { color: var(--text-muted); }
+.yoru-shell-shelf-item.is-new:hover .yoru-shell-shelf-name { color: var(--text-main); }
 .yoru-shell-shelf-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .yoru-shell-shelf-name {
   font-size: 13.5px;
@@ -1611,6 +1621,166 @@
 .yoru-link-row:hover { background: var(--bg-card-hover); border-color: var(--border-focus); }
 .yoru-link-title { font-size: 13.5px; font-weight: 700; color: var(--text-main); }
 .yoru-link-author { font-size: 12px; color: var(--text-muted); }
+
+/* Las colecciones del libro, en su ficha: se quitan con la x y se añaden del desplegable. */
+.yoru-tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.yoru-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.yoru-tag button {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-dark);
+  cursor: pointer;
+}
+.yoru-tag button:hover { color: var(--text-main); background: var(--bg-card-hover); }
+.yoru-tag-add {
+  padding: 5px 10px;
+  border: 1px dashed var(--border-light);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-tag-add:hover { color: var(--text-main); border-color: var(--border-focus); }
+
+/* =========================================================
+   Modal «Crear colección»
+   ========================================================= */
+.yoru-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 55%);
+}
+.yoru-modal {
+  width: 100%;
+  max-width: 440px;
+  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-panel);
+}
+.yoru-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.yoru-modal-title {
+  font-family: var(--font-heading);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+.yoru-modal-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.yoru-modal-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.yoru-modal-close {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.yoru-modal-close:hover { background: var(--bg-card-hover); color: var(--text-main); }
+
+/* Los dos caminos, apilados. El marcado es el manual: es el que casi siempre se quiere. */
+.yoru-modal-choices { display: flex; flex-direction: column; gap: 10px; }
+.yoru-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.yoru-choice:hover,
+.yoru-choice:focus-visible { background: var(--bg-card-hover); border-color: var(--border-focus); }
+.yoru-choice.is-marked { border-color: var(--primary); }
+.yoru-choice.is-marked svg { color: var(--primary); }
+
+.yoru-modal-body { display: flex; flex-direction: column; gap: 14px; }
+.yoru-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.yoru-field-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.yoru-field input,
+.yoru-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+}
+.yoru-field input:focus,
+.yoru-field select:focus { outline: none; border-color: var(--border-focus); }
+.yoru-field-note { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.yoru-rule-row { display: flex; gap: 10px; }
+.yoru-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
+@media (max-width: 460px) {
+  .yoru-rule-row { flex-direction: column; }
+}
 
 /* =========================================================
    Menú del clic derecho sobre un libro

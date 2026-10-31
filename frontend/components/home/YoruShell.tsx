@@ -23,10 +23,12 @@ import {
 import { useBackHandler } from '../../hooks/useBackButton';
 import './yoru-shell.css';
 import { BookMenuProvider } from './BookContextMenu';
+import CollectionModal from './CollectionModal';
 import GlobalSearch from './GlobalSearch';
 import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
+import { Cover } from './primitives';
 import StatsView from './StatsView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
@@ -137,6 +139,15 @@ export default function YoruShell({
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
+  const [collectionsVersion, setCollectionsVersion] = useState(0);
+
+  useEffect(() => {
+    const onUpdate = () => setCollectionsVersion((value) => value + 1);
+    window.addEventListener('yoru-collections-updated', onUpdate);
+    return () => window.removeEventListener('yoru-collections-updated', onUpdate);
+  }, []);
 
   const library = useMemo(() => visibleBooks(books), [books]);
   const detailBook = useMemo(
@@ -150,7 +161,9 @@ export default function YoruShell({
       authors: authorGroups(books),
       collections: collectionGroups(books),
     }),
-    [books]
+    // `collectionsVersion` entra a propósito: las colecciones no viven en los libros,
+    // así que crear una no cambia `books` y sin esto la barra no se enteraría.
+    [books, collectionsVersion]
   );
 
   const shelfCounts = useMemo(
@@ -243,6 +256,7 @@ export default function YoruShell({
         onUpdateBookDetails(book.id, { tags });
       },
       onHideFromContinue: (book: ShelfBook) => onUpdateBookDetails(book.id, { hiddenFromContinue: true }),
+      onCreateCollection: () => setIsCreatingCollection(true),
     }),
     [es, openDetail, onSelectBook, groups.collections, onUpdateBookDetails]
   );
@@ -313,6 +327,9 @@ export default function YoruShell({
           onOpenChapter={(book, chapterIndex) => onSelectBook(book, chapterIndex)}
           onOpenDetail={openDetail}
           onSetStatus={(book, status) => onUpdateBookDetails(book.id, { status })}
+          collections={groups.collections.map((entry) => entry.key)}
+          onSetTags={(book, tags) => onUpdateBookDetails(book.id, { tags })}
+          onCreateCollection={() => setIsCreatingCollection(true)}
           onOpenInfo={onOpenInfo}
         />
       );
@@ -554,12 +571,19 @@ export default function YoruShell({
         {navItem('audiobooks', es ? 'Audiolibros' : 'Audiobooks', Headphones)}
       </div>
 
+      {/*
+        Los cuatro estantes y las colecciones del usuario, juntos: desde fuera son lo
+        mismo, un montón de libros con nombre. El estante lleva su portada por icono
+        cuando tiene libros, para que la barra se parezca a la biblioteca y no a un
+        menú.
+      */}
       <div className="yoru-shell-nav-section">
-        <div className="yoru-shell-nav-label">{es ? 'Estantes' : 'Shelves'}</div>
+        <div className="yoru-shell-nav-label">{es ? 'Colecciones' : 'Collections'}</div>
         {SHELVES.map((entry) => {
           const Icon = entry.icon;
           const count = shelfCounts[entry.id];
           const active = view === 'shelf' && shelf === entry.id;
+          const first = shelfBooks(books, entry.id)[0];
           return (
             <button
               key={entry.id}
@@ -572,17 +596,59 @@ export default function YoruShell({
               aria-current={active ? 'page' : undefined}
             >
               <span className="yoru-shell-shelf-icon">
-                <Icon size={18} />
+                {first ? <Cover book={first} /> : <Icon size={18} />}
               </span>
               <span className="yoru-shell-shelf-text">
                 <span className="yoru-shell-shelf-name">{es ? entry.es : entry.en}</span>
                 <span className="yoru-shell-shelf-sub">
-                  {count} {es ? (count === 1 ? 'libro' : 'libros') : count === 1 ? 'book' : 'books'}
+                  {count > 0
+                    ? `${es ? 'Estante' : 'Shelf'} · ${count} ${es ? (count === 1 ? 'elemento' : 'elementos') : count === 1 ? 'item' : 'items'}`
+                    : es ? 'Estante' : 'Shelf'}
                 </span>
               </span>
             </button>
           );
         })}
+
+        {groups.collections.map((entry) => {
+          const active = view === 'group' && group?.kind === 'collection' && group.name === entry.key;
+          const first = entry.books[0];
+          const count = entry.books.length;
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              className={`yoru-shell-shelf-item${active ? ' active' : ''}`}
+              onClick={() => openGroup('collection', entry.key)}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className="yoru-shell-shelf-icon">
+                {first ? <Cover book={first} /> : <Tag size={18} />}
+              </span>
+              <span className="yoru-shell-shelf-text">
+                <span className="yoru-shell-shelf-name">{entry.name}</span>
+                <span className="yoru-shell-shelf-sub">
+                  {count > 0
+                    ? `${es ? 'Colección' : 'Collection'} · ${count} ${es ? (count === 1 ? 'elemento' : 'elementos') : count === 1 ? 'item' : 'items'}`
+                    : es ? 'Colección vacía' : 'Empty collection'}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+
+        <button type="button" className="yoru-shell-shelf-item is-new" onClick={() => setIsCreatingCollection(true)}>
+          <span className="yoru-shell-shelf-icon">
+            <Plus size={18} />
+          </span>
+          <span className="yoru-shell-shelf-text">
+            <span className="yoru-shell-shelf-name">
+              {groups.collections.length
+                ? es ? 'Crear colección' : 'Create collection'
+                : es ? 'Crea tu primera colección' : 'Create your first collection'}
+            </span>
+          </span>
+        </button>
       </div>
 
       <div className="yoru-shell-nav-section">
@@ -723,6 +789,16 @@ export default function YoruShell({
 
       {isSearchOpen && (
         <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} />
+      )}
+
+      {isCreatingCollection && (
+        <CollectionModal
+          books={library}
+          es={es}
+          onClose={() => setIsCreatingCollection(false)}
+          // Recién creada se abre: así se ve que existe, aunque esté vacía.
+          onCreated={(name) => openGroup('collection', name)}
+        />
       )}
     </div>
   );
