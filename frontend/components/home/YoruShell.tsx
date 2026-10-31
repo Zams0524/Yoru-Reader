@@ -309,6 +309,7 @@ export default function YoruShell({
         <AudiobookshelfView
           es={es}
           onOpenSettings={() => go('settings')}
+          libraryBooks={library}
           onOpenLocalBook={(bookId, listen) => {
             const local = books.find((entry) => entry.id === bookId);
             if (local) onSelectBook(local, undefined, listen || undefined);

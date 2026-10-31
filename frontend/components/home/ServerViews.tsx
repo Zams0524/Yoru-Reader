@@ -1,12 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Headphones, Loader2, Server, Settings as SettingsIcon } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, BookOpen, Headphones, Link2, Loader2, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
 import {
   absCoverUrl,
+  audiobookMatchScore,
   bookIdForAudiobook,
   getAudiobook,
   getAudiobookLibraries,
   getAudiobooks,
   isAudiobookshelfConfigured,
+  setAudiobookLink,
 } from '../../utils/audiobookshelfService';
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
@@ -82,15 +84,20 @@ function AudiobookDetail({
   es,
   onBack,
   onOpenLocalBook,
+  libraryBooks,
 }: {
   item: AudiobookItem;
   es: boolean;
   onBack: () => void;
   onOpenLocalBook?: (bookId: string, listen?: boolean) => void;
+  /** La biblioteca local, para poder vincular desde aquí. */
+  libraryBooks?: { id: string; title: string; author?: string }[];
 }) {
   const [full, setFull] = useState<AudiobookItem>(item);
   const [loading, setLoading] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkedBookId, setLinkedBookId] = useState<string | null>(() => bookIdForAudiobook(item.id));
 
   // La cuadrícula pide los items en modo reducido, así que el detalle hay que pedirlo
   // aparte; mientras llega se enseña lo que ya se tenía en lugar de una pantalla vacía.
@@ -99,6 +106,8 @@ function AudiobookDetail({
     setFull(item);
     setLoading(true);
     setDescriptionOpen(false);
+    setLinking(false);
+    setLinkedBookId(bookIdForAudiobook(item.id));
     getAudiobook(item.id)
       .then((detail) => { if (alive) setFull(detail); })
       .catch(() => undefined)
@@ -106,8 +115,20 @@ function AudiobookDetail({
     return () => { alive = false; };
   }, [item]);
 
-  const linkedBookId = bookIdForAudiobook(item.id);
   const chapters = full.chapters || [];
+
+  /**
+   * Los libros de la biblioteca a los que podría pertenecer este audiolibro, los que
+   * mejor casan primero. El parecido lo calcula la misma función que usa el lector
+   * para proponer un audiolibro, solo que mirando al revés.
+   */
+  const candidates = useMemo(() => {
+    const books = libraryBooks || [];
+    return [...books]
+      .map((book) => ({ book, score: audiobookMatchScore(book, full) }))
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.book);
+  }, [libraryBooks, full]);
   const description = full.description || '';
   const longDescription = description.length > 420;
 
@@ -140,7 +161,13 @@ function AudiobookDetail({
             {full.series && <span className="yoru-badge">{full.series}</span>}
           </div>
 
-          {linkedBookId && onOpenLocalBook && (
+          {/*
+            Sin vínculo esta ficha no tenía un solo botón, y una pantalla sin nada
+            que pulsar parece rota aunque no lo esté. El vínculo se hacía solo desde
+            el lector, estando ya dentro del libro; aquí, mirando el audiolibro, es
+            donde más apetece hacerlo, así que también se puede.
+          */}
+          {linkedBookId && onOpenLocalBook ? (
             <div className="yoru-detail-actions">
               <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => onOpenLocalBook(linkedBookId, true)}>
                 <Headphones size={16} />
@@ -150,7 +177,47 @@ function AudiobookDetail({
                 <BookOpen size={16} />
                 {es ? 'Abrir el libro' : 'Open the book'}
               </button>
+              <button type="button" className="yoru-btn" onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}>
+                <Unlink size={16} />
+                {es ? 'Deshacer el vínculo' : 'Unlink'}
+              </button>
             </div>
+          ) : (
+            <div className="yoru-detail-actions">
+              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => setLinking((open) => !open)}>
+                <Link2 size={16} />
+                {es ? 'Vincular con un libro tuyo' : 'Link to one of your books'}
+              </button>
+            </div>
+          )}
+
+          {!linkedBookId && linking && (
+            candidates.length > 0 ? (
+              <ul className="yoru-link-list">
+                {candidates.map((candidate) => (
+                  <li key={candidate.id}>
+                    <button
+                      type="button"
+                      className="yoru-link-row"
+                      onClick={() => {
+                        setAudiobookLink(candidate.id, { itemId: full.id, title: full.title, chapters: chapters.length });
+                        setLinkedBookId(candidate.id);
+                        setLinking(false);
+                      }}
+                    >
+                      <span className="yoru-link-title">{candidate.title}</span>
+                      {candidate.author && <span className="yoru-link-author">{candidate.author}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="yoru-empty-note">
+                {es
+                  ? 'No hay ningún libro en tu biblioteca al que vincularlo. Descárgalo primero desde Explorar Kavita; si este audiolibro no tiene libro, no hay nada que leer mientras suena.'
+                  : 'There is no book in your library to link it to. Download it from Explore Kavita first; if this audiobook has no book, there is nothing to read along with.'}
+              </p>
+            )
           )}
 
           {description && (
@@ -208,11 +275,14 @@ export function AudiobookshelfView({
   es,
   onOpenSettings,
   onOpenLocalBook,
+  libraryBooks,
 }: {
   es: boolean;
   onOpenSettings: () => void;
   /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
   onOpenLocalBook?: (bookId: string, listen?: boolean) => void;
+  /** La biblioteca local, para poder vincular un audiolibro desde su ficha. */
+  libraryBooks?: { id: string; title: string; author?: string }[];
 }) {
   const [open, setOpen] = useState<AudiobookItem | null>(null);
   const [libraries, setLibraries] = useState<AudiobookshelfLibrary[] | null>(null);
@@ -258,7 +328,15 @@ export function AudiobookshelfView({
   if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} onOpenSettings={onOpenSettings} />;
 
   if (open) {
-    return <AudiobookDetail item={open} es={es} onBack={() => setOpen(null)} onOpenLocalBook={onOpenLocalBook} />;
+    return (
+      <AudiobookDetail
+        item={open}
+        es={es}
+        onBack={() => setOpen(null)}
+        onOpenLocalBook={onOpenLocalBook}
+        libraryBooks={libraryBooks}
+      />
+    );
   }
 
   return (
