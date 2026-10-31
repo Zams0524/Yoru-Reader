@@ -20,13 +20,11 @@ import {
  */
 export default function HomeServerSections({
   es,
-  scope,
   localTitles,
   onOpenItem,
   onOpenSeries,
 }: {
   es: boolean;
-  scope: 'all' | 'books' | 'audio';
   /** Títulos que ya están en la biblioteca local, para no repetirlos. */
   localTitles?: Set<string>;
   /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
@@ -43,8 +41,8 @@ export default function HomeServerSections({
     return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
   }, []);
 
-  const showBooks = scope !== 'audio';
-  const showAudio = scope !== 'books';
+
+
 
   // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
   const onDeck = useMemo(
@@ -57,43 +55,44 @@ export default function HomeServerSections({
 
   return (
     <>
-      {showBooks && onDeck.length > 0 && (
-        <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'}>
+      {onDeck.length > 0 && (
+        <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
           {onDeck.map((item) => (
             <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
 
-      {showAudio && catalog.forYouAudio.length > 0 && (
-        <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'}>
+      {catalog.forYouAudio.length > 0 && (
+        <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'} es={es}>
           {catalog.forYouAudio.map((item) => (
             <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
 
-      {showBooks && catalog.kavita.length > 0 && (
-        <Rail title={es ? 'Series de libros' : 'Book series'}>
+      {catalog.kavita.length > 0 && (
+        <Rail title={es ? 'Series de libros' : 'Book series'} es={es}>
           {catalog.kavita.map((item) => (
             <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
 
-      {showAudio && audioSeries.length > 0 && (
-        <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'}>
+      {audioSeries.length > 0 && (
+        <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'} es={es}>
           {audioSeries.map((series) => (
             <SeriesStack key={series.key} series={series} es={es} onOpen={onOpenSeries} />
           ))}
         </Rail>
       )}
 
-      {showBooks && randomBooks.length > 0 && (
+      {randomBooks.length > 0 && (
         <Rail
           title={es ? 'Libros aleatorios' : 'Random books'}
           onMore={() => setSeed((value) => value + 1)}
           moreLabel={es ? 'Actualizar' : 'Shuffle'}
+          es={es}
         >
           {randomBooks.map((item) => (
             <ServerCard key={`r-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
@@ -101,11 +100,12 @@ export default function HomeServerSections({
         </Rail>
       )}
 
-      {showAudio && randomAudio.length > 0 && (
+      {randomAudio.length > 0 && (
         <Rail
           title={es ? 'Audiolibros aleatorios' : 'Random audiobooks'}
           onMore={() => setSeed((value) => value + 1)}
           moreLabel={es ? 'Actualizar' : 'Shuffle'}
+          es={es}
         >
           {randomAudio.map((item) => (
             <ServerCard key={`ra-${item.id}`} item={item} es={es} onOpen={onOpenItem} />

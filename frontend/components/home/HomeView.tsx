@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
 import HomeServerSections from './HomeServerSections';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
@@ -15,12 +15,9 @@ import {
   type ShelfBook,
 } from './libraryIndex';
 
-type Filter = 'all' | 'reading' | 'unopened';
-
 /**
- * Vista «Inicio»: la portada de la plantilla (Continuar + carruseles) alimentada con
- * la biblioteca local. Los filtros de la plantilla eran Inicio/Libros/Audiolibros;
- * aquí no hay audiolibros, así que filtran por lo que el usuario ya empezó.
+ * Vista «Inicio»: la portada de la app, con «Continuar» y los carruseles de la
+ * biblioteca local mezclados con los de los servidores de casa.
  */
 export default function HomeView({
   books,
@@ -28,6 +25,7 @@ export default function HomeView({
   onOpenDetail,
   onContinue,
   onGoCatalog,
+  onGoAudiobooks,
   onOpenCollection,
   onOpenSeries,
   onOpenServerItem,
@@ -38,45 +36,38 @@ export default function HomeView({
   onOpenDetail: (book: ShelfBook) => void;
   onContinue: (book: ShelfBook) => void;
   onGoCatalog: () => void;
+  /** La pestaña «Audiolibros», que ahora lleva a la sección y no filtra esta pantalla. */
+  onGoAudiobooks: () => void;
   onOpenCollection: (group: EntityGroup) => void;
   onOpenSeries: (group: EntityGroup) => void;
   /** Abre un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
   onOpenServerItem: (item: ServerItem) => void;
-  /** Abre una serie de audiolibros, que por ahora es su primer tomo. */
+  /** Abre la serie de audiolibros, con todos sus tomos. */
   onOpenServerSeries: (series: ServerSeries) => void;
 }) {
-  const [filter, setFilter] = useState<Filter>('all');
-
-  const data = useMemo(() => {
-    const scoped =
-      filter === 'reading'
-        ? books.filter((book) => book.lastRead)
-        : filter === 'unopened'
-          ? books.filter((book) => !book.lastRead)
-          : books;
-    return {
+  const data = useMemo(
+    () => ({
       continuing: continueReading(books),
-      recent: recentlyAdded(scoped),
-      forYou: suggestions(scoped),
-      collections: collectionGroups(scoped).slice(0, 12),
-      series: seriesGroups(scoped).filter((group) => group.books.length > 1).slice(0, 12),
-    };
-  }, [books, filter]);
+      recent: recentlyAdded(books),
+      forYou: suggestions(books),
+      collections: collectionGroups(books).slice(0, 12),
+      series: seriesGroups(books).filter((group) => group.books.length > 1).slice(0, 12),
+    }),
+    [books]
+  );
 
-  const chips: { key: Filter; label: string }[] = [
-    { key: 'all', label: es ? 'Todo' : 'All' },
-    { key: 'reading', label: es ? 'Empezados' : 'Started' },
-    { key: 'unopened', label: es ? 'Sin abrir' : 'Unopened' },
-  ];
-  void chips;
-  void filter;
+  /*
+    Inicio / Libros / Audiolibros.
 
-  // Inicio / Libros / Audiolibros, como la maqueta de referencia: filtran por tipo.
-  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
-  const scopes: { key: 'all' | 'books' | 'audio'; label: string }[] = [
+    Antes eran un filtro de esta misma pantalla, y filtraban a medias: con
+    «Audiolibros» elegido seguían saliendo «Añadidos recientemente», «Libros para ti»
+    y «Series», que son libros locales. Ahora llevan a su sección de verdad, que es lo
+    que una pestaña promete. Inicio no navega: ya estás en Inicio.
+  */
+  const scopes: { key: 'all' | 'books' | 'audio'; label: string; go?: () => void }[] = [
     { key: 'all', label: es ? 'Inicio' : 'Home' },
-    { key: 'books', label: es ? 'Libros' : 'Books' },
-    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks' },
+    { key: 'books', label: es ? 'Libros' : 'Books', go: onGoCatalog },
+    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks', go: onGoAudiobooks },
   ];
 
   if (books.length === 0) {
@@ -90,23 +81,22 @@ export default function HomeView({
 
   return (
     <div>
-      <div className="yoru-chip-row" role="tablist" aria-label={es ? 'Filtrar' : 'Filter'}>
+      <div className="yoru-chip-row" aria-label={es ? 'Secciones' : 'Sections'}>
         {scopes.map((item) => (
           <button
             key={item.key}
             type="button"
-            role="tab"
-            aria-selected={scope === item.key}
-            className={`yoru-chip${scope === item.key ? ' active' : ''}`}
-            onClick={() => setScope(item.key)}
+            className={`yoru-chip${item.go ? '' : ' active'}`}
+            aria-current={item.go ? undefined : 'page'}
+            onClick={() => item.go?.()}
           >
             {item.label}
           </button>
         ))}
       </div>
 
-      {scope !== 'audio' && data.continuing.length > 0 && (
-        <Rail title={es ? 'Continuar' : 'Continue'}>
+      {data.continuing.length > 0 && (
+        <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
           {data.continuing.map((book) => {
             const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
             // Miniatura de 56 px: aquí el respaldo es solo color, sin el título, que a
@@ -145,13 +135,13 @@ export default function HomeView({
         title={es ? 'Añadidos recientemente' : 'Recently added'}
         books={data.recent}
         onOpen={onOpenDetail}
+        es={es}
         onMore={onGoCatalog}
         moreLabel={es ? 'Ver todo' : 'See all'}
       />
 
       <HomeServerSections
         es={es}
-        scope={scope}
         localTitles={new Set(books.map((book) => book.title))}
         onOpenItem={onOpenServerItem}
         onOpenSeries={onOpenServerSeries}
@@ -161,10 +151,11 @@ export default function HomeView({
         title={es ? 'Libros para ti' : 'Books for you'}
         books={data.forYou}
         onOpen={onOpenDetail}
+        es={es}
       />
 
       {data.series.length > 0 && (
-        <Rail title={es ? 'Series' : 'Series'}>
+        <Rail title={es ? 'Series' : 'Series'} es={es}>
           {data.series.map((group) => (
             <div key={group.key} style={{ width: 240 }}>
               <EntityCard
@@ -178,7 +169,7 @@ export default function HomeView({
       )}
 
       {data.collections.length > 0 && (
-        <Rail title={es ? 'Descubre colecciones' : 'Discover collections'}>
+        <Rail title={es ? 'Descubre colecciones' : 'Discover collections'} es={es}>
           {data.collections.map((group) => (
             <div key={group.key} style={{ width: 240 }}>
               <EntityCard

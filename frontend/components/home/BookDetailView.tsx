@@ -237,11 +237,13 @@ export default function BookDetailView({
           title={es ? 'Tomos de la serie' : 'Volumes in this series'}
           books={series}
           onOpen={onOpenDetail}
+          es={es}
         />
         <BookRail
           title={es ? 'Más de este autor' : 'More from this author'}
           books={byAuthor}
           onOpen={onOpenDetail}
+          es={es}
         />
       </div>
     </div>

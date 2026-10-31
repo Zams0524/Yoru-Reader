@@ -476,6 +476,7 @@ export default function YoruShell({
         onOpenDetail={openDetail}
         onContinue={(book) => onSelectBook(book)}
         onGoCatalog={() => go('catalog')}
+        onGoAudiobooks={() => go('audiobooks')}
         onOpenCollection={(entry) => openGroup('collection', entry.key)}
         onOpenSeries={(entry) => openGroup('series', entry.key)}
         onOpenServerItem={openServerItem}

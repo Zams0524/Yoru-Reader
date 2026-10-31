@@ -370,6 +370,40 @@
   color: var(--text-main);
   margin: 0;
 }
+/* «Ver todo» y las flechas, juntos a la derecha del título. */
+.yoru-rail-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.yoru-rail-arrow {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.yoru-rail-arrow:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+}
+.yoru-rail-arrow:disabled {
+  /* Se queda, pero apagada: que la fila no cambie de ancho al llegar al extremo. */
+  opacity: 0.35;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  /* En táctil se arrastra con el dedo; las flechas solo quitarían sitio. */
+  .yoru-rail-arrow { display: none; }
+}
+
 .yoru-rail-more {
   background: none;
   border: none;
@@ -391,8 +425,20 @@
   margin-right: calc(-1 * var(--yoru-canvas-pad, 24px));
   padding-right: var(--yoru-canvas-pad, 24px);
   padding-bottom: 6px;
-  scrollbar-width: thin;
+  /*
+    Sin barra propia: se mueve con las flechas de la cabecera, con la rueda o
+    arrastrando. En Inicio hay hasta once carruseles, y once barras finas encima de
+    la de la página y la de la barra lateral era lo que había que quitar.
+  */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /*
+    El suavizado va en la llamada de la flecha, no aquí: puesto en el CSS obliga a
+    animar *cualquier* desplazamiento del carril, también los que hace el navegador
+    por su cuenta, y entonces el carril no se mueve en una pestaña de segundo plano.
+  */
 }
+.yoru-rail-track::-webkit-scrollbar { display: none; }
 .yoru-rail-track > * { flex: 0 0 auto; }
 
 /* Tarjeta póster (carrusel y cuadrícula) */
