@@ -21,6 +21,23 @@
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-heading: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --font-japanese: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif;
+
+  /*
+    Radio de las esquinas.
+
+    Entre las tres hojas había **27 valores sueltos** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 30, 34 y 999 px) y ningún
+    token. Aquí hay cuatro peldaños, y todos cuelgan de `--radius-base`, que es lo que
+    mueve el deslizador de Apariencia: de esquina viva a muy redondeada, sin que cada
+    pieza decida por su cuenta.
+
+    `--radius-pill` no se escala: una píldora es una píldora en cualquier ajuste.
+  */
+  --radius-base: 10px;
+  --radius-sm: calc(var(--radius-base) * 0.6);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) * 1.6);
+  --radius-pill: 999px;
 }
 
 [data-theme='light'] {
