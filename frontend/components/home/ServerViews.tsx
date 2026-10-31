@@ -13,7 +13,8 @@ import {
 } from '../../utils/audiobookshelfService';
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
-import { getCachedServerCatalog, type ServerItem } from '../../utils/serverCatalog';
+import { getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
+import { Rail } from './primitives';
 import { useAudiobookPlayback } from './useAudiobookPlayback';
 
 /**
@@ -505,8 +506,17 @@ export function AudiobookshelfView({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [seed, setSeed] = useState(1);
 
   const configured = isAudiobookshelfConfigured();
+
+  /** El carrusel de aleatorios sale de la caché, la misma que alimenta Inicio. */
+  const randomAudio = useMemo(() => sample(getCachedServerCatalog().audiobooks, 10, seed), [seed]);
+
+  /** Abre la ficha de un audiolibro del que solo tenemos el id, como los de la caché. */
+  const openById = useCallback((id: string) => {
+    getAudiobook(id).then(setOpen).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!configured) return undefined;
@@ -579,6 +589,40 @@ export function AudiobookshelfView({
           </div>
         </div>
       </div>
+
+      {/*
+        «Audiolibros aleatorios» existía solo en Inicio, que es donde menos falta
+        hace: aquí es donde se viene a buscar qué escuchar, y una cuadrícula de 48
+        portadas ordenadas siempre igual enseña siempre lo mismo.
+        Sale de la caché, así que no cuesta una petición más.
+      */}
+      {randomAudio.length > 0 && (
+        <Rail
+          title={es ? 'Audiolibros aleatorios' : 'Random audiobooks'}
+          onMore={() => setSeed((value) => value + 1)}
+          moreLabel={es ? 'Actualizar' : 'Shuffle'}
+          es={es}
+        >
+          {randomAudio.map((item) => (
+            <button
+              key={`rnd-${item.id}`}
+              type="button"
+              className="yoru-poster is-audio"
+              title={item.title}
+              onClick={() => openById(serverItemId(item))}
+            >
+              <span className="yoru-poster-frame">
+                <img src={item.cover} alt="" loading="lazy" />
+                <span className="yoru-poster-play" aria-hidden="true">
+                  <Play size={18} />
+                </span>
+              </span>
+              <span className="yoru-poster-title">{item.title}</span>
+              {item.author && <span className="yoru-poster-meta">{item.author}</span>}
+            </button>
+          ))}
+        </Rail>
+      )}
 
       {libraries && libraries.length > 1 && (
         <div className="yoru-chip-row">

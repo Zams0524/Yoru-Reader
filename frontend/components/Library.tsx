@@ -2630,7 +2630,9 @@ const Library = React.memo(function Library({
           <div 
             className="mas-list-item"
             onClick={() => {
-              setActiveSettingsSection('sec-dictionaries');
+              // `sec-dictionaries` no existe: el identificador real es `sec-dicts`,
+              // así que esta fila abría un panel vacío.
+              setActiveSettingsSection('sec-dicts');
               setMobileSettingsSectionOpen(true);
             }}
           >

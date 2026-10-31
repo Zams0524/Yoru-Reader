@@ -266,6 +266,26 @@ cadena no aparece en ningún otro sitio del repo. Abre un panel vacío.
 
 ---
 
+## Decisiones tomadas, para que no se rehagan
+
+**Los cuatro estantes se quedan automáticos.** La captura de referencia sugería que
+«Quiero empezar» y «Pendiente» fueran manuales, y llegó a darse esa instrucción. Se
+descartó el 31 oct: hoy «Por empezar» se llena sola con los libros que nunca se han
+abierto, y eso es útil tal cual; volverla manual la vacía y obliga a etiquetar a mano
+para recuperar lo que ya había. La intención manual tiene desde ese día su sitio
+propio, que son las **colecciones manuales**. Y la lista de «nunca abiertos» se puede
+reconstruir cuando se quiera como **colección dinámica** con la regla Estado = Sin
+empezar. *No volver a cambiarlo leyendo la captura.*
+
+**«Servidor» como regla de colección dinámica exige antes sellar el origen al
+importar.** No es un hueco olvidado: `Book` no guarda de dónde vino un libro, así que
+un ejemplar traído de Kavita no se distingue de uno arrastrado a la ventana. Para que
+la regla exista hay que añadir ese campo en la importación y rellenarlo. Trabajo con
+nombre, no un descuido. Lo mismo con **idioma**, que además hoy no distinguiría nada:
+en Yoru todo es japonés y el distintivo «JA» de la ficha está escrito a mano.
+
+---
+
 ## Cosas que parecen faltar y no faltan
 
 Para que no vuelvan a aparecer en una lista de pendientes.
