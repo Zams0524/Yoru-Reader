@@ -11,6 +11,8 @@ import {
   MoreVertical,
   StickyNote,
   Bookmark,
+  BookAudio,
+  Cloud,
 } from 'lucide-react';
 
 interface ReaderColors {
@@ -49,6 +51,13 @@ interface ReaderNavbarProps {
   onMouseLeave?: () => void;
   isReadingAloud?: boolean;
   onToggleReadAloud?: () => void;
+  /** Audiobook from Audiobookshelf; only when a server is connected. */
+  isAudiobookOpen?: boolean;
+  /** El libro se esta leyendo del servidor, sin guardarlo. */
+  isTemporary?: boolean;
+  /** Guardarlo en la biblioteca sin volver a bajarlo. */
+  onKeep?: () => void;
+  onToggleAudiobook?: () => void;
   onOpenSearch?: () => void;
   onOpenNotes?: () => void;
   /** The page on screen has a bookmark (ribbon), and the button that sets or removes it. */
@@ -79,6 +88,10 @@ export default function ReaderNavbar({
   onMouseLeave,
   isReadingAloud = false,
   onToggleReadAloud,
+  isAudiobookOpen = false,
+  isTemporary = false,
+  onKeep,
+  onToggleAudiobook,
   onOpenSearch,
   onOpenNotes,
   isPageBookmarked = false,
@@ -190,6 +203,12 @@ export default function ReaderNavbar({
                     <span>{es ? 'Sesión de lectura' : 'Reading session'}</span>
                   </button>
                 )}
+                {onToggleAudiobook && (
+                  <button type="button" role="menuitem" onClick={runAndClose(onToggleAudiobook)}>
+                    <BookAudio size={18} />
+                    <span>{isAudiobookOpen ? (es ? 'Cerrar audiolibro' : 'Close audiobook') : (es ? 'Escuchar audiolibro' : 'Listen to audiobook')}</span>
+                  </button>
+                )}
                 {onOpenNotes && (
                   <button type="button" role="menuitem" onClick={runAndClose(onOpenNotes)}>
                     <StickyNote size={18} />
@@ -210,6 +229,17 @@ export default function ReaderNavbar({
 
       <div className="reader-topbar-info">
         <div className="reader-topbar-title">{bookTitle}</div>
+        {isTemporary && (
+          <span className="reader-temporary">
+            <Cloud size={13} aria-hidden="true" />
+            {es ? 'Del servidor' : 'From the server'}
+            {onKeep && (
+              <button type="button" className="reader-temporary-keep" onClick={onKeep}>
+                {es ? 'Descargar' : 'Download'}
+              </button>
+            )}
+          </span>
+        )}
         {bookAuthor && <div className="reader-topbar-sub">{bookAuthor}</div>}
         <div className="reader-topbar-sub">
           {sectionTitle && <span>{es ? 'Sección: ' : 'Section: '}{sectionTitle}</span>}

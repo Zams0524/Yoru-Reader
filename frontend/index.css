@@ -1984,6 +1984,25 @@ rt {
 }
 .yomitan-fields-header span:first-child { width: 160px; flex-shrink: 0; }
 
+/* La ayuda de los marcadores. Con tokens: es nueva, no hereda la deuda de al lado. */
+.yomitan-cards-help {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.yomitan-cards-help p { margin: 0 0 10px; }
+.yomitan-cards-help p:last-child { margin-bottom: 0; }
+.yomitan-cards-help ul { margin: 0 0 10px; padding-left: 18px; }
+.yomitan-cards-help li { margin-bottom: 4px; }
+.yomitan-cards-help code {
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+}
+
 .yomitan-cards-footer {
   display: flex;
   align-items: center;

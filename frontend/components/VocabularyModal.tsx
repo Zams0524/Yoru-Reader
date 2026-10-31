@@ -2161,6 +2161,8 @@ interface AnkiCardsModalProps {
 function AnkiCardsModal({ settings, onSave, onClose, availableDecks, availableModels, lang }: AnkiCardsModalProps) {
   const [activeTab, setActiveTab] = useState<'expression' | 'reading' | 'kanji'>('expression');
   const [local, setLocal] = useState<any>(settings);
+  // «Ayuda» no hacía nada; ahora explica aquí mismo qué son los marcadores.
+  const [showHelp, setShowHelp] = useState(false);
   const [modelFields, setModelFields] = useState<string[]>([]);
 
   const tab = local[activeTab] || { deck: '', noteType: '', fields: {} };
@@ -2370,8 +2372,37 @@ function AnkiCardsModal({ settings, onSave, onClose, availableDecks, availableMo
           ))}
         </div>
 
+        {showHelp && (
+          <div className="yomitan-cards-help">
+            <p>
+              {lang === 'es'
+                ? 'Cada campo de tu nota de Anki se rellena con un marcador. Yoru lo sustituye por el dato de la palabra al crear la tarjeta.'
+                : 'Each field of your Anki note is filled from a marker. Yoru replaces it with the word’s data when it makes the card.'}
+            </p>
+            <ul>
+              <li><code>{'{expression}'}</code> — {lang === 'es' ? 'la palabra, tal cual aparece' : 'the word as it appears'}</li>
+              <li><code>{'{furigana}'}</code> — {lang === 'es' ? 'la palabra con su lectura encima' : 'the word with its reading above'}</li>
+              <li><code>{'{glossary}'}</code> — {lang === 'es' ? 'el significado del diccionario' : 'the dictionary meaning'}</li>
+              <li><code>{'{sentence}'}</code> — {lang === 'es' ? 'la frase del libro donde la encontraste' : 'the sentence you found it in'}</li>
+              <li><code>{'{audio}'}</code> — {lang === 'es' ? 'la pronunciación, si el diccionario la trae' : 'the pronunciation, if the dictionary has it'}</li>
+              <li><code>{'{pitch-accents}'}</code> — {lang === 'es' ? 'el acento tonal' : 'the pitch accent'}</li>
+            </ul>
+            <p>
+              {lang === 'es'
+                ? 'Un campo en blanco se queda vacío en la tarjeta. El desplegable de cada fila enseña todos los marcadores disponibles.'
+                : 'A blank field stays empty on the card. Each row’s dropdown lists every available marker.'}
+            </p>
+          </div>
+        )}
+
         <div className="yomitan-cards-footer">
-          <button className="yomitan-cards-help-btn" onClick={() => {}}>{lang === 'es' ? 'Ayuda' : 'Help'}</button>
+          <button
+            className="yomitan-cards-help-btn"
+            onClick={() => setShowHelp((open) => !open)}
+            aria-expanded={showHelp}
+          >
+            {showHelp ? (lang === 'es' ? 'Ocultar ayuda' : 'Hide help') : (lang === 'es' ? 'Ayuda' : 'Help')}
+          </button>
           <button
             className="yomitan-cards-close-btn"
             onClick={() => { onSave(local); onClose(); }}

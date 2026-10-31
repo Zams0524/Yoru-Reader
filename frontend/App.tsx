@@ -2,13 +2,25 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DictionaryInstallToast from './components/DictionaryInstallToast';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from './utils/platform';
-const Library = React.lazy(() => import('./components/Library'));
+const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import { db } from './utils/db';
+import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
+import { queueKavitaProgress } from './utils/kavitaService';
+import { refreshServerCatalog } from './utils/serverCatalog';
+import { markOpenTiming, startOpenTiming } from './utils/openTiming';
+
+/**
+ * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
+ * id para que los caminos que escriben en IndexedDB lo dejen pasar de largo.
+ */
+const TEMPORARY_ID_PREFIX = 'tmp:';
+export const isTemporaryBookId = (id: string) => typeof id === 'string' && id.startsWith(TEMPORARY_ID_PREFIX);
+export const temporaryBookId = (volumeId: number) => TEMPORARY_ID_PREFIX + 'kavita:' + volumeId;
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
 import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
@@ -99,6 +111,8 @@ export default function App() {
   const [books, setBooks] = useState<any[]>([]);
   const [activeBook, setActiveBook] = useState<any | null>(null);
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
+  // El libro abierto, accesible desde callbacks memorizados sin dependencias.
+  const activeBookRef = useRef<any>(null);
   // The reader's code loads while the library sits idle, so opening the first book does not wait
   // for it ("Loading reader..." before the book's own loading screen).
   useEffect(() => {
@@ -114,10 +128,18 @@ export default function App() {
   const [libraryTab, setLibraryTab] = useState('library');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
-    window.__yoruTheme = s.theme || 'dark';
+    window.__yoruTheme = resolveTheme(s.theme);
     return s;
   });
   const lang = settings.appLanguage || 'en';
+  /*
+    El tema que se pinta. Con «Sistema» hay que traducirlo, porque el CSS va por
+    `data-theme` y no sabe de preferencias del escritorio; y hay que volver a
+    traducirlo cuando el escritorio cambia solo al anochecer.
+  */
+  const resolvedTheme = useResolvedTheme(settings.theme);
+
+  useEffect(() => { window.__yoruTheme = resolvedTheme; }, [resolvedTheme]);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [infoBook, setInfoBook] = useState<any | null>(null);
   const [showHotUpdateBanner, setShowHotUpdateBanner] = useState(false);
@@ -608,21 +630,95 @@ export default function App() {
     };
   }, [activeBook]);
 
-  const handleSelectBook = async (book: any) => {
+  // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
+  // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
+  const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
     // Start of an open, for the timing line the native reader logs.
-    (window as { __yoruOpenRequestedAt?: number }).__yoruOpenRequestedAt = performance.now();
-    setActiveBook(book);
+    startOpenTiming(book?.title || 'libro');
+    const positioned = typeof startChapter === 'number'
+      ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
+      : book;
+    // Bandera de apertura, solo en memoria: no se guarda con el libro.
+    const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
+    setActiveBook(target);
     await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
     const loadedBooks = await db.getBooks();
     setBooks(loadedBooks);
   };
 
   const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number) => {
+    // Libro temporal: no se guarda aqui, pero su progreso si sube al servidor del que
+    // salio. Se sale antes de tocar la base para no rozar el camino de siempre.
+    if (isTemporaryBookId(bookId)) {
+      setActiveBook((current: any) => (current && current.id === bookId
+        ? { ...current, progress: { ...(current.progress || {}), currentChapter, currentPage, percent } }
+        : current));
+      const temporaryTitle = activeBookRef.current?.title;
+      if (temporaryTitle) queueKavitaProgress(temporaryTitle, percent);
+      return;
+    }
     const updatedBooks = await db.updateBookProgress(bookId, currentChapter, currentPage, percent);
     setBooks(updatedBooks);
+    // Books imported from Kavita send their progress back to the server.
+    const title = updatedBooks.find(b => b.id === bookId)?.title;
+    if (title) queueKavitaProgress(title, percent);
+  }, []);
+
+  /**
+   * Leer del servidor sin guardar: baja el volumen, lo parsea con el importador de
+   * siempre y lo abre. No pasa por `db`, asi que no entra en el Catalogo ni cuenta
+   * como libro suyo. `importKavitaBook` ya deja registrada la fuente por titulo, que
+   * es lo que necesita el progreso para subir a Kavita.
+   */
+  const handleReadTemporary = useCallback(async (kavitaBook: any) => {
+    // El cronometro arranca aqui, no al montar el lector: la descarga y el parseo son
+    // justo lo que se espera, y dejarlos fuera de la cuenta era lo que hacia parecer
+    // que abrir del servidor era instantaneo.
+    startOpenTiming(`${kavitaBook?.seriesName || ''} ${kavitaBook?.title || ''}`.trim() || 'volumen del servidor');
+    const { importKavitaBook, getKavitaProgressPercent, kavitaChapterForPercent } = await import('./utils/kavitaService');
+    markOpenTiming('modulo');
+    const parsed = await importKavitaBook(kavitaBook);
+    markOpenTiming('descarga y parseo');
+    const first = parsed[0];
+    if (!first) throw new Error('El volumen no trae ningun libro que abrir.');
+    // Se retoma por donde lo dejo el servidor. Si no contesta, se empieza de cero.
+    const percent = await getKavitaProgressPercent(kavitaBook.chapterId, kavitaBook.pages);
+    markOpenTiming('progreso del servidor');
+    const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
+    const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
+    setActiveBook({
+      ...first,
+      id: temporaryBookId(kavitaBook.volumeId),
+      isTemporary: true,
+      kavitaBook,
+      parsedBook: first,
+      progress: { currentChapter, currentPage: 0, percent },
+    });
+  }, []);
+
+  /**
+   * Convertir en permanente el libro temporal que se esta leyendo, sin volver a
+   * bajarlo: ya esta parseado en memoria. El progreso que llevaba se conserva.
+   */
+  const handleKeepTemporary = useCallback(async () => {
+    const current = activeBookRef.current;
+    if (!current?.isTemporary || !current.parsedBook) return;
+    const saved = await db.addBooks([current.parsedBook]);
+    const stored = saved.find((book: any) => book.title === current.parsedBook.title);
+    setBooks(saved);
+    if (stored) {
+      const percent = current.progress?.percent || 0;
+      if (percent > 0) {
+        await db.updateBookProgress(stored.id, current.progress?.currentChapter || 0, current.progress?.currentPage || 0, percent);
+      }
+      setActiveBook({ ...stored, progress: current.progress });
+    }
   }, []);
 
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
+    // El temporal no tiene fila en la base. Las estadisticas de verdad (las del parte
+    // diario) van por titulo en handleSaveReadingStats, asi que no se pierden.
+    if (isTemporaryBookId(bookId)) return;
     const updatedBooks = await db.incrementReadingStats(bookId, chars, seconds);
     setBooks(updatedBooks);
   }, []);
@@ -894,8 +990,18 @@ export default function App() {
     }
   };
 
+  // Novedades de los servidores de casa, en segundo plano. No bloquea nada: si no
+  // responden (fuera de casa, modo avión) se queda lo que hubiera en la caché.
+  useEffect(() => {
+    void refreshServerCatalog();
+  }, []);
+
+  useEffect(() => {
+    activeBookRef.current = activeBook;
+  }, [activeBook]);
+
   return (
-    <div className="app-container" data-theme={settings.theme}>
+    <div className="app-container" data-theme={resolvedTheme}>
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
         {profiles.length === 0 ? (
           <WelcomeScreen onCreateProfile={handleAddProfile} settings={settings} onSaveSettings={handleSaveSettings} />
@@ -913,6 +1019,7 @@ export default function App() {
             onUpdateProgress={handleUpdateProgress}
             onIncrementReadingStats={handleIncrementReadingStats}
             onSaveReadingStats={handleSaveReadingStats}
+            onKeepTemporary={handleKeepTemporary}
             wordStatuses={wordStatuses}
             onSetWordStatus={handleSetWordStatus}
             settings={settings}
@@ -920,29 +1027,32 @@ export default function App() {
             onUpdateBookDetails={handleUpdateBookDetails}
           />
         ) : (
-          <Library 
+          <YoruShell
           books={books}
+          settings={settings}
           onSelectBook={handleSelectBook}
-          onAddBooks={handleAddBooks}
-          onDeleteBook={handleDeleteBook}
-          onBulkDeleteBooks={handleBulkDeleteBooks}
           onUpdateBookDetails={handleUpdateBookDetails}
-          onOpenInfo={(book) => {
+          onOpenInfo={(book: any) => {
             setInfoBook(book);
             setIsInfoOpen(true);
           }}
-          profiles={profiles}
-          activeProfileId={activeProfileId || ''}
-          onSelectProfile={handleSelectProfile}
-          onAddProfile={handleAddProfile}
-          onDeleteProfile={handleDeleteProfile}
-          onUpdateProfile={handleUpdateProfile}
-          onClearDeletedBooks={handleClearDeletedBooks}
-          settings={settings}
-          onSaveSettings={handleSaveSettings}
-          wordStatuses={wordStatuses}
           initialTab={libraryTab}
-          navigateTo={libraryNav}
+          libraryProps={{
+            navigateTo: libraryNav,
+            onReadTemporary: handleReadTemporary,
+            onAddBooks: handleAddBooks,
+            onDeleteBook: handleDeleteBook,
+            onBulkDeleteBooks: handleBulkDeleteBooks,
+            profiles,
+            activeProfileId: activeProfileId || '',
+            onSelectProfile: handleSelectProfile,
+            onAddProfile: handleAddProfile,
+            onDeleteProfile: handleDeleteProfile,
+            onUpdateProfile: handleUpdateProfile,
+            onClearDeletedBooks: handleClearDeletedBooks,
+            onSaveSettings: handleSaveSettings,
+            wordStatuses,
+          }}
           />
         )}
       </React.Suspense>

@@ -1,0 +1,9 @@
+# Las ruedas de Windows de torch ya son solo CPU: no arrastran CUDA.
+# En Linux hay que pedir el indice de CPU a mano, o se baja una build con CUDA de 2 GB:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+torch>=2.6
+torchaudio>=2.6
+transformers>=4.40
+numpy>=1.26
+soundfile>=0.12
+janome>=0.5          # lecturas del japones; Apache-2.0, trae su diccionario dentro

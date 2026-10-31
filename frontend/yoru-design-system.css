@@ -21,6 +21,23 @@
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-heading: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --font-japanese: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif;
+
+  /*
+    Radio de las esquinas.
+
+    Entre las tres hojas había **27 valores sueltos** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 30, 34 y 999 px) y ningún
+    token. Aquí hay cuatro peldaños, y todos cuelgan de `--radius-base`, que es lo que
+    mueve el deslizador de Apariencia: de esquina viva a muy redondeada, sin que cada
+    pieza decida por su cuenta.
+
+    `--radius-pill` no se escala: una píldora es una píldora en cualquier ajuste.
+  */
+  --radius-base: 10px;
+  --radius-sm: calc(var(--radius-base) * 0.6);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) * 1.6);
+  --radius-pill: 999px;
 }
 
 [data-theme='light'] {
@@ -6316,4 +6333,780 @@ html.yoru-compact #root {
   .book-card:hover {
     transform: none;
   }
+}
+
+/* ==========================================================================
+   Media servers: Kavita / Audiobookshelf settings, the Kavita browser and the
+   audiobook player in the reader
+   ========================================================================== */
+.media-server-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.media-server-hint,
+.media-server-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.media-server-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.media-server-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--primary);
+}
+
+.media-server-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.media-server-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.media-server-head p {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.media-server-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.media-server-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.media-server-field input,
+.media-browser-search input,
+.audio-sync-search input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.media-server-field input:focus,
+.media-browser-search input:focus {
+  border-color: var(--primary);
+}
+
+.media-server-mode {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 3px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-app);
+}
+
+.media-server-mode button {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.media-server-mode button.is-active {
+  background: var(--primary);
+  color: #111;
+}
+
+.media-server-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.media-server-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.media-server-btn.is-primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #111;
+}
+
+.media-server-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.media-server-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.media-server-status.is-ok { color: #34d399; }
+.media-server-status.is-error { color: #f87171; }
+
+/* Kavita browser: full-screen sheet over the library */
+.media-browser {
+  position: fixed;
+  inset: 0;
+  z-index: 10030;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--text-main);
+  padding-top: var(--yoru-safe-top, 0px);
+  padding-bottom: var(--yoru-safe-bottom, 0px);
+}
+
+.media-browser-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.media-browser-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.media-browser-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.media-browser-search {
+  position: relative;
+  flex: 1 1 260px;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.media-browser-search svg {
+  position: absolute;
+  left: 11px;
+}
+
+.media-browser-search input {
+  padding-left: 32px;
+}
+
+.media-browser-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.media-browser-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+
+.media-browser-chips button {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.media-browser-chips button.is-active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.media-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px 12px;
+}
+
+.media-browser-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-browser-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+}
+
+.media-browser-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-browser-cover.is-large {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.media-browser-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.media-browser-more {
+  display: flex;
+  margin: 20px auto 0;
+}
+
+.media-browser-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 40px auto;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.media-browser-series-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.media-browser-series-head h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.media-browser-series-head p {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.media-browser-volumes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.media-browser-volumes li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.media-browser-volume-cover {
+  width: 40px;
+  aspect-ratio: 2 / 3;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--bg-app);
+}
+
+.media-browser-volume-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-browser-volume-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.86rem;
+}
+
+.media-browser-volume-text small {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+/* Audiobook player in the reader: same look and place as the read-aloud bar */
+.audio-sync-player {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + var(--yoru-safe-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 9990;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(60vh, 460px);
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: linear-gradient(0deg, rgba(12, 14, 19, 0.97), rgba(20, 23, 30, 0.95));
+  border: 1px solid rgba(255, 218, 94, 0.16);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  box-sizing: border-box;
+  color: #e0e0ea;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s;
+}
+
+.audio-sync-player.is-raised {
+  bottom: calc(110px + var(--yoru-safe-bottom, 0px));
+}
+
+.audio-sync-player.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 24px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
+
+.audio-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audio-sync-controls {
+  justify-content: center;
+}
+
+.audio-sync-controls .read-aloud-btn {
+  position: relative;
+}
+
+.audio-sync-controls .read-aloud-btn small {
+  position: absolute;
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.audio-sync-cover {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/*
+  La portada y el titulo de la barra compacta son el camino ancho al modo
+  reproductor. Boton pelado: no se pinta como boton, pero se comporta como uno
+  — cursor, realce al pasar y foco visible con el teclado.
+*/
+.audio-sync-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.audio-sync-open:hover { background: rgba(255, 255, 255, 0.07); }
+.audio-sync-open:hover .audio-sync-title { color: #ffda5e; }
+.audio-sync-open:focus-visible { outline: 2px solid rgba(255, 218, 94, 0.75); outline-offset: 2px; }
+/* Con capitulos el boton solo lleva la portada: que no se coma el sitio del selector. */
+.audio-sync-open.is-cover-only { flex: 0 0 auto; }
+
+/* El que abre otra pantalla, no uno mas de la fila de controles. */
+.audio-sync-expand {
+  border: 1px solid rgba(255, 218, 94, 0.45);
+  color: #ffda5e;
+}
+.audio-sync-expand:hover { background: rgba(255, 218, 94, 0.14); }
+
+.audio-sync-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.audio-sync-chapter {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e0e0ea;
+  font-size: 12.5px;
+}
+
+.audio-sync-chapter option {
+  background: #16181f;
+  color: #e0e0ea;
+}
+
+.audio-sync-time {
+  flex-shrink: 0;
+  min-width: 44px;
+  font-size: 11.5px;
+  color: rgba(224, 224, 234, 0.7);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.audio-sync-scrubber {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--read-aloud-accent, #ffd54a);
+}
+
+.audio-sync-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  color: rgba(224, 224, 234, 0.75);
+}
+
+.audio-sync-message.is-error {
+  color: #f87171;
+}
+
+.audio-sync-search {
+  display: flex;
+  gap: 6px;
+}
+
+.audio-sync-search input {
+  min-height: 34px;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #e0e0ea;
+}
+
+.audio-sync-matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audio-sync-matches button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #e0e0ea;
+  text-align: left;
+  cursor: pointer;
+}
+
+.audio-sync-matches button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.audio-sync-matches img {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.audio-sync-matches span {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+}
+
+.audio-sync-matches strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-sync-matches small {
+  color: rgba(224, 224, 234, 0.6);
+}
+
+/* ── Modo reproductor ───────────────────────────────────────────────────
+   El segundo nivel del audiolibro: la barra pequeña se queda para leer
+   mientras suena, y esto es para cuando uno solo escucha. Vive dentro del
+   mismo componente que la barra, porque el <audio> no puede desmontarse. */
+
+.audio-full {
+  position: fixed;
+  inset: 0;
+  z-index: 9995;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 16px calc(28px + var(--yoru-safe-bottom, 0px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  color: #e9e9f2;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 218, 94, 0.07), transparent 60%),
+    linear-gradient(180deg, rgba(16, 18, 24, 0.99), rgba(10, 11, 15, 0.99));
+  backdrop-filter: blur(22px);
+  animation: audio-full-in 0.22s ease-out;
+}
+
+@keyframes audio-full-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+.audio-full-top {
+  position: absolute;
+  top: calc(14px + var(--yoru-safe-top, 0px));
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.audio-full-cover {
+  width: min(260px, 54vw);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+
+.audio-full-title {
+  margin: 4px 0 0;
+  max-width: min(640px, 92vw);
+  font-size: clamp(1.05rem, 2.6vw, 1.45rem);
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  /* Un título japonés largo no se corta a la mitad: se deja en dos líneas. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.audio-full-author {
+  margin: 0;
+  color: #a7a7b8;
+  font-size: 0.92rem;
+}
+
+.audio-full-chapter {
+  max-width: min(520px, 90vw);
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e9e9f2;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.audio-full-chapter option { background: #15171e; color: #e9e9f2; }
+
+.audio-full-scrubber { width: min(620px, 92vw); }
+
+.audio-full-times {
+  display: flex;
+  justify-content: space-between;
+  width: min(620px, 92vw);
+  margin-top: -6px;
+  color: #9e9eb0;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-full-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 4vw, 28px);
+  margin-top: 6px;
+}
+
+.audio-full-controls .read-aloud-btn { position: relative; }
+
+.audio-full-controls .read-aloud-btn small {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 700;
+  left: 50%;
+  top: 52%;
+  transform: translate(-50%, -50%);
+}
+
+.audio-full-controls .read-aloud-btn:disabled { opacity: 0.3; cursor: default; }
+
+.audio-full-play {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: #f2f2f6;
+  color: #15171e;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease;
+}
+
+.audio-full-play:hover { transform: scale(1.05); }
+.audio-full-play:active { transform: scale(0.97); }
+
+.audio-full-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.audio-full-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a7a7b8;
+}
+
+.audio-full-volume input { width: 96px; }
+
+.audio-full-tools .read-aloud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A ~400 px cabe todo sin barra lateral de desplazamiento. */
+@media (max-width: 430px) {
+  .audio-full { gap: 10px; padding-top: 58px; }
+  .audio-full-cover { width: 58vw; }
+  .audio-full-play { width: 64px; height: 64px; }
+  .audio-full-controls { gap: 8px; }
+  .audio-full-volume input { width: 72px; }
+}
+
+/* Pantallas bajas (una ventana a media altura): la portada cede primero. */
+@media (max-height: 620px) {
+  .audio-full-cover { width: min(150px, 34vh); }
+  .audio-full { gap: 8px; }
 }
