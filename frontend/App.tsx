@@ -7,6 +7,7 @@ const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import { db } from './utils/db';
+import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
@@ -127,10 +128,18 @@ export default function App() {
   const [libraryTab, setLibraryTab] = useState('library');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
-    window.__yoruTheme = s.theme || 'dark';
+    window.__yoruTheme = resolveTheme(s.theme);
     return s;
   });
   const lang = settings.appLanguage || 'en';
+  /*
+    El tema que se pinta. Con «Sistema» hay que traducirlo, porque el CSS va por
+    `data-theme` y no sabe de preferencias del escritorio; y hay que volver a
+    traducirlo cuando el escritorio cambia solo al anochecer.
+  */
+  const resolvedTheme = useResolvedTheme(settings.theme);
+
+  useEffect(() => { window.__yoruTheme = resolvedTheme; }, [resolvedTheme]);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [infoBook, setInfoBook] = useState<any | null>(null);
   const [showHotUpdateBanner, setShowHotUpdateBanner] = useState(false);
@@ -992,7 +1001,7 @@ export default function App() {
   }, [activeBook]);
 
   return (
-    <div className="app-container" data-theme={settings.theme}>
+    <div className="app-container" data-theme={resolvedTheme}>
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
         {profiles.length === 0 ? (
           <WelcomeScreen onCreateProfile={handleAddProfile} settings={settings} onSaveSettings={handleSaveSettings} />

@@ -3116,27 +3116,44 @@ const Library = React.memo(function Library({
               <div className="settings-section-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Palette size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Apariencia e Idioma' : 'Appearance & Language'}</span>
+                  <span>{lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language'}</span>
                 </h3>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff', marginBottom: '4px' }}>
-                      {lang === 'es' ? 'Tema del Lector' : 'Reader Theme'}
+                    {/*
+                      Un solo control de esquema. Antes había dos llamados «tema», aquí
+                      y en «Estilo de texto», con vocabularios distintos — y no eran
+                      dos ajustes: los dos escribían `settings.theme`. El de allí decía
+                      además «se aplica únicamente a la página de lectura», que era
+                      falso. Aquí queda el único, con un vocabulario.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {lang === 'es' ? 'Esquema' : 'Color scheme'}
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: '#888899', marginBottom: '10px' }}>
-                      {lang === 'es' ? 'Apariencia visual para el catálogo y el lector.' : 'Visual style for catalog and reading mode.'}
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es'
+                        ? 'Los colores de toda la app: catálogo, lector y ajustes.'
+                        : 'The colours of the whole app: catalog, reader and settings.'}
                     </div>
-                    <select 
+                    <select
                       value={settings.theme || 'dark'}
                       onChange={(e) => onSaveSettings({ ...settings, theme: e.target.value })}
                       className="migaku-select"
                       style={{ width: '100%' }}
                     >
-                      <option value="dark">{lang === 'es' ? 'Oscuro Yoru (por defecto)' : 'Dark Yoru (default)'}</option>
-                      <option value="sepia">{lang === 'es' ? 'Sepia Relajante' : 'Warm Sepia'}</option>
-                      <option value="light">{lang === 'es' ? 'Claro Clásico' : 'Classic Light'}</option>
+                      <option value="system">{lang === 'es' ? 'Sistema' : 'System'}</option>
+                      <option value="light">{lang === 'es' ? 'Claro' : 'Light'}</option>
+                      <option value="dark">{lang === 'es' ? 'Oscuro' : 'Dark'}</option>
+                      <option value="sepia">{lang === 'es' ? 'Sepia' : 'Sepia'}</option>
                     </select>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-dark)', marginTop: '8px' }}>
+                      {settings.theme === 'system'
+                        ? (lang === 'es' ? 'Sigue al escritorio y cambia con él.' : 'Follows your desktop and changes with it.')
+                        : settings.theme === 'sepia'
+                          ? (lang === 'es' ? 'Papel cálido; el más descansado para leer de noche.' : 'Warm paper; the easiest on the eyes at night.')
+                          : ''}
+                    </div>
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
@@ -3278,88 +3295,10 @@ const Library = React.memo(function Library({
             <div id="sec-text-style" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Type size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Estilo de texto y Lector' : 'Text Style & Reader'}</span>
+                <span>{lang === 'es' ? 'Estilo de texto' : 'Text Style'}</span>
               </h3>
               <p className="settings-card-desc">{lang === 'es' ? 'Modifica el tamaño de la tipografía, dirección de lectura, velocidad de audio y comportamiento del lector.' : 'Modify typography size, reading direction, audio speed and reader behavior.'}</p>
               
-
-              {/* Tema del libro (Book theme) */}
-              <div className="settings-row-control" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Tema del libro' : 'Book theme'}</span>
-                  <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.4)' }}>
-                    {lang === 'es' ? 'Se aplica únicamente a la página de lectura' : 'Applies only to the book page'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'light' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'light' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#ffffff',
-                      color: '#000000',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Blanco' : 'White'}</span>
-                  </button>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'sepia' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'sepia' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#f4ecd8',
-                      color: '#5b4636',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Crema' : 'Paper'}</span>
-                  </button>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'dark' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'dark' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#08080a',
-                      color: '#ffffff',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Oscuro' : 'Dark'}</span>
-                  </button>
-                </div>
-              </div>
 
               {/* Zoom de texto */}
               <div className="settings-row-control">

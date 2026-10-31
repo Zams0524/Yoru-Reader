@@ -47,6 +47,7 @@ import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
 import { useReaderSettings, ReaderSettingsState, baseReaderTheme } from '../hooks/useReaderSettings';
+import { useResolvedTheme } from '../utils/theme';
 import { useBackHandler } from '../hooks/useBackButton';
 
 // Page-turn keys handled inside ReaderEngine.
@@ -324,6 +325,8 @@ export default function Reader({
   }, [onSaveSettings, onBack]);
 
   const [readerSettings, rawSetReaderSetting] = useReaderSettings();
+  /** El esquema de la app ya traducido: «Sistema» no es un tema que se pueda pintar. */
+  const appTheme = useResolvedTheme(settings.theme);
 
   const fsrsSettings = db.getSettings();
   const fsrsRetentionRate = fsrsSettings.fsrsRetentionRate !== undefined ? Number(fsrsSettings.fsrsRetentionRate) : 0.90;
@@ -342,7 +345,7 @@ export default function Reader({
     // The app theme follows the book's base colours (contrast/twilight/console are variants).
     if (key === 'theme') {
       const base = baseReaderTheme(String(value));
-      if (settings.theme !== base) {
+      if (appTheme !== base) {
         onSaveSettings({ ...settings, theme: base });
       }
     }
@@ -574,13 +577,13 @@ export default function Reader({
   }, []);
 
   useEffect(() => {
-    if (settings.theme === 'light' || settings.theme === 'sepia' || settings.theme === 'dark') {
-      // Only follow a real change of the app theme, not a variant of the same base.
-      if (baseReaderTheme(readerSettings.theme) !== settings.theme) {
-        rawSetReaderSetting('theme', settings.theme);
-      }
+    // El tema resuelto y no el guardado: con «Sistema» el guardado no es ninguno de
+    // los tres, y el lector se quedaba con el suyo de antes.
+    // Only follow a real change of the app theme, not a variant of the same base.
+    if (baseReaderTheme(readerSettings.theme) !== appTheme) {
+      rawSetReaderSetting('theme', appTheme);
     }
-  }, [settings.theme, readerSettings.theme, rawSetReaderSetting]);
+  }, [appTheme, readerSettings.theme, rawSetReaderSetting]);
 
   useEffect(() => {
     if (!isGalleryOpen || bookImages.length === 0) return;
@@ -645,9 +648,8 @@ export default function Reader({
   }, []);
 
   useEffect(() => {
-    const theme = settings.theme || 'dark';
-    window.__yoruTheme = theme;
-  }, [settings.theme]);
+    window.__yoruTheme = appTheme;
+  }, [appTheme]);
 
   const handleSelection = useCallback(async () => {
     const selectionObj = window.getSelection();
