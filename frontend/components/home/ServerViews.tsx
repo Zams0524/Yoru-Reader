@@ -13,6 +13,7 @@ import {
 } from '../../utils/audiobookshelfService';
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
+import { getCachedServerCatalog, type ServerItem } from '../../utils/serverCatalog';
 import { useAudiobookPlayback } from './useAudiobookPlayback';
 
 /**
@@ -386,6 +387,96 @@ function AudiobookDetail({
           )
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Una serie de audiolibros, con sus tomos.
+ *
+ * La serie no es una entidad de Audiobookshelf: el montón lo hacemos nosotros
+ * agrupando por el campo `series` que trae cada audiolibro. Por eso esta vista no
+ * pide nada al servidor — sale entera de la misma caché que alimenta los carruseles
+ * de Inicio, así que aparece al instante y funciona sin red.
+ *
+ * Existe porque la tarjeta «Serie A · 3 audiolibros» tenía que llevar a los tres.
+ * Antes llevaba al primero, que es peor que no llevar a ningún sitio: el usuario
+ * cree que ha llegado.
+ */
+export function AudiobookSeriesView({
+  seriesKey,
+  es,
+  onBack,
+  onOpenItem,
+}: {
+  seriesKey: string;
+  es: boolean;
+  onBack: () => void;
+  onOpenItem: (item: ServerItem) => void;
+}) {
+  const items = useMemo(() => {
+    const catalog = getCachedServerCatalog();
+    return catalog.audiobooks
+      .filter((item) => item.series === seriesKey)
+      // Por título y con números de verdad, para que el tomo 2 no caiga tras el 10.
+      .sort((a, b) => a.title.localeCompare(b.title, 'ja', { numeric: true }));
+  }, [seriesKey]);
+
+  const author = items.find((item) => item.author)?.author;
+
+  return (
+    <div>
+      <button type="button" className="yoru-detail-back" onClick={onBack}>
+        <ArrowLeft size={16} />
+        {es ? 'Volver' : 'Back'}
+      </button>
+
+      <div className="yoru-view-head">
+        <div className="yoru-series-head">
+          <span className="yoru-series-head-cover">
+            {items[0]?.cover ? <img src={items[0].cover} alt="" loading="lazy" /> : <span />}
+          </span>
+          <span>
+            <h1 className="yoru-view-title">{seriesKey}</h1>
+            <span className="yoru-view-sub">
+              {items.length}{' '}
+              {es
+                ? items.length === 1 ? 'audiolibro' : 'audiolibros'
+                : items.length === 1 ? 'audiobook' : 'audiobooks'}
+              {author ? ` · ${author}` : ''}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="yoru-empty-note">
+          {es
+            ? 'De esta serie no queda nada en la lista guardada. Abre Audiolibros para traerla otra vez del servidor.'
+            : 'Nothing from this series is left in the saved list. Open Audiobooks to fetch it from the server again.'}
+        </p>
+      ) : (
+        <ul className="yoru-link-list yoru-volume-list">
+          {items.map((item, index) => (
+            <li key={item.id}>
+              <button type="button" className="yoru-volume-row" onClick={() => onOpenItem(item)}>
+                <span className="yoru-volume-index">{index + 1}</span>
+                <span className="yoru-volume-cover">
+                  {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span />}
+                </span>
+                <span className="yoru-volume-text">
+                  <span className="yoru-link-title">{item.title}</span>
+                  {item.author && <span className="yoru-link-author">{item.author}</span>}
+                </span>
+                <span className="yoru-volume-listen">
+                  <Headphones size={15} aria-hidden="true" />
+                  <span>{es ? 'Escuchar' : 'Listen'}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

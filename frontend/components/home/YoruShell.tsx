@@ -27,7 +27,7 @@ import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import StatsView from './StatsView';
-import { AudiobookshelfView, ServerEmptyState } from './ServerViews';
+import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
@@ -63,6 +63,7 @@ type View =
   | 'listen'
   | 'kavita'
   | 'audiobooks'
+  | 'audioseries'
   | 'shelf'
   | 'group'
   | 'detail';
@@ -168,6 +169,8 @@ export default function YoruShell({
    * ficha que se miró.
    */
   const [serverTarget, setServerTarget] = useState<{ kind: 'kavita' | 'audiobook'; id: string } | null>(null);
+  /** La serie de audiolibros que se está mirando, por su nombre, que es su clave. */
+  const [audioSeries, setAudioSeries] = useState<string | null>(null);
 
   const go = useCallback((next: View, target: typeof serverTarget = null) => {
     setView(next);
@@ -186,14 +189,14 @@ export default function YoruShell({
   );
 
   /**
-   * Una serie de audiolibros abre su primer tomo. Audiobookshelf no tiene entidad de
-   * serie: el montón lo hacemos nosotros agrupando por nombre, así que no hay ficha
-   * de serie a la que ir todavía.
+   * Una serie de audiolibros abre la serie entera, no su primer tomo. La tarjeta
+   * promete «Serie A · 3 audiolibros»; dejar al usuario en uno solo es peor que no
+   * llevarlo a ningún sitio, porque cree que ha llegado.
    */
-  const openServerSeries = useCallback(
-    (series: ServerSeries) => go('audiobooks', { kind: 'audiobook', id: series.firstId }),
-    [go]
-  );
+  const openServerSeries = useCallback((series: ServerSeries) => {
+    setAudioSeries(series.key);
+    go('audioseries');
+  }, [go]);
 
   const openDetail = useCallback((book: ShelfBook) => {
     setDetailId(book.id);
@@ -213,6 +216,8 @@ export default function YoruShell({
     [isDrawerOpen, () => setIsDrawerOpen(false)],
     [view === 'detail', () => go(group ? 'group' : 'home')],
     [view === 'group', () => go(groupBackView(group))],
+    // La serie de audiolibros se abre desde Inicio, así que atrás vuelve a Inicio.
+    [view === 'audioseries', () => go('home')],
     [view !== 'home', () => go('home')],
   ];
   useBackHandler(
@@ -333,6 +338,17 @@ export default function YoruShell({
             }}
           />
         </React.Suspense>
+      );
+    }
+
+    if (view === 'audioseries' && audioSeries) {
+      return (
+        <AudiobookSeriesView
+          seriesKey={audioSeries}
+          es={es}
+          onBack={() => go('home')}
+          onOpenItem={openServerItem}
+        />
       );
     }
 
