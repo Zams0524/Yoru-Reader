@@ -476,7 +476,23 @@ export default function AudioSyncPlayer({
         onError={() => { setPlaying(false); setPhase({ kind: 'error', message: es ? 'No se pudo cargar el audio desde Audiobookshelf.' : 'Could not load the audio from Audiobookshelf.' }); }}
       />
       <div className="audio-sync-row">
-        <img className="audio-sync-cover" src={session.coverUrl} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+        {/*
+          La portada y el titulo abren el reproductor. Es el gesto que ya trae
+          aprendido cualquiera que haya usado Spotify o YT Music, y no hay que
+          ensenarlo. El chevron de abajo se queda para quien lo busque.
+          Cuando hay capitulos, el selector ocupa el sitio del titulo y se queda
+          fuera del boton: es un control, y meterlo dentro lo dejaria inservible.
+        */}
+        <button
+          type="button"
+          className={`audio-sync-open${chapters.length > 0 ? ' is-cover-only' : ''}`}
+          onClick={() => setExpanded(true)}
+          aria-label={es ? 'Abrir el reproductor' : 'Open the player'}
+          title={es ? 'Abrir el reproductor' : 'Open the player'}
+        >
+          <img className="audio-sync-cover" src={session.coverUrl} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+          {chapters.length === 0 && <span className="audio-sync-title">{session.title}</span>}
+        </button>
         {chapters.length > 0 ? (
           <select
             className="audio-sync-chapter"
@@ -486,9 +502,7 @@ export default function AudioSyncPlayer({
           >
             {chapters.map((chapter, index) => <option key={chapter.id} value={index}>{chapter.title}</option>)}
           </select>
-        ) : (
-          <span className="audio-sync-title">{session.title}</span>
-        )}
+        ) : null}
         {alignment ? (
           <button
             type="button"
@@ -559,9 +573,14 @@ export default function AudioSyncPlayer({
         <button type="button" className="read-aloud-chip" onClick={nextRate} aria-label={es ? 'Velocidad' : 'Speed'}>
           {rate}×
         </button>
+        {/*
+          Este no es uno mas de la fila: abre otra pantalla, no mueve el audio
+          quince segundos. Lleva marco y acento para que se distinga de los
+          cuatro redondos de al lado.
+        */}
         <button
           type="button"
-          className="read-aloud-btn"
+          className="read-aloud-btn audio-sync-expand"
           onClick={() => setExpanded(true)}
           aria-label={es ? 'Abrir el reproductor' : 'Open the player'}
           title={es ? 'Abrir el reproductor' : 'Open the player'}

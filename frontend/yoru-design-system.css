@@ -6770,6 +6770,40 @@ html.yoru-compact #root {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/*
+  La portada y el titulo de la barra compacta son el camino ancho al modo
+  reproductor. Boton pelado: no se pinta como boton, pero se comporta como uno
+  — cursor, realce al pasar y foco visible con el teclado.
+*/
+.audio-sync-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.audio-sync-open:hover { background: rgba(255, 255, 255, 0.07); }
+.audio-sync-open:hover .audio-sync-title { color: #ffda5e; }
+.audio-sync-open:focus-visible { outline: 2px solid rgba(255, 218, 94, 0.75); outline-offset: 2px; }
+/* Con capitulos el boton solo lleva la portada: que no se coma el sitio del selector. */
+.audio-sync-open.is-cover-only { flex: 0 0 auto; }
+
+/* El que abre otra pantalla, no uno mas de la fila de controles. */
+.audio-sync-expand {
+  border: 1px solid rgba(255, 218, 94, 0.45);
+  color: #ffda5e;
+}
+.audio-sync-expand:hover { background: rgba(255, 218, 94, 0.14); }
+
 .audio-sync-title {
   flex: 1;
   min-width: 0;
