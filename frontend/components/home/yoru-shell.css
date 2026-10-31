@@ -1613,6 +1613,70 @@
 .yoru-link-author { font-size: 12px; color: var(--text-muted); }
 
 /* =========================================================
+   Menú del clic derecho sobre un libro
+   ========================================================= */
+.yoru-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.yoru-menu {
+  position: fixed;
+  min-width: 216px;
+  max-width: 280px;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.yoru-menu-head {
+  padding: 8px 10px 6px;
+  font-family: var(--font-japanese);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-menu-item,
+.yoru-menu-back {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-menu-item:hover:not(:disabled),
+.yoru-menu-item:focus-visible,
+.yoru-menu-back:hover,
+.yoru-menu-back:focus-visible { background: var(--surface-raised); }
+.yoru-menu-item:disabled { color: var(--text-dark); cursor: default; }
+.yoru-menu-back {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.yoru-menu-more { margin-left: auto; color: var(--text-dark); }
+.yoru-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-light);
+}
+
+/* =========================================================
    Vista de serie de audiolibros: la portada, el recuento y sus tomos
    ========================================================= */
 .yoru-series-head {

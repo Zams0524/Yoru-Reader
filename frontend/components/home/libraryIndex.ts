@@ -20,6 +20,8 @@ export interface ShelfBook {
   lastRead?: string;
   chapters?: unknown[];
   isDeleted?: boolean;
+  /** Apartado a mano de «Continuar», sin tocar el progreso. */
+  hiddenFromContinue?: boolean;
   progress?: {
     currentChapter?: number;
     currentPage?: number;
@@ -87,10 +89,13 @@ function time(value?: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** El libro que el usuario está leyendo ahora mismo: el último abierto sin terminar. */
+/**
+ * El libro que el usuario está leyendo ahora mismo: el último abierto sin terminar.
+ * Salvo los que haya apartado a mano desde el menú del libro.
+ */
 export function continueReading(books: ShelfBook[]): ShelfBook[] {
   return visibleBooks(books)
-    .filter((book) => book.lastRead && (book.progress?.percent ?? 0) < 100)
+    .filter((book) => !book.hiddenFromContinue && book.lastRead && (book.progress?.percent ?? 0) < 100)
     .sort(byLastRead)
     .slice(0, 6);
 }

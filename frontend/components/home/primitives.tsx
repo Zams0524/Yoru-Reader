@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useBookMenu } from './BookContextMenu';
 import { coverImage, coverTint, type EntityGroup, type ShelfBook } from './libraryIndex';
 
 /**
@@ -35,8 +36,16 @@ export function BookPoster({
   onOpen: (book: ShelfBook) => void;
 }) {
   const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
+  // El menú del clic derecho, si quien pinta esta portada lo ofrece.
+  const openMenu = useBookMenu();
   return (
-    <button type="button" className="yoru-poster" onClick={() => onOpen(book)} title={book.title}>
+    <button
+      type="button"
+      className="yoru-poster"
+      onClick={() => onOpen(book)}
+      onContextMenu={openMenu ? (event) => openMenu(book, event) : undefined}
+      title={book.title}
+    >
       <span className="yoru-poster-frame">
         <Cover book={book} />
         {percent > 0 && (

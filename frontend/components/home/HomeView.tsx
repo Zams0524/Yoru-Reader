@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
 import HomeServerSections from './HomeServerSections';
+import { useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import {
   collectionGroups,
@@ -45,6 +46,8 @@ export default function HomeView({
   /** Abre la serie de audiolibros, con todos sus tomos. */
   onOpenServerSeries: (series: ServerSeries) => void;
 }) {
+  const openMenu = useBookMenu();
+
   const data = useMemo(
     () => ({
       continuing: continueReading(books),
@@ -110,6 +113,9 @@ export default function HomeView({
                 type="button"
                 className="yoru-continue-card"
                 onClick={() => onContinue(book)}
+                // Aquí el menú sí ofrece «Quitar de Continuar»: es el único sitio
+                // donde esa acción quiere decir algo.
+                onContextMenu={openMenu ? (event) => openMenu(book, event, { fromContinue: true }) : undefined}
                 title={book.title}
               >
                 <span className="yoru-continue-cover">

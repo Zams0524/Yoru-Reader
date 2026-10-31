@@ -2128,6 +2128,18 @@ const Library = React.memo(function Library({
               key={book.id} 
               className={`book-card ${isSelected ? 'selected' : ''} ${selectMode ? 'select-mode-active' : ''}`}
               onClick={() => handleCardClick(book)}
+              /*
+                El clic derecho abre el mismo menú que el botón ⋮, no uno paralelo:
+                esto ya era el menú del libro, solo le faltaba la otra forma de
+                abrirlo. El ancla es el punto donde se pulsó.
+              */
+              onContextMenu={(e) => {
+                if (selectMode) return;
+                e.preventDefault();
+                setMenuOpenLeft(e.clientX > window.innerWidth / 2);
+                setMenuAnchor(new DOMRect(e.clientX, e.clientY, 0, 0));
+                setActiveMenuBookId(book.id);
+              }}
               style={{ position: 'relative', zIndex: activeMenuBookId === book.id ? 500 : 'auto' }}
             >
               {/* Card Context Menu Trigger and Popup */}

@@ -37,6 +37,14 @@ export interface Book {
   series?: string;
   tags?: string[];
   hideCover?: boolean;
+  /**
+   * Apartado a mano del carrusel «Continuar», sin tocar el progreso.
+   *
+   * Hace falta un campo propio porque «Continuar» se calcula de lo leído: un libro
+   * empezado y sin terminar sale siempre. Borrar `lastRead` lo quitaría, pero
+   * perdiendo cuándo se leyó por última vez, que es un dato del usuario.
+   */
+  hiddenFromContinue?: boolean;
 }
 
 export interface Settings {

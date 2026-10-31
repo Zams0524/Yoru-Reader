@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useBackHandler } from '../../hooks/useBackButton';
 import './yoru-shell.css';
+import { BookMenuProvider } from './BookContextMenu';
 import GlobalSearch from './GlobalSearch';
 import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
@@ -223,6 +224,27 @@ export default function YoruShell({
   useBackHandler(
     backSteps.some(([open]) => open),
     () => backSteps.find(([open]) => open)?.[1]()
+  );
+
+  /**
+   * Lo que ofrece el clic derecho sobre un libro. Vive aquí porque aquí están los
+   * manejadores: abrir la ficha, abrir el lector y escribir en la biblioteca.
+   */
+  const bookMenuActions = useMemo(
+    () => ({
+      es,
+      onOpenDetail: openDetail,
+      onRead: (book: ShelfBook) => onSelectBook(book),
+      collections: groups.collections.map((entry) => entry.key),
+      onAddToCollection: (book: ShelfBook, collection: string) => {
+        const tags = book.tags ? [...book.tags] : [];
+        if (tags.includes(collection)) return;
+        tags.push(collection);
+        onUpdateBookDetails(book.id, { tags });
+      },
+      onHideFromContinue: (book: ShelfBook) => onUpdateBookDetails(book.id, { hiddenFromContinue: true }),
+    }),
+    [es, openDetail, onSelectBook, groups.collections, onUpdateBookDetails]
   );
 
   const embeddedTab = EMBEDDED_TABS[view];
@@ -677,7 +699,7 @@ export default function YoruShell({
           {serverToast && (
             <div className="yoru-server-toast" role="status" aria-live="polite">{serverToast}</div>
           )}
-          {renderCanvas()}
+          <BookMenuProvider actions={bookMenuActions}>{renderCanvas()}</BookMenuProvider>
         </main>
       </div>
 
