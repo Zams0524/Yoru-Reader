@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlignLeft, ChevronDown, ChevronUp, FileText, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
 import type { AudiobookItem, AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
@@ -570,11 +571,18 @@ export default function AudioSyncPlayer({
       </div>
 
       {/*
-        El modo reproductor. Va dentro de este mismo árbol, no en una vista aparte,
-        porque el <audio> de arriba tiene que seguir montado: sacarlo a otra pantalla
-        cortaría la reproducción al abrirlo.
+        El modo reproductor. Sigue en este mismo árbol de React, no en una vista
+        aparte, porque el <audio> de arriba tiene que seguir montado: sacarlo a otra
+        pantalla cortaria la reproduccion al abrirlo.
+
+        Pero el nodo se cuelga del <body>, y eso no es un adorno. La barra lleva
+        `transform: translateX(-50%)` y `backdrop-filter`, y cualquiera de los dos
+        convierte a la barra en el marco de referencia de sus hijos `position:
+        fixed`. Sin el portal, el `inset: 0` del reproductor no mide la pantalla:
+        mide la barrita. El modo a pantalla completa salia encajonado en 460 px de
+        ancho sobre la propia barra, que es lo que parecia «no funciona».
       */}
-      {expanded && (
+      {expanded && createPortal(
         <div className="audio-full" role="dialog" aria-modal="true"
              aria-label={es ? 'Reproductor' : 'Player'}>
           <div className="audio-full-top">
@@ -690,7 +698,8 @@ export default function AudioSyncPlayer({
               </button>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
