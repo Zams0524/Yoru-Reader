@@ -1522,3 +1522,27 @@
 .yoru-link-row:hover { background: var(--bg-card-hover); border-color: var(--border-focus); }
 .yoru-link-title { font-size: 13.5px; font-weight: 700; color: var(--text-main); }
 .yoru-link-author { font-size: 12px; color: var(--text-muted); }
+
+/* El reproductor de la ficha del audiolibro: escuchar sin libro delante. */
+.yoru-ab-player {
+  margin-top: 16px;
+  padding: 14px 16px;
+  max-width: 520px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--shell-radius);
+  background: var(--surface-raised);
+}
+.yoru-ab-seek { display: flex; align-items: center; gap: 10px; }
+.yoru-ab-seek span {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+}
+.yoru-ab-seek span:last-child { text-align: right; }
+.yoru-ab-seek input { flex: 1; min-width: 0; accent-color: var(--primary); }
+.yoru-ab-controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.yoru-ab-controls .yoru-btn { padding: 7px 14px; font-size: 13px; }
+
+/* Los capitulos son botones: el que suena ahora se marca. */
+.yoru-chapter-row.current .yoru-chapter-title { color: var(--primary); }

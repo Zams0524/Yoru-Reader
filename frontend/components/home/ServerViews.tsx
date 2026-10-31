@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Headphones, Link2, Loader2, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
+import { ArrowLeft, BookOpen, Headphones, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
 import {
   absCoverUrl,
   audiobookMatchScore,
   bookIdForAudiobook,
   getAudiobook,
   getAudiobookLibraries,
+  getAudiobookProgress,
   getAudiobooks,
   isAudiobookshelfConfigured,
   setAudiobookLink,
 } from '../../utils/audiobookshelfService';
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
+import { useAudiobookPlayback } from './useAudiobookPlayback';
 
 /**
  * Las vistas de servidor dentro del lienzo del shell: el contenido de Kavita y el de
@@ -59,6 +61,16 @@ function formatDuration(seconds: number, es: boolean): string | undefined {
   return `${hours} h ${minutes} min`;
 }
 
+/** El reloj del reproductor: h:mm:ss, o m:ss cuando no llega a la hora. */
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
+}
+
 /** Fila que no existe cuando no hay valor; la ficha no pinta huecos. */
 function MetaRow({ label, value }: { label: string; value?: string | number }) {
   if (value === undefined || value === null || value === '') return null;
@@ -98,6 +110,10 @@ function AudiobookDetail({
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [linking, setLinking] = useState(false);
   const [linkedBookId, setLinkedBookId] = useState<string | null>(() => bookIdForAudiobook(item.id));
+  // Por dónde iba, según el servidor, para poder decir «Continuar · N %» antes de
+  // abrir sesión. Sin esto habría que empezar a sonar para saberlo.
+  const [saved, setSaved] = useState<{ currentTime: number; duration: number } | null>(null);
+  const playback = useAudiobookPlayback(item.id, es);
 
   // La cuadrícula pide los items en modo reducido, así que el detalle hay que pedirlo
   // aparte; mientras llega se enseña lo que ya se tenía en lugar de una pantalla vacía.
@@ -108,27 +124,41 @@ function AudiobookDetail({
     setDescriptionOpen(false);
     setLinking(false);
     setLinkedBookId(bookIdForAudiobook(item.id));
+    setSaved(null);
     getAudiobook(item.id)
       .then((detail) => { if (alive) setFull(detail); })
       .catch(() => undefined)
       .finally(() => { if (alive) setLoading(false); });
+    getAudiobookProgress(item.id).then((progress) => { if (alive) setSaved(progress); });
     return () => { alive = false; };
   }, [item]);
 
   const chapters = full.chapters || [];
+  const duration = playback.session?.duration || full.duration || saved?.duration || 0;
+  const listening = playback.phase.kind === 'ready';
+  const position = listening ? playback.time : (saved?.currentTime || 0);
+  const percent = duration > 0 ? Math.min(100, Math.round((position / duration) * 100)) : 0;
+  const nowChapter = chapters.findIndex(
+    (chapter) => position >= chapter.start && (chapter.end <= 0 || position < chapter.end),
+  );
 
   /**
    * Los libros de la biblioteca a los que podría pertenecer este audiolibro, los que
    * mejor casan primero. El parecido lo calcula la misma función que usa el lector
    * para proponer un audiolibro, solo que mirando al revés.
    */
-  const candidates = useMemo(() => {
+  const scored = useMemo(() => {
     const books = libraryBooks || [];
     return [...books]
       .map((book) => ({ book, score: audiobookMatchScore(book, full) }))
-      .sort((a, b) => b.score - a.score)
-      .map((entry) => entry.book);
+      .sort((a, b) => b.score - a.score);
   }, [libraryBooks, full]);
+  const candidates = useMemo(() => scored.map((entry) => entry.book), [scored]);
+  /**
+   * Si ni el mejor llega a parecerse, se dice. Listar tres libros al azar como si
+   * fueran candidatos es peor que admitir que no hay ninguno: invita a vincular mal.
+   */
+  const likely = (scored[0]?.score ?? 0) >= 0.3;
   const description = full.description || '';
   const longDescription = description.length > 420;
 
@@ -162,62 +192,87 @@ function AudiobookDetail({
           </div>
 
           {/*
-            Sin vínculo esta ficha no tenía un solo botón, y una pantalla sin nada
-            que pulsar parece rota aunque no lo esté. El vínculo se hacía solo desde
-            el lector, estando ya dentro del libro; aquí, mirando el audiolibro, es
-            donde más apetece hacerlo, así que también se puede.
+            Escuchar es lo que se viene a hacer a la ficha de un audiolibro, así que
+            es el botón principal. Leer escuchando solo aparece cuando hay libro
+            vinculado, y vincular baja a acción secundaria: es un ajuste que se hace
+            una vez, no la acción de esta pantalla.
           */}
-          {linkedBookId && onOpenLocalBook ? (
-            <div className="yoru-detail-actions">
-              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => onOpenLocalBook(linkedBookId, true)}>
-                <Headphones size={16} />
-                {es ? 'Leer escuchando' : 'Read along'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId)}>
-                <BookOpen size={16} />
-                {es ? 'Abrir el libro' : 'Open the book'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}>
-                <Unlink size={16} />
-                {es ? 'Deshacer el vínculo' : 'Unlink'}
-              </button>
-            </div>
-          ) : (
-            <div className="yoru-detail-actions">
-              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => setLinking((open) => !open)}>
-                <Link2 size={16} />
-                {es ? 'Vincular con un libro tuyo' : 'Link to one of your books'}
-              </button>
-            </div>
+          <div className="yoru-detail-actions">
+            <button
+              type="button"
+              className="yoru-btn yoru-btn-primary"
+              onClick={() => (playback.playing ? playback.pause() : playback.start())}
+              disabled={playback.phase.kind === 'loading'}
+            >
+              {playback.phase.kind === 'loading' ? <Loader2 size={16} className="guide-spin" />
+                : playback.playing ? <Pause size={16} />
+                : <Play size={16} />}
+              {playback.phase.kind === 'loading' ? (es ? 'Preparando' : 'Preparing')
+                : playback.playing ? (es ? 'Pausar' : 'Pause')
+                : percent > 0 ? (es ? `Continuar · ${percent} %` : `Continue · ${percent}%`)
+                : (es ? 'Escuchar' : 'Listen')}
+            </button>
+            {linkedBookId && onOpenLocalBook && (
+              <>
+                <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId, true)}>
+                  <Headphones size={16} />
+                  {es ? 'Leer escuchando' : 'Read along'}
+                </button>
+                <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId)}>
+                  <BookOpen size={16} />
+                  {es ? 'Abrir el libro' : 'Open the book'}
+                </button>
+              </>
+            )}
+          </div>
+
+          {playback.phase.kind === 'error' && (
+            <p className="yoru-stats-empty" role="alert">{playback.phase.message}</p>
           )}
 
-          {!linkedBookId && linking && (
-            candidates.length > 0 ? (
-              <ul className="yoru-link-list">
-                {candidates.map((candidate) => (
-                  <li key={candidate.id}>
-                    <button
-                      type="button"
-                      className="yoru-link-row"
-                      onClick={() => {
-                        setAudiobookLink(candidate.id, { itemId: full.id, title: full.title, chapters: chapters.length });
-                        setLinkedBookId(candidate.id);
-                        setLinking(false);
-                      }}
-                    >
-                      <span className="yoru-link-title">{candidate.title}</span>
-                      {candidate.author && <span className="yoru-link-author">{candidate.author}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="yoru-empty-note">
-                {es
-                  ? 'No hay ningún libro en tu biblioteca al que vincularlo. Descárgalo primero desde Explorar Kavita; si este audiolibro no tiene libro, no hay nada que leer mientras suena.'
-                  : 'There is no book in your library to link it to. Download it from Explore Kavita first; if this audiobook has no book, there is nothing to read along with.'}
-              </p>
-            )
+          {listening && playback.session && (
+            <div className="yoru-ab-player">
+              <audio
+                ref={playback.audioRef}
+                preload="metadata"
+                onLoadedMetadata={playback.handlers.onLoadedMetadata}
+                onTimeUpdate={playback.handlers.onTimeUpdate}
+                onPlay={playback.handlers.onPlay}
+                onPause={playback.handlers.onPause}
+                onEnded={playback.handlers.onEnded}
+              />
+              <div className="yoru-ab-seek">
+                <span>{formatClock(position)}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(1, Math.floor(duration))}
+                  value={Math.floor(position)}
+                  onChange={(e) => playback.seekTo(Number(e.target.value))}
+                  aria-label={es ? 'Posición' : 'Position'}
+                />
+                <span>-{formatClock(Math.max(0, duration - position))}</span>
+              </div>
+              <div className="yoru-ab-controls">
+                <button type="button" className="yoru-btn" onClick={() => playback.seekTo(position - 15)}>
+                  <RotateCcw size={16} /> 15
+                </button>
+                <button
+                  type="button"
+                  className="yoru-btn yoru-btn-primary"
+                  onClick={() => (playback.playing ? playback.pause() : playback.play())}
+                  aria-label={playback.playing ? (es ? 'Pausar' : 'Pause') : (es ? 'Reproducir' : 'Play')}
+                >
+                  {playback.playing ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <button type="button" className="yoru-btn" onClick={() => playback.seekTo(position + 30)}>
+                  <RotateCw size={16} /> 30
+                </button>
+                <button type="button" className="yoru-btn" onClick={playback.nextRate} aria-label={es ? 'Velocidad' : 'Speed'}>
+                  {playback.rate}×
+                </button>
+              </div>
+            </div>
           )}
 
           {description && (
@@ -255,17 +310,82 @@ function AudiobookDetail({
       {chapters.length > 1 && (
         <>
           <h2 className="yoru-rail-title yoru-server-section">{es ? 'Capítulos' : 'Chapters'}</h2>
+          {/* Estaban ahí con sus duraciones pidiendo que los pulsaras, y no hacían nada. */}
           <div className="yoru-chapter-list">
             {chapters.map((chapter, index) => (
-              <div key={chapter.id} className="yoru-chapter-row">
+              <button
+                key={chapter.id}
+                type="button"
+                className={`yoru-chapter-row${index === nowChapter ? ' current' : ''}`}
+                onClick={() => playback.start(chapter.start)}
+              >
                 <span className="yoru-chapter-index">{index + 1}</span>
                 <span className="yoru-chapter-title">{chapter.title}</span>
                 <span className="yoru-chapter-time">{formatDuration(chapter.end - chapter.start, es)}</span>
-              </div>
+              </button>
             ))}
           </div>
         </>
       )}
+
+      {/*
+        Vincular con un libro vive aquí abajo, no arriba: se hace una vez por
+        audiolibro y no es a lo que se viene. Donde de verdad vive «leer escuchando»
+        es en su propia sección de la barra lateral.
+      */}
+      <div className="yoru-server-section">
+        {linkedBookId ? (
+          <button
+            type="button"
+            className="yoru-server-more"
+            onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}
+          >
+            <Unlink size={14} /> {es ? 'Deshacer el vínculo con el libro' : 'Unlink from the book'}
+          </button>
+        ) : (
+          <button type="button" className="yoru-server-more" onClick={() => setLinking((open) => !open)}>
+            <Link2 size={14} /> {es ? 'Vincular con un libro tuyo' : 'Link to one of your books'}
+          </button>
+        )}
+
+        {!linkedBookId && linking && (
+          candidates.length === 0 ? (
+            <p className="yoru-empty-note">
+              {es
+                ? 'Tu biblioteca está vacía. Descarga el libro desde Explorar Kavita y vuelve aquí.'
+                : 'Your library is empty. Download the book from Explore Kavita and come back.'}
+            </p>
+          ) : (
+            <>
+              {!likely && (
+                <p className="yoru-empty-note">
+                  {es
+                    ? 'Ninguno de tus libros se parece a este audiolibro. Estos son todos, por si lo quieres vincular igualmente.'
+                    : 'None of your books looks like this audiobook. These are all of them, in case you want to link it anyway.'}
+                </p>
+              )}
+              <ul className="yoru-link-list">
+                {candidates.map((candidate) => (
+                  <li key={candidate.id}>
+                    <button
+                      type="button"
+                      className="yoru-link-row"
+                      onClick={() => {
+                        setAudiobookLink(candidate.id, { itemId: full.id, title: full.title, chapters: chapters.length });
+                        setLinkedBookId(candidate.id);
+                        setLinking(false);
+                      }}
+                    >
+                      <span className="yoru-link-title">{candidate.title}</span>
+                      {candidate.author && <span className="yoru-link-author">{candidate.author}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )
+        )}
+      </div>
     </div>
   );
 }

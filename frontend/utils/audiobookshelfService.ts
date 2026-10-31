@@ -189,6 +189,22 @@ export async function searchAudiobooks(query: string, limit = 12): Promise<Audio
   return results.flat().filter((item) => item.id && !seen.has(item.id) && seen.add(item.id));
 }
 
+/**
+ * Por dónde va el usuario en este audiolibro, según el servidor. Devuelve `null` si
+ * no lo ha empezado (Audiobookshelf contesta 404) o si el servidor no responde: no
+ * saber el progreso no debe impedir enseñar la ficha.
+ */
+export async function getAudiobookProgress(itemId: string): Promise<{ currentTime: number; duration: number } | null> {
+  try {
+    const { data } = await absRequest<any>(`/api/me/progress/${encodeURIComponent(itemId)}`);
+    const currentTime = Number(data?.currentTime);
+    if (!Number.isFinite(currentTime) || currentTime <= 0) return null;
+    return { currentTime, duration: Number(data?.duration) || 0 };
+  } catch {
+    return null;
+  }
+}
+
 export async function getAudiobook(itemId: string): Promise<AudiobookItem> {
   const { data } = await absRequest<any>(`/api/items/${encodeURIComponent(itemId)}?expanded=1`);
   return toAudiobookItem(data);

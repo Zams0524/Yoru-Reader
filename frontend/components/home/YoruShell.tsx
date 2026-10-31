@@ -336,9 +336,19 @@ export default function YoruShell({
             </div>
             <p className="yoru-empty-note">
               {es
-                ? 'Abre un libro, toca ⋮ > Escuchar audiolibro y elige el audiolibro de Audiobookshelf. A partir de ahí aparecerá aquí.'
-                : 'Open a book, tap ⋮ > Listen to audiobook and pick its audiobook in Audiobookshelf. From then on it shows up here.'}
+                ? 'Aquí viven los libros que tienes en texto y en audio a la vez: los que puedes leer mientras los escuchas. Para que uno aparezca, vincula su audiolibro — desde la ficha del audiolibro, en Audiolibros, o abriendo el libro y eligiéndolo en el reproductor.'
+                : 'This is where the books you have as both text and audio live: the ones you can read while listening. To make one show up, link its audiobook — from the audiobook page under Audiobooks, or by opening the book and picking it in the player.'}
             </p>
+            <div className="yoru-detail-actions" style={{ marginTop: 18 }}>
+              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('audiobooks')}>
+                <Headphones size={16} />
+                {es ? 'Ver mis audiolibros' : 'See my audiobooks'}
+              </button>
+              <button type="button" className="yoru-btn" onClick={() => go('catalog')}>
+                <LibraryIcon size={16} />
+                {es ? 'Ver mi biblioteca' : 'See my library'}
+              </button>
+            </div>
           </div>
         );
       }
@@ -448,8 +458,12 @@ export default function YoruShell({
         {navItem('catalog', es ? 'Catálogo' : 'Catalog', LibraryIcon, library.length)}
         {navItem('srs', 'Yoru SRS', Zap)}
         {navItem('statistics', es ? 'Estadísticas' : 'Statistics', BarChart3)}
-        {listenable.length > 0
-          && navItem('listen', es ? 'Leer y escuchar' : 'Read and listen', Headphones, listenable.length)}
+        {/*
+          «Leer y escuchar» se queda siempre a la vista, también vacía. Es la sección
+          propia de los libros que valen para los dos modos, y escondiéndola cuando
+          no hay ninguno nadie llegaba a saber que existía ni cómo llenarla.
+        */}
+        {navItem('listen', es ? 'Leer y escuchar' : 'Read and listen', Headphones, listenable.length)}
       </div>
 
       <div className="yoru-shell-nav-section">
