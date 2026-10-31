@@ -31,7 +31,15 @@ const TIMEOUT_MS = 2500;
 const MAX_ITEMS = 36;
 
 export interface ServerItem {
+  /**
+   * Identificador para React, con prefijo de carrusel: la misma serie sale en
+   * «Series de libros» y en «Continuar en el servidor», y dos claves iguales en la
+   * misma página se pisan. **No vale para pedirle nada al servidor**: para eso está
+   * `serverId`, o `serverItemId()` si el dato viene de una caché vieja.
+   */
   id: string;
+  /** El identificador de verdad, el que entiende Kavita o Audiobookshelf. */
+  serverId?: string;
   title: string;
   cover: string;
   source: 'kavita' | 'audiobookshelf';
@@ -50,6 +58,12 @@ export interface ServerSeries {
   count: number;
   author?: string;
   source: 'kavita' | 'audiobookshelf';
+  /**
+   * El primer tomo de la serie. La serie es un montón que hacemos aquí agrupando por
+   * nombre, no algo que el servidor tenga con identidad propia, así que no hay ficha
+   * de serie a la que ir: pulsar la tarjeta abre este tomo.
+   */
+  firstId: string;
 }
 
 export interface ServerCatalog {
@@ -109,6 +123,7 @@ async function fetchKavita(): Promise<ServerItem[]> {
   const page = await withTimeout(getKavitaSeries(first.id, 1, MAX_ITEMS));
   return (page.items || []).slice(0, MAX_ITEMS).map((series) => ({
     id: `kavita-${series.id}`,
+    serverId: String(series.id),
     title: series.name,
     cover: kavitaSeriesCoverUrl(series.id),
     source: 'kavita' as const,
@@ -123,6 +138,7 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
   const page = await withTimeout(getAudiobooks(first.id, 0, MAX_ITEMS));
   return (page.items || []).slice(0, MAX_ITEMS).map((item) => ({
     id: `abs-${item.id}`,
+    serverId: item.id,
     title: item.title,
     cover: absCoverUrl(item.id),
     source: 'audiobookshelf' as const,
@@ -135,6 +151,7 @@ async function fetchOnDeck(): Promise<ServerItem[]> {
   const series = await withTimeout(getKavitaOnDeck(MAX_ITEMS));
   return series.map((item) => ({
     id: 'ondeck-' + item.id,
+    serverId: String(item.id),
     title: item.name,
     cover: kavitaSeriesCoverUrl(item.id),
     source: 'kavita' as const,
@@ -148,6 +165,7 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
   const items = await withTimeout(getAudiobookPersonalized(first.id, 12));
   return items.map((item) => ({
     id: 'foryou-' + item.id,
+    serverId: item.id,
     title: item.title,
     cover: absCoverUrl(item.id),
     source: 'audiobookshelf' as const,
@@ -192,6 +210,18 @@ export async function refreshServerCatalog(): Promise<void> {
 }
 
 /**
+ * El identificador que entiende el servidor.
+ *
+ * Lo normal es `serverId`. El respaldo es para las cachés escritas antes de que ese
+ * campo existiera: ahí solo estaba el id con prefijo de carrusel, y una caché vieja
+ * sigue siendo válida durante días. Quitarle el prefijo deja el id de verdad, que es
+ * justo de donde salió.
+ */
+export function serverItemId(item: ServerItem): string {
+  return item.serverId || item.id.replace(/^(kavita|abs|ondeck|foryou)-/, '');
+}
+
+/**
  * Series de audiolibros, agrupando por el campo `series` que da Audiobookshelf.
  * Solo sale lo que el servidor dice: si un audiolibro no trae serie, no se inventa.
  */
@@ -206,6 +236,7 @@ export function audiobookSeriesOf(items: ServerItem[]): ServerSeries[] {
       count: 0,
       author: item.author,
       source: 'audiobookshelf' as const,
+      firstId: serverItemId(item),
     };
     if (entry.covers.length < 4) entry.covers.push(item.cover);
     entry.count += 1;

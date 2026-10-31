@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
 import HomeServerSections from './HomeServerSections';
+import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import {
   collectionGroups,
   continueReading,
+  coverImage,
+  coverTint,
   formatCount,
   recentlyAdded,
   seriesGroups,
@@ -27,6 +30,8 @@ export default function HomeView({
   onGoCatalog,
   onOpenCollection,
   onOpenSeries,
+  onOpenServerItem,
+  onOpenServerSeries,
 }: {
   books: ShelfBook[];
   es: boolean;
@@ -35,6 +40,10 @@ export default function HomeView({
   onGoCatalog: () => void;
   onOpenCollection: (group: EntityGroup) => void;
   onOpenSeries: (group: EntityGroup) => void;
+  /** Abre un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
+  onOpenServerItem: (item: ServerItem) => void;
+  /** Abre una serie de audiolibros, que por ahora es su primer tomo. */
+  onOpenServerSeries: (series: ServerSeries) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -100,6 +109,11 @@ export default function HomeView({
         <Rail title={es ? 'Continuar' : 'Continue'}>
           {data.continuing.map((book) => {
             const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
+            // Miniatura de 56 px: aquí el respaldo es solo color, sin el título, que a
+            // ese tamaño no se lee. Quién tiene imagen y quién degradado lo decide
+            // `coverImage` / `coverTint`, igual que en el resto de la concha.
+            const cover = coverImage(book);
+            const tint = coverTint(book);
             return (
               <button
                 key={book.id}
@@ -109,7 +123,9 @@ export default function HomeView({
                 title={book.title}
               >
                 <span className="yoru-continue-cover">
-                  {book.hideCover || !book.cover ? <span /> : <img src={book.cover} alt="" loading="lazy" />}
+                  {cover
+                    ? <img src={cover} alt="" loading="lazy" />
+                    : <span style={tint ? { background: tint } : undefined} />}
                 </span>
                 <span className="yoru-continue-body">
                   <span className="yoru-continue-title">{book.title}</span>
@@ -137,6 +153,8 @@ export default function HomeView({
         es={es}
         scope={scope}
         localTitles={new Set(books.map((book) => book.title))}
+        onOpenItem={onOpenServerItem}
+        onOpenSeries={onOpenServerSeries}
       />
 
       <BookRail

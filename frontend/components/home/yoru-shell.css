@@ -157,6 +157,22 @@
   flex-shrink: 0;
 }
 .yoru-shell-avatar img { width: 100%; height: 100%; object-fit: cover; }
+/*
+  Avatar generado: el degradado del perfil llena el disco y la inicial va encima.
+  Blanco fijo por lo mismo que el respaldo de portada: el degradado no cambia con el tema.
+*/
+.yoru-shell-avatar > span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.yoru-shell-avatar > span[style] {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
 
 /* =========================================================
    2. Área de trabajo: barra lateral + lienzo
@@ -425,6 +441,17 @@
   background: var(--surface-raised);
   overflow: hidden;
 }
+/*
+  Respaldo teñido con el degradado que el libro trae por portada. El blanco y la
+  sombra no son tokens a propósito: el degradado es el mismo en claro, oscuro y
+  sepia, así que el texto de encima tampoco cambia con el tema. Es el trato que
+  `.book-cover-placeholder` le da ya en el catálogo (`index.css:218`).
+*/
+.yoru-poster-fallback.is-tinted {
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
 .yoru-poster-progress {
   position: absolute;
   inset: auto 0 0 0;
@@ -502,6 +529,8 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .yoru-continue-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* El relleno sin imagen: llena el hueco para poder teñirse con el degradado del libro. */
+.yoru-continue-cover > span { display: block; width: 100%; height: 100%; }
 .yoru-continue-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .yoru-continue-title {
   font-family: var(--font-japanese);
@@ -834,6 +863,7 @@
   background: var(--surface-raised);
 }
 .yoru-search-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.yoru-search-thumb > span { display: block; width: 100%; height: 100%; }
 .yoru-search-row-title {
   font-family: var(--font-japanese);
   font-size: 13.5px;
@@ -1326,6 +1356,18 @@
   flex-direction: column;
   gap: 8px;
   text-align: left;
+  /* Es un botón: el mismo despojado que `.yoru-poster`, para que no parezca uno del sistema. */
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.yoru-series-stack:hover .yoru-series-stack-front,
+.yoru-series-stack:focus-visible .yoru-series-stack-front {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
 }
 .yoru-series-stack-frame {
   position: relative;
@@ -1341,6 +1383,7 @@
   object-fit: cover;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
 }
 .yoru-series-stack-front { z-index: 3; }
 .yoru-series-stack-back.is-1 {

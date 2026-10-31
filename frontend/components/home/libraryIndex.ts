@@ -189,3 +189,43 @@ export function searchBooks(books: ShelfBook[], query: string, limit = 30): Shel
 export function formatCount(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
+
+/**
+ * La portada de un libro, decidida en un solo sitio.
+ *
+ * Un libro sin portada incrustada no guarda un hueco: guarda **un degradado CSS** en
+ * `cover` (`linear-gradient(…)`), que el catálogo pinta como fondo desde siempre
+ * (`Library.tsx:2145`). Metido en un `<img src>` eso es una petición a una URL que no
+ * existe: 404, y un rectángulo negro. Pasaba en Inicio, fichas, búsqueda, estantes,
+ * series, autores y colecciones — en todo menos en el propio catálogo.
+ *
+ * Por eso la decisión vive aquí y no en cada pantalla: cualquier vista nueva que
+ * pregunte por estas dos funciones ya nace bien.
+ */
+
+/**
+ * Si lo guardado es un degradado CSS y no una imagen. Vale igual para las portadas de
+ * los libros y para los avatares de los perfiles, que Yoru genera de la misma forma
+ * (`Library.tsx:1348`) y que también salían rotos en la cabecera.
+ */
+export function isCssGradient(value?: string): boolean {
+  return Boolean(value && value.startsWith('linear-gradient'));
+}
+
+/** La imagen que se puede meter en un `<img src>`, o cadena vacía si no hay ninguna. */
+export function coverImage(book: ShelfBook): string {
+  if (book.hideCover) return '';
+  const cover = book.cover;
+  if (!cover || isCssGradient(cover)) return '';
+  return cover;
+}
+
+/**
+ * El degradado que el libro trae por portada, para teñir con él el respaldo
+ * tipográfico en vez de perder el color que el catálogo sí enseña. Cadena vacía
+ * cuando el libro tiene portada de verdad, o cuando la esconde a propósito.
+ */
+export function coverTint(book: ShelfBook): string {
+  if (book.hideCover) return '';
+  return isCssGradient(book.cover) ? (book.cover as string) : '';
+}

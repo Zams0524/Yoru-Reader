@@ -4,6 +4,7 @@ import type { KavitaBook, KavitaLibrary, KavitaSeries } from '../types/integrati
 import {
   getKavitaLibraries,
   getKavitaSeries,
+  getKavitaSeriesById,
   getKavitaVolumes,
   importKavitaBook,
   importedKavitaVolumeIds,
@@ -38,6 +39,8 @@ interface Props {
   libraryBooks?: { id: string; title: string }[];
   /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
   onOpenLocalBook?: (bookId: string, listen?: boolean) => void;
+  /** Serie que hay que abrir al entrar, cuando se llega pulsando una portada de Inicio. */
+  initialSeriesId?: string;
 }
 
 const PAGE_SIZE = 30;
@@ -47,7 +50,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook, initialSeriesId }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -66,6 +69,19 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useBackHandler(true, () => (openSeries ? setOpenSeries(null) : onClose()));
+
+  /*
+    Se llega desde una portada de Inicio: la serie se abre sola. El carrusel sale de
+    la caché, que guarda el id y poco más, así que la serie entera hay que pedirla.
+  */
+  useEffect(() => {
+    if (!configured || !initialSeriesId) return undefined;
+    const id = Number(initialSeriesId);
+    if (!Number.isFinite(id)) return undefined;
+    let alive = true;
+    getKavitaSeriesById(id).then((series) => { if (alive && series) setOpenSeries(series); });
+    return () => { alive = false; };
+  }, [configured, initialSeriesId]);
 
   // Libraries; book-type libraries (Book = 2, Light Novel = 4) first.
   useEffect(() => {

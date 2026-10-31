@@ -396,9 +396,12 @@ export function AudiobookshelfView({
   onOpenSettings,
   onOpenLocalBook,
   libraryBooks,
+  initialItemId,
 }: {
   es: boolean;
   onOpenSettings: () => void;
+  /** Ficha que hay que abrir al entrar, cuando se llega pulsando una portada de Inicio. */
+  initialItemId?: string;
   /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
   onOpenLocalBook?: (bookId: string, listen?: boolean) => void;
   /** La biblioteca local, para poder vincular un audiolibro desde su ficha. */
@@ -444,6 +447,20 @@ export function AudiobookshelfView({
     if (!libraryId) return undefined;
     return load(libraryId);
   }, [libraryId, load]);
+
+  /*
+    Se llega desde una portada de Inicio: la ficha se abre sola. El detalle hay que
+    pedirlo porque la cuadrícula pide los items en modo reducido, y el carrusel de
+    Inicio sale de la caché, que guarda menos todavía.
+  */
+  useEffect(() => {
+    if (!configured || !initialItemId) return undefined;
+    let alive = true;
+    getAudiobook(initialItemId)
+      .then((item) => { if (alive) setOpen(item); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [configured, initialItemId]);
 
   if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} onOpenSettings={onOpenSettings} />;
 

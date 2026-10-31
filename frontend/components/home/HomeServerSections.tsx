@@ -22,11 +22,17 @@ export default function HomeServerSections({
   es,
   scope,
   localTitles,
+  onOpenItem,
+  onOpenSeries,
 }: {
   es: boolean;
   scope: 'all' | 'books' | 'audio';
   /** Títulos que ya están en la biblioteca local, para no repetirlos. */
   localTitles?: Set<string>;
+  /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
+  onOpenItem: (item: ServerItem) => void;
+  /** Abre una serie de audiolibros, que por ahora es su primer tomo. */
+  onOpenSeries: (series: ServerSeries) => void;
 }) {
   const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
   const [seed, setSeed] = useState(1);
@@ -54,7 +60,7 @@ export default function HomeServerSections({
       {showBooks && onDeck.length > 0 && (
         <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'}>
           {onDeck.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} />
+            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
@@ -62,7 +68,7 @@ export default function HomeServerSections({
       {showAudio && catalog.forYouAudio.length > 0 && (
         <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'}>
           {catalog.forYouAudio.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} />
+            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
@@ -70,7 +76,7 @@ export default function HomeServerSections({
       {showBooks && catalog.kavita.length > 0 && (
         <Rail title={es ? 'Series de libros' : 'Book series'}>
           {catalog.kavita.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} />
+            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
@@ -78,7 +84,7 @@ export default function HomeServerSections({
       {showAudio && audioSeries.length > 0 && (
         <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'}>
           {audioSeries.map((series) => (
-            <SeriesStack key={series.key} series={series} es={es} />
+            <SeriesStack key={series.key} series={series} es={es} onOpen={onOpenSeries} />
           ))}
         </Rail>
       )}
@@ -90,7 +96,7 @@ export default function HomeServerSections({
           moreLabel={es ? 'Actualizar' : 'Shuffle'}
         >
           {randomBooks.map((item) => (
-            <ServerCard key={`r-${item.id}`} item={item} es={es} />
+            <ServerCard key={`r-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
@@ -102,7 +108,7 @@ export default function HomeServerSections({
           moreLabel={es ? 'Actualizar' : 'Shuffle'}
         >
           {randomAudio.map((item) => (
-            <ServerCard key={`ra-${item.id}`} item={item} es={es} />
+            <ServerCard key={`ra-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
           ))}
         </Rail>
       )}
@@ -110,18 +116,30 @@ export default function HomeServerSections({
   );
 }
 
-function ServerCard({ item, es }: { item: ServerItem; es: boolean }) {
+/**
+ * Una portada del servidor.
+ *
+ * Es un `<button>` y no un `<div>` con `onClick` a propósito: así llega el foco con
+ * el tabulador y responde a Enter y a espacio sin escribir nada. Antes era un `div`,
+ * y las seis filas de servidor de Inicio parecían pulsables sin serlo.
+ */
+function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpen: (item: ServerItem) => void }) {
   const isAudio = item.source === 'audiobookshelf';
   return (
-    <div className={`yoru-poster${isAudio ? ' is-audio' : ''}`} title={item.title}>
-      <div className="yoru-poster-frame">
+    <button
+      type="button"
+      className={`yoru-poster${isAudio ? ' is-audio' : ''}`}
+      title={item.title}
+      onClick={() => onOpen(item)}
+    >
+      <span className="yoru-poster-frame">
         <img src={item.cover} alt="" loading="lazy" />
         {isAudio && (
           <span className="yoru-poster-play" aria-hidden="true">
             <Play size={18} />
           </span>
         )}
-      </div>
+      </span>
       <span className="yoru-poster-title">{item.title}</span>
       <span className="yoru-poster-meta">
         {item.author
@@ -129,16 +147,29 @@ function ServerCard({ item, es }: { item: ServerItem; es: boolean }) {
             ? `~${Math.round(item.hours)} h ${es ? 'de lectura' : 'to read'}`
             : isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}
       </span>
-    </div>
+    </button>
   );
 }
 
-/** Tarjeta de serie: los cantos de los demás tomos asomando detrás de la portada. */
-function SeriesStack({ series, es }: { series: ServerSeries; es: boolean }) {
+/**
+ * Tarjeta de serie: los cantos de los demás tomos asomando detrás de la portada.
+ *
+ * Abre el primer tomo, no una ficha de serie: la serie la agrupamos nosotros por
+ * nombre y Audiobookshelf no tiene una entidad propia a la que ir.
+ */
+function SeriesStack({
+  series,
+  es,
+  onOpen,
+}: {
+  series: ServerSeries;
+  es: boolean;
+  onOpen: (series: ServerSeries) => void;
+}) {
   const backs = series.covers.slice(1, 3);
   return (
-    <div className="yoru-series-stack" title={series.title}>
-      <div className="yoru-series-stack-frame">
+    <button type="button" className="yoru-series-stack" title={series.title} onClick={() => onOpen(series)}>
+      <span className="yoru-series-stack-frame">
         {backs.map((cover, index) => (
           <img
             key={`${cover}-${index}`}
@@ -149,7 +180,7 @@ function SeriesStack({ series, es }: { series: ServerSeries; es: boolean }) {
           />
         ))}
         <img className="yoru-series-stack-front" src={series.covers[0]} alt="" loading="lazy" />
-      </div>
+      </span>
       <span className="yoru-poster-title">{series.title}</span>
       <span className="yoru-poster-meta">
         {series.count}{' '}
@@ -158,6 +189,6 @@ function SeriesStack({ series, es }: { series: ServerSeries; es: boolean }) {
           : series.count === 1 ? 'audiobook' : 'audiobooks'}
         {series.author ? ` · ${series.author}` : ''}
       </span>
-    </div>
+    </button>
   );
 }

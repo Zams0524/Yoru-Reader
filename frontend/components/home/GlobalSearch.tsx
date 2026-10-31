@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { searchBooks, type ShelfBook } from './libraryIndex';
+import { coverImage, coverTint, searchBooks, type ShelfBook } from './libraryIndex';
 
 /** Búsqueda global de la plantilla, limitada a la biblioteca local. */
 export default function GlobalSearch({
@@ -81,7 +81,10 @@ export default function GlobalSearch({
                 }}
               >
                 <span className="yoru-search-thumb">
-                  {book.hideCover || !book.cover ? <span /> : <img src={book.cover} alt="" loading="lazy" />}
+                  {/* 34 px: color sí, título no — a este tamaño no se leería. */}
+                  {coverImage(book)
+                    ? <img src={coverImage(book)} alt="" loading="lazy" />
+                    : <span style={coverTint(book) ? { background: coverTint(book) } : undefined} />}
                 </span>
                 <span style={{ minWidth: 0 }}>
                   <span className="yoru-search-row-title" style={{ display: 'block' }}>

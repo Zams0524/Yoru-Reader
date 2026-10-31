@@ -30,9 +30,11 @@ import StatsView from './StatsView';
 import { AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 import { isKavitaConfigured } from '../../utils/kavitaService';
+import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
 import {
   authorGroups,
   collectionGroups,
+  isCssGradient,
   seriesGroups,
   shelfBooks,
   visibleBooks,
@@ -159,10 +161,39 @@ export default function YoruShell({
     [books]
   );
 
-  const go = useCallback((next: View) => {
+  /**
+   * La ficha de servidor que hay que abrir nada más entrar en su sección. La pone una
+   * tarjeta de Inicio y la consume la vista. Navegar a mano la deja en nulo, para que
+   * volver a «Audiolibros» por la barra lateral enseñe el catálogo y no la última
+   * ficha que se miró.
+   */
+  const [serverTarget, setServerTarget] = useState<{ kind: 'kavita' | 'audiobook'; id: string } | null>(null);
+
+  const go = useCallback((next: View, target: typeof serverTarget = null) => {
     setView(next);
+    setServerTarget(target);
     setIsDrawerOpen(false);
   }, []);
+
+  /** Una portada de servidor abre su ficha: la serie en Kavita, el tomo en Audiobookshelf. */
+  const openServerItem = useCallback(
+    (item: ServerItem) => {
+      const id = serverItemId(item);
+      if (item.source === 'kavita') go('kavita', { kind: 'kavita', id });
+      else go('audiobooks', { kind: 'audiobook', id });
+    },
+    [go]
+  );
+
+  /**
+   * Una serie de audiolibros abre su primer tomo. Audiobookshelf no tiene entidad de
+   * serie: el montón lo hacemos nosotros agrupando por nombre, así que no hay ficha
+   * de serie a la que ir todavía.
+   */
+  const openServerSeries = useCallback(
+    (series: ServerSeries) => go('audiobooks', { kind: 'audiobook', id: series.firstId }),
+    [go]
+  );
 
   const openDetail = useCallback((book: ShelfBook) => {
     setDetailId(book.id);
@@ -293,6 +324,7 @@ export default function YoruShell({
             onOpenSettings={() => go('settings')}
             showToast={(message: string) => setServerToast(message)}
             onReadTemporary={libraryProps.onReadTemporary}
+            initialSeriesId={serverTarget?.kind === 'kavita' ? serverTarget.id : undefined}
             embedded
             libraryBooks={library}
             onOpenLocalBook={(bookId: string, listen?: boolean) => {
@@ -309,6 +341,7 @@ export default function YoruShell({
         <AudiobookshelfView
           es={es}
           onOpenSettings={() => go('settings')}
+          initialItemId={serverTarget?.kind === 'audiobook' ? serverTarget.id : undefined}
           libraryBooks={library}
           onOpenLocalBook={(bookId, listen) => {
             const local = books.find((entry) => entry.id === bookId);
@@ -429,6 +462,8 @@ export default function YoruShell({
         onGoCatalog={() => go('catalog')}
         onOpenCollection={(entry) => openGroup('collection', entry.key)}
         onOpenSeries={(entry) => openGroup('series', entry.key)}
+        onOpenServerItem={openServerItem}
+        onOpenServerSeries={openServerSeries}
       />
     );
   };
@@ -659,10 +694,19 @@ function groupBackView(group: { kind: 'series' | 'author' | 'collection' } | nul
   return group.kind === 'series' ? 'series' : group.kind === 'author' ? 'authors' : 'collections';
 }
 
+/**
+ * El avatar del perfil. Un perfil sin foto no guarda un hueco: guarda un degradado
+ * CSS (`Library.tsx:1348`), el mismo trato que las portadas. Metido en un `<img src>`
+ * daba 404 y dejaba el disco vacío en la cabecera, en todas las pantallas a la vez.
+ */
 function avatarFor(libraryProps: Record<string, any>): React.ReactNode {
   const profiles: any[] = libraryProps.profiles || [];
   const active = profiles.find((profile) => profile.id === libraryProps.activeProfileId) || profiles[0];
-  if (active?.avatar) return <img src={active.avatar} alt="" />;
   const name: string = active?.name || 'Yoru';
-  return <span>{name.slice(0, 1).toUpperCase()}</span>;
+  const initial = name.slice(0, 1).toUpperCase();
+  if (isCssGradient(active?.avatar)) {
+    return <span style={{ background: active.avatar }}>{initial}</span>;
+  }
+  if (active?.avatar) return <img src={active.avatar} alt="" />;
+  return <span>{initial}</span>;
 }

@@ -1,11 +1,25 @@
 import React from 'react';
-import type { EntityGroup, ShelfBook } from './libraryIndex';
+import { coverImage, coverTint, type EntityGroup, type ShelfBook } from './libraryIndex';
 
-/** Portada con respaldo tipográfico cuando el libro no tiene imagen o la esconde. */
+/**
+ * Portada con respaldo tipográfico cuando el libro no tiene imagen o la esconde.
+ *
+ * Qué cuenta como imagen lo decide `coverImage`, no esta vista: un libro sin portada
+ * guarda un degradado CSS en `cover`, que no es una URL. Si lo trae, el respaldo se
+ * tiñe con él, que es el color que el catálogo lleva enseñando desde siempre.
+ */
 export function Cover({ book, className }: { book: ShelfBook; className?: string }) {
-  const src = book.hideCover ? '' : book.cover;
+  const src = coverImage(book);
   if (!src) {
-    return <div className={`yoru-poster-fallback ${className || ''}`}>{book.title.slice(0, 24)}</div>;
+    const tint = coverTint(book);
+    return (
+      <div
+        className={`yoru-poster-fallback${tint ? ' is-tinted' : ''} ${className || ''}`}
+        style={tint ? { background: tint } : undefined}
+      >
+        {book.title.slice(0, 24)}
+      </div>
+    );
   }
   return <img src={src} alt="" loading="lazy" className={className} />;
 }
