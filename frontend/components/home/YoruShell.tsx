@@ -419,6 +419,42 @@ export default function YoruShell({
         que no había nada. Ahora se ve la biblioteca, con los que ya tienen audiolibro
         delante, y lo que falta por hacer cabe en una línea encima.
       */
+      /*
+        Con la biblioteca entera vacía no vale enseñar la rejilla: salía «Nada por
+        aquí» y un buscador que no puede buscar en nada, que es un callejón sin
+        salida. Aquí hace falta una línea corta y un camino, no un diagnóstico.
+      */
+      if (library.length === 0) {
+        return (
+          <div>
+            <div className="yoru-view-head">
+              <div>
+                <h1 className="yoru-view-title">{es ? 'Leer y escuchar' : 'Read and listen'}</h1>
+                <div className="yoru-view-sub">
+                  {es
+                    ? 'Primero trae un libro; después le vinculas su audiolibro.'
+                    : 'Bring in a book first; then link its audiobook.'}
+                </div>
+              </div>
+            </div>
+            <div className="yoru-detail-actions">
+              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('catalog')}>
+                <Plus size={16} />
+                {es ? 'Importar un libro' : 'Import a book'}
+              </button>
+              <button type="button" className="yoru-btn" onClick={() => go('kavita')}>
+                <ServerIcon size={16} />
+                {es ? 'Traerlo de Kavita' : 'Get one from Kavita'}
+              </button>
+              <button type="button" className="yoru-btn" onClick={() => go('audiobooks')}>
+                <Headphones size={16} />
+                {es ? 'Ver mis audiolibros' : 'See my audiobooks'}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       const sinVincular = library.filter((book) => !getAudiobookLink(book.id));
       const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
       const total = listenable.length;
