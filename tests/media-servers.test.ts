@@ -352,7 +352,15 @@ async function absTests() {
   const session = await startAudiobookPlayback('li1');
   const playCall = calls.find((c) => c.url.endsWith('/play'))!;
   check(playCall.body.forceDirectPlay === true && playCall.body.deviceInfo.clientName === 'Yoru Reader', 'Sesión con reproducción directa');
-  check(session.tracks[0].startOffset === 0 && session.tracks[1].url === `${A}/api/items/li1/file/222?token=abs-token`, 'Pistas ordenadas con token');
+  // Por la ruta pública de la sesión, no por el fichero con el testigo en la dirección:
+  // eso último lo contesta el servidor con 401, y el navegador, que no sabe leer esa
+  // respuesta, lo reporta como «Format error». La prueba anterior fijaba ese fallo.
+  check(
+    session.tracks[0].startOffset === 0
+      && session.tracks[0].url === `${A}/public/session/sess1/track/1`
+      && session.tracks[1].url === `${A}/public/session/sess1/track/2`,
+    'Pistas ordenadas y servidas por la sesión, sin testigo en la dirección'
+  );
   check(session.currentTime === 4000 && session.chapters.length === 2, 'Posición y capítulos del servidor');
   const at = locateTrack(session.tracks, 4000);
   check(at.trackIndex === 1 && at.offset === 400, 'Tiempo global → pista y segundo');

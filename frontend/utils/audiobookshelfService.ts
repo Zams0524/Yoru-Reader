@@ -82,6 +82,31 @@ export function absCoverUrl(itemId: string): string {
 }
 
 /**
+ * La dirección de una pista para reproducirla.
+ *
+ * **No lleva testigo, y es a propósito.** Yoru pedía el fichero original con el
+ * testigo metido en la dirección (`/api/items/…/file/…?token=…`), que es la única
+ * forma que tiene un `<audio>` de autenticarse porque no puede mandar cabeceras.
+ * Audiobookshelf dejó de aceptar eso: responde `401 Unauthorized` en texto plano, y
+ * el navegador, que no sabe leerlo, lo reporta como «Format error» — por eso parecía
+ * un problema de códec cuando era de permisos.
+ *
+ * La vía buena es la que usa el propio cliente del servidor: `/public/session/…`, una
+ * ruta **pública** en la que la credencial es la sesión de reproducción, que ya
+ * abrimos antes de sonar. Comprobado contra el servidor: la ruta vieja da 401 y esta
+ * da 404 con una sesión inventada, o sea que existe y no pide autenticación.
+ *
+ * Y vale en los tres sitios —escritorio, navegador y Android— porque no depende de
+ * poder tocar las cabeceras de la petición.
+ */
+function sessionTrackUrl(sessionId: string, contentUrl: unknown, index: number, config: AudiobookshelfConfig): string {
+  const base = normalizeServerUrl(config.serverUrl);
+  // El transcodificado trae su propia dirección de HLS; la reproducción directa, no.
+  if (typeof contentUrl === 'string' && contentUrl.startsWith('/hls')) return `${base}${contentUrl}`;
+  return `${base}/public/session/${encodeURIComponent(sessionId)}/track/${index}`;
+}
+
+/**
  * Pregunta al servidor cómo quiere que le pidan el audio.
  *
  * Un `<audio src>` no puede mandar cabeceras, así que el testigo tiene que ir en la
@@ -267,14 +292,18 @@ export async function startAudiobookPlayback(itemId: string): Promise<Audiobooks
       supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/x-m4b', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/wav'],
     },
   });
+  const sessionId = String(data?.id || '');
   const tracks: AudioTrack[] = (Array.isArray(data?.audioTracks) ? data.audioTracks : [])
-    .map((track: any, index: number) => ({
-      index: track.index ?? index,
-      startOffset: Number(track.startOffset) || 0,
-      duration: Number(track.duration) || 0,
-      url: absMediaUrl(track.contentUrl, config),
-      mimeType: track.mimeType,
-    }))
+    .map((track: any, index: number) => {
+      const trackIndex = track.index ?? index;
+      return {
+        index: trackIndex,
+        startOffset: Number(track.startOffset) || 0,
+        duration: Number(track.duration) || 0,
+        url: sessionTrackUrl(sessionId, track.contentUrl, trackIndex, config),
+        mimeType: track.mimeType,
+      };
+    })
     .sort((a: AudioTrack, b: AudioTrack) => a.startOffset - b.startOffset);
   if (tracks.length === 0) throw new Error('Audiobookshelf no devolvió pistas de audio para este libro.');
   return {
