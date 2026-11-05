@@ -49,7 +49,21 @@ export function getKavitaConfig(): KavitaConfig {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;
     const config = JSON.parse(raw) as KavitaConfig;
-    return config?.serverUrl ? config : { ...fallback, ...config, serverUrl: KAVITA_DEFAULT_URL };
+    /*
+      Una credencial guardada pero **vacía** no tapa a la de fábrica.
+
+      Aquí estaba el agujero: bastaba con que quedara una fila de configuración sin
+      clave —porque se borraron los datos, porque se guardó con el campo en blanco—
+      para que el respaldo dejara de entrar y la biblioteca no cargara, aunque la
+      app trajera credenciales propias. Vacío quiere decir «no tengo», no «quiero
+      que no haya».
+    */
+    return {
+      ...fallback,
+      ...config,
+      serverUrl: config?.serverUrl || fallback.serverUrl,
+      apiKey: config?.apiKey?.trim() || fallback.apiKey,
+    };
   } catch {
     return fallback;
   }

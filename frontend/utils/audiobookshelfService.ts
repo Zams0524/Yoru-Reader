@@ -36,7 +36,13 @@ export function getAudiobookshelfConfig(): AudiobookshelfConfig {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;
     const config = JSON.parse(raw) as AudiobookshelfConfig;
-    return config?.serverUrl ? config : { ...fallback, ...config, serverUrl: AUDIOBOOKSHELF_DEFAULT_URL };
+    // Un testigo guardado pero vacío no tapa al de fábrica; el porqué, en Kavita.
+    return {
+      ...fallback,
+      ...config,
+      serverUrl: config?.serverUrl || fallback.serverUrl,
+      token: config?.token?.trim() || fallback.token,
+    };
   } catch {
     return fallback;
   }
