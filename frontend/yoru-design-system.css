@@ -40,6 +40,79 @@
   --radius-pill: 999px;
 }
 
+/*
+  Temas de acento.
+
+  El dorado es el de Yoru y el que viene puesto: es la identidad de la app, no una
+  opción más de la lista. Los demás están para quien lo quiera distinto.
+
+  Cada acento se define dos veces porque el mismo color no vale para los dos fondos:
+  sobre oscuro hace falta claro y luminoso, y sobre claro o sepia hace falta oscuro,
+  o el texto en dorado sobre papel no se lee. Por eso la segunda regla lleva también
+  `[data-theme]`, que vive en el mismo elemento.
+*/
+[data-accent='crimson'] {
+  --primary: #f0888f;
+  --primary-hover: #ffa3a9;
+  --primary-gradient: linear-gradient(135deg, #f49aa0, #cf5f6a);
+  --button-gradient: linear-gradient(135deg, #f49aa0, #cf5f6a);
+  --border-focus: rgba(240, 136, 143, 0.62);
+}
+[data-accent='jade'] {
+  --primary: #6fd1a6;
+  --primary-hover: #8fe6bf;
+  --primary-gradient: linear-gradient(135deg, #85dcb4, #3fa37c);
+  --button-gradient: linear-gradient(135deg, #85dcb4, #3fa37c);
+  --border-focus: rgba(111, 209, 166, 0.62);
+}
+[data-accent='indigo'] {
+  --primary: #8fa8f0;
+  --primary-hover: #adbdff;
+  --primary-gradient: linear-gradient(135deg, #a0b4f4, #5d79d2);
+  --button-gradient: linear-gradient(135deg, #a0b4f4, #5d79d2);
+  --border-focus: rgba(143, 168, 240, 0.62);
+}
+[data-accent='violet'] {
+  --primary: #c197ef;
+  --primary-hover: #d6b4ff;
+  --primary-gradient: linear-gradient(135deg, #cba7f2, #9566cc);
+  --button-gradient: linear-gradient(135deg, #cba7f2, #9566cc);
+  --border-focus: rgba(193, 151, 239, 0.62);
+}
+
+[data-theme='light'][data-accent='crimson'],
+[data-theme='sepia'][data-accent='crimson'] {
+  --primary: #b03744;
+  --primary-hover: #8c2932;
+  --primary-gradient: linear-gradient(135deg, #cf5f6a, #b03744);
+  --button-gradient: linear-gradient(135deg, #cf5f6a, #b03744);
+  --border-focus: rgba(176, 55, 68, 0.48);
+}
+[data-theme='light'][data-accent='jade'],
+[data-theme='sepia'][data-accent='jade'] {
+  --primary: #1f7d58;
+  --primary-hover: #156243;
+  --primary-gradient: linear-gradient(135deg, #3fa37c, #1f7d58);
+  --button-gradient: linear-gradient(135deg, #3fa37c, #1f7d58);
+  --border-focus: rgba(31, 125, 88, 0.48);
+}
+[data-theme='light'][data-accent='indigo'],
+[data-theme='sepia'][data-accent='indigo'] {
+  --primary: #3f58b0;
+  --primary-hover: #2e438c;
+  --primary-gradient: linear-gradient(135deg, #5d79d2, #3f58b0);
+  --button-gradient: linear-gradient(135deg, #5d79d2, #3f58b0);
+  --border-focus: rgba(63, 88, 176, 0.48);
+}
+[data-theme='light'][data-accent='violet'],
+[data-theme='sepia'][data-accent='violet'] {
+  --primary: #70479e;
+  --primary-hover: #593680;
+  --primary-gradient: linear-gradient(135deg, #9566cc, #70479e);
+  --button-gradient: linear-gradient(135deg, #9566cc, #70479e);
+  --border-focus: rgba(112, 71, 158, 0.48);
+}
+
 [data-theme='light'] {
   color-scheme: light;
   --bg-app: #f2f4f6;

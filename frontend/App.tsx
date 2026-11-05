@@ -1001,7 +1001,20 @@ export default function App() {
   }, [activeBook]);
 
   return (
-    <div className="app-container" data-theme={resolvedTheme}>
+    <div
+      className="app-container"
+      data-theme={resolvedTheme}
+      /*
+        El acento y el radio viven aquí, en el mismo sitio que el tema: son los tres
+        ajustes que tiñen la app entera. El dorado no lleva atributo — es el que
+        definen los tokens por defecto, porque es la identidad de Yoru y no una
+        opción más.
+      */
+      data-accent={settings.accent && settings.accent !== 'gold' ? settings.accent : undefined}
+      style={typeof settings.cornerRadius === 'number'
+        ? ({ '--radius-base': `${settings.cornerRadius}px` } as React.CSSProperties)
+        : undefined}
+    >
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
         {profiles.length === 0 ? (
           <WelcomeScreen onCreateProfile={handleAddProfile} settings={settings} onSaveSettings={handleSaveSettings} />

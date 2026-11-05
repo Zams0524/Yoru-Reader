@@ -104,6 +104,20 @@ const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
   });
 };
 
+/**
+ * Los acentos de Yoru. El dorado va primero y es el de por defecto: es la identidad
+ * de la app, no una opción más. La muestra de color es la del tema oscuro, que es
+ * donde se elige casi siempre; en claro y sepia cada acento tiene su versión oscura,
+ * definida en yoru-design-system.css, porque el dorado sobre papel no se lee.
+ */
+const ACCENTS = [
+  { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#f2c866' },
+  { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#f0888f' },
+  { id: 'jade', es: 'Jade', en: 'Jade', swatch: '#6fd1a6' },
+  { id: 'indigo', es: 'Índigo', en: 'Indigo', swatch: '#8fa8f0' },
+  { id: 'violet', es: 'Violeta', en: 'Violet', swatch: '#c197ef' },
+];
+
 const Library = React.memo(function Library({ 
   books, 
   onSelectBook, 
@@ -3154,6 +3168,62 @@ const Library = React.memo(function Library({
                           ? (lang === 'es' ? 'Papel cálido; el más descansado para leer de noche.' : 'Warm paper; the easiest on the eyes at night.')
                           : ''}
                     </div>
+
+                    {/*
+                      Acento. El dorado va primero y es el que viene puesto: es la
+                      identidad de Yoru, no una opción más de la lista.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+                      {lang === 'es' ? 'Acento' : 'Accent'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es' ? 'El color de los botones y lo marcado.' : 'The colour of buttons and selected things.'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {ACCENTS.map((accent) => {
+                        const active = (settings.accent || 'gold') === accent.id;
+                        return (
+                          <button
+                            key={accent.id}
+                            type="button"
+                            onClick={() => onSaveSettings({ ...settings, accent: accent.id })}
+                            title={lang === 'es' ? accent.es : accent.en}
+                            aria-label={lang === 'es' ? accent.es : accent.en}
+                            aria-pressed={active}
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: 'var(--radius-pill)',
+                              background: accent.swatch,
+                              border: active ? '2px solid var(--text-main)' : '1px solid var(--border-light)',
+                              cursor: 'pointer',
+                              padding: 0,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/*
+                      Radio de las esquinas. Mueve `--radius-base`, del que cuelgan los
+                      cuatro peldaños; antes cada pieza traía el suyo, 27 en total.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+                      {lang === 'es' ? 'Esquinas' : 'Corners'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es' ? 'De esquina viva a muy redondeada.' : 'From sharp to very rounded.'}
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      step={1}
+                      value={typeof settings.cornerRadius === 'number' ? settings.cornerRadius : 10}
+                      onChange={(e) => onSaveSettings({ ...settings, cornerRadius: parseInt(e.target.value, 10) })}
+                      style={{ width: '100%' }}
+                      aria-label={lang === 'es' ? 'Radio de las esquinas' : 'Corner radius'}
+                    />
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
