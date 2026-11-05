@@ -23,6 +23,22 @@
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
+/**
+ * Un valor de `.env.local`, que git ignora.
+ *
+ * Así hay dos caminos para lo mismo, y los dos dejan la app configurada sin que
+ * nadie escriba nada al abrirla:
+ *
+ * - **Escribirlo aquí abajo**: viaja con la app y se publica. Léase el aviso.
+ * - **Escribirlo en `.env.local`**: se queda en este equipo y no sube a ningún sitio.
+ *
+ * Lo de `.env.local` manda sobre lo de aquí, para poder probar sin tocar el código.
+ */
+function env(name: string): string {
+  const value = (import.meta.env as Record<string, string | undefined>)[name];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export interface KavitaDefaults {
   serverUrl: string;
   apiKey: string;
@@ -37,14 +53,14 @@ export interface AudiobookshelfDefaults {
  * Kavita. Con `apiKey` vacío no se usa: la app pedirá configurarlo como hasta ahora.
  */
 export const KAVITA_DEFAULTS: KavitaDefaults = {
-  serverUrl: 'http://localhost:5000',
-  apiKey: '',
+  serverUrl: env('VITE_KAVITA_URL') || 'http://localhost:5000',
+  apiKey: env('VITE_KAVITA_API_KEY') || '',
 };
 
 /**
  * Audiobookshelf. Con `token` vacío no se usa.
  */
 export const AUDIOBOOKSHELF_DEFAULTS: AudiobookshelfDefaults = {
-  serverUrl: 'http://localhost:13378',
-  token: '',
+  serverUrl: env('VITE_ABS_URL') || 'http://localhost:13378',
+  token: env('VITE_ABS_TOKEN') || '',
 };
