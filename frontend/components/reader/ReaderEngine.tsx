@@ -4,6 +4,7 @@ import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJite
 import { isPhoneUI } from '../../utils/platform';
 import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
+import { finishOpenTiming } from '../../utils/openTiming';
 
 export interface Chapter {
   title: string;
@@ -1315,6 +1316,15 @@ function ReaderEngineComponent({
     contentRef.current?.querySelectorAll('img.yoru-book-img').forEach((img) => {
       if (revealedSpoilers.has(img.getAttribute('src') || '')) img.classList.add('is-revealed');
     });
+  }, [currentHtml]);
+
+  // Ya hay texto en pantalla: es el instante que cuenta para quien abrió el libro, y
+  // cierra la línea de tiempos que empezó en el clic. Se espera al fotograma siguiente
+  // al pintado, no al efecto, que corre antes de que el navegador dibuje.
+  useEffect(() => {
+    if (!currentHtml) return undefined;
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => finishOpenTiming()));
+    return () => cancelAnimationFrame(frame);
   }, [currentHtml]);
 
   const handleContentClick = useCallback((e: React.MouseEvent) => {

@@ -2,6 +2,7 @@
 import { X, Search, Palette, Clock, Type, Target, Layers, FolderOpen, BookOpen, AlertTriangle, Info } from 'lucide-react';
 import { t } from '../utils/i18n';
 import AppAbout from './AppAbout';
+import MediaServerSettings from './settings/MediaServerSettings';
 import { useConfirm } from './ConfirmModal';
 import { clearYomitanCache, getInstalledDictionaries } from '../utils/yomitanDB';
 import { isPhoneUI } from '../utils/platform';
@@ -229,7 +230,8 @@ export default function SettingsModal({
       label: 'Anki',
       icon: <Layers size={16} />,
       tabs: [
-        { id: 'sources', label: lang === 'es' ? 'Integración con Anki' : 'Anki Integration' }
+        { id: 'sources', label: lang === 'es' ? 'Integración con Anki' : 'Anki Integration' },
+        { id: 'media-servers', label: lang === 'es' ? 'Kavita y Audiobookshelf' : 'Kavita & Audiobookshelf' }
       ]
     },
     {
@@ -476,6 +478,13 @@ export default function SettingsModal({
   );
 
   // 5. INTEGRACIÓN / Integración con Anki
+  const renderMediaServersContent = () => (
+    <div className="settings-panel-section">
+      <h4 className="settings-panel-title">{lang === 'es' ? 'Servidores multimedia' : 'Media servers'}</h4>
+      <MediaServerSettings lang={lang} />
+    </div>
+  );
+
   const renderSourcesContent = () => (
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management'}</h4>
@@ -830,6 +839,7 @@ export default function SettingsModal({
     { id: 'text-style', keywords: 'text style estilo texto fuente font size tamaño slider furigana tarjetas library covers', render: renderTextStyleContent },
     { id: 'rendering', keywords: 'rendering renderizado acento pitch learning status cursor hover resaltado', render: renderRenderingContent },
     { id: 'sources', keywords: 'sources fuentes anki anki-connect deck cards note integracion', render: renderSourcesContent },
+    { id: 'media-servers', keywords: 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels red local lan', render: renderMediaServersContent },
     { id: 'backups', keywords: 'backups copias seguridad google drive cloud zip export backup local', render: renderBackupsContent },
     { id: 'dictionaries', keywords: 'dictionaries diccionarios yomitan deinflector words', render: renderDictionariesContent },
     { id: 'danger-zone', keywords: 'danger zone peligro reset clear delete database restablecer borrar', render: renderDangerZoneContent }

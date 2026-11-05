@@ -1,4 +1,9 @@
 const { app, BrowserWindow, shell, ipcMain, session, protocol, net, webContents } = require('electron');
+// Dos módulos distintos con el mismo nombre. El `net` de Electron es un cliente HTTP
+// (`net.fetch`) y no tiene `createConnection`; para hablar con Discord por su tubería
+// hace falta el `net` de Node. Confundirlos es lo que tenía el Rich Presence sin
+// funcionar desde siempre, soltando un error en cada intento.
+const nodeNet = require('node:net');
 const path = require('path');
 const http = require('http');
 const url = require('url');
@@ -1063,6 +1068,9 @@ let discordRpcSocket = null;
 let discordRpcClientId = '1543447663561678989'; // Official Registered Yoru Reader App ID
 let discordRpcActivePresence = null;
 let isDiscordConnecting = false;
+/** Hasta cuándo no se vuelve a buscar Discord, tras no encontrarlo. */
+let discordRetryAfter = 0;
+const DISCORD_BACKOFF_MS = 5 * 60 * 1000;
 let isDiscordReady = false;
 
 function sendDiscordRpcFrame(socket, opcode, payload) {
@@ -1099,6 +1107,10 @@ function connectDiscordRpc() {
     });
   }
 
+  if (Date.now() < discordRetryAfter) {
+    return Promise.reject(new Error('Discord no está, se reintenta más tarde'));
+  }
+
   isDiscordConnecting = true;
   isDiscordReady = false;
 
@@ -1108,6 +1120,10 @@ function connectDiscordRpc() {
     const tryNextPipe = () => {
       if (pipeIndex >= 10) {
         isDiscordConnecting = false;
+        // Quien no tiene Discord abierto no lo va a abrir en los próximos minutos, y
+        // recorrer diez tuberías en cada actualización de progreso llenaba el log de
+        // avisos idénticos. Se deja de intentar un rato.
+        discordRetryAfter = Date.now() + DISCORD_BACKOFF_MS;
         return reject(new Error('No active Discord IPC pipe found'));
       }
 
@@ -1116,7 +1132,7 @@ function connectDiscordRpc() {
         : path.join(process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || process.env.TMP || process.env.TEMP || '/tmp', `discord-ipc-${pipeIndex}`);
 
       console.log(`[Discord RPC] Trying pipe: ${pipePath}`);
-      const socket = net.createConnection(pipePath, () => {
+      const socket = nodeNet.createConnection(pipePath, () => {
         discordRpcSocket = socket;
 
         // Opcode 0: Handshake

@@ -18,6 +18,10 @@ import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reade
 import NativeReaderHost, { type NativeTextSelection } from './reader/NativeReaderHost';
 import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
+import AudioSyncPlayer from './reader/AudioSyncPlayer';
+import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
+import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
+import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -43,6 +47,7 @@ import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
 import { useReaderSettings, ReaderSettingsState, baseReaderTheme } from '../hooks/useReaderSettings';
+import { useResolvedTheme } from '../utils/theme';
 import { useBackHandler } from '../hooks/useBackButton';
 
 // Page-turn keys handled inside ReaderEngine.
@@ -285,6 +290,8 @@ interface ReaderProps {
   onUpdateProgress: (bookId: string, currentChapter: number, currentPage: number, percent: number) => void;
   onIncrementReadingStats: (bookId: string, chars: number, seconds: number) => void;
   onSaveReadingStats?: (title: string, chars: number, seconds: number, sessions?: number) => Promise<void>;
+  /** Guardar en la biblioteca el libro temporal que se esta leyendo. */
+  onKeepTemporary?: () => void;
   wordStatuses: Record<string, string>;
   onSetWordStatus: (word: string, status: string, wordData?: any) => void;
   settings: any;
@@ -298,6 +305,7 @@ export default function Reader({
   onUpdateProgress, 
   onIncrementReadingStats,
   onSaveReadingStats,
+  onKeepTemporary,
   wordStatuses, 
   onSetWordStatus, 
   settings, 
@@ -317,6 +325,8 @@ export default function Reader({
   }, [onSaveSettings, onBack]);
 
   const [readerSettings, rawSetReaderSetting] = useReaderSettings();
+  /** El esquema de la app ya traducido: «Sistema» no es un tema que se pueda pintar. */
+  const appTheme = useResolvedTheme(settings.theme);
 
   const fsrsSettings = db.getSettings();
   const fsrsRetentionRate = fsrsSettings.fsrsRetentionRate !== undefined ? Number(fsrsSettings.fsrsRetentionRate) : 0.90;
@@ -335,7 +345,7 @@ export default function Reader({
     // The app theme follows the book's base colours (contrast/twilight/console are variants).
     if (key === 'theme') {
       const base = baseReaderTheme(String(value));
-      if (settings.theme !== base) {
+      if (appTheme !== base) {
         onSaveSettings({ ...settings, theme: base });
       }
     }
@@ -448,6 +458,27 @@ export default function Reader({
   // web reader follows the player up when the bars show; the native page keeps its low place (a
   // relayout there takes about half a second, and the page bar covers that strip anyway).
   const [readAloudReach, setReadAloudReach] = useState({ current: 0, low: 0 });
+  // Audiobookshelf audiobook of this book. It and read aloud share the bottom spot (and the reach
+  // above): opening one closes the other.
+  // `__openAudiobook` lo pone la ficha del shell al pulsar «Escuchar audiolibro».
+  const [isAudiobookOpen, setIsAudiobookOpen] = useState(() => Boolean((book as any).__openAudiobook));
+  const audiobookAvailable = useMemo(() => isAudiobookshelfConfigured(), []);
+  useEffect(() => {
+    if (isReadAloudOpen) setIsAudiobookOpen(false);
+  }, [isReadAloudOpen]);
+
+  // ── Alineación texto-audio ──────────────────────────────────────────────
+  // Con alineación, el texto y el audio van juntos: desde una frase se pone el audio
+  // ahí, y si el usuario quiere, el texto va detrás del audio. El índice se reconstruye
+  // al abrir el libro, porque empareja los cues con el texto de ahora y no con el de
+  // cuando se alineó.
+  const [alignment, setAlignment] = useState<LoadedAlignment | null>(null);
+  const [followsAudio, setFollowsAudio] = useState(false);
+  const audioSeekRef = useRef<((seconds: number) => void) | null>(null);
+  /** El último párrafo al que llevó el audio: evita repetir el salto en cada tick. */
+  const lastFollowedRef = useRef<number | null>(null);
+  /** Para avisar una sola vez de que ese tramo no está alineado, y no en cada tick. */
+  const warnedUnalignedRef = useRef(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -546,13 +577,13 @@ export default function Reader({
   }, []);
 
   useEffect(() => {
-    if (settings.theme === 'light' || settings.theme === 'sepia' || settings.theme === 'dark') {
-      // Only follow a real change of the app theme, not a variant of the same base.
-      if (baseReaderTheme(readerSettings.theme) !== settings.theme) {
-        rawSetReaderSetting('theme', settings.theme);
-      }
+    // El tema resuelto y no el guardado: con «Sistema» el guardado no es ninguno de
+    // los tres, y el lector se quedaba con el suyo de antes.
+    // Only follow a real change of the app theme, not a variant of the same base.
+    if (baseReaderTheme(readerSettings.theme) !== appTheme) {
+      rawSetReaderSetting('theme', appTheme);
     }
-  }, [settings.theme, readerSettings.theme, rawSetReaderSetting]);
+  }, [appTheme, readerSettings.theme, rawSetReaderSetting]);
 
   useEffect(() => {
     if (!isGalleryOpen || bookImages.length === 0) return;
@@ -617,9 +648,8 @@ export default function Reader({
   }, []);
 
   useEffect(() => {
-    const theme = settings.theme || 'dark';
-    window.__yoruTheme = theme;
-  }, [settings.theme]);
+    window.__yoruTheme = appTheme;
+  }, [appTheme]);
 
   const handleSelection = useCallback(async () => {
     const selectionObj = window.getSelection();
@@ -1035,6 +1065,88 @@ export default function Reader({
   }, []);
 
   /** Opens the section holding a paragraph and turns to it (and to a range inside it, when given). */
+  // Carga la alineación guardada de este libro, si la hay. Hace falta que el motor haya
+  // montado las secciones, porque los cues se emparejan con los párrafos tal como los
+  // numera el lector.
+  const loadAlignment = useCallback(async () => {
+    const sections = engineApiRef.current?.getSections();
+    if (!sections?.length) return;
+    const resultado = await prepareAlignment(book.id, book.chapters || [], sections, lang);
+    if (!resultado) { setAlignment(null); return; }
+    if ('error' in resultado) {
+      setAlignment(null);
+      showToast(resultado.error, 'error');
+      return;
+    }
+    setAlignment(resultado.ok);
+    if (resultado.ok.notice) showToast(resultado.ok.notice, 'info');
+  }, [book.id, book.chapters, lang, showToast]);
+
+  useEffect(() => {
+    if (!isAudiobookOpen || alignment) return;
+    void loadAlignment();
+  }, [isAudiobookOpen, alignment, loadAlignment]);
+
+  /** El usuario eligió el `.srt` que dejó el alineador. */
+  const handleImportSrt = useCallback(async (file: File) => {
+    const sections = engineApiRef.current?.getSections();
+    if (!sections?.length) return;
+    const srt = await file.text();
+    const resultado = buildFromSrt(srt, file.name, book.chapters || [], sections, lang);
+    if ('error' in resultado) {
+      // El veredicto manda: una alineación que su propio generador da por mala no se
+      // guarda siquiera. Más vale no tener audio sincronizado que tenerlo mintiendo.
+      showToast(resultado.error, 'error');
+      return;
+    }
+    await saveAlignmentSrt(book.id, srt, file.name);
+    setAlignment(resultado.ok);
+    setFollowsAudio(true);
+    showToast(
+      resultado.ok.notice
+        || (lang === 'es' ? 'Alineación cargada: el texto ya puede seguir al audio.'
+          : 'Alignment loaded: the text can now follow the audio.'),
+      resultado.ok.notice ? 'info' : 'success',
+    );
+  }, [book.id, book.chapters, lang, showToast]);
+
+  /** El audio avanzó: si el texto va detrás, llevarlo al párrafo que suena. */
+  const handleAudioTime = useCallback((ms: number) => {
+    if (!followsAudio || !alignment) return;
+    const donde = paragraphAtTime(alignment.index, ms);
+    if (!donde) {
+      // Ahí no hay texto alineado. **No se salta a ojo**: el lector se queda donde está
+      // y se dice una vez. Un salto aproximado en un libro para aprender japonés
+      // enseña mal, y es peor que no moverse.
+      if (!warnedUnalignedRef.current) {
+        warnedUnalignedRef.current = true;
+        showToast(lang === 'es' ? 'Este tramo del audio no está alineado.'
+          : 'This stretch of the audio is not aligned.', 'info');
+      }
+      return;
+    }
+    warnedUnalignedRef.current = false;
+    if (lastFollowedRef.current === donde.paragraphId) return;
+    lastFollowedRef.current = donde.paragraphId;
+    goToParagraphAnywhere(donde.paragraphId);
+  }, [followsAudio, alignment, lang, showToast]);
+
+  /** Desde la frase elegida, poner el audiolibro justo ahí. */
+  const handleListenFromSelection = useCallback(() => {
+    if (!alignment || !selection) return;
+    const ms = timeOfParagraph(alignment.index, selection.paragraphId);
+    const saltar = audioSeekRef.current;
+    if (ms === null || !saltar) {
+      showToast(lang === 'es' ? 'Esa parte no tiene audio alineado.'
+        : 'That part has no aligned audio.', 'info');
+      return;
+    }
+    // Mientras el audio va a donde lee el usuario, el texto no debe moverse solo.
+    lastFollowedRef.current = selection.paragraphId;
+    saltar(ms / 1000);
+    endSelection();
+  }, [alignment, selection, lang, showToast, endSelection]);
+
   const goToParagraphAnywhere = useCallback((paragraphId: number, offsets?: { start: number; end: number }) => {
     const api = engineApiRef.current;
     if (!api) return;
@@ -2234,6 +2346,7 @@ export default function Reader({
       [showSettingsPopover, () => setShowSettingsPopover(false)],
       [sidebarMode !== null, () => setSidebarMode(null)],
       [isReadAloudOpen, () => { readAloud.stop(); setIsReadAloudOpen(false); }],
+      [isAudiobookOpen, () => setIsAudiobookOpen(false)],
     ];
     const step = steps.find(([open]) => open);
     if (step) step[1]();
@@ -2415,6 +2528,16 @@ export default function Reader({
             readAloud.start();
           }
         }}
+        isTemporary={Boolean((book as any).isTemporary)}
+        onKeep={onKeepTemporary}
+        isAudiobookOpen={isAudiobookOpen}
+        onToggleAudiobook={audiobookAvailable ? () => {
+          if (!isAudiobookOpen && isReadAloudOpen) {
+            readAloud.stop();
+            setIsReadAloudOpen(false);
+          }
+          setIsAudiobookOpen(open => !open);
+        } : undefined}
         onToggleSettings={() => setShowSettingsPopover(prev => !prev)}
         onToggleFullscreen={toggleFullscreen}
         isFullscreen={!!document.fullscreenElement}
@@ -2530,6 +2653,28 @@ export default function Reader({
         />
       )}
 
+      {isAudiobookOpen && (
+        <AudioSyncPlayer
+          book={{ id: book.id, title: book.title || '', author: book.author || '' }}
+          lang={lang}
+          accent={colors.accent}
+          raised={isHeaderVisible}
+          autoHide={!isHeaderVisible}
+          onReach={setReadAloudReach}
+          onClose={() => setIsAudiobookOpen(false)}
+          alignment={alignment ? { name: alignment.name, notice: alignment.notice } : null}
+          onImportSrt={(file) => { void handleImportSrt(file); }}
+          onTimeMs={handleAudioTime}
+          seekRef={audioSeekRef}
+          followText={followsAudio}
+          onFollowTextChange={(value) => {
+            setFollowsAudio(value);
+            lastFollowedRef.current = null;
+            warnedUnalignedRef.current = false;
+          }}
+        />
+      )}
+
       {isVoiceSettingsOpen && (
         <ReadAloudSettings
           voice={readAloud.voice}
@@ -2563,7 +2708,7 @@ export default function Reader({
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
-          bottomReserve={isReadAloudOpen ? readAloudReach.low : 0}
+          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.low : 0}
           highlights={highlights}
           onSelection={handleNativeSelection}
         />
@@ -2580,7 +2725,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
-          bottomReserve={isReadAloudOpen ? readAloudReach.current : 0}
+          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.current : 0}
         />
       )}
 
@@ -2906,6 +3051,15 @@ export default function Reader({
           onHighlight={selection.offsets ? handleHighlightSelection : undefined}
           onNote={selection.offsets ? handleNoteSelection : undefined}
           onReadAloud={handleReadFromSelection}
+          onListenFrom={
+            // Solo si hay alineación, el reproductor está abierto y **ese** párrafo
+            // está alineado. Si no lo está no se ofrece: mandar el audio a un sitio
+            // aproximado es peor que no ofrecer nada.
+            alignment && isAudiobookOpen
+              && timeOfParagraph(alignment.index, selection.paragraphId) !== null
+              ? handleListenFromSelection
+              : undefined
+          }
           colors={colors}
           lang={lang}
         />

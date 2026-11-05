@@ -1,11 +1,15 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon } from 'lucide-react';
+import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, Eye, EyeOff, ChevronUp, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
+import MediaServerSettings from './settings/MediaServerSettings';
+import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
+import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
+import { getHomeLayout, resetHomeLayout, saveHomeLayout, RAILS, type RailId } from '../utils/homeRails';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
@@ -28,6 +32,8 @@ import { ensureNotificationPermission, getNotificationPermission, hasYoruNotific
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
+const KavitaBrowser = React.lazy(() => import('./KavitaBrowser'));
+const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const SrsReviewModal = React.lazy(() => import('./SrsReviewModal'));
 const ProgressDashboard = React.lazy(() => import('./ProgressDashboard'));
@@ -52,6 +58,8 @@ interface LibraryProps {
   onSaveSettings: (...args: any[]) => any;
   wordStatuses?: Record<string, string>;
   initialTab?: string;
+  /** Cuando el shell nuevo la monta dentro de su lienzo: sin cabecera ni barra inferior propias. */
+  embedded?: boolean;
   /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
   navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
@@ -97,6 +105,134 @@ const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
   });
 };
 
+/**
+ * Los acentos de Yoru. El dorado va primero y es el de por defecto: es la identidad
+ * de la app, no una opción más. La muestra de color es la del tema oscuro, que es
+ * donde se elige casi siempre; en claro y sepia cada acento tiene su versión oscura,
+ * definida en yoru-design-system.css, porque el dorado sobre papel no se lee.
+ */
+/**
+ * «Organizar inicio»: el orden de los carruseles y cuáles se esconden.
+ *
+ * Con flechas y no arrastrando a propósito: arrastrar no funciona con el teclado ni
+ * con un lector de pantalla, y aquí hay once filas que caben en poco sitio.
+ *
+ * Lista **todos** los carruseles, también los que ahora mismo no tienen nada que
+ * enseñar. Esconder uno es decir «no lo quiero», no «hoy está vacío»: los de servidor
+ * aparecen y desaparecen según lo que haya en Kavita, y la lista tiene que ser
+ * estable para poder ordenarla.
+ */
+function HomeRailsEditor({ lang }: { lang: string }) {
+  const [layout, setLayout] = useState(() => getHomeLayout());
+  const hidden = new Set(layout.hidden);
+
+  const apply = (next: typeof layout) => {
+    setLayout(next);
+    saveHomeLayout(next);
+  };
+
+  const move = (index: number, delta: number) => {
+    const order = [...layout.order];
+    const target = index + delta;
+    if (target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    apply({ ...layout, order });
+  };
+
+  const toggle = (id: RailId) => {
+    const next = hidden.has(id)
+      ? layout.hidden.filter((entry) => entry !== id)
+      : [...layout.hidden, id];
+    apply({ ...layout, hidden: next });
+  };
+
+  const byId = new Map(RAILS.map((rail) => [rail.id, rail]));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      {layout.order.map((id, index) => {
+        const rail = byId.get(id);
+        if (!rail) return null;
+        const off = hidden.has(id);
+        return (
+          <div
+            key={id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '7px 10px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--surface-raised)',
+              opacity: off ? 0.5 : 1,
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 0, fontSize: '0.84rem', color: 'var(--text-main)' }}>
+              {lang === 'es' ? rail.es : rail.en}
+            </span>
+            <button
+              type="button"
+              onClick={() => move(index, -1)}
+              disabled={index === 0}
+              aria-label={lang === 'es' ? 'Subir' : 'Move up'}
+              style={railBtn(index === 0)}
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(index, 1)}
+              disabled={index === layout.order.length - 1}
+              aria-label={lang === 'es' ? 'Bajar' : 'Move down'}
+              style={railBtn(index === layout.order.length - 1)}
+            >
+              <ChevronDown size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggle(id)}
+              aria-pressed={off}
+              aria-label={off
+                ? (lang === 'es' ? 'Mostrar' : 'Show')
+                : (lang === 'es' ? 'Esconder' : 'Hide')}
+              style={railBtn(false)}
+            >
+              {off ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => { resetHomeLayout(); setLayout(getHomeLayout()); }}
+        style={{
+          alignSelf: 'flex-start', marginTop: '6px', padding: '6px 12px',
+          border: '1px solid var(--border-light)', borderRadius: 'var(--radius-pill)',
+          background: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer',
+        }}
+      >
+        {lang === 'es' ? 'Volver al orden de siempre' : 'Back to the usual order'}
+      </button>
+    </div>
+  );
+}
+
+function railBtn(disabled: boolean): React.CSSProperties {
+  return {
+    width: '26px', height: '26px', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
+    background: 'none', color: 'var(--text-muted)',
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
+  };
+}
+
+const ACCENTS = [
+  { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#f2c866' },
+  { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#f0888f' },
+  { id: 'jade', es: 'Jade', en: 'Jade', swatch: '#6fd1a6' },
+  { id: 'indigo', es: 'Índigo', en: 'Indigo', swatch: '#8fa8f0' },
+  { id: 'violet', es: 'Violeta', en: 'Violet', swatch: '#c197ef' },
+];
+
 const Library = React.memo(function Library({ 
   books, 
   onSelectBook, 
@@ -116,6 +252,7 @@ const Library = React.memo(function Library({
   onSaveSettings,
   wordStatuses = {},
   initialTab,
+  embedded = false,
   navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
@@ -379,10 +516,22 @@ const Library = React.memo(function Library({
   });
   const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false);
   const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useState(false);
+  const [isKavitaBrowserOpen, setIsKavitaBrowserOpen] = useState(false);
+  const [kavitaReady, setKavitaReady] = useState(() => isKavitaConfigured());
+  useEffect(() => {
+    const refresh = () => setKavitaReady(isKavitaConfigured());
+    window.addEventListener('yoru-media-servers-changed', refresh);
+    return () => window.removeEventListener('yoru-media-servers-changed', refresh);
+  }, []);
+  const libraryTitles = useMemo(() => new Set<string>(books.filter(book => !book.isDeleted).map(book => book.title)), [books]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSectionPending, startSectionTransition] = useTransition();
   const [activeTab, setActiveTabState] = useState(initialTab || 'library'); // 'library' | 'statistics' | 'settings' | 'notes' | 'srs'
   const setActiveTab = (tab: string) => startSectionTransition(() => setActiveTabState(tab));
+  // Embebida, la sección la manda el shell: su barra lateral cambia initialTab en cada clic.
+  useEffect(() => {
+    if (embedded && initialTab) setActiveTabState(initialTab);
+  }, [embedded, initialTab]);
   const [selectedDeckFilter, setSelectedDeckFilter] = useState<string | null>(null);
   const [srsSubTab, setSrsSubTab] = useState<'decks' | 'stats' | 'notes' | 'history' | 'settings'>('decks');
   const [isDeckPromptOpen, setIsDeckPromptOpen] = useState(false);
@@ -425,6 +574,10 @@ const Library = React.memo(function Library({
   // A tapped notification asks for the SRS or the updates section.
   useEffect(() => {
     if (!navigateTo) return;
+    if (navigateTo.section === OPEN_KAVITA_BROWSER) {
+      setIsKavitaBrowserOpen(true);
+      return;
+    }
     setActiveTab(navigateTo.tab);
     if (navigateTo.section) {
       setActiveSettingsSection(navigateTo.section);
@@ -1362,6 +1515,7 @@ const Library = React.memo(function Library({
       'sec-vocab-manage': ['Vocabulario y Anki', 'Vocabulary & Anki'],
       'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
       'sec-discord': ['Discord', 'Discord'],
+      'sec-media-servers': ['Servidores multimedia', 'Media servers'],
       'sec-backup': ['Copias de seguridad', 'Backups'],
       'sec-updates': ['Actualizaciones', 'Updates'],
       'sec-about': ['Acerca de', 'About'],
@@ -2103,6 +2257,18 @@ const Library = React.memo(function Library({
               key={book.id} 
               className={`book-card ${isSelected ? 'selected' : ''} ${selectMode ? 'select-mode-active' : ''}`}
               onClick={() => handleCardClick(book)}
+              /*
+                El clic derecho abre el mismo menú que el botón ⋮, no uno paralelo:
+                esto ya era el menú del libro, solo le faltaba la otra forma de
+                abrirlo. El ancla es el punto donde se pulsó.
+              */
+              onContextMenu={(e) => {
+                if (selectMode) return;
+                e.preventDefault();
+                setMenuOpenLeft(e.clientX > window.innerWidth / 2);
+                setMenuAnchor(new DOMRect(e.clientX, e.clientY, 0, 0));
+                setActiveMenuBookId(book.id);
+              }}
               style={{ position: 'relative', zIndex: activeMenuBookId === book.id ? 500 : 'auto' }}
             >
               {/* Card Context Menu Trigger and Popup */}
@@ -2593,7 +2759,9 @@ const Library = React.memo(function Library({
           <div 
             className="mas-list-item"
             onClick={() => {
-              setActiveSettingsSection('sec-dictionaries');
+              // `sec-dictionaries` no existe: el identificador real es `sec-dicts`,
+              // así que esta fila abría un panel vacío.
+              setActiveSettingsSection('sec-dicts');
               setMobileSettingsSectionOpen(true);
             }}
           >
@@ -2817,6 +2985,11 @@ const Library = React.memo(function Library({
       );
     };
 
+    const mediaServerNames = [isKavitaConfigured() && 'Kavita', isAudiobookshelfConfigured() && 'Audiobookshelf'].filter(Boolean);
+    const mediaServersSummary = mediaServerNames.length > 0
+      ? (lang === 'es' ? `Conectado: ${mediaServerNames.join(' y ')}` : `Connected: ${mediaServerNames.join(' & ')}`)
+      : 'Kavita, Audiobookshelf';
+
     const showSidebar = !isMobile || !mobileSettingsSectionOpen;
     const showContent = !isMobile || mobileSettingsSectionOpen;
 
@@ -2875,6 +3048,7 @@ const Library = React.memo(function Library({
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
                   {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
+                  {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
                   {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
               </div>
@@ -3071,27 +3245,142 @@ const Library = React.memo(function Library({
               <div className="settings-section-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Palette size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Apariencia e Idioma' : 'Appearance & Language'}</span>
+                  <span>{lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language'}</span>
                 </h3>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff', marginBottom: '4px' }}>
-                      {lang === 'es' ? 'Tema del Lector' : 'Reader Theme'}
+                    {/*
+                      Un solo control de esquema. Antes había dos llamados «tema», aquí
+                      y en «Estilo de texto», con vocabularios distintos — y no eran
+                      dos ajustes: los dos escribían `settings.theme`. El de allí decía
+                      además «se aplica únicamente a la página de lectura», que era
+                      falso. Aquí queda el único, con un vocabulario.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {lang === 'es' ? 'Esquema' : 'Color scheme'}
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: '#888899', marginBottom: '10px' }}>
-                      {lang === 'es' ? 'Apariencia visual para el catálogo y el lector.' : 'Visual style for catalog and reading mode.'}
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es'
+                        ? 'Los colores de toda la app: catálogo, lector y ajustes.'
+                        : 'The colours of the whole app: catalog, reader and settings.'}
                     </div>
-                    <select 
+                    <select
                       value={settings.theme || 'dark'}
                       onChange={(e) => onSaveSettings({ ...settings, theme: e.target.value })}
                       className="migaku-select"
                       style={{ width: '100%' }}
                     >
-                      <option value="dark">{lang === 'es' ? 'Oscuro Yoru (por defecto)' : 'Dark Yoru (default)'}</option>
-                      <option value="sepia">{lang === 'es' ? 'Sepia Relajante' : 'Warm Sepia'}</option>
-                      <option value="light">{lang === 'es' ? 'Claro Clásico' : 'Classic Light'}</option>
+                      <option value="system">{lang === 'es' ? 'Sistema' : 'System'}</option>
+                      <option value="light">{lang === 'es' ? 'Claro' : 'Light'}</option>
+                      <option value="dark">{lang === 'es' ? 'Oscuro' : 'Dark'}</option>
+                      <option value="sepia">{lang === 'es' ? 'Sepia' : 'Sepia'}</option>
                     </select>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-dark)', marginTop: '8px' }}>
+                      {settings.theme === 'system'
+                        ? (lang === 'es' ? 'Sigue al escritorio y cambia con él.' : 'Follows your desktop and changes with it.')
+                        : settings.theme === 'sepia'
+                          ? (lang === 'es' ? 'Papel cálido; el más descansado para leer de noche.' : 'Warm paper; the easiest on the eyes at night.')
+                          : ''}
+                    </div>
+
+                    {/*
+                      Acento. El dorado va primero y es el que viene puesto: es la
+                      identidad de Yoru, no una opción más de la lista.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+                      {lang === 'es' ? 'Acento' : 'Accent'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es' ? 'El color de los botones y lo marcado.' : 'The colour of buttons and selected things.'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {ACCENTS.map((accent) => {
+                        const active = (settings.accent || 'gold') === accent.id;
+                        return (
+                          <button
+                            key={accent.id}
+                            type="button"
+                            onClick={() => onSaveSettings({ ...settings, accent: accent.id })}
+                            title={lang === 'es' ? accent.es : accent.en}
+                            aria-label={lang === 'es' ? accent.es : accent.en}
+                            aria-pressed={active}
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: 'var(--radius-pill)',
+                              background: accent.swatch,
+                              border: active ? '2px solid var(--text-main)' : '1px solid var(--border-light)',
+                              cursor: 'pointer',
+                              padding: 0,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/*
+                      Radio de las esquinas. Mueve `--radius-base`, del que cuelgan los
+                      cuatro peldaños; antes cada pieza traía el suyo, 27 en total.
+                    */}
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+                      {lang === 'es' ? 'Esquinas' : 'Corners'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es' ? 'De esquina viva a muy redondeada.' : 'From sharp to very rounded.'}
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      step={1}
+                      value={typeof settings.cornerRadius === 'number' ? settings.cornerRadius : 10}
+                      onChange={(e) => onSaveSettings({ ...settings, cornerRadius: parseInt(e.target.value, 10) })}
+                      style={{ width: '100%' }}
+                      aria-label={lang === 'es' ? 'Radio de las esquinas' : 'Corner radius'}
+                    />
+
+                    {/*
+                      El título bajo la portada, para toda la app. No tiene nada que
+                      ver con «difuminar portada», que es por libro y esconde la
+                      imagen; este dice si debajo va el nombre o no va nada.
+                    */}
+                    <label
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: '10px',
+                        margin: '18px 0 0', cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.showPosterTitles !== false}
+                        onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <span>
+                        <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                          {lang === 'es' ? 'Títulos bajo la portada' : 'Titles under covers'}
+                        </span>
+                        <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-dark)' }}>
+                          {lang === 'es'
+                            ? 'Quítalos y las cuadrículas se quedan solo en portadas.'
+                            : 'Turn them off and the grids are covers only.'}
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Organizar inicio: el orden de los carruseles y los que se esconden. */}
+                  <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {lang === 'es' ? 'Organizar inicio' : 'Arrange home'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es'
+                        ? 'Inicio puede llegar a once carruseles. Ponlos en tu orden y esconde los que no uses.'
+                        : 'Home can reach eleven rails. Put them in your order and hide the ones you never use.'}
+                    </div>
+                    <HomeRailsEditor lang={lang} />
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
@@ -3233,88 +3522,10 @@ const Library = React.memo(function Library({
             <div id="sec-text-style" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Type size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Estilo de texto y Lector' : 'Text Style & Reader'}</span>
+                <span>{lang === 'es' ? 'Estilo de texto' : 'Text Style'}</span>
               </h3>
               <p className="settings-card-desc">{lang === 'es' ? 'Modifica el tamaño de la tipografía, dirección de lectura, velocidad de audio y comportamiento del lector.' : 'Modify typography size, reading direction, audio speed and reader behavior.'}</p>
               
-
-              {/* Tema del libro (Book theme) */}
-              <div className="settings-row-control" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Tema del libro' : 'Book theme'}</span>
-                  <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.4)' }}>
-                    {lang === 'es' ? 'Se aplica únicamente a la página de lectura' : 'Applies only to the book page'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'light' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'light' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#ffffff',
-                      color: '#000000',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Blanco' : 'White'}</span>
-                  </button>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'sepia' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'sepia' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#f4ecd8',
-                      color: '#5b4636',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Crema' : 'Paper'}</span>
-                  </button>
-                  <button 
-                    onClick={() => onSaveSettings({ ...settings, theme: 'dark' })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '6px',
-                      border: settings.theme === 'dark' ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
-                      background: '#08080a',
-                      color: '#ffffff',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>Aa</span>
-                    <span>{lang === 'es' ? 'Oscuro' : 'Dark'}</span>
-                  </button>
-                </div>
-              </div>
 
               {/* Zoom de texto */}
               <div className="settings-row-control">
@@ -3858,6 +4069,21 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Discord Rich Presence */}
+          {matchesSearch(MEDIA_SERVER_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-media-servers') && (
+            <div id="sec-media-servers" className="settings-section-card">
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Server size={18} style={{ color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Servidores multimedia' : 'Media servers'}</span>
+              </h3>
+              <p className="settings-card-desc">
+                {lang === 'es'
+                  ? 'Conecta tus servidores de casa: Kavita para importar novelas ligeras y Audiobookshelf para escuchar el audiolibro mientras lees.'
+                  : 'Connect your home servers: Kavita to import light novels and Audiobookshelf to listen to the audiobook while you read.'}
+              </p>
+              <MediaServerSettings lang={lang} />
+            </div>
+          )}
+
           {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
             <div id="sec-discord" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -5927,7 +6153,7 @@ const Library = React.memo(function Library({
 
   return (
     <div 
-      className={`library-container device-${deviceClass}`}
+      className={`library-container device-${deviceClass}${embedded ? ' is-embedded' : ''}`}
       data-device={deviceClass}
       aria-busy={isSectionPending}
       onTouchStart={handleTouchStart}
@@ -5968,8 +6194,8 @@ const Library = React.memo(function Library({
         aria-label={lang === 'es' ? 'Importar copia de seguridad' : 'Import backup'}
       />
 
-      {/* 1. Sticky Header — Yoru Cafe style */}
-      {isMobile ? (
+      {/* 1. Sticky Header — Yoru Cafe style (la oculta el shell nuevo, que trae la suya) */}
+      {!embedded && (isMobile ? (
         <header className="mobile-top-app-bar">
           {activeTab === 'settings' ? (
             <button
@@ -6004,6 +6230,11 @@ const Library = React.memo(function Library({
           <div className="mobile-top-actions">
             {activeTab === 'library' && (
               <>
+                {kavitaReady && (
+                  <button className="mobile-icon-btn" onClick={() => setIsKavitaBrowserOpen(true)} title={lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'} aria-label={lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'}>
+                    <Server size={20} />
+                  </button>
+                )}
                 <button className="mobile-icon-btn" onClick={triggerFileInput} title={lang === 'es' ? 'Importar libro' : 'Import book'} aria-label={lang === 'es' ? 'Importar libro' : 'Import book'}>
                   <Plus size={24} />
                 </button>
@@ -6139,6 +6370,22 @@ const Library = React.memo(function Library({
                   </div>
                   <div className="header-action-dropdown-item-desc">
                     {lang === 'es' ? 'Todos los libros de una carpeta' : 'All supported books in a folder'}
+                  </div>
+                </button>
+                <button 
+                  className="header-action-dropdown-item"
+                  onClick={() => {
+                    setActiveHeaderDropdown(null);
+                    setIsKavitaBrowserOpen(true);
+                  }}
+                  type="button"
+                >
+                  <div className="header-action-dropdown-item-header">
+                    <Server size={14} style={{ color: 'var(--primary)' }} />
+                    <span>{lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'}</span>
+                  </div>
+                  <div className="header-action-dropdown-item-desc">
+                    {lang === 'es' ? 'Novelas de tu servidor Kavita' : 'Novels from your Kavita server'}
                   </div>
                 </button>
                 <button 
@@ -6374,7 +6621,7 @@ const Library = React.memo(function Library({
           </div>
         </div>
       </header>
-      )}
+      ))}
 
 
 
@@ -6446,12 +6693,14 @@ const Library = React.memo(function Library({
       {/* 2. Two-column Sidebar + Main Content Layout */}
       {activeTab === 'library' && (
         <div className="library-layout-wrapper">
-          {isMobile && (
+          {!embedded && isMobile && (
             <div 
               className={`sidebar-overlay ${isSidebarOpen ? 'active' : ''}`}
               onClick={() => setIsSidebarOpen(false)}
             />
           )}
+          {/* El cajon de la biblioteca duplicaria la barra lateral del shell. */}
+          {!embedded && (
           <aside 
             className={`library-sidebar ${isSidebarOpen ? 'open' : ''}`}
             onClick={(e) => {
@@ -6666,6 +6915,7 @@ const Library = React.memo(function Library({
                 </div>
               </div>
             </aside>
+          )}
 
           <main className="library-main-content">
             {updateBannerVisible && (() => {
@@ -6757,6 +7007,12 @@ const Library = React.memo(function Library({
                       <span style={{ marginRight: '8px' }}>📄</span>
                       {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
                     </button>
+                    {kavitaReady && (
+                      <button className="empty-add-btn" onClick={() => setIsKavitaBrowserOpen(true)}>
+                        <Server size={16} style={{ marginRight: '8px' }} />
+                        {lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -6847,7 +7103,7 @@ const Library = React.memo(function Library({
       {activeTab === 'srs' && renderSrsTab()}
 
       {/* Bottom Navigation Bar for Mobile (hidden during an SRS review, which is full screen and sits below it) */}
-      {isMobile && !isSrsReviewOpen && !isSidebarOpen && (
+      {!embedded && isMobile && !isSrsReviewOpen && !isSidebarOpen && (
         <nav className="bottom-navigation-bar" aria-label={lang === 'es' ? 'Navegación principal' : 'Main navigation'}>
           <button 
             className={`bottom-tab-btn ${activeTab === 'library' ? 'active' : ''}`}
@@ -7592,6 +7848,21 @@ const Library = React.memo(function Library({
       )}
 
       <React.Suspense fallback={null}>
+        {isKavitaBrowserOpen && (
+          <KavitaBrowser
+            lang={lang}
+            libraryTitles={libraryTitles}
+            onImport={async (parsedBooks) => { await onAddBooks(parsedBooks); }}
+            onClose={() => setIsKavitaBrowserOpen(false)}
+            onOpenSettings={() => {
+              setIsKavitaBrowserOpen(false);
+              setActiveTab('settings');
+              setActiveSettingsSection('sec-media-servers');
+              if (isMobile) setMobileSettingsSectionOpen(true);
+            }}
+            showToast={showToast}
+          />
+        )}
         {isVocabModalOpen && (
           <VocabularyModal isOpen={isVocabModalOpen} onClose={() => setIsVocabModalOpen(false)} />
         )}
