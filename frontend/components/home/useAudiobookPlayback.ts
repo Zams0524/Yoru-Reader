@@ -3,6 +3,7 @@ import type { AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
   closeAudiobookSession,
   locateTrack,
+  probeMediaAuth,
   startAudiobookPlayback,
   syncAudiobookSession,
   updateAudiobookProgress,
@@ -254,6 +255,16 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       console.warn(`[Audiobookshelf] la pista no cargó (código ${code ?? '?'}) ${detail} — ${safeUrl}`);
       setPlaying(false);
       setPhase({ kind: 'error', message: mediaErrorMessage(code, es) });
+      /*
+        «Format error» no dice si el fichero es ilegible o si el servidor contestó un
+        401 que el navegador no sabe interpretar. Preguntándoselo de las dos maneras se
+        sabe cuál de las dos es, que son arreglos opuestos.
+      */
+      if (url) {
+        void probeMediaAuth(url).then(({ query, header }) => {
+          console.warn(`[Audiobookshelf] el servidor responde: testigo en la dirección ${query}, en la cabecera ${header}`);
+        });
+      }
     },
     onTimeUpdate: () => {
       const audio = audioRef.current;

@@ -81,6 +81,36 @@ export function absCoverUrl(itemId: string): string {
   return absMediaUrl(`/api/items/${encodeURIComponent(itemId)}/cover`);
 }
 
+/**
+ * Pregunta al servidor cómo quiere que le pidan el audio.
+ *
+ * Un `<audio src>` no puede mandar cabeceras, así que el testigo tiene que ir en la
+ * dirección. Pero las versiones nuevas de Audiobookshelf dejaron de aceptarlo así en
+ * los ficheros de medios y contestan `401 Unauthorized` — que el navegador no
+ * distingue de un fichero ilegible y reporta como «Format error». De ahí que el
+ * reproductor pareciera un problema de códec cuando era de permisos.
+ *
+ * Esto pide **un solo byte** de cada forma y devuelve lo que respondió cada una. El
+ * testigo no sale de aquí: solo se informa del código.
+ */
+export async function probeMediaAuth(url: string): Promise<{ query: number; header: number }> {
+  const config = getAudiobookshelfConfig();
+  const bare = url.replace(/([?&])token=[^&]*/i, '$1').replace(/[?&]$/, '');
+  const ask = async (target: string, headers: Record<string, string>): Promise<number> => {
+    try {
+      const response = await fetch(target, { headers: { Range: 'bytes=0-1', ...headers } });
+      return response.status;
+    } catch {
+      return 0;
+    }
+  };
+  const [query, header] = await Promise.all([
+    ask(url, {}),
+    ask(bare, config?.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
+  ]);
+  return { query, header };
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 
 export async function loginAudiobookshelf(serverUrl: string, username: string, password: string): Promise<AudiobookshelfConfig> {

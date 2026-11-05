@@ -73,6 +73,29 @@ function formatClock(seconds: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
 }
 
+/**
+ * El texto de una sinopsis que viene con HTML dentro.
+ *
+ * Los saltos (`<br>`, `</p>`) se conservan como saltos de línea de verdad, el resto
+ * de etiquetas se quita y las entidades se descodifican. No se inyecta como HTML a
+ * propósito: lo que manda el servidor no entra en la página como marcado.
+ */
+function plainText(raw: string): string {
+  if (!raw) return '';
+  const withBreaks = raw
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(p|div|li)\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '');
+  const decoded = withBreaks
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
+  return decoded.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** Fila que no existe cuando no hay valor; la ficha no pinta huecos. */
 function MetaRow({ label, value }: { label: string; value?: string | number }) {
   if (value === undefined || value === null || value === '') return null;
@@ -161,7 +184,13 @@ function AudiobookDetail({
    * fueran candidatos es peor que admitir que no hay ninguno: invita a vincular mal.
    */
   const likely = (scored[0]?.score ?? 0) >= 0.3;
-  const description = full.description || '';
+  /*
+    Audiobookshelf devuelve la sinopsis con HTML dentro, y salía en crudo: el lector
+    veía «<br />» escrito en mitad de la frase. Aquí se pasa a texto — los saltos de
+    línea se respetan, las etiquetas se van — en vez de inyectarlo como HTML, que
+    sería meter en la página lo que mande el servidor.
+  */
+  const description = plainText(full.description || '');
   const longDescription = description.length > 420;
 
   return (
@@ -179,7 +208,7 @@ function AudiobookDetail({
           <h1 className="yoru-detail-title">{full.title}</h1>
           {full.author && <div className="yoru-detail-author">{full.author}</div>}
           {full.narrator && (
-            <div className="yoru-detail-author">{es ? 'Narra' : 'Narrated by'} {full.narrator}</div>
+            <div className="yoru-detail-author">{es ? 'Narrado por' : 'Narrated by'} {full.narrator}</div>
           )}
 
           <div className="yoru-detail-badges">
