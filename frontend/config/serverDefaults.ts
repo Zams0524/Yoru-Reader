@@ -35,7 +35,9 @@
  * Lo de `.env.local` manda sobre lo de aquí, para poder probar sin tocar el código.
  */
 function env(name: string): string {
-  const value = (import.meta.env as Record<string, string | undefined>)[name];
+  // Fuera de Vite —las pruebas corren en Node a secas— `import.meta.env` no existe.
+  const source = (import.meta as { env?: Record<string, string | undefined> }).env;
+  const value = source?.[name];
   return typeof value === 'string' ? value.trim() : '';
 }
 
