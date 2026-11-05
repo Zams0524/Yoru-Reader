@@ -260,9 +260,10 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
         401 que el navegador no sabe interpretar. Preguntándoselo de las dos maneras se
         sabe cuál de las dos es, que son arreglos opuestos.
       */
+      const track = sessionRef.current?.tracks[trackIndexRef.current];
       if (url) {
-        void probeMediaAuth(url).then(({ query, header }) => {
-          console.warn(`[Audiobookshelf] el servidor responde: testigo en la dirección ${query}, en la cabecera ${header}`);
+        void probeMediaAuth(url, track?.fileUrl || '').then((resumen) => {
+          console.warn(`[Audiobookshelf] el servidor responde: ${resumen}`);
         });
       }
     },

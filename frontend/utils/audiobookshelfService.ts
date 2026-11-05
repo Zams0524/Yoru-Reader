@@ -118,22 +118,25 @@ function sessionTrackUrl(sessionId: string, contentUrl: unknown, index: number, 
  * Esto pide **un solo byte** de cada forma y devuelve lo que respondió cada una. El
  * testigo no sale de aquí: solo se informa del código.
  */
-export async function probeMediaAuth(url: string): Promise<{ query: number; header: number }> {
+export async function probeMediaAuth(sessionUrl: string, fileUrl: string): Promise<string> {
   const config = getAudiobookshelfConfig();
-  const bare = url.replace(/([?&])token=[^&]*/i, '$1').replace(/[?&]$/, '');
+  const token = config?.token?.trim() || '';
+  const auth = token ? { Authorization: `Bearer ${token}` } : {};
+  const withToken = (url: string) => `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
   const ask = async (target: string, headers: Record<string, string>): Promise<number> => {
     try {
-      const response = await fetch(target, { headers: { Range: 'bytes=0-1', ...headers } });
-      return response.status;
+      return (await fetch(target, { headers: { Range: 'bytes=0-1', ...headers } })).status;
     } catch {
       return 0;
     }
   };
-  const [query, header] = await Promise.all([
-    ask(url, {}),
-    ask(bare, config?.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
+  const [a, b, c, d] = await Promise.all([
+    ask(sessionUrl, {}),
+    ask(sessionUrl, auth),
+    ask(fileUrl ? withToken(fileUrl) : sessionUrl, {}),
+    ask(fileUrl || sessionUrl, auth),
   ]);
-  return { query, header };
+  return `sesión sin nada ${a}, sesión con cabecera ${b}, fichero con testigo ${c}, fichero con cabecera ${d}`;
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────
@@ -301,6 +304,7 @@ export async function startAudiobookPlayback(itemId: string): Promise<Audiobooks
         startOffset: Number(track.startOffset) || 0,
         duration: Number(track.duration) || 0,
         url: sessionTrackUrl(sessionId, track.contentUrl, trackIndex, config),
+        fileUrl: typeof track.contentUrl === 'string' ? normalizeServerUrl(config.serverUrl) + track.contentUrl : undefined,
         mimeType: track.mimeType,
       };
     })
