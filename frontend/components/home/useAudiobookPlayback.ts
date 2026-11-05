@@ -53,7 +53,26 @@ export interface AudiobookPlayback {
     onPlay: () => void;
     onPause: () => void;
     onEnded: () => void;
+    /** Sin esto, una pista que no carga deja el reproductor mudo y en 0:00. */
+    onError: () => void;
   };
+}
+
+/** Lo que significa cada código de `MediaError`, dicho para quien lo lee en pantalla. */
+function mediaErrorMessage(code: number | undefined, es: boolean): string {
+  if (code === 1) return es ? 'Se canceló la carga del audio.' : 'Loading the audio was cancelled.';
+  if (code === 2) {
+    return es
+      ? 'No se pudo traer el audio del servidor. Comprueba que Audiobookshelf sigue encendido.'
+      : 'Could not fetch the audio from the server. Check that Audiobookshelf is still up.';
+  }
+  if (code === 3) return es ? 'El audio llegó, pero no se pudo descodificar.' : 'The audio arrived but could not be decoded.';
+  if (code === 4) {
+    return es
+      ? 'El servidor no dio el audio, o este formato no se puede reproducir aquí.'
+      : 'The server did not serve the audio, or this format cannot be played here.';
+  }
+  return es ? 'No se pudo reproducir el audio.' : 'The audio could not be played.';
 }
 
 export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlayback {
@@ -121,7 +140,7 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     playAfterLoadRef.current = autoplay;
     if (index === trackIndexRef.current && audio.src === target.tracks[index].url && audio.readyState > 0) {
       audio.currentTime = offset;
-      if (autoplay) void audio.play().catch(() => setPlaying(false));
+      if (autoplay) void audio.play().catch((error) => { setPlaying(false); console.warn('[Audiobookshelf] play() rechazado:', error); });
       return;
     }
     pendingSeekRef.current = offset;
@@ -166,7 +185,7 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     const current = sessionRef.current;
     if (!audio || !current) return;
     if (!audio.src) { loadTrack(current, timeRef.current, true); return; }
-    void audio.play().catch(() => setPlaying(false));
+    void audio.play().catch(reportPlayRejection);
   }, [loadTrack]);
 
   const pause = useCallback(() => { audioRef.current?.pause(); }, []);
@@ -189,6 +208,25 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     });
   }, []);
 
+  /*
+    Un rechazo de `play()` se tragaba el motivo. Los dos que importan son distintos y
+    hay que distinguirlos: el navegador bloqueando la reproducción sin un gesto del
+    usuario, y la pista que no se puede reproducir.
+  */
+  const reportPlayRejection = useCallback((error: unknown) => {
+    setPlaying(false);
+    const name = error instanceof Error ? error.name : '';
+    console.warn(`[Audiobookshelf] play() rechazado: ${name || error}`);
+    if (name === 'NotAllowedError') {
+      setPhase({
+        kind: 'error',
+        message: es
+          ? 'El navegador no deja empezar a sonar solo. Pulsa el botón de reproducir.'
+          : 'The browser will not start playback on its own. Press play.',
+      });
+    }
+  }, [es]);
+
   const handlers = {
     onLoadedMetadata: () => {
       const audio = audioRef.current;
@@ -198,7 +236,24 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
         audio.currentTime = pendingSeekRef.current;
         pendingSeekRef.current = null;
       }
-      if (playAfterLoadRef.current) void audio.play().catch(() => setPlaying(false));
+      if (playAfterLoadRef.current) void audio.play().catch(reportPlayRejection);
+    },
+    /*
+      Que la pista no cargara no se enteraba nadie: el `<audio>` no tenía manejador de
+      error, así que el reproductor se quedaba pintado en 0:00 y en silencio, sin una
+      sola línea en ningún sitio. Un reproductor que falla callado es el peor caso,
+      porque parece que el fallo lo tienes tú.
+    */
+    onError: () => {
+      const audio = audioRef.current;
+      const code = audio?.error?.code;
+      const detail = audio?.error?.message || '';
+      const url = audio?.currentSrc || audio?.src || '';
+      // El testigo viaja en la dirección; no se escribe en el registro.
+      const safeUrl = url.replace(/([?&]token=)[^&]*/i, '$1…');
+      console.warn(`[Audiobookshelf] la pista no cargó (código ${code ?? '?'}) ${detail} — ${safeUrl}`);
+      setPlaying(false);
+      setPhase({ kind: 'error', message: mediaErrorMessage(code, es) });
     },
     onTimeUpdate: () => {
       const audio = audioRef.current;

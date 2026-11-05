@@ -242,6 +242,7 @@ function AudiobookDetail({
                 onPlay={playback.handlers.onPlay}
                 onPause={playback.handlers.onPause}
                 onEnded={playback.handlers.onEnded}
+                onError={playback.handlers.onError}
               />
               <div className="yoru-ab-seek">
                 <span>{formatClock(position)}</span>

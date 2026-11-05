@@ -411,49 +411,33 @@ export default function YoruShell({
     }
 
     if (view === 'listen') {
-      if (!listenable.length) {
-        return (
-          <div>
-            <div className="yoru-view-head">
-              <div>
-                <h1 className="yoru-view-title">{es ? 'Leer y escuchar' : 'Read and listen'}</h1>
-                <div className="yoru-view-sub">
-                  {es ? 'Ningún libro tiene audiolibro todavía' : 'No book has an audiobook yet'}
-                </div>
-              </div>
-            </div>
-            <p className="yoru-empty-note">
-              {es
-                ? 'Aquí viven los libros que tienes en texto y en audio a la vez: los que puedes leer mientras los escuchas. Para que uno aparezca, vincula su audiolibro — desde la ficha del audiolibro, en Audiolibros, o abriendo el libro y eligiéndolo en el reproductor.'
-                : 'This is where the books you have as both text and audio live: the ones you can read while listening. To make one show up, link its audiobook — from the audiobook page under Audiobooks, or by opening the book and picking it in the player.'}
-            </p>
-            <div className="yoru-detail-actions" style={{ marginTop: 18 }}>
-              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('audiobooks')}>
-                <Headphones size={16} />
-                {es ? 'Ver mis audiolibros' : 'See my audiobooks'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => go('catalog')}>
-                <LibraryIcon size={16} />
-                {es ? 'Ver mi biblioteca' : 'See my library'}
-              </button>
-            </div>
-          </div>
-        );
-      }
+      /*
+        Siempre la biblioteca, nunca una pantalla de bienvenida.
+
+        Antes, sin ningún libro vinculado, esta sección era un texto largo explicando
+        qué hacer y dos botones para irse a otro sitio: una pantalla entera para decir
+        que no había nada. Ahora se ve la biblioteca, con los que ya tienen audiolibro
+        delante, y lo que falta por hacer cabe en una línea encima.
+      */
+      const sinVincular = library.filter((book) => !getAudiobookLink(book.id));
+      const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
+      const total = listenable.length;
+      const subtitle = total === 0
+        ? (es
+            ? 'Ningún libro tiene audiolibro todavía. Abre uno y elige su audiolibro en el reproductor, o vincúlalo desde Audiolibros.'
+            : 'No book has an audiobook yet. Open one and pick its audiobook in the player, or link it from Audiobooks.')
+        : (() => {
+            const base = es
+              ? `${total} ${total === 1 ? 'libro listo para leer y escuchar' : 'libros listos para leer y escuchar'}`
+              : `${total} ${total === 1 ? 'book ready to read along' : 'books ready to read along'}`;
+            if (!withChapters) return base;
+            return es ? `${base} · ${withChapters} con capítulos` : `${base} · ${withChapters} with chapters`;
+          })();
       return (
         <BookGridView
           title={es ? 'Leer y escuchar' : 'Read and listen'}
-          subtitle={(() => {
-            const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
-            const total = listenable.length;
-            if (es) {
-              const base = `${total} ${total === 1 ? 'libro con audiolibro' : 'libros con audiolibro'}`;
-              return withChapters ? `${base} · ${withChapters} con capítulos` : base;
-            }
-            const base = `${total} ${total === 1 ? 'book with an audiobook' : 'books with an audiobook'}`;
-            return withChapters ? `${base} · ${withChapters} with chapters` : base;
-          })()}
-          books={listenable}
+          subtitle={subtitle}
+          books={[...listenable, ...sinVincular]}
           es={es}
           onOpenDetail={openDetail}
         />
