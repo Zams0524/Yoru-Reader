@@ -175,6 +175,41 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
 
 let running = false;
 
+/** Una petición al servidor con el motivo a mano cuando falla, en vez de tragárselo. */
+interface Attempt {
+  items: ServerItem[] | null;
+  error: string | null;
+}
+
+async function attempt(run: () => Promise<ServerItem[]>): Promise<Attempt> {
+  try {
+    return { items: await run(), error: null };
+  } catch (error) {
+    return { items: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+const SKIPPED: Attempt = { items: null, error: null };
+
+/**
+ * Una línea por servidor en el registro, y **nada en pantalla**.
+ *
+ * El silencio de cara al usuario se queda tal cual: estar fuera de casa o sin red no
+ * es un problema que haya que anunciarle, y por eso esto no lanza avisos ni pinta
+ * errores. Lo que no podía seguir igual es que nosotros tampoco lo viéramos: un
+ * diagnóstico que no distingue «no había nada» de «la petición se cayó» no sirve, y
+ * era imposible saber por qué un carrusel salía vacío sin preguntárselo al usuario.
+ */
+function report(server: string, parts: { label: string; attempt: Attempt }[]): void {
+  const failed = parts.find((part) => part.attempt.error);
+  if (failed) {
+    console.warn(`[catálogo] ${server}: falló ${failed.label} — ${failed.attempt.error}`);
+    return;
+  }
+  const counts = parts.map((part) => `${part.attempt.items?.length ?? 0} ${part.label}`).join(', ');
+  console.log(`[catálogo] ${server}: ${counts}`);
+}
+
 /**
  * Pide las novedades y actualiza la caché. No propaga errores a propósito: quien la
  * llama no tiene nada que hacer con ellos. Se puede llamar al arrancar sin miedo.
@@ -188,21 +223,34 @@ export async function refreshServerCatalog(): Promise<void> {
   running = true;
   try {
     const [kavita, audiobooks, onDeck, forYouAudio] = await Promise.all([
-      wantsKavita ? fetchKavita().catch(() => null) : Promise.resolve(null),
-      wantsAudiobooks ? fetchAudiobooks().catch(() => null) : Promise.resolve(null),
-      wantsKavita ? fetchOnDeck().catch(() => null) : Promise.resolve(null),
-      wantsAudiobooks ? fetchForYouAudio().catch(() => null) : Promise.resolve(null),
+      wantsKavita ? attempt(fetchKavita) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchAudiobooks) : Promise.resolve(SKIPPED),
+      wantsKavita ? attempt(fetchOnDeck) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchForYouAudio) : Promise.resolve(SKIPPED),
     ]);
 
+    if (wantsKavita) {
+      report('Kavita', [
+        { label: 'series', attempt: kavita },
+        { label: 'a medias', attempt: onDeck },
+      ]);
+    }
+    if (wantsAudiobooks) {
+      report('Audiobookshelf', [
+        { label: 'audiolibros', attempt: audiobooks },
+        { label: 'para ti', attempt: forYouAudio },
+      ]);
+    }
+
     // Un servidor caído no borra lo que ya sabíamos del otro.
-    if (kavita === null && audiobooks === null) return;
+    if (kavita.items === null && audiobooks.items === null) return;
     const previous = getCachedServerCatalog();
     save({
       at: Date.now(),
-      kavita: kavita ?? previous.kavita,
-      audiobooks: audiobooks ?? previous.audiobooks,
-      onDeck: onDeck ?? previous.onDeck,
-      forYouAudio: forYouAudio ?? previous.forYouAudio,
+      kavita: kavita.items ?? previous.kavita,
+      audiobooks: audiobooks.items ?? previous.audiobooks,
+      onDeck: onDeck.items ?? previous.onDeck,
+      forYouAudio: forYouAudio.items ?? previous.forYouAudio,
     });
   } finally {
     running = false;
