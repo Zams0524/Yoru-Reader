@@ -1,3 +1,4 @@
+import { KAVITA_DEFAULTS } from '../config/serverDefaults';
 import type {
   ConnectionTestResult,
   KavitaBook,
@@ -38,7 +39,12 @@ export const KAVITA_DEFAULT_URL = 'http://localhost:5000';
  * `isKavitaConfigured()`, que exige además la clave.
  */
 export function getKavitaConfig(): KavitaConfig {
-  const fallback = { serverUrl: KAVITA_DEFAULT_URL, apiKey: '' } as KavitaConfig;
+  /*
+    El respaldo es lo que viene de fábrica (`config/serverDefaults.ts`). Solo se usa
+    cuando el usuario no ha guardado nada: en cuanto configura su servidor manda el
+    suyo, y puede cambiarlo o borrarlo desde Ajustes como siempre.
+  */
+  const fallback = { serverUrl: KAVITA_DEFAULTS.serverUrl, apiKey: KAVITA_DEFAULTS.apiKey } as KavitaConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;

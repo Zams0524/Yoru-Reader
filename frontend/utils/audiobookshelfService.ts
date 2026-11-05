@@ -1,3 +1,4 @@
+import { AUDIOBOOKSHELF_DEFAULTS } from '../config/serverDefaults';
 import type {
   AudiobookItem,
   AudiobookshelfConfig,
@@ -29,7 +30,8 @@ export const AUDIOBOOKSHELF_DEFAULT_URL = 'http://localhost:13378';
  * está listo es `isAudiobookshelfConfigured()`, que exige el token.
  */
 export function getAudiobookshelfConfig(): AudiobookshelfConfig {
-  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULT_URL, token: '' } as AudiobookshelfConfig;
+  // Igual que en Kavita: lo de fábrica solo entra cuando el usuario no tiene nada.
+  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULTS.serverUrl, token: AUDIOBOOKSHELF_DEFAULTS.token } as AudiobookshelfConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;
