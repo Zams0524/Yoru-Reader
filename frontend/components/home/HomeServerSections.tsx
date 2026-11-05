@@ -8,6 +8,7 @@ import {
   type ServerItem,
   type ServerSeries,
 } from '../../utils/serverCatalog';
+import type { RailId } from '../../utils/homeRails';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -18,7 +19,7 @@ import {
  * En lugar de «Popular» (que ningún servidor expone como ranking) va «Continuar en el
  * servidor», que es el `on-deck` de Kavita: lo que ese servidor tiene a medias.
  */
-export default function HomeServerSections({
+export function useServerRails({
   es,
   localTitles,
   onOpenItem,
@@ -53,67 +54,84 @@ export default function HomeServerSections({
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
   const randomAudio = useMemo(() => sample(catalog.audiobooks, 10, seed + 7), [catalog.audiobooks, seed]);
 
-  return (
-    <>
-      {onDeck.length > 0 && (
-        <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
-          {onDeck.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
-          ))}
-        </Rail>
-      )}
+  /*
+    Devueltos uno a uno y no como un bloque: así Inicio puede intercalarlos con los
+    suyos y el usuario puede poner «Continuar en el servidor» antes que «Continuar».
+    Un carrusel sin datos no entra en el mapa, así que no se pinta ni deja hueco.
+  */
+  const rails: Partial<Record<RailId, React.ReactNode>> = {};
 
-      {catalog.forYouAudio.length > 0 && (
-        <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'} es={es}>
-          {catalog.forYouAudio.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
-          ))}
-        </Rail>
-      )}
+  if (onDeck.length > 0) {
+    rails['server-ondeck'] = (
+      <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
+        {onDeck.map((item) => (
+          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
 
-      {catalog.kavita.length > 0 && (
-        <Rail title={es ? 'Series de libros' : 'Book series'} es={es}>
-          {catalog.kavita.map((item) => (
-            <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
-          ))}
-        </Rail>
-      )}
+  if (catalog.forYouAudio.length > 0) {
+    rails['server-foryou-audio'] = (
+      <Rail title={es ? 'Audiolibros para ti' : 'Audiobooks for you'} es={es}>
+        {catalog.forYouAudio.map((item) => (
+          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
 
-      {audioSeries.length > 0 && (
-        <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'} es={es}>
-          {audioSeries.map((series) => (
-            <SeriesStack key={series.key} series={series} es={es} onOpen={onOpenSeries} />
-          ))}
-        </Rail>
-      )}
+  if (catalog.kavita.length > 0) {
+    rails['server-kavita'] = (
+      <Rail title={es ? 'Series de libros' : 'Book series'} es={es}>
+        {catalog.kavita.map((item) => (
+          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
 
-      {randomBooks.length > 0 && (
-        <Rail
-          title={es ? 'Libros aleatorios' : 'Random books'}
-          onMore={() => setSeed((value) => value + 1)}
-          moreLabel={es ? 'Actualizar' : 'Shuffle'}
-          es={es}
-        >
-          {randomBooks.map((item) => (
-            <ServerCard key={`r-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
-          ))}
-        </Rail>
-      )}
+  if (audioSeries.length > 0) {
+    rails['server-audio-series'] = (
+      <Rail title={es ? 'Series de audiolibros' : 'Audiobook series'} es={es}>
+        {audioSeries.map((series) => (
+          <SeriesStack key={series.key} series={series} es={es} onOpen={onOpenSeries} />
+        ))}
+      </Rail>
+    );
+  }
 
-      {randomAudio.length > 0 && (
-        <Rail
-          title={es ? 'Audiolibros aleatorios' : 'Random audiobooks'}
-          onMore={() => setSeed((value) => value + 1)}
-          moreLabel={es ? 'Actualizar' : 'Shuffle'}
-          es={es}
-        >
-          {randomAudio.map((item) => (
-            <ServerCard key={`ra-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
-          ))}
-        </Rail>
-      )}
-    </>
-  );
+  if (randomBooks.length > 0) {
+    rails['server-random-books'] = (
+      <Rail
+        title={es ? 'Libros aleatorios' : 'Random books'}
+        onMore={() => setSeed((value) => value + 1)}
+        moreLabel={es ? 'Actualizar' : 'Shuffle'}
+        es={es}
+      >
+        {randomBooks.map((item) => (
+          <ServerCard key={`r-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
+
+  if (randomAudio.length > 0) {
+    rails['server-random-audio'] = (
+      <Rail
+        title={es ? 'Audiolibros aleatorios' : 'Random audiobooks'}
+        onMore={() => setSeed((value) => value + 1)}
+        moreLabel={es ? 'Actualizar' : 'Shuffle'}
+        es={es}
+      >
+        {randomAudio.map((item) => (
+          <ServerCard key={`ra-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
+
+  return rails;
 }
 
 /**

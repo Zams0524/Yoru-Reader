@@ -26,6 +26,17 @@ export function Cover({ book, className }: { book: ShelfBook; className?: string
   return <img src={src} alt="" loading="lazy" className={className} />;
 }
 
+/**
+ * Si se enseña el título bajo la portada. Es global y se guarda en los ajustes.
+ *
+ * No choca con `hideCover`, que es por libro y hace justo lo contrario: esconder la
+ * imagen para que se vea el respaldo tipográfico. Uno dice qué pasa **bajo** la
+ * portada en toda la app; el otro, qué pasa **dentro** de una.
+ *
+ * Sin proveedor vale `true`, que es lo de siempre.
+ */
+export const PosterTitlesContext = React.createContext(true);
+
 export function BookPoster({
   book,
   subtitle,
@@ -35,6 +46,7 @@ export function BookPoster({
   subtitle?: string;
   onOpen: (book: ShelfBook) => void;
 }) {
+  const showTitles = React.useContext(PosterTitlesContext);
   const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
   // El menú del clic derecho, si quien pinta esta portada lo ofrece.
   const openMenu = useBookMenu();
@@ -54,8 +66,12 @@ export function BookPoster({
           </span>
         )}
       </span>
-      <span className="yoru-poster-title">{book.title}</span>
-      {subtitle !== '' && <span className="yoru-poster-meta">{subtitle ?? book.author ?? ''}</span>}
+      {showTitles && (
+        <>
+          <span className="yoru-poster-title">{book.title}</span>
+          {subtitle !== '' && <span className="yoru-poster-meta">{subtitle ?? book.author ?? ''}</span>}
+        </>
+      )}
     </button>
   );
 }

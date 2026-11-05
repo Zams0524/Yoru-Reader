@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
+import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, Eye, EyeOff, ChevronUp, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
@@ -9,6 +9,7 @@ import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
+import { getHomeLayout, resetHomeLayout, saveHomeLayout, RAILS, type RailId } from '../utils/homeRails';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
@@ -110,6 +111,120 @@ const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
  * donde se elige casi siempre; en claro y sepia cada acento tiene su versión oscura,
  * definida en yoru-design-system.css, porque el dorado sobre papel no se lee.
  */
+/**
+ * «Organizar inicio»: el orden de los carruseles y cuáles se esconden.
+ *
+ * Con flechas y no arrastrando a propósito: arrastrar no funciona con el teclado ni
+ * con un lector de pantalla, y aquí hay once filas que caben en poco sitio.
+ *
+ * Lista **todos** los carruseles, también los que ahora mismo no tienen nada que
+ * enseñar. Esconder uno es decir «no lo quiero», no «hoy está vacío»: los de servidor
+ * aparecen y desaparecen según lo que haya en Kavita, y la lista tiene que ser
+ * estable para poder ordenarla.
+ */
+function HomeRailsEditor({ lang }: { lang: string }) {
+  const [layout, setLayout] = useState(() => getHomeLayout());
+  const hidden = new Set(layout.hidden);
+
+  const apply = (next: typeof layout) => {
+    setLayout(next);
+    saveHomeLayout(next);
+  };
+
+  const move = (index: number, delta: number) => {
+    const order = [...layout.order];
+    const target = index + delta;
+    if (target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    apply({ ...layout, order });
+  };
+
+  const toggle = (id: RailId) => {
+    const next = hidden.has(id)
+      ? layout.hidden.filter((entry) => entry !== id)
+      : [...layout.hidden, id];
+    apply({ ...layout, hidden: next });
+  };
+
+  const byId = new Map(RAILS.map((rail) => [rail.id, rail]));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      {layout.order.map((id, index) => {
+        const rail = byId.get(id);
+        if (!rail) return null;
+        const off = hidden.has(id);
+        return (
+          <div
+            key={id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '7px 10px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--surface-raised)',
+              opacity: off ? 0.5 : 1,
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 0, fontSize: '0.84rem', color: 'var(--text-main)' }}>
+              {lang === 'es' ? rail.es : rail.en}
+            </span>
+            <button
+              type="button"
+              onClick={() => move(index, -1)}
+              disabled={index === 0}
+              aria-label={lang === 'es' ? 'Subir' : 'Move up'}
+              style={railBtn(index === 0)}
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(index, 1)}
+              disabled={index === layout.order.length - 1}
+              aria-label={lang === 'es' ? 'Bajar' : 'Move down'}
+              style={railBtn(index === layout.order.length - 1)}
+            >
+              <ChevronDown size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggle(id)}
+              aria-pressed={off}
+              aria-label={off
+                ? (lang === 'es' ? 'Mostrar' : 'Show')
+                : (lang === 'es' ? 'Esconder' : 'Hide')}
+              style={railBtn(false)}
+            >
+              {off ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => { resetHomeLayout(); setLayout(getHomeLayout()); }}
+        style={{
+          alignSelf: 'flex-start', marginTop: '6px', padding: '6px 12px',
+          border: '1px solid var(--border-light)', borderRadius: 'var(--radius-pill)',
+          background: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer',
+        }}
+      >
+        {lang === 'es' ? 'Volver al orden de siempre' : 'Back to the usual order'}
+      </button>
+    </div>
+  );
+}
+
+function railBtn(disabled: boolean): React.CSSProperties {
+  return {
+    width: '26px', height: '26px', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
+    background: 'none', color: 'var(--text-muted)',
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
+  };
+}
+
 const ACCENTS = [
   { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#f2c866' },
   { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#f0888f' },
@@ -3224,6 +3339,48 @@ const Library = React.memo(function Library({
                       style={{ width: '100%' }}
                       aria-label={lang === 'es' ? 'Radio de las esquinas' : 'Corner radius'}
                     />
+
+                    {/*
+                      El título bajo la portada, para toda la app. No tiene nada que
+                      ver con «difuminar portada», que es por libro y esconde la
+                      imagen; este dice si debajo va el nombre o no va nada.
+                    */}
+                    <label
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: '10px',
+                        margin: '18px 0 0', cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.showPosterTitles !== false}
+                        onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <span>
+                        <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                          {lang === 'es' ? 'Títulos bajo la portada' : 'Titles under covers'}
+                        </span>
+                        <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-dark)' }}>
+                          {lang === 'es'
+                            ? 'Quítalos y las cuadrículas se quedan solo en portadas.'
+                            : 'Turn them off and the grids are covers only.'}
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Organizar inicio: el orden de los carruseles y los que se esconden. */}
+                  <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {lang === 'es' ? 'Organizar inicio' : 'Arrange home'}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                      {lang === 'es'
+                        ? 'Inicio puede llegar a once carruseles. Ponlos en tu orden y esconde los que no uses.'
+                        : 'Home can reach eleven rails. Put them in your order and hide the ones you never use.'}
+                    </div>
+                    <HomeRailsEditor lang={lang} />
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>

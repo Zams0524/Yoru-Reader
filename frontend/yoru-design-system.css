@@ -41,6 +41,20 @@
 }
 
 /*
+  Y los peldaños otra vez, donde el deslizador fija la base.
+
+  Una variable derivada se resuelve **donde se declara**, no donde se usa: declarados
+  solo en `:root`, los tres seguían saliendo del 10 px de `:root` por mucho que
+  `.app-container` cambiara `--radius-base`, y el deslizador no movía nada. Se vio
+  probándolo, no compilando: tipos y build estaban verdes igualmente.
+*/
+.app-container {
+  --radius-sm: calc(var(--radius-base) * 0.6);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) * 1.6);
+}
+
+/*
   Temas de acento.
 
   El dorado es el de Yoru y el que viene puesto: es la identidad de la app, no una

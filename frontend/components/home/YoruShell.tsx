@@ -28,7 +28,7 @@ import GlobalSearch from './GlobalSearch';
 import HomeView from './HomeView';
 import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
-import { Cover } from './primitives';
+import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
@@ -765,7 +765,9 @@ export default function YoruShell({
           {serverToast && (
             <div className="yoru-server-toast" role="status" aria-live="polite">{serverToast}</div>
           )}
-          <BookMenuProvider actions={bookMenuActions}>{renderCanvas()}</BookMenuProvider>
+          <PosterTitlesContext.Provider value={settings?.showPosterTitles !== false}>
+            <BookMenuProvider actions={bookMenuActions}>{renderCanvas()}</BookMenuProvider>
+          </PosterTitlesContext.Provider>
         </main>
       </div>
 
