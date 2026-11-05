@@ -56,7 +56,7 @@ export interface AudiobookshelfDefaults {
  */
 export const KAVITA_DEFAULTS: KavitaDefaults = {
   serverUrl: env('VITE_KAVITA_URL') || 'http://localhost:5000',
-  apiKey: env('VITE_KAVITA_API_KEY') || '',
+  apiKey: env('VITE_KAVITA_API_KEY') || 'TpThYNJN3ehxG6Ftfc2mWsprqLUc0kYm',
 };
 
 /**
@@ -64,5 +64,6 @@ export const KAVITA_DEFAULTS: KavitaDefaults = {
  */
 export const AUDIOBOOKSHELF_DEFAULTS: AudiobookshelfDefaults = {
   serverUrl: env('VITE_ABS_URL') || 'http://localhost:13378',
-  token: env('VITE_ABS_TOKEN') || '',
+  token: env('VITE_ABS_TOKEN')
+    || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlJZCI6ImE4OGI0NTM0LTc2NmQtNGI1YS1iMjdhLTFkZDkwNDNlNWRhMyIsIm5hbWUiOiJ1c3VhcmlvcyIsInR5cGUiOiJhcGkiLCJpYXQiOjE3OTM5MjI0NzJ9.OtBu6XhqdvnvpqIEl30e8iaGYpGW2_vxKidVT59jByE',
 };
