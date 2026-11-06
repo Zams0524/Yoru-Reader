@@ -7269,11 +7269,20 @@ html.yoru-compact #root {
   color: var(--text-muted);
   max-width: 54ch;
 }
-.settings-row-control {
+/*
+  Anidada bajo `.settings-rows` a proposito. `.settings-row-control` ya existia en
+  index.css, con separacion a los lados, relleno y un borde abajo, y la usan las
+  filas de interruptor de media docena de tarjetas. Esta hoja carga despues, asi
+  que una regla suelta con el mismo nombre se las pisaba y les quitaba las tres
+  cosas: el interruptor dejaba de irse a la derecha y las filas se apelotonaban.
+*/
+.settings-rows .settings-row-control {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  padding: 0;
+  border-bottom: none;
 }
 
 .settings-input {
