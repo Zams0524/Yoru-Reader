@@ -51,8 +51,8 @@ export default function HomeView({
 
   /*
     El orden de los carruseles lo decide el usuario en Ajustes → Organizar inicio.
-    Se lee aquí, antes de cualquier salida temprana, porque son hooks: con la
-    biblioteca vacía esta vista devuelve el estado vacío y no llega a pintarlos.
+    Se lee aquí, antes de cualquier salida temprana, porque son hooks: sin nada que
+    enseñar esta vista devuelve el estado vacío y no llega a pintarlos.
   */
   const [layout, setLayout] = useState(() => getHomeLayout());
   useEffect(() => {
@@ -94,7 +94,17 @@ export default function HomeView({
     { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks', go: onGoAudiobooks },
   ];
 
-  if (books.length === 0) {
+  /*
+    Vacío de verdad: ni un libro propio ni nada en ninguno de los dos servidores.
+
+    Antes bastaba con no tener libros locales para que Inicio dijera «tu biblioteca
+    está vacía», aunque detrás hubiera un Kavita con sus series y doscientos y pico
+    audiolibros esperando. Eso es decirle a alguien que no tiene nada mientras lo
+    tiene todo, y encima tapando lo que sí hay.
+  */
+  const sinLibrosPropios = books.length === 0;
+  const sinServidores = Object.keys(serverRails).length === 0;
+  if (sinLibrosPropios && sinServidores) {
     return (
       <EmptyState
         title={es ? 'Tu biblioteca está vacía' : 'Your library is empty'}
@@ -224,6 +234,18 @@ export default function HomeView({
           </button>
         ))}
       </div>
+
+      {/*
+        Con servidor y sin libros propios, «importa una novela» sigue siendo verdad,
+        pero es una nota al pie: lo que se viene a ver es el catálogo.
+      */}
+      {sinLibrosPropios && (
+        <p className="yoru-home-hint">
+          {es
+            ? 'Esto es lo que hay en tus servidores. Importa una novela y también aparecerá aquí.'
+            : 'This is what your servers have. Import a novel and it will show up here too.'}
+        </p>
+      )}
 
       {layout.order
         .filter((id) => !hidden.has(id) && all[id])

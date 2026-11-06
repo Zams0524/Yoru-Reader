@@ -364,6 +364,13 @@
   color: var(--bg-app);
 }
 
+/* La nota de «importa una novela» cuando lo que se está viendo es de los servidores. */
+.yoru-home-hint {
+  margin: -8px 0 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .yoru-rail { margin-bottom: 32px; }
 .yoru-rail-head {
   display: flex;
