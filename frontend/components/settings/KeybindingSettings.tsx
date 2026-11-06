@@ -25,6 +25,7 @@ export default function KeybindingSettings({
   onSaveSettings,
   recording,
   onRecord,
+  onDone,
 }: {
   lang: string;
   settings: Record<string, any>;
@@ -32,6 +33,8 @@ export default function KeybindingSettings({
   /** El atajo que está esperando una tecla, o null. */
   recording: string | null;
   onRecord: (id: string | null) => void;
+  /** Avisa de que se hizo, con el aviso de la app. */
+  onDone: (message: string) => void;
 }) {
   const bindings = settings.keybindings || DEFAULTS;
 
@@ -91,10 +94,22 @@ export default function KeybindingSettings({
 
         <button
           type="button"
+          /*
+            El aviso de la app, no el del navegador.
+
+            Esto era un `alert()` con una nota al lado admitiendo que era un apaño
+            porque desde dentro de Library no se alcanzaba `showToast`. Ahora la
+            tarjeta está fuera y le llega por props, así que se acabó el apaño: un
+            `alert()` bloquea la ventana entera y se ve como un aviso del sistema,
+            no como algo de Yoru.
+
+            Sin diálogo de confirmación a propósito: restablecer cinco teclas se
+            deshace volviéndolas a poner, y preguntar antes de algo que no rompe
+            nada enseña a la gente a decir que sí sin leer.
+          */
           onClick={() => {
             onSaveSettings({ ...settings, keybindings: { ...DEFAULTS } });
-            // Fallback to alert if showToast is not directly accessible here
-            alert(lang === 'es' ? 'Atajos restablecidos por defecto.' : 'Shortcuts reset to defaults.');
+            onDone(lang === 'es' ? 'Atajos restablecidos por defecto.' : 'Shortcuts reset to defaults.');
           }}
           style={{
             marginTop: '8px',

@@ -35,7 +35,7 @@ export default function VocabularySettings({
         type="button"
         className="reset-filter-btn"
         onClick={onOpenPanel}
-        style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
+        style={{ background: 'var(--yoru-gold-soft)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
       >
         <Database size={15} /> {lang === 'es' ? 'Abrir Panel de Vocabulario' : 'Open Vocabulary Panel'}
       </button>

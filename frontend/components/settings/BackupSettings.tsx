@@ -32,7 +32,7 @@ export default function BackupSettings({
           type="button"
           className="reset-filter-btn"
           onClick={onExport}
-          style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          style={{ background: 'var(--yoru-gold-soft)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
         >
           <Download size={16} /> {lang === 'es' ? 'Exportar Biblioteca' : 'Export Library'}
         </button>

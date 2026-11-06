@@ -43,7 +43,12 @@ export default function ReadingDaySettings({
           onChange={(e) => onSaveSettings({ ...settings, startDayHour: parseInt(e.target.value) })}
           style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
         />
-        <p style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px', lineHeight: 1.3 }}>
+        {/*
+          El token, no un blanco al treinta por ciento. Ese blanco se escribió
+          pensando solo en el tema oscuro: sobre el papel del tema claro y sobre el
+          sepia quedaba casi invisible, porque es blanco sobre fondo claro.
+        */}
+        <p style={{ fontSize: '0.74rem', color: 'var(--text-dark)', marginTop: '8px', lineHeight: 1.3 }}>
           {lang === 'es'
             ? 'Ajusta a qué hora comienza un nuevo día. Útil si lees después de medianoche y deseas que se contabilice en el día anterior.'
             : 'Configure at what hour a new reading day starts. Useful for night readers.'}
