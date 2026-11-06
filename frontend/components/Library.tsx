@@ -12,6 +12,8 @@ import StatisticsSettings from './settings/StatisticsSettings';
 import KeybindingSettings from './settings/KeybindingSettings';
 import NotificationSettings from './settings/NotificationSettings';
 import CloudSyncSettings from './settings/CloudSyncSettings';
+import DiscordSettings from './settings/DiscordSettings';
+import DangerZoneSettings from './settings/DangerZoneSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -3855,121 +3857,7 @@ const Library = React.memo(function Library({
                 <MessageSquare size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Discord Rich Presence' : 'Discord Rich Presence'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {lang === 'es' 
-                  ? 'Configura la integración de presencia en Discord.' 
-                  : 'Configure the Discord presence integration.'}
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-                {/* Enabled */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                  <span>{lang === 'es' ? 'Habilitar Discord Rich Presence:' : 'Enable Discord Rich Presence:'}</span>
-                  <input 
-                    type="checkbox" 
-                    checked={settings.discordEnabled || false}
-                    onChange={(e) => onSaveSettings({ ...settings, discordEnabled: e.target.checked })}
-                    style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                </div>
-
-                {/* Inactivity Timer */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Temporizador de inactividad (segundos):' : 'Inactivity Timer (seconds):'}
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.discordInactivityTimer !== undefined ? settings.discordInactivityTimer : 300}
-                    onChange={(e) => onSaveSettings({ ...settings, discordInactivityTimer: parseInt(e.target.value) || 0 })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%'
-                    }}
-                  />
-                </div>
-
-                {/* Icon */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Icono:' : 'Icon:'}
-                  </label>
-                  <select
-                    value={settings.discordIcon || 'Yoru'}
-                    onChange={(e) => onSaveSettings({ ...settings, discordIcon: e.target.value })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="Yoru">Yoru</option>
-                    <option value="Cute">Cute</option>
-                    <option value="Jacked">Jacked</option>
-                    <option value="Cursed">Cursed</option>
-                  </select>
-                </div>
-
-                {/* Show Stats */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Mostrar Estadísticas:' : 'Show Stats:'}
-                  </label>
-                  <select
-                    value={settings.discordShowStats || 'None'}
-                    onChange={(e) => onSaveSettings({ ...settings, discordShowStats: e.target.value })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="None">{lang === 'es' ? 'Ninguna' : 'None'}</option>
-                    <option value="Characters per Hour">{lang === 'es' ? 'Caracteres por hora' : 'Characters per Hour'}</option>
-                    <option value="Total Characters">{lang === 'es' ? 'Caracteres totales' : 'Total Characters'}</option>
-                    <option value="Cards Mined">{lang === 'es' ? 'Tarjetas creadas' : 'Cards Mined'}</option>
-                    <option value="Active Reading Time">{lang === 'es' ? 'Tiempo activo de lectura' : 'Active Reading Time'}</option>
-                  </select>
-                </div>
-
-                {/* Blacklisted Scenes */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Novelas/Escenas en lista negra:' : 'Blacklisted Novels/Scenes:'}
-                  </label>
-                  <textarea
-                    value={settings.discordBlacklist || ''}
-                    onChange={(e) => onSaveSettings({ ...settings, discordBlacklist: e.target.value })}
-                    placeholder={lang === 'es' ? 'Escribe nombres de libros a ignorar, uno por línea...' : 'Enter book names to ignore, one per line...'}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      height: '120px',
-                      resize: 'vertical'
-                    }}
-                  />
-                </div>
-              </div>
+              <DiscordSettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
             </div>
           )}
 
@@ -4226,18 +4114,7 @@ const Library = React.memo(function Library({
                 <AlertTriangle size={18} style={{ color: '#ef4444' }} />
                 <span>{lang === 'es' ? 'Zona de peligro' : 'Danger Zone'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Acciones destructivas e irreversibles sobre los datos almacenados en la aplicación.' : 'Irreversible destructive actions on stored application data.'}</p>
-              
-              <div style={{ marginTop: '16px' }}>
-                <button 
-                  type="button" 
-                  className="reset-filter-btn"
-                  onClick={handleDeleteAllData}
-                  style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: '#ef4444', color: '#f87171', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <AlertTriangle size={14} /> <span>{lang === 'es' ? 'Eliminar todos los datos' : 'Delete all data'}</span>
-                </button>
-              </div>
+              <DangerZoneSettings lang={lang} onDeleteAllData={handleDeleteAllData} />
             </div>
           )}
         </div>
