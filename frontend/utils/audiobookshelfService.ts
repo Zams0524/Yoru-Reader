@@ -529,6 +529,31 @@ export function audiobookSearchQuery(title: string): string {
 
 export const AUDIOBOOK_AUTO_MATCH_SCORE = 0.8;
 
+/**
+ * El audiolibro de este libro, si no hay duda de cuál es.
+ *
+ * Una sola regla, en un solo sitio, porque dos sitios la preguntan y tienen que
+ * contestar lo mismo: el lector, cuando abre un libro y busca su audio, y la
+ * sección «Leer y escuchar», que enseña los libros que tienen las dos mitades. Si
+ * cada uno decidiera por su cuenta, la sección prometería pares que el lector luego
+ * no haría, o al revés.
+ *
+ * Lo que pide: que el mejor candidato pase del umbral y que no haya empate con
+ * otro **tomo distinto**. Un empate entre dos copias del mismo tomo no es duda —
+ * pasa cuando el servidor tiene el fichero repetido—, así que no estorba.
+ */
+export function unambiguousAudiobook<T extends { title: string; author?: string }>(
+  candidates: { item: T; score: number }[]
+): T | null {
+  const [best, second] = candidates;
+  if (!best || best.score < AUDIOBOOK_AUTO_MATCH_SCORE) return null;
+  const mismoTomo = Boolean(second)
+    && volumeNumberOf(best.item.title) !== null
+    && volumeNumberOf(best.item.title) === volumeNumberOf(second.item.title);
+  const sinDuda = !second || second.score < best.score - 0.1 || mismoTomo;
+  return sinDuda ? best.item : null;
+}
+
 /** Audiobooks that may be this book, best first. */
 export async function findAudiobookMatches(book: { title: string; author?: string }): Promise<{ item: AudiobookItem; score: number }[]> {
   const query = audiobookSearchQuery(book.title) || book.title;

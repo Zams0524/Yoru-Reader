@@ -32,7 +32,13 @@ import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
-import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
+import {
+  audiobookLinkState,
+  audiobookMatchScore,
+  getAudiobookLink,
+  unambiguousAudiobook,
+} from '../../utils/audiobookshelfService';
+import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
 import {
@@ -271,12 +277,31 @@ export default function YoruShell({
     return source.find((entry) => entry.key === group.name)?.books ?? [];
   }, [group, groups]);
 
-  // Los libros que tienen un audiolibro vinculado desde el lector. El vínculo lo guarda
-  // `setAudiobookLink` (frontend/utils/audiobookshelfService.ts) por id de libro.
-  const listenable = useMemo(
-    () => library.filter((book) => Boolean(getAudiobookLink(book.id))),
-    [library]
-  );
+  /*
+    Los libros que se pueden leer y escuchar a la vez: los que tienen su audiolibro.
+
+    Cuentan dos cosas, y hacen falta las dos. Una es el vínculo ya guardado, que
+    escribe `setAudiobookLink` cuando el lector encuentra el audio o cuando lo
+    vinculas a mano. La otra es el par que todavía no se ha guardado pero existe:
+    el vínculo se creaba solo al abrir el libro en el lector, así que un catálogo
+    recién emparejado enseñaba esta sección vacía hasta que abrías los veinticinco
+    tomos uno por uno. Nadie va a hacer eso.
+
+    El par sin guardar se calcula contra la caché que ya alimenta Inicio —ni una
+    petición más— y con la misma regla que usa el lector, para que lo que se promete
+    aquí sea exactamente lo que allí va a pasar.
+  */
+  const listenable = useMemo(() => {
+    const audiolibros = getCachedServerCatalog().audiobooks;
+    return library.filter((book) => {
+      if (getAudiobookLink(book.id)) return true;
+      if (audiolibros.length === 0) return false;
+      const ordenados = audiolibros
+        .map((item) => ({ item, score: audiobookMatchScore(book, item as never) }))
+        .sort((a, b) => b.score - a.score);
+      return Boolean(unambiguousAudiobook(ordenados));
+    });
+  }, [library]);
 
   // El aviso se va solo: es informativo (p. ej. «Importado»), no un dialogo.
   useEffect(() => {
@@ -456,7 +481,6 @@ export default function YoruShell({
         );
       }
 
-      const sinVincular = library.filter((book) => !getAudiobookLink(book.id));
       const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
       const total = listenable.length;
       const subtitle = total === 0
@@ -474,7 +498,16 @@ export default function YoruShell({
         <BookGridView
           title={es ? 'Leer y escuchar' : 'Read and listen'}
           subtitle={subtitle}
-          books={[...listenable, ...sinVincular]}
+          /*
+            Solo los libros que tienen las dos mitades: la novela y su audiolibro.
+
+            Antes esta vista pintaba `[...listenable, ...sinVincular]`, o sea los que
+            se pueden leer escuchando y, detrás, toda la biblioteca. Una sección que
+            se llama «Leer y escuchar» y enseña libros con los que no puedes hacer ni
+            una cosa ni la otra a la vez no es una sección: es el catálogo otra vez,
+            con otro nombre.
+          */
+          books={listenable}
           es={es}
           onOpenDetail={openDetail}
         />

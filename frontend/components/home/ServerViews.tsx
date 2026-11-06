@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, Headphones, ListPlus, Loader2, MoreHorizontal, Pause, Play, Server, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, Headphones, Link2, ListPlus, Loader2, Pause, Play, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
 import {
   absCoverUrl,
   audiobookMatchScore,
@@ -164,7 +164,6 @@ function AudiobookDetail({
   /** ¿Lo que suena es este audiolibro? Si no, sus mandos no hablan de esta ficha. */
   const isCurrent = player.current?.id === item.id;
   const [tab, setTab] = useState<'summary' | 'technical' | 'chapters' | 'history'>('summary');
-  const [moreOpen, setMoreOpen] = useState(false);
   const [inList, setInList] = useState(() => isAudiobookInList(item.id));
 
   // La cuadrícula pide los items en modo reducido, así que el detalle hay que pedirlo
@@ -278,21 +277,24 @@ function AudiobookDetail({
             </button>
 
             {/*
-              «Leer y escuchar» es la razón de ser de esta app, así que está arriba
-              siempre. Sin libro vinculado no se esconde: lleva a vincularlo, que es
-              el paso que falta, en vez de hacer como que la opción no existe.
+              «Leer y escuchar» solo cuando se puede leer y escuchar de verdad, o
+              sea cuando este audiolibro tiene su novela al lado. Es el mismo criterio
+              que decide qué entra en la sección «Leer y escuchar», y tiene que ser el
+              mismo: un botón que aparece en sitios donde esa sección no te llevaría
+              promete algo que no hay. Sin par no se pinta nada aquí; para conseguirlo
+              está «Vincular con un libro tuyo», ahí abajo, que es una acción de
+              verdad y no un aviso apagado.
             */}
-            <button
-              type="button"
-              className="yoru-btn"
-              onClick={() => {
-                if (linkedBookId && onOpenLocalBook) onOpenLocalBook(linkedBookId, true);
-                else setLinking(true);
-              }}
-            >
-              <Headphones size={16} />
-              {es ? 'Leer y escuchar' : 'Read and listen'}
-            </button>
+            {linkedBookId && onOpenLocalBook && (
+              <button
+                type="button"
+                className="yoru-btn"
+                onClick={() => onOpenLocalBook(linkedBookId, true)}
+              >
+                <Headphones size={16} />
+                {es ? 'Leer y escuchar' : 'Read and listen'}
+              </button>
+            )}
 
             {/*
               Una lista de verdad, no un menú que no lleva a ningún sitio: lo que se
@@ -310,40 +312,7 @@ function AudiobookDetail({
               {inList ? (es ? 'En tu lista' : 'In your list') : (es ? 'Añadir a lista' : 'Add to list')}
             </button>
 
-            <button
-              type="button"
-              className="yoru-btn yoru-btn-icon"
-              onClick={() => setMoreOpen((open) => !open)}
-              aria-expanded={moreOpen}
-              aria-label={es ? 'Más opciones' : 'More options'}
-            >
-              <MoreHorizontal size={16} />
-            </button>
           </div>
-
-          {moreOpen && (
-            <div className="yoru-detail-menu" role="menu">
-              {linkedBookId && onOpenLocalBook && (
-                <button type="button" role="menuitem" onClick={() => onOpenLocalBook(linkedBookId)}>
-                  {es ? 'Abrir el libro' : 'Open the book'}
-                </button>
-              )}
-              <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setLinking((open) => !open); }}>
-                {linkedBookId
-                  ? (es ? 'Cambiar el libro vinculado' : 'Change the linked book')
-                  : (es ? 'Vincular con un libro tuyo' : 'Link to one of your books')}
-              </button>
-              {linkedBookId && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); setMoreOpen(false); }}
-                >
-                  {es ? 'Deshacer el vínculo' : 'Unlink'}
-                </button>
-              )}
-            </div>
-          )}
 
           {playback.phase.kind === 'error' && (
             <p className="yoru-stats-empty" role="alert">{playback.phase.message}</p>
@@ -475,11 +444,67 @@ function AudiobookDetail({
       )}
 
       {/*
-        Elegir el libro vive aquí abajo, pero ya no se abre desde aquí: poner y
-        quitar el vínculo está en el menú «…» de arriba, con las demás cosas que se
-        hacen una vez. Lo que queda es la lista de candidatos, que necesita sitio.
+        Vincular vive aquí abajo, debajo de la fila de botones.
+
+        Estuvo un rato dentro de un menú de tres puntos y era peor: esconde detrás de
+        un icono sin nombre lo único que hay que hacer para que un audiolibro se pueda
+        leer escuchando. Aquí se lee, y la lista de candidatos tiene el sitio que
+        necesita para desplegarse.
       */}
       <div className="yoru-server-section">
+        {linkedBookId ? (
+          <div className="yoru-detail-actions">
+            {onOpenLocalBook && (
+              <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId)}>
+                <BookOpen size={15} /> {es ? 'Abrir el libro' : 'Open the book'}
+              </button>
+            )}
+            <button type="button" className="yoru-server-more" onClick={() => setLinking((open) => !open)}>
+              <Link2 size={14} /> {es ? 'Cambiar el libro vinculado' : 'Change the linked book'}
+            </button>
+            <button
+              type="button"
+              className="yoru-server-more"
+              onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}
+            >
+              <Unlink size={14} /> {es ? 'Deshacer el vínculo' : 'Unlink'}
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="yoru-server-more" onClick={() => setLinking((open) => !open)}>
+            <Link2 size={14} /> {es ? 'Vincular con un libro tuyo' : 'Link to one of your books'}
+          </button>
+        )}
+
+        {linkedBookId && linking && (
+          candidates.length === 0 ? (
+            <p className="yoru-empty-note">
+              {es
+                ? 'Tu biblioteca está vacía. Descarga el libro desde Explorar Kavita y vuelve aquí.'
+                : 'Your library is empty. Download the book from Explore Kavita and come back.'}
+            </p>
+          ) : (
+            <ul className="yoru-link-list">
+              {candidates.map((candidate) => (
+                <li key={candidate.id}>
+                  <button
+                    type="button"
+                    className="yoru-link-row"
+                    onClick={() => {
+                      setAudiobookLink(candidate.id, { itemId: full.id, title: full.title, chapters: chapters.length });
+                      setLinkedBookId(candidate.id);
+                      setLinking(false);
+                    }}
+                  >
+                    <span className="yoru-link-title">{candidate.title}</span>
+                    {candidate.author && <span className="yoru-link-author">{candidate.author}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+
         {!linkedBookId && linking && (
           candidates.length === 0 ? (
             <p className="yoru-empty-note">
