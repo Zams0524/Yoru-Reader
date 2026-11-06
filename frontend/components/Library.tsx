@@ -8,6 +8,8 @@ import ProfileSettings from './settings/ProfileSettings';
 import ReadingDaySettings from './settings/ReadingDaySettings';
 import VocabularySettings from './settings/VocabularySettings';
 import BackupSettings from './settings/BackupSettings';
+import StatisticsSettings from './settings/StatisticsSettings';
+import KeybindingSettings from './settings/KeybindingSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -3472,104 +3474,13 @@ const Library = React.memo(function Library({
                 <Keyboard size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {lang === 'es' 
-                  ? 'Personaliza los atajos de teclado del lector. Haz clic en el botón de un atajo y presiona una tecla para cambiarlo.' 
-                  : 'Customize reader keyboard shortcuts. Click a shortcut button and press a key to change it.'}
-              </p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                {(() => {
-                  const bindings = settings.keybindings || {
-                    toggleFullscreen: 'f',
-                    nextPage: 'ArrowRight',
-                    prevPage: 'ArrowLeft',
-                    toggleMenu: 'Escape',
-                    readAloud: 't'
-                  };
-
-                  const list = [
-                    { id: 'toggleFullscreen', label: lang === 'es' ? 'Pantalla completa' : 'Full screen' },
-                    { id: 'nextPage', label: lang === 'es' ? 'Página siguiente' : 'Next page' },
-                    { id: 'prevPage', label: lang === 'es' ? 'Página anterior' : 'Previous page' },
-                    { id: 'toggleMenu', label: lang === 'es' ? 'Mostrar/Ocultar Menú' : 'Toggle Menu' },
-                    { id: 'readAloud', label: lang === 'es' ? 'Leer en voz alta (TTS)' : 'Read aloud (TTS)' }
-                  ];
-
-                  return list.map(item => {
-                    const isRecording = bindingKeyAction === item.id;
-                    const val = bindings[item.id];
-                    let displayVal = val;
-                    if (val === ' ') displayVal = 'Space';
-                    if (val === 'ArrowRight') displayVal = '→';
-                    if (val === 'ArrowLeft') displayVal = '←';
-                    if (val === 'ArrowUp') displayVal = '↑';
-                    if (val === 'ArrowDown') displayVal = '↓';
-
-                    return (
-                      <div key={item.id} className="settings-row-control" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '8px' }}>
-                        <span className="settings-label-text" style={{ fontSize: '0.88rem' }}>{item.label}</span>
-                        <button
-                          type="button"
-                          onClick={() => setBindingKeyAction(isRecording ? null : item.id)}
-                          style={{
-                            background: isRecording ? 'rgba(226, 192, 98, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-                            border: isRecording ? '1px solid #e2c062' : '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '6px',
-                            color: isRecording ? '#e2c062' : 'rgba(255, 255, 255, 0.9)',
-                            padding: '6px 14px',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            minWidth: '100px',
-                            textAlign: 'center',
-                            fontFamily: 'monospace',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isRecording ? (lang === 'es' ? 'Presiona...' : 'Press key...') : displayVal}
-                        </button>
-                      </div>
-                    );
-                  });
-                })()}
-
-                {/* Reset button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSaveSettings({
-                      ...settings,
-                      keybindings: {
-                        toggleFullscreen: 'f',
-                        nextPage: 'ArrowRight',
-                        prevPage: 'ArrowLeft',
-                        toggleMenu: 'Escape',
-                        readAloud: 't'
-                      }
-                    });
-                    // Fallback to alert if showToast is not directly accessible here
-                    alert(lang === 'es' ? 'Atajos restablecidos por defecto.' : 'Shortcuts reset to defaults.');
-                  }}
-                  style={{
-                    marginTop: '8px',
-                    alignSelf: 'flex-start',
-                    background: 'transparent',
-                    border: '1px solid var(--border-light)',
-                    color: 'var(--text-muted)',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text-main)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-light)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                >
-                  {lang === 'es' ? 'Restablecer valores predeterminados' : 'Reset to default values'}
-                </button>
-              </div>
+              <KeybindingSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                recording={bindingKeyAction}
+                onRecord={setBindingKeyAction}
+              />
             </div>
           )}
 
@@ -3859,40 +3770,14 @@ const Library = React.memo(function Library({
                 <BarChart3 size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Estadísticas' : 'Statistics'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Configura el almacenamiento del historial de lectura y las acciones de limpieza.' : 'Configure the storage of reading history and cleanup actions.'}</p>
-              
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Conservar estadísticas al eliminar libro' : 'Keep stats on book deletion'}</span>
-                <label className="migaku-switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.keepStatsOnDelete !== false}
-                    onChange={(e) => onSaveSettings({ ...settings, keepStatsOnDelete: e.target.checked })}
-                  />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-
-              <div style={{ marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const ok = await showConfirm({
-                      title: lang === 'es' ? '¿Limpiar estadísticas?' : 'Clear statistics?',
-                      message: lang === 'es' ? '¿Limpiar estadísticas de libros ya eliminados?' : 'Clear stats for already deleted books?',
-                      type: 'warning',
-                      confirmText: lang === 'es' ? 'Limpiar' : 'Clear',
-                    });
-                    if (ok) {
-                      await onClearDeletedBooks();
-                      showToast(lang === 'es' ? 'Limpieza completada.' : 'Cleanup done.', 'success');
-                    }
-                  }}
-                  style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                >
-                  <Trash2 size={14} /> <span>{lang === 'es' ? 'Estadísticas de libros eliminados' : 'Deleted-book statistics'}</span>
-                </button>
-              </div>
+              <StatisticsSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                onClearDeletedBooks={onClearDeletedBooks}
+                showConfirm={showConfirm}
+                showToast={showToast}
+              />
             </div>
           )}
 
