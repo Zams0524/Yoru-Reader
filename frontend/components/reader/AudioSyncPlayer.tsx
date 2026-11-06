@@ -15,6 +15,7 @@ import {
   startAudiobookPlayback,
   syncAudiobookSession,
   updateAudiobookProgress,
+  volumeNumberOf,
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
 import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
@@ -219,7 +220,24 @@ export default function AudioSyncPlayer({
       .then((matches) => {
         if (!current) return;
         const [best, second] = matches;
-        if (best && best.score >= AUDIOBOOK_AUTO_MATCH_SCORE && (!second || second.score < best.score - 0.1)) {
+        /*
+          Dos candidatos empatados solo son una duda si son tomos distintos.
+
+          Un servidor acaba con el mismo tomo dos veces —una copia vieja, un fichero
+          repetido— y entonces el primero y el segundo empatan en puntuación. La
+          regla de «el segundo a más de 0.1» leía ese empate como ambigüedad y
+          mandaba a elegir entre dos entradas idénticas. En la biblioteca de zams eso
+          dejaba sin audio los tomos 2, 3 y 4 de una serie de veinticinco.
+
+          Si los dos apuntan al mismo tomo da igual cuál se coja, así que no hay nada
+          que preguntar. La duda de verdad —dos tomos distintos que puntúan igual—
+          sigue llevando a la lista.
+        */
+        const mismoTomo = Boolean(second)
+          && volumeNumberOf(best.item.title) !== null
+          && volumeNumberOf(best.item.title) === volumeNumberOf(second.item.title);
+        const sinDuda = !second || second.score < best.score - 0.1 || mismoTomo;
+        if (best && best.score >= AUDIOBOOK_AUTO_MATCH_SCORE && sinDuda) {
           chooseItem(best.item);
         } else {
           setPhase({ kind: 'choose', matches: matches.map((match) => match.item) });

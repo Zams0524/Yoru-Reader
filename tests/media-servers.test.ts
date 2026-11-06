@@ -388,6 +388,20 @@ async function absTests() {
   // Y un título que es solo la colección no se queda vacío.
   check(normalizeTitle('(MFブックス)').length > 0, 'Un título que es solo la colección no se vacía');
 
+  /*
+    El mismo tomo dos veces en el servidor no es una duda.
+
+    Pasa: una copia vieja, un fichero repetido. Los dos candidatos empatan, y la
+    regla de «el segundo a más de 0.1» lo leía como ambigüedad y mandaba a elegir
+    entre dos entradas idénticas. Si apuntan al mismo tomo, da igual cuál se coja.
+  */
+  const duplicado = { ...mushoku(4), id: 'm4bis' };
+  const empate = audiobookMatchScore(libroMushoku4, duplicado);
+  check(
+    empate === propio && volumeNumberOf(duplicado.title) === volumeNumberOf(mushoku(4).title),
+    'Dos copias del mismo tomo empatan y son el mismo tomo'
+  );
+
   const session = await startAudiobookPlayback('li1');
   const playCall = calls.find((c) => c.url.endsWith('/play'))!;
   check(playCall.body.forceDirectPlay === true && playCall.body.deviceInfo.clientName === 'Yoru Reader', 'Sesión con reproducción directa');

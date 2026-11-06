@@ -300,12 +300,19 @@ export default function ServerBookDetail({
                 type="button"
                 className="yoru-btn"
                 disabled
+                /*
+                  Lo que se dice aquí es lo que se sabe, ni una palabra más. Esta
+                  pantalla no ha buscado audiolibro para este tomo: solo mira si hay
+                  uno ya vinculado. Poner «ningún audiolibro se parece a este tomo»
+                  sería afirmar algo que no se ha comprobado, y en la mitad de los
+                  casos sería falso.
+                */
                 title={es
-                  ? 'Ningún audiolibro de tu servidor se parece a este tomo. Puedes vincularlo a mano desde su ficha en Audiolibros.'
-                  : 'No audiobook on your server matches this volume. You can link one by hand from its page in Audiobooks.'}
+                  ? 'Todavía no hay ningún audiolibro vinculado a este tomo. Yoru lo busca al abrir el libro, y también puedes vincularlo a mano desde Audiolibros.'
+                  : 'No audiobook is linked to this volume yet. Yoru looks for one when you open the book, and you can also link it by hand from Audiobooks.'}
               >
                 <Headphones size={15} />
-                {es ? 'Sin audiolibro' : 'No audiobook'}
+                {es ? 'Sin audiolibro aún' : 'No audiobook yet'}
               </button>
             )
           )}
