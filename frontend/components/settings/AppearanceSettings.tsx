@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Eye, EyeOff, Palette, RotateCcw, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Palette, Sparkles } from 'lucide-react';
 import { getHomeLayout, resetHomeLayout, saveHomeLayout, RAILS, type RailId } from '../../utils/homeRails';
 
 /**

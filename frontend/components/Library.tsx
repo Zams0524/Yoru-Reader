@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, Eye, EyeOff, ChevronUp, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
+import { Plus, Info, Trash2, Check, BarChart3, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Type, Layers, AlertTriangle, Keyboard, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
@@ -22,9 +22,8 @@ import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
-import { getHomeLayout, resetHomeLayout, saveHomeLayout, RAILS, type RailId } from '../utils/homeRails';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
+import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
 import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
@@ -38,9 +37,9 @@ import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
 import { hasDesktopIntegrations, isPhoneUI } from '../utils/platform';
 import { useDeviceClass } from '../hooks/useDeviceClass';
 import AppAbout from './AppAbout';
-import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
+import { useAppUpdater } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
-import { ensureNotificationPermission, getNotificationPermission, hasYoruNotifications, notificationSettings, YoruNotifications } from '../utils/yoruNotifications';
+import { getNotificationPermission, hasYoruNotifications } from '../utils/yoruNotifications';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -2775,106 +2774,6 @@ const Library = React.memo(function Library({
       && (settings.profileName || '').trim().toLowerCase() === 'zams';
     // Phones have no physical keyboard: hide the shortcuts section there.
     const showKeyboardShortcuts = showDesktopIntegrations;
-    const handleSliderChange = (val) => {
-      onSaveSettings({ ...settings, fontSize: val });
-    };
-
-    const renderSliderControl = (label, value, min, max, step, formatValue, onChange) => {
-      const numericVal = parseFloat(value);
-      const handleDecrement = () => {
-        const newVal = Math.max(min, numericVal - step);
-        onChange(newVal);
-      };
-      const handleIncrement = () => {
-        const newVal = Math.min(max, numericVal + step);
-        onChange(newVal);
-      };
-      const percentage = ((numericVal - min) / (max - min)) * 100;
-      
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '12px', boxSizing: 'border-box', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.86rem', fontWeight: 500, color: 'var(--text-main)' }}>{label}</span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>{formatValue(numericVal)}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', marginTop: '4px' }}>
-            <button 
-              onClick={handleDecrement}
-              disabled={numericVal <= min}
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                border: '1px solid var(--border-light)',
-                background: 'transparent',
-                color: 'var(--text-main)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: numericVal <= min ? 'not-allowed' : 'pointer',
-                opacity: numericVal <= min ? 0.3 : 1,
-                fontSize: '1rem',
-                fontWeight: '300',
-                fontFamily: 'monospace',
-                outline: 'none',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={e => { if (numericVal > min) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              -
-            </button>
-            <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <input 
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={numericVal}
-                onChange={(e) => onChange(parseFloat(e.target.value))}
-                style={{
-                  WebkitAppearance: 'none',
-                  appearance: 'none',
-                  width: '100%',
-                  height: '4px',
-                  background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${percentage}%, var(--border-light) ${percentage}%, var(--border-light) 100%)`,
-                  accentColor: 'var(--primary)',
-                  borderRadius: '2px',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              />
-            </div>
-            <button 
-              onClick={handleIncrement}
-              disabled={numericVal >= max}
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                border: '1px solid var(--border-light)',
-                background: 'transparent',
-                color: 'var(--text-main)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: numericVal >= max ? 'not-allowed' : 'pointer',
-                opacity: numericVal >= max ? 0.3 : 1,
-                fontSize: '1rem',
-                fontWeight: '300',
-                fontFamily: 'monospace',
-                outline: 'none',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={e => { if (numericVal < max) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              +
-            </button>
-          </div>
-        </div>
-      );
-    };
 
     const scrollToSection = (id) => {
       const el = document.getElementById(id);
