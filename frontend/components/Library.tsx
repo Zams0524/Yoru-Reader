@@ -3036,55 +3036,65 @@ const Library = React.memo(function Library({
                 </div>
               </div>
 
-              {/* General Section */}
+              {/* Preferencias: cómo se ve y cómo se comporta Yoru contigo. */}
               <div>
                 <div className="settings-nav-group-title">
-                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'General' : 'General'}</span>
+                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Preferencias' : 'Preferences'}</span>
                 </div>
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
-                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
-                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
-                </div>
-              </div>
-  
-              {/* Reading Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
-                </div>
-                <div className="settings-nav-group">
                   {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
                   {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno', lang === 'es' ? 'A qué hora empieza tu día' : 'When your day starts')}
-                </div>
-              </div>
-
-              {/* Integration Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
-                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
-                  {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
+                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
+                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
+                  {/* Discord es una preferencia de lo que enseñas fuera, no una tripa de la app. */}
                   {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
                 </div>
               </div>
-  
-              {/* Data Section */}
+
+              {/* Biblioteca: de dónde salen tus libros y tus palabras. */}
+              <div>
+                <div className="settings-nav-group-title">
+                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Biblioteca' : 'Library'}</span>
+                </div>
+                <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
+                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
+                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
+                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
+                </div>
+              </div>
+
+              {/* Datos: lo tuyo, y cómo se guarda y se lleva de un sitio a otro. */}
               <div>
                 <div className="settings-nav-group-title">
                   <Database size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
                 </div>
                 <div className="settings-nav-group">
+                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
                   {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library')}
+                </div>
+              </div>
+
+              {/* Yoru: la aplicación en sí, no lo que hay dentro. */}
+              <div>
+                <div className="settings-nav-group-title">
+                  <Info size={13} aria-hidden="true" /> <span>Yoru</span>
+                </div>
+                <div className="settings-nav-group">
                   {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions')}
                   {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics')}
-                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
                 </div>
+              </div>
+
+              {/*
+                La zona de peligro va sola y separada, sin cabecera de grupo que la
+                emparente con nada. Estaba pegada a «Copias de seguridad», que es el
+                peor vecino posible: se viene de guardar una copia, se baja un renglón
+                de más y se da en borrarlo todo.
+              */}
+              <div className="settings-nav-group settings-nav-danger">
+                {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
               </div>
             </div>
             
