@@ -7222,3 +7222,119 @@ html.yoru-compact #root {
   .audio-full-cover { width: min(150px, 34vh); }
   .audio-full { gap: 8px; }
 }
+
+/* ── Ajustes: filas de etiqueta y control ───────────────────────────────────
+   La forma que pidio zams: a la izquierda que es y que hace, a la derecha el
+   control, y aire entre medias. Antes cada tarjeta se apanaba como podia.
+   ───────────────────────────────────────────────────────────────────────── */
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-end { justify-content: flex-end; }
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-row-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.settings-row-desc {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  max-width: 54ch;
+}
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.settings-input {
+  min-width: 240px;
+  padding: 9px 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+}
+.settings-input:focus-visible { border-color: var(--primary); }
+
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.settings-btn:hover:not(:disabled) { background: var(--bg-card-hover); }
+.settings-btn:disabled { opacity: 0.45; cursor: default; }
+.settings-btn.is-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--bg-app);
+}
+.settings-btn.is-primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+/* La foto del perfil, redonda y del tamano en que se reconoce de un vistazo. */
+.settings-profile-photo { gap: 16px; }
+.settings-profile-avatar {
+  display: flex;
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+.settings-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.settings-profile-avatar > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 1.6rem;
+  color: var(--text-muted);
+}
+
+/*
+  Estrecho: la fila se parte en dos lineas y el control baja a la izquierda. Un
+  control empujado contra el borde derecho de un telefono no se alcanza bien.
+*/
+@media (max-width: 640px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .settings-row-end { align-items: flex-start; }
+  .settings-input { min-width: 0; width: 100%; }
+}

@@ -4,6 +4,7 @@ import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
+import ProfileSettings from './settings/ProfileSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -3015,6 +3016,26 @@ const Library = React.memo(function Library({
             </div>
   
             <div className="settings-nav-groups">
+              {/*
+                Perfil va primero porque es lo que la gente viene a cambiar: quién
+                eres. Hasta ahora no estaba en Ajustes y solo se llegaba por el menú
+                del avatar, donde nadie lo buscaba.
+              */}
+              <div>
+                <div className="settings-nav-group-title">
+                  <User size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Perfil' : 'Profile'}</span>
+                </div>
+                <div className="settings-nav-group">
+                  {renderSidebarBtn(
+                    'sec-profile',
+                    lang === 'es' ? 'Perfil' : 'Profile',
+                    User,
+                    'perfil profile nombre name foto photo avatar imagen picture usuario',
+                    activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')
+                  )}
+                </div>
+              </div>
+
               {/* General Section */}
               <div>
                 <div className="settings-nav-group-title">
@@ -3100,6 +3121,28 @@ const Library = React.memo(function Library({
         {showContent && (
           <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: '100px' }}>
           
+          {/*
+            Perfil. Lo mismo que hace el modal del menú del avatar, pero donde se
+            busca; los dos escriben por `onUpdateProfile`, así que no hay dos
+            verdades sobre quién eres.
+          */}
+          {matchesSearch('perfil profile nombre name foto photo avatar imagen picture usuario')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-profile') && (
+            <div id="sec-profile" className="settings-section-card" style={{ minWidth: 0 }}>
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <User size={18} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Perfil' : 'Profile'}</span>
+              </h3>
+              <ProfileSettings
+                es={lang === 'es'}
+                profile={activeProfile}
+                profileCount={profiles.length}
+                onSave={(changes) => onUpdateProfile(activeProfileId, changes)}
+                onPickImage={(file) => resizeImage(file, 128)}
+              />
+            </div>
+          )}
+
           {showDiagnostics && matchesSearch(ABOUT_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-about') && (
             <div id="sec-about" className="settings-section-card" style={{ minWidth: 0 }}>
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
