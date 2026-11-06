@@ -10,6 +10,8 @@ import VocabularySettings from './settings/VocabularySettings';
 import BackupSettings from './settings/BackupSettings';
 import StatisticsSettings from './settings/StatisticsSettings';
 import KeybindingSettings from './settings/KeybindingSettings';
+import NotificationSettings from './settings/NotificationSettings';
+import CloudSyncSettings from './settings/CloudSyncSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -3782,103 +3784,21 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Notificaciones (Android) */}
-          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (() => {
-            const es = lang === 'es';
-            const options = notificationSettings(settings);
-            const setOption = (key: string, value: boolean | number) => {
-              onSaveSettings({ ...settings, [key]: value });
-              if (value === true) {
-                void ensureNotificationPermission(true).then(() => getNotificationPermission()).then(setNotificationPermission);
-              }
-            };
-            const renderToggle = (key: string, checked: boolean, label: string, hint: string) => (
-              <div className="settings-row-control" key={key}>
-                <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span>{label}</span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>{hint}</span>
-                </span>
-                <label className="migaku-switch">
-                  <input type="checkbox" checked={checked} onChange={(e) => setOption(key, e.target.checked)} />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-            );
-            const groupTitle = (text: string) => (
-              <div style={{ fontSize: '0.72rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-dark)', margin: '16px 0 4px' }}>{text}</div>
-            );
-            return (
-              <div id="sec-notifications" className="settings-section-card">
-                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bell size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{es ? 'Notificaciones' : 'Notifications'}</span>
-                </h3>
-                <p className="settings-card-desc">{es
-                  ? 'Cada grupo también se puede silenciar desde los ajustes de notificaciones de Android.'
-                  : 'Each group can also be silenced from Android\'s notification settings.'}</p>
-
-                {notificationPermission && notificationPermission !== 'granted' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', margin: '12px 0 4px', borderRadius: '10px', background: 'var(--yoru-gold-soft, rgba(242,200,102,0.13))' }}>
-                    <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-main)' }}>{es
-                      ? 'Android tiene apagadas las notificaciones de Yoru. El reproductor de lectura sigue funcionando, pero los avisos no.'
-                      : 'Android has Yoru\'s notifications off. The read-aloud player still works, the notices don\'t.'}</span>
-                    <button
-                      type="button"
-                      className="yoru-btn yoru-btn-primary"
-                      style={{ flexShrink: 0, padding: '6px 12px', fontSize: '0.8rem' }}
-                      onClick={async () => {
-                        if (notificationPermission === 'prompt' && await ensureNotificationPermission(true)) {
-                          setNotificationPermission('granted');
-                        } else {
-                          void YoruNotifications.openNotificationSettings().catch(() => {});
-                        }
-                      }}
-                    >{es ? 'Activar' : 'Turn on'}</button>
-                  </div>
-                )}
-
-                {groupTitle(es ? 'Lectura en voz alta' : 'Read aloud')}
-                {renderToggle('notifyReadAloudBackground', options.readAloudBackground,
-                  es ? 'Seguir leyendo fuera de la app' : 'Keep reading outside the app',
-                  es ? 'Con el reproductor en la notificación y la pantalla de bloqueo' : 'With the player in the notification and on the lock screen')}
-                {renderToggle('notifyReadAloudSentence', options.readAloudSentence,
-                  es ? 'Mostrar la oración actual' : 'Show the current sentence',
-                  es ? 'Si lo apagas, se ve el título del libro' : 'When off, the book title is shown')}
-
-                {groupTitle(es ? 'Repaso' : 'Reviews')}
-                {renderToggle('notifySrsDaily', options.srsDaily,
-                  es ? 'Avisar del nuevo día de repaso' : 'Notify when a new review day starts',
-                  es ? 'Solo si hay tarjetas pendientes; sin sonido' : 'Only when cards are due; silent')}
-                {options.srsDaily && (
-                  <div style={{ marginTop: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span className="settings-label-text">{es ? 'Hora del aviso' : 'Reminder time'}</span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                        {String(options.srsHour).padStart(2, '0')}:00
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="23"
-                      step="1"
-                      value={options.srsHour}
-                      onChange={(e) => setOption('notifySrsHour', parseInt(e.target.value, 10))}
-                      aria-label={es ? 'Hora del aviso de repaso' : 'Review reminder time'}
-                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                    />
-                  </div>
-                )}
-
-                {groupTitle(es ? 'Actualizaciones' : 'Updates')}
-                {renderToggle('notifyAppUpdates', options.appUpdates,
-                  es ? 'Avisar de versiones nuevas' : 'Notify about new versions',
-                  es ? 'Se buscan una vez al día' : 'Checked once a day')}
-                {renderToggle('notifyOtaUpdates', options.otaUpdates,
-                  es ? 'Avisar de mejoras automáticas' : 'Notify about automatic improvements',
-                  es ? 'Se instalan solas igualmente' : 'They install themselves anyway')}
-              </div>
-            );
-          })()}
+          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (
+            <div id="sec-notifications" className="settings-section-card">
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bell size={18} style={{ color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Notificaciones' : 'Notifications'}</span>
+              </h3>
+              <NotificationSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                permission={notificationPermission}
+                onPermissionChange={setNotificationPermission}
+              />
+            </div>
+          )}
 
           {/* Card: Día de lectura */}
           {matchesSearch('reading day dia lectura start hours limites horas nocturno') && (settingsSearchQuery || activeSettingsSection === 'sec-reading-day') && (
@@ -3898,91 +3818,18 @@ const Library = React.memo(function Library({
                 <Cloud size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Configura la sincronización con almacenamiento en la nube y cómo se resuelven los conflictos.' : 'Configure cloud storage synchronization and how metadata conflicts are resolved.'}</p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de almacenamiento' : 'Storage Sync Target'}</span>
-                  <span style={{ color: gDriveTokens ? '#34d399' : 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
-                    {gDriveTokens ? 'Google Drive' : (lang === 'es' ? 'Ninguno' : 'None')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de ajustes' : 'Settings Sync Target'}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Perfil local' : 'Local Profile'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Combinación de estadísticas' : 'Statistics Merge'}</span>
-                <select 
-                  value={settings.statsMergeOption || 'merge'}
-                  onChange={(e) => onSaveSettings({ ...settings, statsMergeOption: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-                  <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-                </select>
-              </div>
-
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Combinación de objetivos de lectura' : 'Reading Goals Merge'}</span>
-                <select 
-                  value={settings.goalsMergeOption || 'merge'}
-                  onChange={(e) => onSaveSettings({ ...settings, goalsMergeOption: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-                  <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-                </select>
-              </div>
-
-              {/* Botón e inputs de Google Drive */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '14px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                
-
-                <button 
-                  type="button"
-                  onClick={handleConnectGDrive}
-                  disabled={gDriveSyncStatus === 'syncing'}
-                  className="reset-filter-btn"
-                  style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
-                </button>
-
-                {gDriveTokens && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button 
-                        type="button"
-                        onClick={handleUploadGDrive}
-                        disabled={gDriveSyncStatus === 'syncing'}
-                        className="reset-filter-btn"
-                        style={{ flex: 1, justifyContent: 'center', background: 'rgba(52, 211, 153, 0.05)', borderColor: '#34d399', color: '#34d399', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Upload size={14} /> <span>{lang === 'es' ? 'Subir copia completa' : 'Upload backup'}</span>
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleDownloadGDrive}
-                        disabled={gDriveSyncStatus === 'syncing'}
-                        className="reset-filter-btn"
-                        style={{ flex: 1, justifyContent: 'center', background: 'rgba(251, 191, 36, 0.05)', borderColor: '#fbbf24', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Download size={14} /> <span>{lang === 'es' ? 'Descargar' : 'Download'}</span>
-                      </button>
-                    </div>
-                    {lastSyncTime && (
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+              <CloudSyncSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                gDriveTokens={gDriveTokens}
+                syncStatus={gDriveSyncStatus}
+                lastSyncTime={lastSyncTime}
+                formatSyncTime={formatSyncTime}
+                onConnect={handleConnectGDrive}
+                onUpload={handleUploadGDrive}
+                onDownload={handleDownloadGDrive}
+              />
             </div>
           )}
 
