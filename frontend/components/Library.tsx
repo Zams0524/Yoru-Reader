@@ -5,6 +5,9 @@ import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
 import ProfileSettings from './settings/ProfileSettings';
+import ReadingDaySettings from './settings/ReadingDaySettings';
+import VocabularySettings from './settings/VocabularySettings';
+import BackupSettings from './settings/BackupSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
@@ -3999,30 +4002,7 @@ const Library = React.memo(function Library({
                 <Calendar size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Día de lectura' : 'Reading Day'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Establece los límites horarios para el cálculo del historial de lectura diario.' : 'Sets calendar hour boundaries for daily reading history calculations.'}</p>
-              
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Hora de inicio del día' : 'Start Day Hour'}</span>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700 }}>
-                    {String(settings.startDayHour || 0).padStart(2, '0')}:00
-                  </span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="23" 
-                  step="1"
-                  value={settings.startDayHour || 0} 
-                  onChange={(e) => onSaveSettings({ ...settings, startDayHour: parseInt(e.target.value) })}
-                  style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                />
-                <p style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px', lineHeight: 1.3 }}>
-                  {lang === 'es' 
-                    ? 'Ajusta a qué hora comienza un nuevo día. Útil si lees después de medianoche y deseas que se contabilice en el día anterior.' 
-                    : 'Configure at what hour a new reading day starts. Useful for night readers.'}
-                </p>
-              </div>
+              <ReadingDaySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
             </div>
           )}
 
@@ -4268,23 +4248,7 @@ const Library = React.memo(function Library({
                 <Database size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {isPhoneUI()
-                  ? (lang === 'es'
-                    ? 'Importa, exporta y gestiona tus palabras. Importa mazos de Anki (.apkg), JPDB, listas de palabras o listas de frecuencia.'
-                    : 'Import, export and manage your words. Import Anki decks (.apkg), JPDB, word lists or frequency lists.')
-                  : (lang === 'es'
-                    ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
-                    : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.')}
-              </p>
-              <button 
-                type="button" 
-                className="reset-filter-btn"
-                onClick={() => setIsVocabModalOpen(true)}
-                style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
-              >
-                <Database size={15} /> {lang === 'es' ? 'Abrir Panel de Vocabulario' : 'Open Vocabulary Panel'}
-              </button>
+              <VocabularySettings lang={lang} isPhone={isPhoneUI()} onOpenPanel={() => setIsVocabModalOpen(true)} />
             </div>
           )}
 
@@ -4295,28 +4259,7 @@ const Library = React.memo(function Library({
                 <FolderOpen size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Copias de seguridad' : 'Backups'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Guarda todo tu catálogo, historial de lectura, perfiles y configuraciones de Anki en un archivo local (se excluyen los diccionarios para mantener el archivo ligero).' : 'Export all your library books, reading statistics, profiles, and configurations to a local backup file.'}</p>
-              
-              <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-                <button 
-                  type="button" 
-                  className="reset-filter-btn"
-                  onClick={handleExportLibrary}
-                  style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <Download size={16} /> {lang === 'es' ? 'Exportar Biblioteca' : 'Export Library'}
-                </button>
-                
-                <label className="reset-filter-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <Upload size={16} /> {lang === 'es' ? 'Importar Respaldo' : 'Import Backup'}
-                  <input 
-                    type="file" 
-                    accept=".json,.zip"
-                    onChange={handleImportLibrary}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-              </div>
+              <BackupSettings lang={lang} onExport={handleExportLibrary} onImport={handleImportLibrary} />
             </div>
           )}
 
