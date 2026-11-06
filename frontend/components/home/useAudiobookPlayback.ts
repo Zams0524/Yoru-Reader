@@ -90,6 +90,8 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
   const listenedRef = useRef(0);
   const lastTickRef = useRef<number | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  /** La pista que hay que cargar en cuanto exista el `<audio>`. Ver el efecto de abajo. */
+  const pendingStartRef = useRef<{ session: AudiobookshelfPlaybackSession; from: number } | null>(null);
   const playAfterLoadRef = useRef(false);
   const trackIndexRef = useRef(0);
   trackIndexRef.current = trackIndex;
@@ -136,7 +138,8 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
 
   const loadTrack = useCallback((target: AudiobookshelfPlaybackSession, globalTime: number, autoplay: boolean) => {
     const audio = audioRef.current;
-    if (!audio) return;
+    // Que no haya `<audio>` todavía no es normal: lo encauza el efecto de más abajo.
+    if (!audio) { console.warn('[Audiobookshelf] loadTrack sin <audio> montado; se reintenta al pintar.'); return; }
     const { trackIndex: index, offset } = locateTrack(target.tracks, globalTime);
     playAfterLoadRef.current = autoplay;
     if (index === trackIndexRef.current && audio.src === target.tracks[index].url && audio.readyState > 0) {
@@ -173,13 +176,36 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
         const from = typeof at === 'number' ? at : started.currentTime;
         timeRef.current = from;
         setTime(from);
+        /*
+          El <audio> solo aparece con la fase «ready», así que aquí todavía no existe
+          el elemento al que darle la fuente. Antes esto se resolvía con un
+          `setTimeout(…, 0)`, que no es una garantía de nada: es una carrera contra el
+          pintado de React, y la perdía. `loadTrack` se encontraba `audioRef.current`
+          a null, se iba por su cláusula de guarda y no cargaba nada — en silencio. El
+          reproductor salía pintado, con su duración y su minuto, y mudo. Al segundo
+          intento sí sonaba, porque para entonces el elemento ya estaba.
+
+          Se deja encargado y lo recoge el efecto de abajo, que por definición corre
+          con el DOM ya pintado. Es como lo hace el reproductor del lector
+          (`reader/AudioSyncPlayer.tsx`), y por lo mismo.
+        */
+        pendingStartRef.current = { session: started, from };
         setPhase({ kind: 'ready' });
-        // El <audio> aparece con la fase «ready», así que la pista se carga después
-        // de pintar: antes no hay elemento al que darle la fuente.
-        window.setTimeout(() => loadTrack(started, from, true), 0);
       })
       .catch((error) => setPhase({ kind: 'error', message: describeServerError(error, es) }));
   }, [itemId, es, loadTrack]);
+
+  /*
+    Recoge el encargo que dejó `start()`, ya con el `<audio>` en el DOM. Depende de
+    `phase` porque es el cambio a «ready» el que lo monta: ese render es justo el que
+    hace falta esperar.
+  */
+  useEffect(() => {
+    const pending = pendingStartRef.current;
+    if (!pending || !audioRef.current) return;
+    pendingStartRef.current = null;
+    loadTrack(pending.session, pending.from, true);
+  }, [phase, loadTrack]);
 
   const play = useCallback(() => {
     const audio = audioRef.current;
