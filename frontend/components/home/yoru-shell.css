@@ -2466,3 +2466,28 @@
 .yoru-player-full-panel button:disabled { opacity: 0.4; cursor: default; }
 .yoru-player-full-panel button.current { color: var(--primary); }
 .yoru-player-full-panel button span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── La cascada: el centinela y el final de la lista ────────────────────────
+   El centinela no se ve salvo cuando hay algo que decir —que viene mas, o
+   que fallo—; su trabajo es asomar por abajo, no ocupar sitio.
+   ───────────────────────────────────────────────────────────────────────── */
+.yoru-more-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 16px 0;
+}
+.yoru-more-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.yoru-more-end {
+  margin: 10px 0 28px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}

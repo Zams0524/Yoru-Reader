@@ -6731,6 +6731,31 @@ html.yoru-compact #root {
   margin: 20px auto 0;
 }
 
+/*
+  La cascada de «Explorar Kavita». El centinela no ocupa sitio ni dice nada salvo
+  cuando hay algo que decir: que viene mas, o que la tanda fallo.
+*/
+.media-browser-more-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 16px 0;
+}
+.media-browser-more-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.media-browser-more-end {
+  margin: 10px 0 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
 .media-browser-empty {
   display: flex;
   flex-direction: column;

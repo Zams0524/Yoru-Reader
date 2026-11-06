@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Headphones, ListPlus, Loader2, MoreHorizontal, Pause, Play, Server, Settings as SettingsIcon } from 'lucide-react';
 import {
   absCoverUrl,
@@ -117,6 +117,14 @@ function MetaRow({ label, value }: { label: string; value?: string | number }) {
  * ASIN, duración, capítulos) y, si algún libro de la biblioteca apunta a este
  * audiolibro, el botón para abrirlo.
  */
+/**
+ * Cuántos audiolibros por tanda.
+ *
+ * Suficientes para llenar la pantalla de sobra y que la cascada no vaya pidiendo
+ * cada dos filas, y pocos para que la primera tanda aparezca pronto.
+ */
+const AUDIO_PAGE_SIZE = 48;
+
 /** Las pestañas de la ficha, en el orden en que se necesitan. */
 const TABS: { id: 'summary' | 'technical' | 'chapters' | 'history'; es: string; en: string }[] = [
   { id: 'summary', es: 'Resumen', en: 'Summary' },
@@ -629,6 +637,8 @@ export function AudiobookshelfView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [seed, setSeed] = useState(1);
+  /** El servidor dejó de dar aunque su cuenta dijera otra cosa. Corta la cascada. */
+  const [agotado, setAgotado] = useState(false);
 
   const configured = isAudiobookshelfConfigured();
 
@@ -655,12 +665,32 @@ export function AudiobookshelfView({
     return () => { alive = false; };
   }, [configured, es]);
 
-  const load = useCallback((id: string) => {
+  /*
+    El catálogo, por tandas y en cascada.
+
+    Antes pedía las primeras 48 y ahí se acababa: la cabecera decía «256 audiolibros»
+    y la cuadrícula enseñaba 48, sin botón ni nada. Los otros doscientos y pico no
+    había forma de verlos.
+
+    Ahora cada tanda se suma a la anterior y la siguiente la pide el centinela de
+    abajo al asomar. `pagina` va en base cero, que es como la cuenta el servidor.
+  */
+  const load = useCallback((id: string, pagina: number) => {
     let alive = true;
     setLoading(true);
     setError('');
-    getAudiobooks(id, 0, 48)
-      .then((page) => { if (alive) { setItems(page.items); setTotal(page.total); } })
+    getAudiobooks(id, pagina, AUDIO_PAGE_SIZE)
+      .then((page) => {
+        if (!alive) return;
+        /*
+          Una tanda vacía corta la cascada. Si el servidor dice que hay 256 pero deja
+          de dar, `items.length` no alcanza nunca a `total` y el centinela pediría
+          sin parar. Más vale enseñar lo que hay y decir que se acabó.
+        */
+        if (pagina > 0 && page.items.length === 0) { setAgotado(true); return; }
+        setItems((prev) => (pagina === 0 ? page.items : [...prev, ...page.items]));
+        setTotal(page.total);
+      })
       .catch((err) => { if (alive) setError(describeServerError(err, es)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -668,8 +698,39 @@ export function AudiobookshelfView({
 
   useEffect(() => {
     if (!libraryId) return undefined;
-    return load(libraryId);
+    setItems([]);
+    setAgotado(false);
+    return load(libraryId, 0);
   }, [libraryId, load]);
+
+  /*
+    Igual que en Kavita: lo que el observador necesita se lee de una referencia y no
+    de las dependencias, para que no se desmonte en mitad de cada tanda. Y no pide
+    nada mientras ya está pidiendo, ni después de un fallo.
+  */
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const quedan = items.length < total && !agotado;
+  const estado = useRef({ libraryId, items, total, loading, error, load, agotado });
+  estado.current = { libraryId, items, total, loading, error, load, agotado };
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        const ahora = estado.current;
+        if (!ahora.libraryId || ahora.loading || ahora.error || ahora.agotado) return;
+        if (ahora.items.length >= ahora.total) return;
+        ahora.load(ahora.libraryId, Math.floor(ahora.items.length / AUDIO_PAGE_SIZE));
+      },
+      // Seiscientos píxeles por delante: la tanda siguiente llega antes de que se
+      // toque fondo, así que no hay parón al final de la cuadrícula.
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [libraryId, quedan]);
 
   /*
     Se llega desde una portada de Inicio: la ficha se abre sola. El detalle hay que
@@ -769,7 +830,7 @@ export function AudiobookshelfView({
           {es ? 'Cargando…' : 'Loading…'}
         </div>
       ) : (
-        <div className="yoru-grid is-covers">
+        <div className="yoru-grid is-covers" aria-busy={loading}>
           {items.map((item) => (
             <button key={item.id} type="button" className="yoru-poster" onClick={() => setOpen(item)} title={item.title}>
               <span className="yoru-poster-frame">
@@ -780,6 +841,36 @@ export function AudiobookshelfView({
             </button>
           ))}
         </div>
+      )}
+
+      {/*
+        El centinela de la cascada. Solo mientras queden audiolibros por traer; el
+        botón aparece únicamente si la tanda falló, porque reintentar solo contra un
+        servidor que no responde es machacarlo.
+      */}
+      {quedan && (
+        <div ref={sentinelRef} className="yoru-more-zone" aria-hidden={!loading && !error}>
+          {loading && items.length > 0 && (
+            <span className="yoru-more-loading" role="status" aria-live="polite">
+              <Loader2 size={18} className="guide-spin" />
+              {es ? 'Trayendo más…' : 'Fetching more…'}
+            </span>
+          )}
+          {!loading && error && libraryId && (
+            <button
+              type="button"
+              className="yoru-btn"
+              onClick={() => load(libraryId, Math.floor(items.length / AUDIO_PAGE_SIZE))}
+            >
+              {es ? 'Reintentar' : 'Try again'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Que se ha llegado al final se dice; cortar en seco deja dudando. */}
+      {!quedan && items.length > 0 && (
+        <p className="yoru-more-end">{es ? 'No hay más audiolibros.' : 'No more audiobooks.'}</p>
       )}
 
       {!loading && !error && !items.length && (
