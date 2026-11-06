@@ -272,18 +272,42 @@ export default function ServerBookDetail({
               {es ? 'Abrir el tuyo' : 'Open yours'}
             </button>
           )}
-          {local?.audiobook && onOpenAudiobook && (
-            <button
-              type="button"
-              className="yoru-btn"
-              onClick={() => onOpenAudiobook(local)}
-              title={local.audiobook.title}
-            >
-              <Headphones size={15} />
-              {(local.audiobook.chapters || 0) > 1
-                ? (es ? 'Leer escuchando · por capítulos' : 'Read along · by chapter')
-                : (es ? 'Leer escuchando' : 'Read along')}
-            </button>
+          {/*
+            «Leer escuchando» se enseña aunque no haya audiolibro, apagado y
+            diciendo por qué. Antes, sin audio, el botón no estaba: quien tiene una
+            serie sin audiolibro —Re:Zero, por ejemplo— no veía nada y no podía
+            saber si la función no existe, si la app no se ha enterado o si ha hecho
+            algo mal. Un botón apagado con su motivo responde a eso en un vistazo.
+
+            Solo cuando el libro es tuyo: ofrecer leer escuchando algo que aún no
+            tienes descargado sería prometer de más.
+          */}
+          {local && onOpenAudiobook && (
+            local.audiobook ? (
+              <button
+                type="button"
+                className="yoru-btn"
+                onClick={() => onOpenAudiobook(local)}
+                title={local.audiobook.title}
+              >
+                <Headphones size={15} />
+                {(local.audiobook.chapters || 0) > 1
+                  ? (es ? 'Leer escuchando · por capítulos' : 'Read along · by chapter')
+                  : (es ? 'Leer escuchando' : 'Read along')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="yoru-btn"
+                disabled
+                title={es
+                  ? 'Ningún audiolibro de tu servidor se parece a este tomo. Puedes vincularlo a mano desde su ficha en Audiolibros.'
+                  : 'No audiobook on your server matches this volume. You can link one by hand from its page in Audiobooks.'}
+              >
+                <Headphones size={15} />
+                {es ? 'Sin audiolibro' : 'No audiobook'}
+              </button>
+            )
           )}
           <button
             type="button"

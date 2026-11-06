@@ -429,9 +429,38 @@ export function setAudiobookLink(bookId: string, link: AudiobookLink | null): vo
   localStorage.setItem(LINKS_KEY, JSON.stringify(links));
 }
 
+/**
+ * Quita del final las notas entre paréntesis o corchetes que no son el tomo.
+ *
+ * Los catálogos cuelgan ahí la colección o la editorial: `… 4 (MFブックス)`,
+ * `… (角川文庫)`, `… (Light Novel)`. Eso tapaba el número de tomo, que va justo
+ * delante, y dejaba el título sin tomo. Y sin tomo no hay forma de distinguir el
+ * cuarto del séptimo: todos los tomos de una serie puntuaban igual contra
+ * cualquier audiolibro de esa serie.
+ *
+ * Un paréntesis que contiene solo un número **sí** es el tomo (`… (4)`), y ese se
+ * respeta. La regla mira si lo de dentro es un número, no de qué editorial se
+ * trata: vale para cualquier catálogo, no para una serie en concreto.
+ */
+function stripEditionNotes(title: string): string {
+  const NOTA_FINAL = /[(（[［【〔]([^)）\]］】〕]*)[)）\]］】〕]\s*$/u;
+  let out = title.trim();
+  for (;;) {
+    const match = out.match(NOTA_FINAL);
+    if (!match || match.index === undefined) break;
+    // `(4)` es el tomo, no una nota: ahí se para.
+    if (/^\s*\d+\s*$/.test(match[1])) break;
+    const recortado = out.slice(0, match.index).trim();
+    // Un título que es solo la nota se queda como está; quitarlo todo no ayuda.
+    if (!recortado || recortado === out) break;
+    out = recortado;
+  }
+  return out;
+}
+
 /** Volume number written in a title: 第3巻, 3巻, Vol. 3, (3), 3 at the end… */
 export function volumeNumberOf(title: string): number | null {
-  const text = title.normalize('NFKC');
+  const text = stripEditionNotes(title.normalize('NFKC'));
   const match = text.match(/第\s*(\d+)\s*[巻卷部]/) || text.match(/(\d+)\s*[巻卷]/)
     || text.match(/\b(?:vol(?:ume)?|v)\.?\s*(\d+)/i) || text.match(/[(（[［]\s*(\d+)\s*[)）\]］]/)
     || text.match(/(\d+)\s*[」』)）\]］]*\s*$/);
@@ -440,8 +469,9 @@ export function volumeNumberOf(title: string): number | null {
 
 /** Title reduced for comparison: NFKC, lower case, no bracketed notes, volume marks or punctuation. */
 export function normalizeTitle(title: string): string {
-  return title
-    .normalize('NFKC')
+  // La nota de editorial fuera también aquí, o el mismo tomo en dos catálogos se
+  // compara como «…本気だす4mfブックス» contra «…本気だす» y no acaba de casar.
+  return stripEditionNotes(title.normalize('NFKC'))
     .toLowerCase()
     .replace(/【[^】]*】|〔[^〕]*〕|\[[^\]]*\]/g, ' ')
     .replace(/第\s*\d+\s*[巻卷部]|\d+\s*[巻卷]|\b(?:vol(?:ume)?|v)\.?\s*\d+/gi, ' ')

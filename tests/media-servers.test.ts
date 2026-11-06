@@ -349,6 +349,45 @@ async function absTests() {
   check(volumeNumberOf('本好きの下剋上 第三部「領主の養女1」') === 1 && volumeNumberOf('Vol. 4') === 4 && volumeNumberOf('第12巻') === 12, 'Número de volumen');
   check(normalizeTitle('【オーディオブック】薬屋のひとりごと 第2巻') === normalizeTitle('薬屋のひとりごと'), 'Normalización de títulos');
 
+  /*
+    El mismo tomo, escrito como lo escriben los dos servidores de zams.
+
+    Kavita cuelga la colección al final —`(MFブックス)`— y eso tapaba el número de
+    tomo, que va justo delante: el título se quedaba sin tomo, y sin tomo el cuarto
+    y el séptimo puntuaban igual contra cualquier audiolibro de la serie.
+  */
+  const kavita4 = '無職転生 ～異世界行ったら本気だす～ 4 (MFブックス)';
+  const abs4 = '[4巻] 無職転生 ～異世界行ったら本気だす～ 4';
+  check(
+    volumeNumberOf(kavita4) === 4 && volumeNumberOf(abs4) === 4,
+    `Tomo con colección detrás y con prefijo [N巻] (${volumeNumberOf(kavita4)} y ${volumeNumberOf(abs4)})`
+  );
+  check(normalizeTitle(kavita4) === normalizeTitle(abs4), 'Mismo título en los dos catálogos');
+
+  const mushoku = (vol: number) => ({
+    id: `m${vol}`, libraryId: 'li1', title: `[${vol}巻] 無職転生 ～異世界行ったら本気だす～ ${vol}`,
+    author: '理不尽な孫の手', duration: 0, coverUrl: '',
+  });
+  const libroMushoku4 = { title: kavita4, author: '理不尽な孫の手' };
+  const propio = audiobookMatchScore(libroMushoku4, mushoku(4));
+  const otroTomo = audiobookMatchScore(libroMushoku4, mushoku(7));
+  check(propio >= 0.9, `El tomo 4 reconoce su audiolibro (${propio.toFixed(2)})`);
+  // Lo que de verdad estaba roto: el tomo 7 puntuaba igual que el 4.
+  check(otroTomo < propio - 0.2, `Otro tomo de la misma serie puntúa menos (${otroTomo.toFixed(2)} < ${propio.toFixed(2)})`);
+
+  // Dos series distintas con el mismo número de tomo no se emparejan.
+  const rezero4 = {
+    id: 'r4', libraryId: 'li1', title: '[4巻] Re:ゼロから始める異世界生活 4',
+    author: '長月達平', duration: 0, coverUrl: '',
+  };
+  const cruzado = audiobookMatchScore(libroMushoku4, rezero4);
+  check(cruzado < 0.3, `Series distintas, mismo tomo, no emparejan (${cruzado.toFixed(2)})`);
+
+  // Un paréntesis que es solo un número sí es el tomo, y se respeta.
+  check(volumeNumberOf('ソードアート・オンライン (3)') === 3, 'Tomo escrito entre paréntesis');
+  // Y un título que es solo la colección no se queda vacío.
+  check(normalizeTitle('(MFブックス)').length > 0, 'Un título que es solo la colección no se vacía');
+
   const session = await startAudiobookPlayback('li1');
   const playCall = calls.find((c) => c.url.endsWith('/play'))!;
   check(playCall.body.forceDirectPlay === true && playCall.body.deviceInfo.clientName === 'Yoru Reader', 'Sesión con reproducción directa');
