@@ -18,6 +18,7 @@ import { db } from './db';
 export type RailId =
   | 'continue'
   | 'recent'
+  | 'server-list'
   | 'server-ondeck'
   | 'server-foryou-audio'
   | 'server-kavita'
@@ -38,6 +39,8 @@ export interface RailDef {
 export const RAILS: RailDef[] = [
   { id: 'continue', es: 'Continuar', en: 'Continue' },
   { id: 'recent', es: 'Añadidos recientemente', en: 'Recently added' },
+  // Lo que tú apartaste va antes que lo que te proponemos nosotros.
+  { id: 'server-list', es: 'Tu lista', en: 'Your list' },
   { id: 'server-ondeck', es: 'Continuar en el servidor', en: 'Continue on the server' },
   { id: 'server-foryou-audio', es: 'Audiolibros para ti', en: 'Audiobooks for you' },
   { id: 'server-kavita', es: 'Series de libros', en: 'Book series' },

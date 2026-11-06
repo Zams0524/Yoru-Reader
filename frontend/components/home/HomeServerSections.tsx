@@ -5,10 +5,12 @@ import {
   audiobookSeriesOf,
   getCachedServerCatalog,
   sample,
+  serverItemId,
   type ServerItem,
   type ServerSeries,
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
+import { audiobookList } from '../../utils/audiobookList';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -45,6 +47,23 @@ export function useServerRails({
 
 
 
+  /*
+    Tu lista guarda ids, no títulos, así que los audiolibros salen de la misma caché
+    que alimenta el resto de carruseles. Un id que ya no esté en el servidor
+    sencillamente no aparece, en vez de dejar una tarjeta rota.
+  */
+  const [listIds, setListIds] = useState(() => audiobookList());
+  useEffect(() => {
+    const onUpdate = () => setListIds(audiobookList());
+    window.addEventListener('yoru-audiobook-list-updated', onUpdate);
+    return () => window.removeEventListener('yoru-audiobook-list-updated', onUpdate);
+  }, []);
+  const listed = useMemo(() => {
+    if (listIds.length === 0) return [];
+    const byId = new Map(catalog.audiobooks.map((item) => [serverItemId(item), item]));
+    return listIds.map((id) => byId.get(id)).filter((item): item is ServerItem => Boolean(item));
+  }, [listIds, catalog.audiobooks]);
+
   // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
   const onDeck = useMemo(
     () => catalog.onDeck.filter((item) => !localTitles || !localTitles.has(item.title)),
@@ -60,6 +79,20 @@ export function useServerRails({
     Un carrusel sin datos no entra en el mapa, así que no se pinta ni deja hueco.
   */
   const rails: Partial<Record<RailId, React.ReactNode>> = {};
+
+  /*
+    Lo que apartaste tú con «Añadir a lista». Va de los primeros porque es lo único
+    de esta pantalla que elegiste a mano: todo lo demás te lo proponemos nosotros.
+  */
+  if (listed.length > 0) {
+    rails['server-list'] = (
+      <Rail title={es ? 'Tu lista' : 'Your list'} es={es}>
+        {listed.map((item) => (
+          <ServerCard key={`l-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
 
   if (onDeck.length > 0) {
     rails['server-ondeck'] = (

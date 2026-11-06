@@ -31,6 +31,7 @@ import { BookGridView, EntityListView } from './ListViews';
 import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
+import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
@@ -698,6 +699,11 @@ export default function YoruShell({
   ];
 
   return (
+    /*
+      El reproductor envuelve el shell entero, no una pantalla. Dentro de la ficha
+      moría al salir de ella: el audio se cortaba en cuanto mirabas otra cosa.
+    */
+    <AudiobookPlayerProvider es={es}>
     <div className="yoru-shell">
       <header className="yoru-shell-header">
         {isMobile && (
@@ -823,6 +829,7 @@ export default function YoruShell({
         />
       )}
     </div>
+    </AudiobookPlayerProvider>
   );
 }
 
