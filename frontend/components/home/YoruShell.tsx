@@ -193,11 +193,39 @@ export default function YoruShell({
   /** La serie de audiolibros que se está mirando, por su nombre, que es su clave. */
   const [audioSeries, setAudioSeries] = useState<string | null>(null);
 
+  /*
+    De dónde se venía al entrar en Ajustes.
+
+    Ajustes se queda con la ventana entera y se lleva la barra lateral por delante,
+    así que la flecha de vuelta es la única salida y tiene que devolver al sitio
+    exacto, no a Inicio por defecto: quien entra desde «Audiolibros» a cambiar algo
+    quiere volver a los audiolibros.
+  */
+  const [beforeSettings, setBeforeSettings] = useState<View>('home');
+
   const go = useCallback((next: View, target: typeof serverTarget = null) => {
-    setView(next);
+    setView((current) => {
+      if (next === 'settings' && current !== 'settings') setBeforeSettings(current);
+      return next;
+    });
     setServerTarget(target);
     setIsDrawerOpen(false);
   }, []);
+
+  const exitSettings = useCallback(() => {
+    setView(beforeSettings);
+    setServerTarget(null);
+  }, [beforeSettings]);
+
+  // Escape también sale: es lo que se pulsa sin pensar cuando algo ocupa la ventana.
+  useEffect(() => {
+    if (view !== 'settings') return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') exitSettings();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, exitSettings]);
 
   /** Una portada de servidor abre su ficha: la serie en Kavita, el tomo en Audiobookshelf. */
   const openServerItem = useCallback(
@@ -313,7 +341,7 @@ export default function YoruShell({
   const renderCanvas = () => {
     if (embeddedTab) {
       return (
-        <div className="yoru-shell-embed">
+        <div className={`yoru-shell-embed${view === 'settings' ? ' is-settings' : ''}`}>
           <React.Suspense
             fallback={
               <div className="app-section-loading" role="status" aria-live="polite">
@@ -332,6 +360,12 @@ export default function YoruShell({
               initialTab={embeddedTab}
               embedded
               navigateTo={libraryProps.navigateTo}
+              /*
+                La salida de Ajustes. Se la damos a `Library` porque la flecha va
+                dentro de su propia lateral, encima del buscador, y es ella quien la
+                pinta; el shell es quien sabe de dónde veníamos.
+              */
+              onExitSettings={view === 'settings' ? exitSettings : undefined}
             />
           </React.Suspense>
         </div>
@@ -737,7 +771,13 @@ export default function YoruShell({
       moría al salir de ella: el audio se cortaba en cuanto mirabas otra cosa.
     */
     <AudiobookPlayerProvider es={es}>
-    <div className="yoru-shell">
+    {/*
+      En Ajustes el shell se aparta: ni cabecera, ni lateral, ni barra de abajo.
+      Ajustes ocupa la ventana entera y su propia lateral es la única navegación,
+      que es lo que pidió zams. La clase se encarga de esconderlas por CSS en vez
+      de no montarlas, para que volver no vuelva a construir media aplicación.
+    */}
+    <div className={`yoru-shell${view === 'settings' ? ' is-settings-fullscreen' : ''}`}>
       <header className="yoru-shell-header">
         {isMobile && (
           <button

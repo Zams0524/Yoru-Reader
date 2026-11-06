@@ -71,6 +71,8 @@ interface LibraryProps {
   initialTab?: string;
   /** Cuando el shell nuevo la monta dentro de su lienzo: sin cabecera ni barra inferior propias. */
   embedded?: boolean;
+  /** Sale de Ajustes y vuelve a donde se estaba. Solo llega a pantalla completa. */
+  onExitSettings?: () => void;
   /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
   navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
@@ -264,6 +266,7 @@ const Library = React.memo(function Library({
   wordStatuses = {},
   initialTab,
   embedded = false,
+  onExitSettings,
   navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
@@ -3009,7 +3012,25 @@ const Library = React.memo(function Library({
         {/* Left Sidebar */}
         {showSidebar && (
           <div className="yomitan-settings-sidebar" style={{ width: isMobile ? '100%' : '250px', borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)', paddingRight: isMobile ? '0' : '20px', display: 'flex', flexDirection: 'column', gap: '20px', flexShrink: 0, overflowY: 'auto', height: '100%' }}>
-            <h2 className="settings-page-heading" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: '10px 0 0 0' }}>{lang === 'es' ? 'Configuración' : 'Settings'}</h2>
+            {/*
+              La flecha de vuelta, pegada al título. En Ajustes el shell se aparta
+              entero —no hay lateral de la app ni barra de abajo—, así que esta es la
+              única salida y tiene que estar donde se busca: arriba del todo, a la
+              izquierda. Escape hace lo mismo.
+            */}
+            <div className="settings-page-head">
+              {onExitSettings && (
+                <button
+                  type="button"
+                  className="settings-back-btn"
+                  onClick={onExitSettings}
+                  aria-label={lang === 'es' ? 'Volver' : 'Back'}
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <h2 className="settings-page-heading">{lang === 'es' ? 'Ajustes' : 'Settings'}</h2>
+            </div>
             
             <div className="yomitan-search-wrapper" style={{ position: 'relative', width: '100%' }}>
               <input 
@@ -3176,141 +3197,32 @@ const Library = React.memo(function Library({
           {/* Card: General (Apariencia, Idioma y Guía) */}
           {matchesSearch('tema theme active dark light sepia idioma lang language interface interfaceLanguage tutorial guia atajos general') && (settingsSearchQuery || activeSettingsSection === 'sec-general' || activeSettingsSection === 'sec-theme' || activeSettingsSection === 'sec-language-interface') && (
             <div id="sec-general" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
-              {/* Banner: Actualizaciones del Sistema */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(124, 58, 237, 0.03) 100%)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                borderRadius: '12px',
-                padding: '16px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: 'rgba(168, 85, 247, 0.15)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#c084fc',
-                    flexShrink: 0
-                  }}>
-                    <span style={{ fontSize: '1.3rem' }}>⚡</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.96rem', color: '#fff' }}>
-                      {lang === 'es' ? 'Actualizaciones del Sistema' : 'System Updates'}
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: '#a0a0b0', marginTop: '2px' }}>
-                      {lang === 'es' 
-                        ? 'Comprueba e instala las últimas actualizaciones en vivo con un solo clic.' 
-                        : 'Check and install the latest live updates with one click.'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('yoru-check-updates-manual'))}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <RefreshCw size={15} />
-                  <span>{lang === 'es' ? 'Buscar Actualizaciones' : 'Check for Updates'}</span>
-                </button>
-              </div>
-              {/* Banner: Guía y Tutorial */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(242, 200, 102, 0.08) 0%, rgba(255, 180, 0, 0.03) 100%)',
-                border: '1px solid rgba(242, 200, 102, 0.25)',
-                borderRadius: '12px',
-                padding: '16px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: 'rgba(242, 200, 102, 0.15)',
-                    border: '1px solid rgba(242, 200, 102, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#f2c866',
-                    flexShrink: 0
-                  }}>
-                    <Sparkles size={22} />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.96rem', color: '#fff' }}>
-                      {lang === 'es' ? 'Guía Rápida y Tutorial de Yoru Reader' : 'Yoru Reader Quick Guide & Tutorial'}
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: '#a0a0b0', marginTop: '2px' }}>
-                      {lang === 'es' 
-                        ? 'Vuelve a ver la guía: diccionario, lectura en voz alta, Yoru SRS y opciones de lectura.'
-                        : 'See the guide again: dictionary, read aloud, Yoru SRS and reading options.'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowTutorialModal(true)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#f2c866',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 14px rgba(242, 200, 102, 0.3)',
-                    transition: 'all 0.15s',
-                    flexShrink: 0
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                >
-                  <Sparkles size={16} />
-                  <span>{lang === 'es' ? 'Ver Tutorial' : 'View Tutorial'}</span>
-                </button>
-              </div>
-
               {/* Apariencia e Idioma Card */}
               <div className="settings-section-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Palette size={18} style={{ color: 'var(--primary)' }} />
                   <span>{lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language'}</span>
                 </h3>
-                
+
+                {/*
+                  La guía, aquí dentro.
+
+                  Estaba en un cartel dorado a toda anchura en la cabecera de Ajustes,
+                  encima de todo lo demás. Un cartel así solo se lee la primera vez;
+                  a partir de ahí es un trozo de pantalla que se salta. Esta entrada
+                  de la lista ya se anuncia como «Tema, idioma y guía», así que la
+                  guía va donde la lista dice que está, y en el tamaño que le toca.
+                */}
+                <div className="settings-row-control">
+                  <span className="settings-label-text">
+                    {lang === 'es' ? 'Guía de Yoru Reader' : 'Yoru Reader guide'}
+                  </span>
+                  <button type="button" className="settings-btn" onClick={() => setShowTutorialModal(true)}>
+                    <Sparkles size={15} />
+                    {lang === 'es' ? 'Ver de nuevo' : 'See it again'}
+                  </button>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
                     {/*

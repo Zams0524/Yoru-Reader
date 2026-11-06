@@ -2491,3 +2491,66 @@
   color: var(--text-muted);
   font-size: 12.5px;
 }
+
+/* ── Ajustes a pantalla completa ────────────────────────────────────────────
+   Al entrar en Ajustes el shell se aparta: su cabecera, su lateral y su barra
+   de abajo se esconden, y Ajustes ocupa la ventana. Su propia lateral pasa a
+   ser la unica navegacion, y la flecha de arriba la unica salida.
+   ───────────────────────────────────────────────────────────────────────── */
+/*
+  Sin `>`: la lateral no siempre cuelga directamente del shell, y con el selector
+  de hijo directo se quedaba puesta. Dentro del embebido no hay ninguna de estas
+  clases —la lateral de Ajustes es `.yomitan-settings-sidebar`—, asi que esto no
+  se lleva nada por delante.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-header,
+.yoru-shell.is-settings-fullscreen .yoru-shell-sidebar,
+.yoru-shell.is-settings-fullscreen .yoru-shell-bottom-nav,
+.yoru-shell.is-settings-fullscreen .yoru-shell-scrim {
+  display: none;
+}
+.yoru-shell.is-settings-fullscreen {
+  --shell-sidebar-w: 0px;
+  --shell-header-h: 0px;
+}
+.yoru-shell.is-settings-fullscreen > .yoru-shell-canvas {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  overflow: hidden;
+}
+.yoru-shell-embed.is-settings {
+  height: 100%;
+  padding: 0;
+}
+
+/* La flecha y el titulo, arriba de la lateral de Ajustes. */
+.settings-page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+.settings-page-heading {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.settings-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.settings-back-btn:hover { background: var(--bg-card-hover); color: var(--text-main); }
