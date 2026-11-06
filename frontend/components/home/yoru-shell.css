@@ -2250,3 +2250,219 @@
   color: var(--text-main);
   border-bottom-color: var(--primary);
 }
+
+/* ── El reproductor ampliado ────────────────────────────────────────────────
+   Ocupa la ventana entera, por encima de la barra. El fondo toma el color de
+   la portada cuando se puede leer (`--yoru-tint`), y si no se queda el del
+   tema: el degradado se apoya en el token, no en un color escrito a mano.
+   ───────────────────────────────────────────────────────────────────────── */
+.yoru-player-full {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 26px;
+  overflow-y: auto;
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--yoru-tint, var(--surface-raised)) 55%, var(--bg-app)) 0%, var(--bg-app) 62%);
+  color: var(--text-main);
+}
+
+.yoru-player-full-top {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/*
+  La portada entera, sin recortar. Las de los audiolibros no tienen una proporcion
+  fija —las hay cuadradas y las hay de libro—, asi que imponerle una recortaba el
+  titulo por arriba. Se le pone un maximo y se deja que ella elija su forma.
+*/
+.yoru-player-full-art {
+  display: flex;
+  margin: 10px 0 18px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+}
+/*
+  Crece hasta el ancho disponible (una portada cuadrada y pequena se veia como un
+  sello), pero conserva su forma: `contain` y alto automatico, no un recorte.
+*/
+.yoru-player-full-art img {
+  width: min(62vw, 300px);
+  height: auto;
+  max-height: 42vh;
+  object-fit: contain;
+  display: block;
+}
+
+.yoru-player-full-title {
+  margin: 0;
+  max-width: 520px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+.yoru-player-full-author {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* El capitulo es una fila pulsable, no una etiqueta: lleva a la lista. */
+.yoru-player-full-chapter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-player-full-chapter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-player-full-chapter:hover { background: var(--bg-card-hover); }
+
+.yoru-player-full-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  max-width: 520px;
+  height: 6px;
+  margin-top: 20px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--primary) 0,
+    var(--primary) var(--yoru-played, 0%),
+    var(--border-light) var(--yoru-played, 0%),
+    var(--border-light) 100%
+  );
+  cursor: pointer;
+}
+.yoru-player-full-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+}
+.yoru-player-full-seek::-webkit-slider-runnable-track { height: 6px; background: none; }
+
+.yoru-player-full-times {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Se dice que el tiempo que queda es del capitulo, no del libro. */
+.yoru-player-full-left { letter-spacing: 0.04em; }
+
+.yoru-player-full-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 22px;
+}
+.yoru-player-full-controls .yoru-player-btn { flex-direction: column; gap: 1px; font-size: 11px; }
+
+.yoru-player-full-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--bg-app);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.yoru-player-full-play:hover { filter: brightness(1.08); }
+
+.yoru-player-full-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 26px;
+}
+.yoru-player-full-spacer { flex: 1; }
+.yoru-player-full-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  cursor: pointer;
+}
+.yoru-player-full-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  border: none;
+}
+.yoru-player-btn.is-on { color: var(--primary); }
+
+/* Capitulos y temporizador comparten panel: la misma lista, el mismo trato. */
+.yoru-player-full-panel {
+  width: 100%;
+  max-width: 520px;
+  margin-top: 16px;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+.yoru-player-full-panel ul { list-style: none; margin: 0; padding: 6px; }
+.yoru-player-full-panel p { margin: 0; padding: 16px; color: var(--text-muted); font-size: 13px; }
+.yoru-player-full-panel button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-player-full-panel button:hover:not(:disabled) { background: var(--bg-card-hover); }
+.yoru-player-full-panel button:disabled { opacity: 0.4; cursor: default; }
+.yoru-player-full-panel button.current { color: var(--primary); }
+.yoru-player-full-panel button span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }

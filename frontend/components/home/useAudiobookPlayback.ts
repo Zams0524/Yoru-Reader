@@ -96,8 +96,22 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
   const trackIndexRef = useRef(0);
   trackIndexRef.current = trackIndex;
 
-  // Un audiolibro distinto es una sesión distinta: lo de antes no vale.
-  useEffect(() => {
+  /*
+    Un audiolibro distinto es una sesión distinta: lo de antes no vale.
+
+    Esto se hace durante el render y no en un efecto, y la diferencia importa. El
+    hook vive en el proveedor, y quien pide reproducir es la barra, que es su hija;
+    los efectos de los hijos corren antes que los del padre. Con el reinicio en un
+    efecto, al pasar de un audiolibro a otro la barra arrancaba primero y se
+    encontraba la sesión del anterior: el reproductor aparecía con el minuto del
+    audiolibro que acababas de dejar, y lo de verdad no sonaba.
+
+    Reiniciar aquí es el patrón que React documenta para el estado que depende de
+    una prop, y deja todo limpio antes de que corra ningún efecto.
+  */
+  const [lastItemId, setLastItemId] = useState(itemId);
+  if (itemId !== lastItemId) {
+    setLastItemId(itemId);
     setPhase({ kind: 'idle' });
     setSession(null);
     setPlaying(false);
@@ -106,7 +120,7 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     sessionRef.current = null;
     timeRef.current = 0;
     listenedRef.current = 0;
-  }, [itemId]);
+  }
 
   const report = useCallback(async (close: boolean) => {
     const current = sessionRef.current;
