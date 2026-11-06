@@ -328,6 +328,19 @@ const Library = React.memo(function Library({
   const showDesktopIntegrations = hasDesktopIntegrations();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSettingsSectionOpen, setMobileSettingsSectionOpen] = useState(false);
+  /*
+    Si la ventana da para dos columnas de Ajustes. Novecientos píxeles es donde la
+    lateral de 250 deja de dejarle sitio decente al panel.
+  */
+  const [isNarrowSettings, setIsNarrowSettings] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = () => setIsNarrowSettings(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
@@ -2742,6 +2755,21 @@ const Library = React.memo(function Library({
   };
 
   const renderSettingsTab = () => {
+    /*
+      Ajustes se parte en lista y detalle por ancho, no por si el aparato es táctil.
+
+      `isMobile` pregunta por el aparato —táctil y pantalla de teléfono—, que es lo
+      que decide el resto del shell. Para dos columnas de 250 y 600 píxeles eso no
+      sirve: en el ordenador, estrechando la ventana, las dos seguían una al lado de
+      la otra y se apretujaban. Quien manda aquí es el sitio que hay, y eso se mide.
+
+      Se hace con una variable propia y no tocando `isMobile`, que gobierna la barra
+      de abajo y el cajón de toda la aplicación. Y se hace aquí y no en CSS porque
+      los anchos son estilos en línea: desde la hoja habría que pisarlos con
+      `!important`, y eso es tapar el problema, no arreglarlo.
+    */
+    const settingsNarrow = isMobile || isNarrowSettings;
+
     // About / Diagnostics is a developer tool: only on Android and only for the "Zams" profile.
     const showDiagnostics = Capacitor.getPlatform() === 'android'
       && (settings.profileName || '').trim().toLowerCase() === 'zams';
@@ -2864,7 +2892,7 @@ const Library = React.memo(function Library({
     const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords, description = '', danger = false) => {
       if (!matchesSearch(searchKeywords)) return null;
       // On phones the list is a menu, not a sidebar: no "current section" highlight.
-      const isActive = !isMobile && activeSettingsSection === sectionId;
+      const isActive = !settingsNarrow && activeSettingsSection === sectionId;
       return (
         <button
           type="button"
@@ -2872,7 +2900,7 @@ const Library = React.memo(function Library({
           onClick={() => {
             setActiveSettingsSection(sectionId);
             setSettingsSearchQuery('');
-            if (isMobile) {
+            if (settingsNarrow) {
               setMobileSettingsSectionOpen(true);
             } else {
               scrollToSection(sectionId);
@@ -2881,14 +2909,14 @@ const Library = React.memo(function Library({
         >
           {IconComponent && (
             <span className="settings-nav-icon" aria-hidden="true">
-              <IconComponent size={isMobile ? 18 : 15} />
+              <IconComponent size={settingsNarrow ? 18 : 15} />
             </span>
           )}
           <span className="settings-nav-text">
             <span className="settings-nav-label">{label}</span>
-            {isMobile && description && <span className="settings-nav-desc">{description}</span>}
+            {settingsNarrow && description && <span className="settings-nav-desc">{description}</span>}
           </span>
-          {isMobile && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
+          {settingsNarrow && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
         </button>
       );
     };
@@ -2898,14 +2926,14 @@ const Library = React.memo(function Library({
       ? (lang === 'es' ? `Conectado: ${mediaServerNames.join(' y ')}` : `Connected: ${mediaServerNames.join(' & ')}`)
       : 'Kavita, Audiobookshelf';
 
-    const showSidebar = !isMobile || !mobileSettingsSectionOpen;
-    const showContent = !isMobile || mobileSettingsSectionOpen;
+    const showSidebar = !settingsNarrow || !mobileSettingsSectionOpen;
+    const showContent = !settingsNarrow || mobileSettingsSectionOpen;
 
     return (
-      <div className="tab-view-container settings-view-panel yomitan-settings-layout" style={{ display: 'flex', gap: isMobile ? '0' : '24px', alignItems: 'stretch', height: '100%', width: '100%', margin: '0' }}>
+      <div className="tab-view-container settings-view-panel yomitan-settings-layout" style={{ display: 'flex', gap: settingsNarrow ? '0' : '24px', alignItems: 'stretch', height: '100%', width: '100%', margin: '0' }}>
         {/* Left Sidebar */}
         {showSidebar && (
-          <div className="yomitan-settings-sidebar" style={{ width: isMobile ? '100%' : '250px', borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)', paddingRight: isMobile ? '0' : '20px', display: 'flex', flexDirection: 'column', gap: '20px', flexShrink: 0, overflowY: 'auto', height: '100%' }}>
+          <div className="yomitan-settings-sidebar" style={{ width: settingsNarrow ? '100%' : '250px', borderRight: settingsNarrow ? 'none' : '1px solid rgba(255,255,255,0.08)', paddingRight: settingsNarrow ? '0' : '20px', display: 'flex', flexDirection: 'column', gap: '20px', flexShrink: 0, overflowY: 'auto', height: '100%' }}>
             {/*
               La flecha de vuelta, pegada al título. En Ajustes el shell se aparta
               entero —no hay lateral de la app ni barra de abajo—, así que esta es la
@@ -3108,6 +3136,7 @@ const Library = React.memo(function Library({
                 onSaveSettings={onSaveSettings}
                 recording={bindingKeyAction}
                 onRecord={setBindingKeyAction}
+                onDone={(message) => showToast(message, 'success')}
               />
             </div>
           )}
