@@ -6443,42 +6443,6 @@ html.yoru-compact #root {
 }
 
 .media-server-hint,
-/*
-  El pliegue de «Configuración avanzada».
-
-  Discreto a proposito: cuando el servidor va bien, esto no es lo que se viene a
-  hacer aqui, solo la puerta por si alguien tiene el suyo propio.
-*/
-.media-server-advanced-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 6px 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-.media-server-advanced-toggle:hover { color: var(--text-main); }
-.media-server-advanced-toggle svg {
-  transition: transform 0.18s ease;
-}
-.media-server-advanced-toggle svg.is-open { transform: rotate(90deg); }
-
-.media-server-advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-light);
-}
-
 .media-server-note {
   margin: 0;
   font-size: 0.78rem;

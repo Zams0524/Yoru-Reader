@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, ChevronRight, Headphones, Library as LibraryIcon, Loader2, Unplug, XCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, Headphones, Library as LibraryIcon, Loader2, Unplug, XCircle } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import type { ConnectionTestResult, KavitaAuthMode } from '../../types/integrations';
 import {
@@ -19,7 +19,6 @@ import {
   testAudiobookshelfConnection,
 } from '../../utils/audiobookshelfService';
 import { describeServerError, normalizeServerUrl } from '../../utils/serverHttp';
-import { AUDIOBOOKSHELF_DEFAULTS, KAVITA_DEFAULTS } from '../../config/serverDefaults';
 
 interface Props {
   lang: string;
@@ -67,38 +66,30 @@ export default function MediaServerSettings({ lang }: Props) {
   const [absConnected, setAbsConnected] = useState(Boolean(savedAbs?.token));
   const [absStatus, setAbsStatus] = useState<Status>({ state: 'idle' });
 
+
   /*
-    Los campos empiezan plegados cuando no hay nada que hacer.
+    Al abrir la sección se comprueba de verdad que los servidores responden.
 
-    Yoru trae los servidores ya puestos, así que lo normal es entrar aquí, verlo
-    todo conectado y no tener que tocar una tecla. Un formulario con la clave en
-    blanco debajo de un «Conectado» verde parece estar pidiendo algo que ya está
-    hecho, y eso hace dudar de si de verdad funciona.
+    «Conectado» significaba solo que había una clave guardada. Con una clave que ya
+    no vale —la cambiaste en el servidor, caducó, el disco no está— la tarjeta decía
+    «Conectado», no ofrecía nada que tocar y dejaba sin salida: la única pantalla que
+    arregla el problema solo aparecía si no había clave ninguna.
 
-    Se abren solos en los dos casos en que sí hay algo que hacer: cuando el servidor
-    no está conectado —esconder lo único que arregla el problema sería cruel— y
-    cuando el usuario guardó una configuración suya, porque lo que uno puso con sus
-    manos no se le esconde.
+    Es una petición por servidor al entrar aquí, y solo aquí. Si falla, la tarjeta se
+    abre con sus campos y su botón, que es lo que hace falta en ese momento.
   */
-  /*
-    «Propio» es distinto de lo que trae Yoru, no «hay algo guardado».
-
-    Mi primera versión miraba si existía configuración guardada, y eso daba siempre
-    que sí: la app la escribe ella sola en cuanto se autentica con la clave de
-    fábrica, incluido el testigo que devuelve el servidor. Con ese criterio la
-    tarjeta se abría siempre y no servía de nada. Lo que distingue es si los valores
-    son otros.
-  */
-  const kavitaEsPropio = Boolean(savedKavita) && (
-    normalizeServerUrl(savedKavita.serverUrl || '') !== normalizeServerUrl(KAVITA_DEFAULTS.serverUrl)
-    || (savedKavita.apiKey || '') !== KAVITA_DEFAULTS.apiKey
-  );
-  const absEsPropio = Boolean(savedAbs) && (
-    normalizeServerUrl(savedAbs.serverUrl || '') !== normalizeServerUrl(AUDIOBOOKSHELF_DEFAULTS.serverUrl)
-    || (savedAbs.token || '') !== AUDIOBOOKSHELF_DEFAULTS.token
-  );
-  const [kavitaAbierto, setKavitaAbierto] = useState(!savedKavita?.apiKey || kavitaEsPropio);
-  const [absAbierto, setAbsAbierto] = useState(!savedAbs?.token || absEsPropio);
+  useEffect(() => {
+    let vivo = true;
+    if (savedKavita?.apiKey) {
+      testKavitaConnection(savedKavita, es).then((r) => { if (vivo && !r.ok) setKavitaConnected(false); }).catch(() => undefined);
+    }
+    if (savedAbs?.token) {
+      testAudiobookshelfConnection(savedAbs, es).then((r) => { if (vivo && !r.ok) setAbsConnected(false); }).catch(() => undefined);
+    }
+    return () => { vivo = false; };
+    // Solo al abrir la sección.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const testKavita = async () => {
     setKavitaStatus({ state: 'testing' });
@@ -192,16 +183,6 @@ export default function MediaServerSettings({ lang }: Props) {
     </p>
   );
 
-  /** El pliegue que esconde lo que no hay que tocar cuando todo funciona. */
-  const avanzado = (abierto: boolean, alternar: () => void, contenido: React.ReactNode) => (
-    <>
-      <button type="button" className="media-server-advanced-toggle" onClick={alternar} aria-expanded={abierto}>
-        <ChevronRight size={14} className={abierto ? 'is-open' : ''} aria-hidden="true" />
-        {es ? 'Configuración avanzada' : 'Advanced settings'}
-      </button>
-      {abierto && <div className="media-server-advanced">{contenido}</div>}
-    </>
-  );
 
   return (
     <div className="media-server-settings">
@@ -222,8 +203,7 @@ export default function MediaServerSettings({ lang }: Props) {
           </div>
           {kavitaConnected && <span className="media-server-badge">{es ? 'Conectado' : 'Connected'}</span>}
         </header>
-        {kavitaConnected && !kavitaAbierto && resumen(kavitaUrl)}
-        {avanzado(kavitaAbierto, () => setKavitaAbierto((v) => !v), <>
+        {kavitaConnected ? resumen(kavitaUrl) : (<>
         {field(es ? 'URL del servidor' : 'Server URL', (
           <input type="url" inputMode="url" autoCapitalize="off" spellCheck={false} value={kavitaUrl} placeholder={KAVITA_DEFAULT_URL} onChange={(e) => setKavitaUrl(e.target.value)} />
         ))}
@@ -245,9 +225,16 @@ export default function MediaServerSettings({ lang }: Props) {
           <button type="button" className="media-server-btn is-primary" onClick={testKavita} disabled={kavitaStatus.state === 'testing'}>
             {es ? 'Probar conexión' : 'Test connection'}
           </button>
-          {kavitaConnected && (
+          {/*
+            «Desconectar» aquí sería un botón que nadie puede pulsar: solo se pintaba
+            estando conectado, y conectado esta tarjeta ya no enseña botones. Lo que
+            hace falta en esta pantalla —la del servidor que no responde— es volver a
+            lo que Yoru trae de fábrica, que es a donde se vuelve si configuraste mal
+            el tuyo. Por dentro es lo mismo: borrar lo guardado.
+          */}
+          {Boolean(localStorage.getItem('yoru_kavita_config')) && (
             <button type="button" className="media-server-btn" onClick={() => { clearKavitaConfig(); setKavitaConnected(false); setKavitaStatus({ state: 'idle' }); }}>
-              <Unplug size={15} /> {es ? 'Desconectar' : 'Disconnect'}
+              <Unplug size={15} /> {es ? 'Volver al de Yoru' : 'Back to Yoru\'s'}
             </button>
           )}
         </div>
@@ -267,8 +254,7 @@ export default function MediaServerSettings({ lang }: Props) {
           </div>
           {absConnected && <span className="media-server-badge">{es ? 'Conectado' : 'Connected'}</span>}
         </header>
-        {absConnected && !absAbierto && resumen(absUrl)}
-        {avanzado(absAbierto, () => setAbsAbierto((v) => !v), <>
+        {absConnected ? resumen(absUrl) : (<>
         {field(es ? 'URL del servidor' : 'Server URL', (
           <input type="url" inputMode="url" autoCapitalize="off" spellCheck={false} value={absUrl} placeholder={AUDIOBOOKSHELF_DEFAULT_URL} onChange={(e) => setAbsUrl(e.target.value)} />
         ))}
@@ -290,9 +276,9 @@ export default function MediaServerSettings({ lang }: Props) {
           <button type="button" className="media-server-btn is-primary" onClick={testAbs} disabled={absStatus.state === 'testing'}>
             {es ? 'Probar conexión' : 'Test connection'}
           </button>
-          {absConnected && (
+          {Boolean(localStorage.getItem('yoru_abs_config')) && (
             <button type="button" className="media-server-btn" onClick={() => { clearAudiobookshelfConfig(); setAbsConnected(false); setAbsStatus({ state: 'idle' }); }}>
-              <Unplug size={15} /> {es ? 'Desconectar' : 'Disconnect'}
+              <Unplug size={15} /> {es ? 'Volver al de Yoru' : 'Back to Yoru\'s'}
             </button>
           )}
         </div>
