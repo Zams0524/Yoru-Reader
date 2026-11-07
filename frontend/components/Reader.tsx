@@ -1110,10 +1110,50 @@ export default function Reader({
     );
   }, [book.id, book.chapters, lang, showToast]);
 
-  /** El audio avanzó: si el texto va detrás, llevarlo al párrafo que suena. */
+  /*
+    Marca el párrafo que está sonando y desmarca el de antes.
+
+    Se hace tocando la clase en el DOM, sin pasar por React. El audio avisa varias
+    veces por segundo, y repintar a ese ritmo un libro paginado es inviable: la
+    paginación por columnas se recalcula en cada repintado y el texto daría saltos.
+    Aquí son dos operaciones: quitar una clase y poner otra.
+
+    Marcar no es seguir. La marca se pone siempre que haya alineación, aunque el
+    usuario tenga el seguimiento apagado o se haya ido a leer a otra parte: saber
+    cuál suena es útil precisamente cuando vas por tu cuenta. Lo que no se hace sin
+    permiso es mover la vista; de eso sigue encargándose `followsAudio`.
+  */
+  const sonandoRef = useRef<{ id: number; elemento: Element } | null>(null);
+  const marcarParrafoSonando = useCallback((paragraphId: number | null) => {
+    const actual = sonandoRef.current;
+    /*
+      No basta con comparar el número: el motor rehace el capítulo entero al cambiar
+      de página, de tamaño de letra o de orientación, y en ese momento el párrafo
+      marcado deja de existir aunque siga sonando el mismo. Mirando `isConnected` se
+      vuelve a marcar el nuevo; comparando solo el número, el resaltado desaparecía
+      hasta la frase siguiente.
+    */
+    if (actual && actual.id === paragraphId && actual.elemento.isConnected) return;
+    if (actual) actual.elemento.classList.remove('is-sonando');
+    sonandoRef.current = null;
+    if (paragraphId === null) return;
+    const elemento = engineApiRef.current?.getContent()?.querySelector(`p.chapter-content[index="${paragraphId}"]`);
+    if (!elemento) return;
+    elemento.classList.add('is-sonando');
+    sonandoRef.current = { id: paragraphId, elemento };
+  }, []);
+
+  /** Sin alineación no hay nada que suene: que no se quede una marca colgada. */
+  useEffect(() => {
+    if (!alignment) marcarParrafoSonando(null);
+  }, [alignment, marcarParrafoSonando]);
+
+  /** El audio avanzó: marcar lo que suena y, si el texto va detrás, llevarlo allí. */
   const handleAudioTime = useCallback((ms: number) => {
-    if (!followsAudio || !alignment) return;
+    if (!alignment) return;
     const donde = paragraphAtTime(alignment.index, ms);
+    marcarParrafoSonando(donde ? donde.paragraphId : null);
+    if (!followsAudio) return;
     if (!donde) {
       // Ahí no hay texto alineado. **No se salta a ojo**: el lector se queda donde está
       // y se dice una vez. Un salto aproximado en un libro para aprender japonés
@@ -1129,7 +1169,7 @@ export default function Reader({
     if (lastFollowedRef.current === donde.paragraphId) return;
     lastFollowedRef.current = donde.paragraphId;
     goToParagraphAnywhere(donde.paragraphId);
-  }, [followsAudio, alignment, lang, showToast]);
+  }, [followsAudio, alignment, lang, showToast, marcarParrafoSonando]);
 
   /** Desde la frase elegida, poner el audiolibro justo ahí. */
   const handleListenFromSelection = useCallback(() => {

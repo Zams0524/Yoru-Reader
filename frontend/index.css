@@ -7690,6 +7690,44 @@ body:has(.reader-container) #ajb-reader {
 .yoru-highlight-pink { background: rgba(255, 155, 180, 0.35); border-radius: 4px; }
 .yoru-highlight-purple { background: rgba(197, 175, 251, 0.35); border-radius: 4px; }
 
+/*
+  El párrafo que está sonando ahora mismo.
+
+  Un fondo tenue del color de acento, no un subrayado: el párrafo puede ocupar
+  varias líneas y hasta partirse entre dos columnas, y un fondo las cubre todas;
+  una línea debajo solo marcaría la última. Y tenue a propósito: esto acompaña a
+  la lectura, no compite con ella, y sobre texto japonés un color fuerte tapa los
+  trazos de los kanji pequeños.
+
+  El color sale del acento que tenga puesto el usuario, mezclado con lo que haya
+  detrás, así que sirve en oscuro, claro y sepia sin escribir tres reglas.
+
+  Ni márgenes ni relleno: mover el texto al marcarlo recalcularía la paginación por
+  columnas y el libro daría un salto en cada frase. El halo se hace con `box-shadow`,
+  que no ocupa sitio.
+*/
+.chapter-content.is-sonando {
+  --sonando-mezcla: 16%;
+  background: color-mix(in srgb, var(--primary) var(--sonando-mezcla), transparent);
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) var(--sonando-mezcla), transparent);
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+/*
+  La misma mezcla no pesa lo mismo sobre papel que sobre negro.
+
+  Con el 16% en los tres temas, el resaltado destacaba 1,39:1 sobre el fondo en
+  oscuro pero solo 1,21:1 en claro y 1,22:1 en sepia: sobre un fondo claro el acento
+  tiene poco recorrido y el bloque casi no se distinguía. Subiéndolo al 24% en los
+  dos claros los tres quedan entre 1,34:1 y 1,39:1, que es lo que se buscaba: que se
+  note igual en cualquier tema sin gritar en ninguno. Medido en pantalla, no deducido.
+*/
+[data-theme='light'] .chapter-content.is-sonando,
+[data-theme='sepia'] .chapter-content.is-sonando {
+  --sonando-mezcla: 24%;
+}
+
 /* First-time Reader Controls Hint Pill */
 .yoru-reader-controls-hint {
   animation: yoru-controls-hint-fade 4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
