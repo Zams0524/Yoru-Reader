@@ -6,6 +6,7 @@ El usuario habla español; **responde siempre en español**.
 Repo: https://github.com/Zams0524/Yoru-Reader (público, rama `main`).
 Git: `gh` autenticado como Zams0524 con scope `workflow`. Commits con `Zams0524@users.noreply.github.com`. Carpeta marcada como `safe.directory` (dueño: CodexSandboxOffline).
 Licencia: **GPL-2.0-or-later** (cambió de MIT en 1.4.0 al incorporar el motor nativo Android OpenReadEra).
+Código de terceros cedido por su autor: `THIRD-PARTY-GRANTS.md`. Nada se porta de otro proyecto sin quedar anotado ahí primero, y cada fichero portado lo dice en su cabecera.
 
 Lee también: docs/VISION_APRENDIZAJE_JAPONES.md, docs/OPTIMIZACION_PLATAFORMAS_Y_UX.md, docs/ARQUITECTURA_MULTI_AGENTE.md, docs/TAREAS_NIX_CLAUDE_CODE.md, docs/INFORME_INGENIERIA_INVERSA_JITEN_YORU.md, docs/PROJECT_GUIDELINES.md, docs/YORU_READER_ENGINEERING_PROMPT.md, docs/SRS_ANKI_PARITY_AUDIT.md.
 Antes de un PR de integración o de versión: auditoría QA con el teléfono, ver `docs/AUDITORIA_QA.md` (`node mobile/qa/auditoria.mjs`).
