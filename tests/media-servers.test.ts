@@ -25,6 +25,7 @@ import {
   timeOfParagraph,
   timeOfText,
 } from '../frontend/utils/readAlongAlignment';
+import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
 import {
   audiobookMatchScore,
   chapterAt,
@@ -424,7 +425,61 @@ async function absTests() {
   check(patch.body.isFinished === true && patch.body.currentTime === 7190, 'Progreso PATCH /api/me/progress');
 }
 
+/** Cuándo el texto sigue al audio y cuándo se queda quieto. */
+function seguimientoTests() {
+  // Una ventana de 1000 px: la banda cómoda va de 220 a 720.
+  const ventana = { inicio: 0, fin: 1000 };
+  const enLaBanda = { inicio: 400, fin: 500 };   // centro 450
+  const masAbajo = { inicio: 740, fin: 800 };    // centro 770, fuera de la banda pero visible
+  const fuera = { inicio: 1200, fin: 1300 };     // ni se ve
+  const aMedias = { inicio: 950, fin: 1100 };    // empieza dentro, acaba fuera
+
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', frase: enLaBanda, ventana }).mover === false,
+    'En la banda cómoda el texto no se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', frase: masAbajo, ventana }).mover === true,
+    'Visible pero fuera de la banda: se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: masAbajo, ventana }).mover === false,
+    'En paginado, visible basta: no se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: aMedias, ventana }).mover === true,
+    'Media frase asomando no cuenta como visible',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: fuera, ventana }).mover === true,
+    'Fuera de la página: se mueve',
+  );
+
+  const decision = decidirSeguimiento({ modo: 'suspendido', frase: fuera, ventana });
+  check(
+    decision.mover === false && decision.ofrecerVolver === true,
+    'Suspendido: no se mueve nada y se ofrece volver',
+  );
+  check(
+    decidirSeguimiento({ modo: 'suspendido', forzar: true, frase: fuera, ventana }).mover === false,
+    'Ni forzando se mueve algo suspendido',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', forzar: true, frase: enLaBanda, ventana }).mover === true,
+    'Forzar mueve aunque ya se viera',
+  );
+
+  // La barra del reproductor tapa los últimos 300 px: lo de debajo no está visible.
+  const tapadoPorLaBarra = { inicio: 780, fin: 860 };
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: tapadoPorLaBarra, ventana }).mover === false
+      && decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: tapadoPorLaBarra, ventana, margenFin: 300 }).mover === true,
+    'Una frase detrás de los mandos no cuenta como visible',
+  );
+}
+
 await kavitaTests();
 await absTests();
+seguimientoTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

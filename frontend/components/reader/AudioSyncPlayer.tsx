@@ -47,6 +47,15 @@ interface Props {
   /** Si el texto debe seguir al audio. Lo decide el usuario. */
   followText?: boolean;
   onFollowTextChange?: (value: boolean) => void;
+  /*
+    Encendido pero en pausa, porque el usuario apartó el texto a mano.
+
+    No es otro mando: es el mismo botón diciendo otra cosa. Aquí el botón es lo único
+    que hay para esto, y está en la barra, que es el único sitio de la pantalla donde
+    algo no puede taparle a nadie ni el texto ni la frase que está sonando.
+  */
+  followSuspended?: boolean;
+  onResumeFollow?: () => void;
 }
 
 /** Speeds for language learners: a bit slower than normal up to double. */
@@ -86,8 +95,19 @@ type Phase =
 export default function AudioSyncPlayer({
   book, lang, accent, onClose, raised = false, autoHide = false, onReach,
   alignment = null, onImportSrt, onTimeMs, seekRef, followText = false, onFollowTextChange,
+  followSuspended = false, onResumeFollow,
 }: Props) {
   const es = lang === 'es';
+  /** Lo que hace el botón de seguir ahora mismo, y cómo se cuenta. */
+  const siguiendo = followText && !followSuspended;
+  const enPausa = followText && followSuspended;
+  const textoSeguir = enPausa
+    ? (es ? 'Volver a la narración' : 'Back to the narration')
+    : (es ? 'El texto sigue al audio' : 'Text follows the audio');
+  const alPulsarSeguir = () => {
+    if (enPausa) onResumeFollow?.();
+    else onFollowTextChange?.(!followText);
+  };
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const srtInputRef = useRef<HTMLInputElement>(null);
@@ -508,12 +528,11 @@ export default function AudioSyncPlayer({
           <button
             type="button"
             className="read-aloud-btn"
-            onClick={() => onFollowTextChange?.(!followText)}
-            aria-pressed={followText}
-            style={followText ? { color: accent } : undefined}
-            aria-label={es ? 'El texto sigue al audio' : 'Text follows the audio'}
-            title={(es ? 'El texto sigue al audio' : 'Text follows the audio')
-              + (alignment.notice ? ` — ${alignment.notice}` : '')}
+            onClick={alPulsarSeguir}
+            aria-pressed={siguiendo}
+            style={siguiendo ? { color: accent } : enPausa ? { color: accent, opacity: 0.6 } : undefined}
+            aria-label={textoSeguir}
+            title={textoSeguir + (alignment.notice ? ` — ${alignment.notice}` : '')}
           >
             <AlignLeft size={16} />
           </button>
@@ -708,13 +727,15 @@ export default function AudioSyncPlayer({
               <button
                 type="button"
                 className="read-aloud-chip"
-                onClick={() => onFollowTextChange?.(!followText)}
-                aria-pressed={followText}
-                style={followText ? { color: accent, borderColor: accent } : undefined}
+                onClick={alPulsarSeguir}
+                aria-pressed={siguiendo}
+                style={siguiendo ? { color: accent, borderColor: accent }
+                  : enPausa ? { color: accent, borderColor: accent, opacity: 0.6 } : undefined}
                 title={alignment.notice || undefined}
               >
                 <AlignLeft size={16} aria-hidden="true" />
-                {es ? 'Seguir el texto' : 'Follow the text'}
+                {enPausa ? (es ? 'Volver a la narración' : 'Back to the narration')
+                  : (es ? 'Seguir el texto' : 'Follow the text')}
               </button>
             )}
           </div>

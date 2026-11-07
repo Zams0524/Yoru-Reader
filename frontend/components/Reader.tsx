@@ -22,6 +22,7 @@ import AudioSyncPlayer from './reader/AudioSyncPlayer';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
 import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
+import { decidirSeguimiento } from '../utils/seguimientoAudio';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -474,6 +475,16 @@ export default function Reader({
   // cuando se alineó.
   const [alignment, setAlignment] = useState<LoadedAlignment | null>(null);
   const [followsAudio, setFollowsAudio] = useState(false);
+  /*
+    Seguir el texto se enciende una vez; apartarlo a mano lo suspende, no lo apaga.
+
+    El mando sigue siendo uno solo, el del reproductor. Esto no es un segundo
+    interruptor: mientras el seguimiento está encendido, en cuanto el usuario pasa una
+    página o desplaza el texto por su cuenta, se deja de mover solo y se le ofrece
+    volver. Antes, el siguiente párrafo se lo arrancaba de las manos, y la única salida
+    era apagar el seguimiento y acordarse de volver a encenderlo.
+  */
+  const [seguimientoSuspendido, setSeguimientoSuspendido] = useState(false);
   const audioSeekRef = useRef<((seconds: number) => void) | null>(null);
   /** El último párrafo al que llevó el audio: evita repetir el salto en cada tick. */
   const lastFollowedRef = useRef<number | null>(null);
@@ -1168,8 +1179,80 @@ export default function Reader({
     warnedUnalignedRef.current = false;
     if (lastFollowedRef.current === donde.paragraphId) return;
     lastFollowedRef.current = donde.paragraphId;
+
+    /*
+      Antes se saltaba al párrafo en cuanto cambiaba. Ahora se pregunta si hace falta.
+
+      En lectura continua la frase vive en una banda y el texto solo se mueve cuando se
+      sale de ella: así la narración avanza unos renglones sin arrastrar la página en
+      cada frase. En paginada no hay banda que valga, o está en la página o no está.
+      Y si el usuario apartó el texto a mano, no se mueve nada.
+    */
+    const api = engineApiRef.current;
+    const contenido = api?.getContent();
+    const elemento = contenido?.querySelector(`p.chapter-content[index="${donde.paragraphId}"]`);
+    if (contenido && elemento) {
+      const caja = contenido.getBoundingClientRect();
+      const frase = elemento.getBoundingClientRect();
+      // El eje por el que se desplaza: el vertical japonés en lectura continua corre en X.
+      const ejeY = contenido.scrollHeight > contenido.clientHeight + 2;
+      const tapado = (isReadAloudOpen || isAudiobookOpen) ? readAloudReach.current : 0;
+      const { mover } = decidirSeguimiento({
+        modo: seguimientoSuspendido ? 'suspendido' : 'siguiendo',
+        estrategia: api?.isPaginated() ? 'visibilidad' : 'comodidad',
+        frase: ejeY ? { inicio: frase.top, fin: frase.bottom } : { inicio: frase.left, fin: frase.right },
+        ventana: ejeY ? { inicio: caja.top, fin: caja.bottom } : { inicio: caja.left, fin: caja.right },
+        // La barra del reproductor tapa el borde de abajo: una frase detrás de los
+        // mandos no está visible por mucho que caiga dentro de la caja.
+        margenFin: ejeY ? tapado : 0,
+      });
+      if (!mover) return;
+    } else if (seguimientoSuspendido) {
+      return;
+    }
     goToParagraphAnywhere(donde.paragraphId);
-  }, [followsAudio, alignment, lang, showToast, marcarParrafoSonando]);
+  }, [followsAudio, alignment, lang, showToast, marcarParrafoSonando, seguimientoSuspendido,
+    isReadAloudOpen, isAudiobookOpen, readAloudReach]);
+
+  /*
+    Mover el texto a mano suspende el seguimiento.
+
+    Se escuchan los gestos del usuario, no el desplazamiento: el propio seguimiento mueve
+    la página, y si mirásemos `scroll` se suspendería él solo en cuanto hiciera su trabajo.
+    El paso de página llega por `onPageTurn`, que el motor solo dispara cuando lo pide
+    alguien (toque, tecla o arrastre); los saltos de la búsqueda o del audio no pasan por ahí.
+  */
+  const suspenderSeguimiento = useCallback(() => {
+    if (!followsAudio) return;
+    setSeguimientoSuspendido(true);
+  }, [followsAudio]);
+
+  useEffect(() => {
+    if (!followsAudio) return;
+    const esDelLector = (e: Event) => {
+      const destino = e.target as Node | null;
+      const contenido = engineApiRef.current?.getContent();
+      return !!contenido && !!destino && contenido.contains(destino);
+    };
+    const alGesto = (e: Event) => { if (esDelLector(e)) suspenderSeguimiento(); };
+    window.addEventListener('wheel', alGesto, { capture: true, passive: true });
+    window.addEventListener('touchmove', alGesto, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('wheel', alGesto, true);
+      window.removeEventListener('touchmove', alGesto, true);
+    };
+  }, [followsAudio, suspenderSeguimiento]);
+
+  /** Encender o apagar el seguimiento siempre parte de cero. */
+  useEffect(() => { setSeguimientoSuspendido(false); }, [followsAudio]);
+
+  /** «Volver a la narración»: retomar el seguimiento y llevar el texto allí ya. */
+  const volverALaNarracion = useCallback(() => {
+    setSeguimientoSuspendido(false);
+    lastFollowedRef.current = null;
+    const id = sonandoRef.current?.id;
+    if (id !== undefined) goToParagraphAnywhere(id);
+  }, []);
 
   /** Desde la frase elegida, poner el audiolibro justo ahí. */
   const handleListenFromSelection = useCallback(() => {
@@ -2463,7 +2546,9 @@ export default function Reader({
   hideBarsOnPageTurnRef.current = !showSettingsPopover && !sidebarMode && !isSearchOpen;
   const handlePageTurn = useCallback(() => {
     if (hideBarsOnPageTurnRef.current) setIsHeaderVisible(false);
-  }, []);
+    // Pasar página a mano es irse por tu cuenta: el audio deja de arrastrar el texto.
+    suspenderSeguimiento();
+  }, [suspenderSeguimiento]);
 
   const handleEngineClick = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement | null;
@@ -2707,6 +2792,8 @@ export default function Reader({
           onTimeMs={handleAudioTime}
           seekRef={audioSeekRef}
           followText={followsAudio}
+          followSuspended={seguimientoSuspendido}
+          onResumeFollow={volverALaNarracion}
           onFollowTextChange={(value) => {
             setFollowsAudio(value);
             lastFollowedRef.current = null;
