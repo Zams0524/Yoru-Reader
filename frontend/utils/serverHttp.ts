@@ -111,7 +111,15 @@ export async function serverRequest<T>(url: string, options: RequestOptions = {}
   if (response.status < 200 || response.status >= 300) {
     const body = response.data as any;
     const detail = typeof body === 'string' ? body : body?.message || body?.title || '';
-    throw new ServerHttpError(response.status, `HTTP ${response.status}${detail ? `: ${String(detail).slice(0, 160)}` : ''}`);
+    /*
+      El host va en el mensaje del error.
+
+      Los fallos de red ya lo decían; los de HTTP no, y con la configuración de
+      servidores fuera de la app el registro es lo único que queda para saber cuál de
+      los dos servidores respondió mal. Un «HTTP 401» suelto no dice con quién.
+    */
+    const host = (() => { try { return new URL(url).host; } catch { return url; } })();
+    throw new ServerHttpError(response.status, `${host} → HTTP ${response.status}${detail ? `: ${String(detail).slice(0, 160)}` : ''}`);
   }
   return response as ServerResponse<T>;
 }
@@ -138,6 +146,18 @@ export async function serverDownload(url: string, headers: Record<string, string
 
 /** Short Spanish/English text for an error, for toasts and the "Test connection" result. */
 export function describeServerError(error: unknown, es: boolean): string {
+  /*
+    Todo fallo de servidor deja rastro en el registro.
+
+    La configuración de servidores ya no se edita desde la app: vienen puestos y
+    nadie los toca. Eso quita de en medio los fallos por una clave mal escrita, pero
+    también quita la pantalla donde se veía qué estaba pasando. Sin esto, un servidor
+    apagado o un disco desconectado dejarían un «no se pudo» en pantalla y nada más,
+    y diagnosticarlo sería adivinar.
+
+    Va el host y el motivo; la clave no, que viaja en las cabeceras y no se escribe.
+  */
+  console.warn('[servidor]', error instanceof Error ? error.message : String(error));
   if (error instanceof ServerHttpError) {
     if (error.status === 401 || error.status === 403) {
       return es ? 'Credenciales no válidas (el servidor respondió 401).' : 'Invalid credentials (the server answered 401).';

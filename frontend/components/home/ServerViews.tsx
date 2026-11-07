@@ -27,11 +27,9 @@ import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookL
 export function ServerEmptyState({
   kind,
   es,
-  onOpenSettings,
 }: {
   kind: 'kavita' | 'audiobookshelf';
   es: boolean;
-  onOpenSettings: () => void;
 }) {
   const isKavita = kind === 'kavita';
   const Icon = isKavita ? Server : Headphones;
@@ -42,16 +40,12 @@ export function ServerEmptyState({
       <p className="yoru-empty-note">
         {isKavita
           ? es
-            ? 'Conecta tu servidor Kavita y tus novelas aparecerán aquí, listas para leer o descargar.'
-            : 'Connect your Kavita server and your novels show up here, ready to read or download.'
+            ? 'No se puede hablar con tu servidor de Kavita ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+            : 'Cannot reach your Kavita server right now. Check that it is running and come back.'
           : es
-            ? 'Conecta tu servidor Audiobookshelf y tus audiolibros aparecerán aquí.'
-            : 'Connect your Audiobookshelf server and your audiobooks show up here.'}
+            ? 'No se puede hablar con tu servidor de Audiobookshelf ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+            : 'Cannot reach your Audiobookshelf server right now. Check that it is running and come back.'}
       </p>
-      <button type="button" className="yoru-btn yoru-btn-primary" onClick={onOpenSettings}>
-        <SettingsIcon size={16} />
-        {es ? 'Configurar servidor' : 'Set up the server'}
-      </button>
     </div>
   );
 }
@@ -640,13 +634,11 @@ export function AudiobookSeriesView({
 /** El catálogo de audiolibros del servidor, biblioteca a biblioteca. */
 export function AudiobookshelfView({
   es,
-  onOpenSettings,
   onOpenLocalBook,
   libraryBooks,
   initialItemId,
 }: {
   es: boolean;
-  onOpenSettings: () => void;
   /** Ficha que hay que abrir al entrar, cuando se llega pulsando una portada de Inicio. */
   initialItemId?: string;
   /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
@@ -771,7 +763,7 @@ export function AudiobookshelfView({
     return () => { alive = false; };
   }, [configured, initialItemId]);
 
-  if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} onOpenSettings={onOpenSettings} />;
+  if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} />;
 
   if (open) {
     return (

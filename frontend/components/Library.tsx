@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { Plus, Info, Trash2, Check, BarChart3, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Type, Layers, AlertTriangle, Keyboard, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
-import MediaServerSettings from './settings/MediaServerSettings';
 import ProfileSettings from './settings/ProfileSettings';
 import ReadingDaySettings from './settings/ReadingDaySettings';
 import VocabularySettings from './settings/VocabularySettings';
@@ -45,7 +44,6 @@ const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnó
 
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
 const KavitaBrowser = React.lazy(() => import('./KavitaBrowser'));
-const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const SrsReviewModal = React.lazy(() => import('./SrsReviewModal'));
 const ProgressDashboard = React.lazy(() => import('./ProgressDashboard'));
@@ -1450,7 +1448,6 @@ const Library = React.memo(function Library({
       'sec-stats': ['Historial de lectura', 'Reading history'],
       'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
       'sec-discord': ['Discord', 'Discord'],
-      'sec-media-servers': ['Servidores multimedia', 'Media servers'],
       'sec-backup': ['Copias de seguridad', 'Backups'],
       'sec-updates': ['Actualizaciones', 'Updates'],
       'sec-about': ['Acerca de', 'About'],
@@ -2862,11 +2859,6 @@ const Library = React.memo(function Library({
       );
     };
 
-    const mediaServerNames = [isKavitaConfigured() && 'Kavita', isAudiobookshelfConfigured() && 'Audiobookshelf'].filter(Boolean);
-    const mediaServersSummary = mediaServerNames.length > 0
-      ? (lang === 'es' ? `Conectado: ${mediaServerNames.join(' y ')}` : `Connected: ${mediaServerNames.join(' & ')}`)
-      : 'Kavita, Audiobookshelf';
-
     const showSidebar = !settingsNarrow || !mobileSettingsSectionOpen;
     const showContent = !settingsNarrow || mobileSettingsSectionOpen;
 
@@ -2923,7 +2915,6 @@ const Library = React.memo(function Library({
               ])}
 
               {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', BookOpen, [
-                renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary),
                 renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`),
                 renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts'),
               ])}
@@ -3140,20 +3131,6 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Discord Rich Presence */}
-          {matchesSearch(MEDIA_SERVER_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-media-servers') && (
-            <div id="sec-media-servers" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Server size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Servidores multimedia' : 'Media servers'}</span>
-              </h3>
-              <p className="settings-card-desc">
-                {lang === 'es'
-                  ? 'Conecta tus servidores de casa: Kavita para importar novelas ligeras y Audiobookshelf para escuchar el audiolibro mientras lees.'
-                  : 'Connect your home servers: Kavita to import light novels and Audiobookshelf to listen to the audiobook while you read.'}
-              </p>
-              <MediaServerSettings lang={lang} />
-            </div>
-          )}
 
           {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
             <div id="sec-discord" className="settings-section-card">
@@ -6579,12 +6556,6 @@ const Library = React.memo(function Library({
             libraryTitles={libraryTitles}
             onImport={async (parsedBooks) => { await onAddBooks(parsedBooks); }}
             onClose={() => setIsKavitaBrowserOpen(false)}
-            onOpenSettings={() => {
-              setIsKavitaBrowserOpen(false);
-              setActiveTab('settings');
-              setActiveSettingsSection('sec-media-servers');
-              if (isMobile) setMobileSettingsSectionOpen(true);
-            }}
             showToast={showToast}
           />
         )}

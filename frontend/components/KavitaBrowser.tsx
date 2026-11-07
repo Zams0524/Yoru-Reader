@@ -25,7 +25,6 @@ interface Props {
   libraryTitles: Set<string>;
   onImport: (parsedBooks: any[]) => Promise<void>;
   onClose: () => void;
-  onOpenSettings: () => void;
   showToast: (message: string, type?: string) => void;
   /** Abrir el volumen sin guardarlo en la biblioteca. */
   onReadTemporary?: (book: KavitaBook) => Promise<void>;
@@ -50,7 +49,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook, initialSeriesId }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook, initialSeriesId }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -369,11 +368,17 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
 
       <div className="media-browser-body">
         {!configured ? (
+          /*
+            Sin botón de configurar: la configuración de servidores ya no se edita
+            desde la app. Yoru los trae puestos, y llevar a una pantalla que ya no
+            existe sería peor que no ofrecer nada. Lo que queda es decir qué pasa.
+          */
           <div className="media-browser-empty">
-            <p>{es ? 'Conecta tu servidor Kavita para explorar tus novelas.' : 'Connect your Kavita server to browse your novels.'}</p>
-            <button type="button" className="media-server-btn is-primary" onClick={onOpenSettings}>
-              <Settings size={15} /> {es ? 'Configurar servidor' : 'Set up server'}
-            </button>
+            <p>
+              {es
+                ? 'No se puede hablar con el servidor de Kavita ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+                : 'Cannot reach the Kavita server right now. Check that it is running and come back.'}
+            </p>
           </div>
         ) : (
           <>

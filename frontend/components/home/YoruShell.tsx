@@ -409,7 +409,7 @@ export default function YoruShell({
 
     if (view === 'kavita') {
       if (!isKavitaConfigured()) {
-        return <ServerEmptyState kind="kavita" es={es} onOpenSettings={() => go('settings')} />;
+        return <ServerEmptyState kind="kavita" es={es} />;
       }
       return (
         <React.Suspense
@@ -425,7 +425,7 @@ export default function YoruShell({
             libraryTitles={new Set(library.map((book) => book.title))}
             onImport={async (parsed: any[]) => { await libraryProps.onAddBooks?.(parsed); }}
             onClose={() => go('home')}
-            onOpenSettings={() => go('settings')}
+           
             showToast={(message: string) => setServerToast(message)}
             onReadTemporary={libraryProps.onReadTemporary}
             initialSeriesId={serverTarget?.kind === 'kavita' ? serverTarget.id : undefined}
@@ -455,7 +455,7 @@ export default function YoruShell({
       return (
         <AudiobookshelfView
           es={es}
-          onOpenSettings={() => go('settings')}
+         
           initialItemId={serverTarget?.kind === 'audiobook' ? serverTarget.id : undefined}
           libraryBooks={library}
           onOpenLocalBook={(bookId, listen) => {
