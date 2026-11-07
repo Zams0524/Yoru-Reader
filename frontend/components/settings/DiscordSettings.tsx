@@ -22,11 +22,6 @@ const CAMPO: React.CSSProperties = {
   width: '100%',
 };
 
-const ETIQUETA: React.CSSProperties = {
-  fontSize: '0.8rem',
-  color: 'var(--text-muted)',
-  fontWeight: 600,
-};
 
 export default function DiscordSettings({
   lang,
@@ -45,74 +40,93 @@ export default function DiscordSettings({
           : 'Configure the Discord presence integration.'}
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-        {/* Enabled */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-          <span>{lang === 'es' ? 'Habilitar Discord Rich Presence:' : 'Enable Discord Rich Presence:'}</span>
+      {/*
+        Los mismos controles que el resto de Ajustes.
+
+        Aquí había una casilla de verificación del navegador, con su tic, y dos
+        listas desplegables nativas, mientras que la sección de al lado usa el
+        interruptor dorado de Yoru. Dos formas distintas de decir «encendido» en la
+        misma pantalla hacen dudar de si significan lo mismo.
+      */}
+      <div className="settings-row-control">
+        <span className="settings-label-text">
+          {lang === 'es' ? 'Mostrar lo que lees en Discord' : 'Show what you are reading on Discord'}
+        </span>
+        <label className="migaku-switch">
           <input
             type="checkbox"
             checked={settings.discordEnabled || false}
             onChange={(e) => onSaveSettings({ ...settings, discordEnabled: e.target.checked })}
-            style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
           />
-        </div>
+          <span className="migaku-switch-slider"></span>
+        </label>
+      </div>
 
-        {/* Inactivity Timer */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={ETIQUETA}>
-            {lang === 'es' ? 'Temporizador de inactividad (segundos):' : 'Inactivity Timer (seconds):'}
-          </label>
-          <input
-            type="number"
-            value={settings.discordInactivityTimer !== undefined ? settings.discordInactivityTimer : 300}
-            onChange={(e) => onSaveSettings({ ...settings, discordInactivityTimer: parseInt(e.target.value) || 0 })}
-            style={CAMPO}
-          />
-        </div>
+      <div className="settings-row-control">
+        <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span>{lang === 'es' ? 'Dejar de mostrarlo tras' : 'Stop showing it after'}</span>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>
+            {lang === 'es' ? 'Segundos sin pasar de página' : 'Seconds without turning a page'}
+          </span>
+        </span>
+        <input
+          type="number"
+          className="migaku-select"
+          style={{ width: '120px' }}
+          value={settings.discordInactivityTimer !== undefined ? settings.discordInactivityTimer : 300}
+          onChange={(e) => onSaveSettings({ ...settings, discordInactivityTimer: parseInt(e.target.value) || 0 })}
+        />
+      </div>
 
-        {/* Icon */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={ETIQUETA}>{lang === 'es' ? 'Icono:' : 'Icon:'}</label>
-          <select
-            value={settings.discordIcon || 'Yoru'}
-            onChange={(e) => onSaveSettings({ ...settings, discordIcon: e.target.value })}
-            style={{ ...CAMPO, cursor: 'pointer' }}
-          >
-            <option value="Yoru">Yoru</option>
-            <option value="Cute">Cute</option>
-            <option value="Jacked">Jacked</option>
-            <option value="Cursed">Cursed</option>
-          </select>
-        </div>
+      <div className="settings-row-control">
+        <span className="settings-label-text">{lang === 'es' ? 'Icono' : 'Icon'}</span>
+        <select
+          className="migaku-select"
+          value={settings.discordIcon || 'Yoru'}
+          onChange={(e) => onSaveSettings({ ...settings, discordIcon: e.target.value })}
+        >
+          <option value="Yoru">Yoru</option>
+          <option value="Cute">Cute</option>
+          <option value="Jacked">Jacked</option>
+          <option value="Cursed">Cursed</option>
+        </select>
+      </div>
 
-        {/* Show Stats */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={ETIQUETA}>{lang === 'es' ? 'Mostrar Estadísticas:' : 'Show Stats:'}</label>
-          <select
-            value={settings.discordShowStats || 'None'}
-            onChange={(e) => onSaveSettings({ ...settings, discordShowStats: e.target.value })}
-            style={{ ...CAMPO, cursor: 'pointer' }}
-          >
-            <option value="None">{lang === 'es' ? 'Ninguna' : 'None'}</option>
-            <option value="Characters per Hour">{lang === 'es' ? 'Caracteres por hora' : 'Characters per Hour'}</option>
-            <option value="Total Characters">{lang === 'es' ? 'Caracteres totales' : 'Total Characters'}</option>
-            <option value="Cards Mined">{lang === 'es' ? 'Tarjetas creadas' : 'Cards Mined'}</option>
-            <option value="Active Reading Time">{lang === 'es' ? 'Tiempo activo de lectura' : 'Active Reading Time'}</option>
-          </select>
-        </div>
+      <div className="settings-row-control">
+        <span className="settings-label-text">{lang === 'es' ? 'Mostrar estadísticas' : 'Show stats'}</span>
+        <select
+          className="migaku-select"
+          value={settings.discordShowStats || 'None'}
+          onChange={(e) => onSaveSettings({ ...settings, discordShowStats: e.target.value })}
+        >
+          <option value="None">{lang === 'es' ? 'Ninguna' : 'None'}</option>
+          <option value="Characters per Hour">{lang === 'es' ? 'Caracteres por hora' : 'Characters per Hour'}</option>
+          <option value="Total Characters">{lang === 'es' ? 'Caracteres totales' : 'Total Characters'}</option>
+          <option value="Cards Mined">{lang === 'es' ? 'Tarjetas creadas' : 'Cards Mined'}</option>
+          <option value="Active Reading Time">{lang === 'es' ? 'Tiempo activo de lectura' : 'Active Reading Time'}</option>
+        </select>
+      </div>
 
-        {/* Blacklisted Scenes */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={ETIQUETA}>
-            {lang === 'es' ? 'Novelas/Escenas en lista negra:' : 'Blacklisted Novels/Scenes:'}
-          </label>
-          <textarea
-            value={settings.discordBlacklist || ''}
-            onChange={(e) => onSaveSettings({ ...settings, discordBlacklist: e.target.value })}
-            placeholder={lang === 'es' ? 'Escribe nombres de libros a ignorar, uno por línea...' : 'Enter book names to ignore, one per line...'}
-            style={{ ...CAMPO, height: '120px', resize: 'vertical' }}
-          />
-        </div>
+      {/*
+        La lista negra, con su explicación fuera del campo. Antes lo único que lo
+        explicaba era el texto de dentro, que desaparece en cuanto escribes una
+        línea: justo cuando ya no sabes si hacía falta el título exacto.
+      */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '14px' }}>
+        <span className="settings-label-text">
+          {lang === 'es' ? 'Libros que no quieres enseñar' : 'Books you would rather not show'}
+        </span>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-dark)', lineHeight: 1.4 }}>
+          {lang === 'es'
+            ? 'Uno por línea. Mientras leas uno de estos, Discord no enseñará nada.'
+            : 'One per line. While you read one of these, Discord shows nothing.'}
+        </span>
+        <textarea
+          value={settings.discordBlacklist || ''}
+          onChange={(e) => onSaveSettings({ ...settings, discordBlacklist: e.target.value })}
+          placeholder={lang === 'es' ? 'El título tal y como aparece en tu biblioteca' : 'The title as it appears in your library'}
+          style={{ ...CAMPO, height: '110px', resize: 'vertical' }}
+        />
       </div>
     </>
   );

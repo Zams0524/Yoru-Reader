@@ -1444,12 +1444,10 @@ const Library = React.memo(function Library({
   const settingsSectionTitle = (sectionId: string) => {
     const titles = {
       'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
-      'sec-dicts': ['Diccionarios', 'Dictionaries'],
+      'sec-dicts': ['Diccionarios y vocabulario', 'Dictionaries and vocabulary'],
       'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
       'sec-text-style': ['Estilo de texto', 'Text Style'],
-      'sec-stats': ['Estadísticas', 'Statistics'],
-      'sec-reading-day': ['Día de lectura', 'Reading Day'],
-      'sec-vocab-manage': ['Vocabulario y Anki', 'Vocabulary & Anki'],
+      'sec-stats': ['Historial de lectura', 'Reading history'],
       'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
       'sec-discord': ['Discord', 'Discord'],
       'sec-media-servers': ['Servidores multimedia', 'Media servers'],
@@ -2913,7 +2911,6 @@ const Library = React.memo(function Library({
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
                   {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
-                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno', lang === 'es' ? 'A qué hora empieza tu día' : 'When your day starts')}
                   {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
                   {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
                   {/* Discord es una preferencia de lo que enseñas fuera, no una tripa de la app. */}
@@ -2928,9 +2925,8 @@ const Library = React.memo(function Library({
                 </div>
                 <div className="settings-nav-group">
                   {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
+                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`)}
+                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts')}
                 </div>
               </div>
 
@@ -3078,11 +3074,21 @@ const Library = React.memo(function Library({
 
 
           {/* Card: Estadísticas */}
-          {matchesSearch('stats config estadisticas tracking delete books annotations enabled') && (settingsSearchQuery || activeSettingsSection === 'sec-stats') && (
+          {/*
+            Historial de lectura: cuándo empieza tu día y qué se guarda de lo leído.
+
+            Eran dos secciones de un control cada una —«Día de lectura» con su
+            deslizador y «Estadísticas» con su interruptor— y cada una ocupaba un
+            panel entero para enseñar una línea. Hablan de lo mismo: lo que Yoru
+            apunta de tus lecturas. A qué hora empieza el día solo importa porque
+            decide en qué día cae lo leído de madrugada, así que va aquí.
+          */}
+          {matchesSearch('stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-stats' || activeSettingsSection === 'sec-reading-day') && (
             <div id="sec-stats" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <BarChart3 size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Estadísticas' : 'Statistics'}</span>
+                <span>{lang === 'es' ? 'Historial de lectura' : 'Reading history'}</span>
               </h3>
               <StatisticsSettings
                 lang={lang}
@@ -3092,6 +3098,9 @@ const Library = React.memo(function Library({
                 showConfirm={showConfirm}
                 showToast={showToast}
               />
+              <div id="sec-reading-day" style={{ borderTop: '1px solid var(--border-light)', marginTop: '18px', paddingTop: '18px' }}>
+                <ReadingDaySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
+              </div>
             </div>
           )}
 
@@ -3113,15 +3122,6 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Día de lectura */}
-          {matchesSearch('reading day dia lectura start hours limites horas nocturno') && (settingsSearchQuery || activeSettingsSection === 'sec-reading-day') && (
-            <div id="sec-reading-day" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Día de lectura' : 'Reading Day'}</span>
-              </h3>
-              <ReadingDaySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
-            </div>
-          )}
 
           {/* Card: Sincronización Cloud */}
           {matchesSearch('sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync') && (settingsSearchQuery || activeSettingsSection === 'sec-cloud-sync') && (
@@ -3172,15 +3172,6 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Vocabulary Management */}
-          {matchesSearch('vocabulario vocabulary import export jpdb anki file frequency') && (settingsSearchQuery || activeSettingsSection === 'sec-vocab-manage') && (
-            <div id="sec-vocab-manage" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
-              </h3>
-              <VocabularySettings lang={lang} isPhone={isPhoneUI()} onOpenPanel={() => setIsVocabModalOpen(true)} />
-            </div>
-          )}
 
           {/* Card: Backup */}
           {matchesSearch('backup import export catalogo perfil copia seguridad') && (settingsSearchQuery || activeSettingsSection === 'sec-backup') && (
@@ -3194,12 +3185,21 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Dictionaries */}
-          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
+          {/*
+            Palabras: lo que consultas y lo que estás aprendiendo.
+
+            «Vocabulario y Anki» era una sección entera para un botón que abre otro
+            panel. Aquí tiene su sitio: lo que miras al tocar una palabra y lo que
+            haces con las que te quedas son la misma búsqueda, y nadie va a pensar
+            en una entrada aparte para guardar palabras cuando ya está leyendo esta.
+          */}
+          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip vocabulario vocabulary import export jpdb anki file')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-dicts' || activeSettingsSection === 'sec-vocab-manage') && (
             <div id="sec-dicts" style={{ display: 'flex', flexDirection: 'column', gap: '28px', width: '100%' }}>
               <div className="settings-section-card">
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BookOpen size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Diccionarios' : 'Dictionaries'}</span>
+                  <span>{lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary'}</span>
                 </h3>
                 <p className="settings-card-desc">
                   {lang === 'es'
@@ -3207,6 +3207,9 @@ const Library = React.memo(function Library({
                     : 'What you see when you tap a word: meanings, how common it is and its pitch accent. Everything works offline.'}
                 </p>
                 <DictionarySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} confirm={showConfirm} />
+                <div id="sec-vocab-manage" style={{ borderTop: '1px solid var(--border-light)', marginTop: '20px', paddingTop: '20px' }}>
+                  <VocabularySettings lang={lang} isPhone={isPhoneUI()} onOpenPanel={() => setIsVocabModalOpen(true)} />
+                </div>
               </div>
             </div>
           )}
