@@ -363,10 +363,17 @@ function ReaderEngineComponent({
   // Height of the page box (the content element; its height is fixed at 100%, the container may
   // add padding): a vertical-text page is exactly this tall (see contentStyle).
   const [boxHeight, setBoxHeight] = useState(() => window.innerHeight);
+  // Y el ancho, que para el texto horizontal es lo que el alto para el vertical: el paso de
+  // una página a la siguiente. Se mide el mismo elemento del que sale `clientWidth` en el
+  // cálculo de páginas, para que las dos cuentas no puedan discrepar.
+  const [boxWidth, setBoxWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setBoxHeight(content.clientHeight || window.innerHeight));
+    const observer = new ResizeObserver(() => {
+      setBoxHeight(content.clientHeight || window.innerHeight);
+      setBoxWidth(content.clientWidth || window.innerWidth);
+    });
     observer.observe(content);
     return () => observer.disconnect();
   }, []);
@@ -484,8 +491,34 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
         width: '100%',
         height: '100%',
-        columnGap: `calc(${hp} * 2)`,
-        columnWidth: `calc(100vw - ${hp} * 2)`,
+        /*
+          Dos columnas cuando la ventana da para ello, como un libro abierto.
+
+          En una pantalla ancha, una sola columna obliga a recorrer con la vista toda
+          la ventana en cada renglón, que es justo lo que cansa al leer. Dos columnas
+          parten el renglón por la mitad. El umbral son 1000 px de caja por columna,
+          el mismo que usa Nanahoshi, y nunca pasa de dos: con tres, cada columna se
+          queda tan estrecha que las palabras largas se parten.
+
+          La cuenta mantiene intacto el paso de página. Con hueco `g = 2·margen` y
+          columna `c = caja/n − g`, n columnas ocupan exactamente una caja: la primera
+          empieza en el margen, la última acaba en el margen opuesto, y la primera de
+          la página siguiente cae justo una caja más allá. Eso importa porque el resto
+          del motor (contar páginas, ir a un párrafo, volver de una búsqueda) da por
+          hecho que una página mide `clientWidth`; si el paso cambiara, la posición de
+          lectura se movería sola al redimensionar o al cambiar el tamaño de letra.
+        */
+        ...(() => {
+          const hpPx = Math.max(10, window.innerWidth * (horizontalPadding / 100));
+          const columnas = Math.min(2, Math.max(1, Math.ceil(boxWidth / 1000)));
+          const hueco = hpPx * 2;
+          const ancho = boxWidth / columnas - hueco;
+          // Si la columna sale ridícula (ventana estrecha con márgenes grandes), una sola.
+          if (columnas > 1 && ancho < 280) {
+            return { columnGap: `${hueco}px`, columnWidth: `${Math.max(120, boxWidth - hueco)}px` };
+          }
+          return { columnGap: `${hueco}px`, columnWidth: `${Math.max(120, ancho)}px` };
+        })(),
         columnFill: 'auto',
       };
     } else if (!paginated && vertical) {
@@ -507,7 +540,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, bottomReserve]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, boxWidth, bottomReserve]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
