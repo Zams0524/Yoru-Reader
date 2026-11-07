@@ -2513,7 +2513,12 @@
   --shell-sidebar-w: 0px;
   --shell-header-h: 0px;
 }
-.yoru-shell.is-settings-fullscreen > .yoru-shell-canvas {
+/*
+  Sin `>`: el lienzo cuelga de `.yoru-shell-workspace`, no del shell, asi que la
+  regla con hijo directo no llegaba a aplicarse nunca y la pagina entera seguia
+  teniendo barra de scroll.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-canvas {
   position: fixed;
   inset: 0;
   margin: 0;
@@ -2521,9 +2526,80 @@
   max-width: none;
   overflow: hidden;
 }
+
+/*
+  La cadena de alturas, de arriba abajo.
+
+  `height: 100%` solo funciona si todos los de arriba tienen una altura que
+  medir, y aqui se rompia en `.library-container`, que crecia con su contenido
+  hasta 1207 pixeles dentro de una ventana de 720. De ahi salia la barra de la
+  pagina: el lienzo tenia que desplazar un hijo mas alto que el.
+
+  `min-height: 0` hace falta en los contenedores flexibles: por defecto un hijo
+  flexible no se encoge por debajo de su contenido, y eso basta para reventar la
+  cadena aunque el alto este puesto.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-embed,
+.yoru-shell.is-settings-fullscreen .library-container {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+  El contenedor de Ajustes se ancla a su hueco en vez de pedir el 100% del padre.
+
+  Con el porcentaje no había manera: la hoja de Library le pone `height: 100%
+  !important` y aun así salía midiendo 1166 píxeles dentro de un padre de 720, así
+  que el porcentaje no estaba resolviendo contra quien yo creía. Anclarlo con
+  `inset: 0` no depende de esa cadena: ocupa el hueco que hay y punto, y lo que
+  sobre se desplaza dentro de cada columna, no en la página.
+*/
+.yoru-shell.is-settings-fullscreen .library-container { position: relative; }
+.yoru-shell.is-settings-fullscreen .tab-view-container {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+}
 .yoru-shell-embed.is-settings {
   height: 100%;
   padding: 0;
+}
+
+/*
+  Cada columna con su propio scroll, y solo si lo necesita.
+
+  La lateral lo necesita casi siempre —catorce entradas y el recuadro de estado—;
+  el panel casi nunca, porque la mayoria de secciones son cuatro controles.
+*/
+.yoru-shell.is-settings-fullscreen .yomitan-settings-sidebar,
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+  El contenido, centrado y con un ancho de lectura.
+
+  `safe center` y no `center` a secas: centrar en una caja que desborda recorta
+  por arriba, y lo que se pierde ahi es inalcanzable porque el scroll no llega a
+  numeros negativos. Con `safe`, en cuanto no cabe se comporta como `flex-start`
+  y se ve entero. Asi, «Actualizaciones» con sus cuatro controles queda en medio,
+  y «Apariencia e idioma» con cuarenta y siete empieza arriba y se desplaza.
+*/
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane {
+  justify-content: safe center;
+  align-items: center;
+  padding: 24px 28px;
+}
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane > * {
+  width: 100%;
+  max-width: 800px;
+  flex-shrink: 0;
 }
 
 /* La flecha y el titulo, arriba de la lateral de Ajustes. */

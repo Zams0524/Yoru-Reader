@@ -327,6 +327,7 @@ const Library = React.memo(function Library({
   const showDesktopIntegrations = hasDesktopIntegrations();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSettingsSectionOpen, setMobileSettingsSectionOpen] = useState(false);
+
   /*
     Si la ventana da para dos columnas de Ajustes. Novecientos píxeles es donde la
     lateral de 250 deja de dejarle sitio decente al panel.
@@ -480,6 +481,22 @@ const Library = React.memo(function Library({
   const [installedDicts, setInstalledDicts] = useState([]);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
+
+  /*
+    Al cambiar de sección, el panel vuelve arriba del todo.
+
+    Cada sección se pinta sola en el panel, y el navegador conserva la posición del
+    desplazamiento al sustituir el contenido: viniendo de una larga desplazada hasta
+    abajo, la siguiente aparecía empezada por la mitad, con su título fuera de vista.
+
+    Va en un efecto y no en el manejador del clic porque ahí todavía no existe la
+    sección nueva: poner el desplazamiento a cero sobre el contenido viejo no sirve
+    de nada. Y se pone directo, sin animación, para que no se vea el salto.
+  */
+  useEffect(() => {
+    const pane = document.querySelector('.yomitan-settings-pane');
+    if (pane) pane.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [activeSettingsSection]);
   // Android: whether Yoru may post notifications, shown in Settings → Notifications.
   const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null);
   useEffect(() => {
@@ -2981,7 +2998,14 @@ const Library = React.memo(function Library({
   
         {/* Right Content Pane */}
         {showContent && (
-          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: '100px' }}>
+          /*
+            Los cien píxeles de relleno abajo eran para que el último control no
+            quedara pegado al borde cuando Ajustes vivía dentro de una página que se
+            desplazaba. A pantalla completa sobran y estorban: inflan el contenido
+            lo justo para que una sección que cabía deje de caber y aparezca una
+            barra de scroll por ocho píxeles. El aire lo pone ahora la hoja.
+          */
+          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
           
           {/*
             Perfil. Lo mismo que hace el modal del menú del avatar, pero donde se
