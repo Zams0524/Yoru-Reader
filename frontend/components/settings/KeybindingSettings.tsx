@@ -17,6 +17,10 @@ const DEFAULTS: Record<string, string> = {
   prevPage: 'ArrowLeft',
   toggleMenu: 'Escape',
   readAloud: 't',
+  toggleBookmark: 'b',
+  goToBookmark: 'r',
+  nextChapter: 'n',
+  prevChapter: 'm',
 };
 
 export default function KeybindingSettings({
@@ -44,6 +48,10 @@ export default function KeybindingSettings({
     { id: 'prevPage', label: lang === 'es' ? 'Página anterior' : 'Previous page' },
     { id: 'toggleMenu', label: lang === 'es' ? 'Mostrar/Ocultar Menú' : 'Toggle Menu' },
     { id: 'readAloud', label: lang === 'es' ? 'Leer en voz alta (TTS)' : 'Read aloud (TTS)' },
+    { id: 'toggleBookmark', label: lang === 'es' ? 'Poner o quitar marcador' : 'Add or remove bookmark' },
+    { id: 'goToBookmark', label: lang === 'es' ? 'Ir al último marcador' : 'Go to last bookmark' },
+    { id: 'nextChapter', label: lang === 'es' ? 'Capítulo siguiente' : 'Next chapter' },
+    { id: 'prevChapter', label: lang === 'es' ? 'Capítulo anterior' : 'Previous chapter' },
   ];
 
   return (

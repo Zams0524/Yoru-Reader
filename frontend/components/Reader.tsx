@@ -1285,6 +1285,21 @@ export default function Reader({
     }
   }, []);
 
+  /** Al capítulo de al lado, por su primer párrafo. En los extremos no hace nada. */
+  const cambiarCapitulo = useCallback((direccion: 1 | -1) => {
+    const api = engineApiRef.current;
+    if (!api) return;
+    const secciones = api.getSections();
+    const destino = api.getCurrentSection() + direccion;
+    if (destino < 0 || destino >= secciones.length) {
+      showToast(direccion > 0
+        ? (lang === 'es' ? 'Es el último capítulo.' : 'This is the last chapter.')
+        : (lang === 'es' ? 'Es el primer capítulo.' : 'This is the first chapter.'), 'info');
+      return;
+    }
+    goToParagraphAnywhere(secciones[destino].startParagraphId);
+  }, [lang, showToast, goToParagraphAnywhere]);
+
   const handleExportHighlights = useCallback(() => {
     const text = exportHighlights(book.title || '', highlights, lang);
     void navigator.clipboard.writeText(text).then(
@@ -2255,12 +2270,17 @@ export default function Reader({
       return;
     }
 
-    const keybindings = settings.keybindings || {
+    const keybindings = {
       toggleFullscreen: 'f',
       nextPage: 'ArrowRight',
       prevPage: 'ArrowLeft',
       toggleMenu: 'Escape',
-      readAloud: 't'
+      readAloud: 't',
+      toggleBookmark: 'b',
+      goToBookmark: 'r',
+      nextChapter: 'n',
+      prevChapter: 'm',
+      ...(settings.keybindings || {}),
     };
 
     const matchKey = (boundKey: string, pressedEvent: KeyboardEvent) => {
@@ -2337,6 +2357,47 @@ export default function Reader({
       return;
     }
 
+    /*
+      Guardar el sitio, volver a él y cambiar de capítulo.
+
+      Guardar y volver no estrenan nada: usan los marcadores de página que ya hay, los
+      mismos que pinta la cinta y que lista la barra lateral. Una segunda lista de
+      «puntos de lectura» en paralelo a los marcadores sería lo mismo con otro nombre,
+      y el usuario tendría que acordarse de en cuál guardó.
+
+      El capítulo no se invierte en vertical. El sentido de la escritura invierte lo
+      espacial —la página siguiente está a la izquierda—, pero un capítulo no está a
+      ningún lado: el siguiente es el siguiente, se lea como se lea.
+    */
+    if (matchKey(keybindings.toggleBookmark, e)) {
+      e.preventDefault();
+      handleTogglePageBookmark();
+      return;
+    }
+
+    if (matchKey(keybindings.goToBookmark, e)) {
+      e.preventDefault();
+      const ultimo = bookmarks[bookmarks.length - 1];
+      if (!ultimo) {
+        showToast(lang === 'es' ? 'No hay ningún marcador todavía.' : 'No bookmarks yet.', 'info');
+      } else {
+        goToParagraphAnywhere(ultimo.paragraphId);
+      }
+      return;
+    }
+
+    if (matchKey(keybindings.nextChapter, e)) {
+      e.preventDefault();
+      cambiarCapitulo(1);
+      return;
+    }
+
+    if (matchKey(keybindings.prevChapter, e)) {
+      e.preventDefault();
+      cambiarCapitulo(-1);
+      return;
+    }
+
     if (matchKey(keybindings.toggleMenu, e)) {
       e.preventDefault();
       setIsHeaderVisible(prev => !prev);
@@ -2362,7 +2423,8 @@ export default function Reader({
       }
       return;
     }
-  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, dictEntry, handleMineToAnki]);
+  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, dictEntry, handleMineToAnki,
+    bookmarks, handleTogglePageBookmark, goToParagraphAnywhere, cambiarCapitulo]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleReaderKeydown);
