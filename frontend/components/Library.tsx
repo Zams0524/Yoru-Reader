@@ -2790,6 +2790,33 @@ const Library = React.memo(function Library({
     // Phones have no physical keyboard: hide the shortcuts section there.
     const showKeyboardShortcuts = showDesktopIntegrations;
 
+    /*
+      Un grupo de la lista, con su cabecera solo cuando la cabecera dice algo.
+
+      Las entradas aparecen y desaparecen: unas según la plataforma —los atajos no
+      están en el teléfono, «Acerca de» solo en Android—, y todas según lo que haya
+      escrito en el buscador. Un grupo puede quedarse con una sola, y entonces su
+      cabecera en versalitas sobra: es un rótulo para encabezar una lista de uno.
+      Con ninguna, sobra el grupo entero.
+
+      Es una regla para todos los grupos, no un apaño para «Yoru»: hoy le toca a ese
+      en el escritorio, pero al buscar le toca a casi todos.
+    */
+    const renderNavGroup = (titulo: string, Icono: any, entradas: any[]) => {
+      const visibles = entradas.filter(Boolean);
+      if (visibles.length === 0) return null;
+      return (
+        <div>
+          {visibles.length > 1 && (
+            <div className="settings-nav-group-title">
+              <Icono size={13} aria-hidden="true" /> <span>{titulo}</span>
+            </div>
+          )}
+          <div className="settings-nav-group">{visibles}</div>
+        </div>
+      );
+    };
+
     const scrollToSection = (id) => {
       const el = document.getElementById(id);
       if (el) {
@@ -2883,74 +2910,34 @@ const Library = React.memo(function Library({
             </div>
   
             <div className="settings-nav-groups">
-              {/*
-                Perfil va primero porque es lo que la gente viene a cambiar: quién
-                eres. Hasta ahora no estaba en Ajustes y solo se llegaba por el menú
-                del avatar, donde nadie lo buscaba.
-              */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <User size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Perfil' : 'Profile'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn(
-                    'sec-profile',
-                    lang === 'es' ? 'Perfil' : 'Profile',
-                    User,
-                    'perfil profile nombre name foto photo avatar imagen picture usuario',
-                    activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')
-                  )}
-                </div>
-              </div>
+              {renderNavGroup(lang === 'es' ? 'Perfil' : 'Profile', User, [
+                renderSidebarBtn('sec-profile', lang === 'es' ? 'Perfil' : 'Profile', User, 'perfil profile nombre name foto photo avatar imagen picture usuario', activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')),
+              ])}
 
-              {/* Preferencias: cómo se ve y cómo se comporta Yoru contigo. */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Preferencias' : 'Preferences'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
-                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
-                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
-                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
-                  {/* Discord es una preferencia de lo que enseñas fuera, no una tripa de la app. */}
-                  {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
-                </div>
-              </div>
+              {renderNavGroup(lang === 'es' ? 'Preferencias' : 'Preferences', Settings, [
+                renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide'),
+                renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice'),
+                showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys'),
+                hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions'),
+                showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence'),
+              ])}
 
-              {/* Biblioteca: de dónde salen tus libros y tus palabras. */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Biblioteca' : 'Library'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`)}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts')}
-                </div>
-              </div>
+              {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', BookOpen, [
+                renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary),
+                renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`),
+                renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts'),
+              ])}
 
-              {/* Datos: lo tuyo, y cómo se guarda y se lleva de un sitio a otro. */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Database size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
-                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library')}
-                </div>
-              </div>
+              {renderNavGroup(lang === 'es' ? 'Datos' : 'Data', Database, [
+                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
+                renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
+              ])}
 
-              {/* Yoru: la aplicación en sí, no lo que hay dentro. */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Info size={13} aria-hidden="true" /> <span>Yoru</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions')}
-                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics')}
-                </div>
-              </div>
+              {renderNavGroup('Yoru', Info, [
+                renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions'),
+                showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics'),
+              ])}
+
 
               {/*
                 La zona de peligro va sola y separada, sin cabecera de grupo que la
@@ -2958,9 +2945,16 @@ const Library = React.memo(function Library({
                 peor vecino posible: se viene de guardar una copia, se baja un renglón
                 de más y se da en borrarlo todo.
               */}
-              <div className="settings-nav-group settings-nav-danger">
-                {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
-              </div>
+              {/*
+                Si la búsqueda no la encuentra, no se pinta ni el hueco: este grupo
+                lleva una línea de separación encima, y sin entrada debajo quedaba
+                una raya suelta al final de la lista.
+              */}
+              {(() => {
+                const entrada = renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true);
+                if (!entrada) return null;
+                return <div className="settings-nav-group settings-nav-danger">{entrada}</div>;
+              })()}
             </div>
             
             {/* Dashboard de Estado */}
