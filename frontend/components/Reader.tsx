@@ -2390,6 +2390,9 @@ export default function Reader({
     /*
       Guardar el sitio, volver a él y cambiar de capítulo.
 
+      Las cuatro teclas vienen de Nanahoshi, de Natsume, que las tiene como B, R, N y
+      M; de ahí sale la elección, no el código. Su cesión: THIRD-PARTY-GRANTS.md.
+
       Guardar y volver no estrenan nada: usan los marcadores de página que ya hay, los
       mismos que pinta la cinta y que lista la barra lateral. Una segunda lista de
       «puntos de lectura» en paralelo a los marcadores sería lo mismo con otro nombre,

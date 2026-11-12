@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, Headphones, Link2, ListPlus, Loader2, Pause, Play, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, Headphones, Link2, ListPlus, Loader2, Pause, Play, Server, Unlink } from 'lucide-react';
 import {
   absCoverUrl,
   audiobookMatchScore,
@@ -50,7 +50,7 @@ export function ServerEmptyState({
   );
 }
 
-function formatDuration(seconds: number, es: boolean): string | undefined {
+function formatDuration(seconds: number): string | undefined {
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
@@ -239,7 +239,7 @@ function AudiobookDetail({
           <div className="yoru-detail-kinds">
             <span>{es ? 'Audiolibro' : 'Audiobook'}</span>
             {full.publishedYear && <span>{full.publishedYear}</span>}
-            {formatDuration(full.duration, es) && <span>{formatDuration(full.duration, es)}</span>}
+            {formatDuration(full.duration) && <span>{formatDuration(full.duration)}</span>}
             {chapters.length > 1 && <span>{chapters.length} {es ? 'capítulos' : 'chapters'}</span>}
             {linkedBookId && <span className="is-linked">{es ? 'Libro electrónico' : 'Ebook'}</span>}
           </div>
@@ -368,7 +368,7 @@ function AudiobookDetail({
           <MetaRow label={es ? 'Autor' : 'Author'} value={full.author} />
           <MetaRow label={es ? 'Narrador' : 'Narrator'} value={full.narrator} />
           <MetaRow label={es ? 'Serie' : 'Series'} value={full.series} />
-          <MetaRow label={es ? 'Duración' : 'Duration'} value={formatDuration(full.duration, es)} />
+          <MetaRow label={es ? 'Duración' : 'Duration'} value={formatDuration(full.duration)} />
           <MetaRow label={es ? 'Capítulos' : 'Chapters'} value={chapters.length > 1 ? chapters.length : undefined} />
           <MetaRow label={es ? 'Editorial' : 'Publisher'} value={full.publisher} />
           <MetaRow label={es ? 'Año' : 'Year'} value={full.publishedYear} />
@@ -396,7 +396,7 @@ function AudiobookDetail({
               >
                 <span className="yoru-chapter-index">{index + 1}</span>
                 <span className="yoru-chapter-title">{chapter.title}</span>
-                <span className="yoru-chapter-time">{formatDuration(chapter.end - chapter.start, es)}</span>
+                <span className="yoru-chapter-time">{formatDuration(chapter.end - chapter.start)}</span>
               </button>
             ))}
           </div>
@@ -423,7 +423,7 @@ function AudiobookDetail({
               <MetaRow label={es ? 'Escuchado' : 'Listened'} value={`${percent} %`} />
               <MetaRow
                 label={es ? 'Te queda' : 'Left'}
-                value={formatDuration(Math.max(0, duration - position), es)}
+                value={formatDuration(Math.max(0, duration - position))}
               />
               {nowChapter >= 0 && (
                 <MetaRow label={es ? 'Capítulo actual' : 'Current chapter'} value={chapters[nowChapter].title} />
