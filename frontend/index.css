@@ -7728,6 +7728,43 @@ body:has(.reader-container) #ajb-reader {
   --sonando-mezcla: 24%;
 }
 
+/*
+  La frase exacta, cuando se sabe cuál es.
+
+  Lo de arriba marca el párrafo entero y es el respaldo; esto marca la frase. Va por
+  `::highlight()`, que pinta un rango sin meter nada en el árbol: envolverla en una
+  etiqueta cambiaría el contenido, y en un lector paginado por columnas cambiar el
+  contenido es repaginar, con el libro dando un salto en cada frase.
+
+  `::highlight()` solo admite unas pocas propiedades —color, fondo, sombra del texto,
+  decoración— y ninguna que ocupe sitio, lo cual aquí viene bien: no hay forma de que
+  esto mueva un píxel del texto. Por eso no lleva el halo del párrafo.
+*/
+::highlight(frase-sonando) {
+  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/*
+  Y el mismo resaltado donde no exista esa API (WebView viejo).
+
+  Son rectángulos dibujados encima, en una capa aparte que no toca el texto. Van por
+  debajo de todo lo que se pueda pulsar y no reciben el ratón, así que tocar una
+  palabra sigue abriendo el diccionario con la frase marcada.
+*/
+.frase-sonando-respaldo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.frase-sonando-trozo {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
 /* First-time Reader Controls Hint Pill */
 .yoru-reader-controls-hint {
   animation: yoru-controls-hint-fade 4s cubic-bezier(0.16, 1, 0.3, 1) forwards;

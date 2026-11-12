@@ -251,6 +251,31 @@ async function kavitaTests() {
   check(timeOfParagraph(idx, 99) === null, 'Índice: un párrafo sin alinear no da tiempo');
   check(paragraphAtTime(idx, 4000)?.paragraphId === 11, 'Índice: del segundo al párrafo');
   check(paragraphAtTime(idx, 0) === null, 'Índice: antes del primer cue no hay párrafo');
+
+  /*
+    Dónde cae cada frase dentro de su párrafo. Es lo que permite resaltar la frase y
+    no el párrafo entero, y se mide en caracteres ya normalizados: el párrafo
+    「吾輩は猫である。」 normaliza a 吾輩は猫である, siete caracteres desde el cero,
+    porque los corchetes y el punto se caen.
+  */
+  check(idx.offsetInParagraph[0] === 0 && idx.lengthOfCue[0] === 7,
+    'Índice: la primera frase empieza al principio de su párrafo');
+  check(idx.offsetInParagraph[1] === 0 && idx.lengthOfCue[1] === 7,
+    'Índice: y la segunda, al principio del suyo');
+
+  // Dos frases en un mismo párrafo: la segunda tiene que empezar donde acaba la primera.
+  const dosEnUno = buildAlignmentIndex(
+    parseAlignment([
+      '1', '00:00:01,000 --> 00:00:02,000', '吾輩は猫である',
+      '', '2', '00:00:02,000 --> 00:00:03,000', '名前はまだ無い',
+    ].join(String.fromCharCode(10))),
+    [{ sectionIndex: 0, paragraphId: 5, text: '「吾輩は猫である。名前はまだ無い。」' }],
+  );
+  check(dosEnUno.offsetInParagraph[0] === 0 && dosEnUno.lengthOfCue[0] === 7
+    && dosEnUno.offsetInParagraph[1] === 7 && dosEnUno.lengthOfCue[1] === 7,
+    'Índice: dos frases en un párrafo no se pisan');
+  check(idx.offsetInParagraph.length === idx.cues.length,
+    'Índice: hay un desplazamiento por cue, colocado o no');
   // Lo que de verdad importa: en un hueco sin alinear **no se inventa** un párrafo. El
   // lector se queda quieto en vez de saltar al más cercano.
   check(paragraphAtTime(idx, 15_000) === null,

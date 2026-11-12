@@ -239,6 +239,17 @@ export interface AlignmentIndex {
   paragraphOfCue: Int32Array;
   /** Para cada cue, su sección, o -1. */
   sectionOfCue: Int32Array;
+  /*
+    Dónde empieza y cuánto mide cada cue **dentro de su párrafo**, en caracteres ya
+    normalizados. Es lo que permite resaltar la frase que suena y no el párrafo entero.
+
+    Se apunta aquí porque aquí está hecha la cuenta: el emparejador ya sabe en qué
+    posición del libro cayó el cue. Buscarlo otra vez al resaltar sería repetir el
+    trabajo y, peor, una frase repetida dentro del mismo párrafo se encontraría en el
+    sitio equivocado. Vale -1 en los cues que no se colocaron.
+  */
+  offsetInParagraph: Int32Array;
+  lengthOfCue: Int32Array;
   /** 1 si ese cue no es la novela (portada, aviso legal, índice, あとがき). */
   asideOfCue: Uint8Array;
   /** Del id de párrafo al primer cue que cae en él. */
@@ -266,6 +277,8 @@ export function buildAlignmentIndex(
   const { cues } = alignment;
   const paragraphOfCue = new Int32Array(cues.length).fill(-1);
   const sectionOfCue = new Int32Array(cues.length).fill(-1);
+  const offsetInParagraph = new Int32Array(cues.length).fill(-1);
+  const lengthOfCue = new Int32Array(cues.length).fill(-1);
   const asideOfCue = new Uint8Array(cues.length);
   for (const [desde, hasta] of alignment.verdict?.aside || []) {
     for (let i = Math.max(0, desde); i <= Math.min(cues.length - 1, hasta); i++) {
@@ -303,6 +316,8 @@ export function buildAlignmentIndex(
     if (p < 0) continue;
     paragraphOfCue[cue.index] = paragraphs[p].paragraphId;
     sectionOfCue[cue.index] = paragraphs[p].sectionIndex;
+    offsetInParagraph[cue.index] = at - startOf[p];
+    lengthOfCue[cue.index] = needle.length;
     // Un párrafo que solo tiene cues de material ajeno no se ofrece para saltar.
     if (!asideOfCue[cue.index] && !firstCueOfParagraph.has(paragraphs[p].paragraphId)) {
       firstCueOfParagraph.set(paragraphs[p].paragraphId, cue.index);
@@ -315,6 +330,8 @@ export function buildAlignmentIndex(
     cues,
     paragraphOfCue,
     sectionOfCue,
+    offsetInParagraph,
+    lengthOfCue,
     asideOfCue,
     firstCueOfParagraph,
     placed,

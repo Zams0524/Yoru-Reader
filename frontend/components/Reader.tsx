@@ -23,6 +23,7 @@ import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
 import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
 import { decidirSeguimiento } from '../utils/seguimientoAudio';
+import { pintarFrase, rangoDeFrase } from '../utils/anclajeFrase';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -474,6 +475,15 @@ export default function Reader({
   // al abrir el libro, porque empareja los cues con el texto de ahora y no con el de
   // cuando se alineó.
   const [alignment, setAlignment] = useState<LoadedAlignment | null>(null);
+  /*
+    El índice, también en una referencia.
+
+    Lo lee quien marca la frase que suena, y eso corre varias veces por segundo desde
+    un `useCallback` que no debe rehacerse: si dependiera del estado, cada carga de
+    alineación crearía una función nueva y el reproductor volvería a engancharse.
+  */
+  const alignmentRef = useRef<LoadedAlignment | null>(null);
+  alignmentRef.current = alignment;
   const [followsAudio, setFollowsAudio] = useState(false);
   /*
     Seguir el texto se enciende una vez; apartarlo a mano lo suspende, no lo apaga.
@@ -1134,24 +1144,44 @@ export default function Reader({
     cuál suena es útil precisamente cuando vas por tu cuenta. Lo que no se hace sin
     permiso es mover la vista; de eso sigue encargándose `followsAudio`.
   */
-  const sonandoRef = useRef<{ id: number; elemento: Element } | null>(null);
-  const marcarParrafoSonando = useCallback((paragraphId: number | null) => {
+  const sonandoRef = useRef<{ id: number; cue: number; elemento: Element } | null>(null);
+  const marcarParrafoSonando = useCallback((paragraphId: number | null, cueIndex = -1) => {
     const actual = sonandoRef.current;
     /*
-      No basta con comparar el número: el motor rehace el capítulo entero al cambiar
+      No basta con comparar los números: el motor rehace el capítulo entero al cambiar
       de página, de tamaño de letra o de orientación, y en ese momento el párrafo
       marcado deja de existir aunque siga sonando el mismo. Mirando `isConnected` se
       vuelve a marcar el nuevo; comparando solo el número, el resaltado desaparecía
       hasta la frase siguiente.
     */
-    if (actual && actual.id === paragraphId && actual.elemento.isConnected) return;
+    if (actual && actual.id === paragraphId && actual.cue === cueIndex && actual.elemento.isConnected) return;
     if (actual) actual.elemento.classList.remove('is-sonando');
     sonandoRef.current = null;
-    if (paragraphId === null) return;
+    if (paragraphId === null) {
+      pintarFrase(null);
+      return;
+    }
     const elemento = engineApiRef.current?.getContent()?.querySelector(`p.chapter-content[index="${paragraphId}"]`);
-    if (!elemento) return;
-    elemento.classList.add('is-sonando');
-    sonandoRef.current = { id: paragraphId, elemento };
+    if (!elemento) {
+      pintarFrase(null);
+      return;
+    }
+
+    /*
+      La frase si se puede, el párrafo si no.
+
+      Resaltar la frase exacta es lo que de verdad ayuda: un párrafo de dieciocho
+      líneas marcado entero no dice por dónde va el narrador. Pero el anclaje puede no
+      resolver —el motor acaba de rehacer el capítulo, o el texto del DOM no es
+      exactamente el que se indexó— y entonces no se deja de marcar nada: se cae al
+      párrafo, que es lo que había antes y sigue siendo útil.
+    */
+    const índice = alignmentRef.current?.index;
+    const rango = (índice && cueIndex >= 0)
+      ? rangoDeFrase(elemento, índice.offsetInParagraph[cueIndex], índice.lengthOfCue[cueIndex])
+      : null;
+    if (!pintarFrase(rango)) elemento.classList.add('is-sonando');
+    sonandoRef.current = { id: paragraphId, cue: cueIndex, elemento };
   }, []);
 
   /** Sin alineación no hay nada que suene: que no se quede una marca colgada. */
@@ -1163,7 +1193,7 @@ export default function Reader({
   const handleAudioTime = useCallback((ms: number) => {
     if (!alignment) return;
     const donde = paragraphAtTime(alignment.index, ms);
-    marcarParrafoSonando(donde ? donde.paragraphId : null);
+    marcarParrafoSonando(donde ? donde.paragraphId : null, donde ? donde.cue.index : -1);
     if (!followsAudio) return;
     if (!donde) {
       // Ahí no hay texto alineado. **No se salta a ojo**: el lector se queda donde está
