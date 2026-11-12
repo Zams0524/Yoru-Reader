@@ -26,6 +26,7 @@ import {
   timeOfText,
 } from '../frontend/utils/readAlongAlignment';
 import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
+import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
 import {
   audiobookMatchScore,
   chapterAt,
@@ -503,8 +504,45 @@ function seguimientoTests() {
   );
 }
 
+/** A qué capítulo llevan «siguiente» y «anterior». */
+function capitulosTests() {
+  const con = (desde: number, hasta: number) => ({ startParagraphId: desde, lastIndex: hasta });
+  // Un capítulo sin párrafos: el motor lo guarda con lastIndex = startParagraphId - 1.
+  const vacio = (en: number) => ({ startParagraphId: en, lastIndex: en - 1 });
+
+  check(tieneTexto(con(10, 40)) && !tieneTexto(vacio(41)),
+    'Capítulos: un rango vacío no cuenta como capítulo con texto');
+
+  const normales = [con(0, 9), con(10, 19), con(20, 29)];
+  check(capituloVecino(normales, 1, 1) === 2 && capituloVecino(normales, 1, -1) === 0,
+    'Capítulos: con todos llenos, siguiente y anterior son el de al lado');
+  check(capituloVecino(normales, 2, 1) === null && capituloVecino(normales, 0, -1) === null,
+    'Capítulos: en los extremos no hay vecino');
+
+  /*
+    El caso que se nos escapó y rompió la tecla M.
+
+    Entre dos capítulos con texto hay una ilustración, que no tiene párrafos. Ir hacia
+    delante caía en uno con texto y funcionaba; ir hacia atrás caía en el vacío, y como
+    el salto buscaba la sección por el número de párrafo —y un rango vacío no contiene
+    ninguno—, no encontraba nada y la tecla se quedaba muda. En un sentido sí y en el
+    otro no.
+  */
+  const conIlustracion = [con(0, 9), vacio(10), con(10, 19)];
+  check(capituloVecino(conIlustracion, 2, -1) === 0,
+    'Capítulos: hacia atrás se salta la ilustración y llega al capítulo con texto');
+  check(capituloVecino(conIlustracion, 0, 1) === 2,
+    'Capítulos: y hacia delante, igual');
+
+  // Varias seguidas, y al final del libro solo quedan vacíos.
+  const alFinal = [con(0, 9), vacio(10), vacio(10), vacio(10)];
+  check(capituloVecino(alFinal, 0, 1) === null,
+    'Capítulos: si solo quedan capítulos sin texto, es el último');
+}
+
 await kavitaTests();
 await absTests();
 seguimientoTests();
+capitulosTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

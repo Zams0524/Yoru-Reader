@@ -24,6 +24,7 @@ import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment 
 import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
 import { decidirSeguimiento } from '../utils/seguimientoAudio';
 import { pintarFrase, rangoDeFrase } from '../utils/anclajeFrase';
+import { capituloVecino } from '../utils/capitulos';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -1315,20 +1316,31 @@ export default function Reader({
     }
   }, []);
 
-  /** Al capítulo de al lado, por su primer párrafo. En los extremos no hace nada. */
+  /**
+   * Al capítulo de al lado, por su primer párrafo. En los extremos solo avisa.
+   *
+   * El salto va **por el número de capítulo**, que ya lo sabemos, y no por el de
+   * párrafo. Pasando por `goToParagraphAnywhere` había que volver a averiguar de qué
+   * capítulo era ese párrafo, y eso falla justo donde más duele: un capítulo sin texto
+   * —una ilustración, una portadilla— tiene un rango vacío que no contiene ni su
+   * propio primer párrafo, así que no se encontraba, el salto se quedaba donde estaba
+   * y la tecla parecía muerta. En un sentido sí y en el otro no, según de qué lado
+   * cayera el capítulo vacío.
+   */
   const cambiarCapitulo = useCallback((direccion: 1 | -1) => {
     const api = engineApiRef.current;
     if (!api) return;
     const secciones = api.getSections();
-    const destino = api.getCurrentSection() + direccion;
-    if (destino < 0 || destino >= secciones.length) {
+    const destino = capituloVecino(secciones, api.getCurrentSection(), direccion);
+    if (destino === null) {
       showToast(direccion > 0
         ? (lang === 'es' ? 'Es el último capítulo.' : 'This is the last chapter.')
         : (lang === 'es' ? 'Es el primer capítulo.' : 'This is the first chapter.'), 'info');
       return;
     }
-    goToParagraphAnywhere(secciones[destino].startParagraphId);
-  }, [lang, showToast, goToParagraphAnywhere]);
+    skipNextReadingPositionRef.current = true;
+    api.goToParagraph(destino, secciones[destino].startParagraphId);
+  }, [lang, showToast]);
 
   const handleExportHighlights = useCallback(() => {
     const text = exportHighlights(book.title || '', highlights, lang);
