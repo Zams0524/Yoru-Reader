@@ -154,3 +154,7 @@ qa-runs/
 # vean, se añaden a mano con `git add -f`, que es la decisión que sí se puede deshacer.
 .nix-transfer/
 .nix-patches/
+# Dos excepciones, y a propósito: COHERENCIA.md y PR-37-RESUMEN.md ya están publicados
+# en main desde el PR 37. Siguen seguidos por git porque quitarlos es una decisión de
+# zams y merece un cambio que diga eso y nada más, no el arrastre de otro. Están
+# seguidos, así que esta carpeta ignorada no les afecta.
