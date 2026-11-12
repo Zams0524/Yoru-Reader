@@ -1,35 +1,35 @@
 {
-  "appVersion": "1.2.8.53",
-  "backendVersion": "1.2.8.53",
-  "hotUpdateVersion": "1.2.8.63",
+  "appVersion": "1.2.8.64",
+  "backendVersion": "1.2.8.64",
+  "hotUpdateVersion": "1.2.8.64",
   "hotUpdateUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
   "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "windowsUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader.Setup.exe",
   "macArmUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-arm64.dmg",
   "macUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x64.dmg",
   "linuxUrl": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/Yoru-Reader-x86_64.flatpak",
-  "description": "Yoru Reader Desktop v1.2.8.53 (Windows, Mac & Linux)",
-  "nativeCommit": "b16d54e776d8a57ae04b0356ab680c73602383b5",
+  "description": "Yoru Reader Desktop v1.2.8.64 (Windows, Mac & Linux)",
+  "nativeCommit": "d2954d97a29c174c2ab4f2fa7343b0d19ae3e225",
   "assetHashes": {
     "dist.zip": {
-      "sha256": "6c279d379c02bea8612bfaeacd15b77193e1b4430367260d586fb452ead468da",
-      "size": 38021207
+      "sha256": "291af43f781722b7a07a13f36ba52312bdddec3ed00c0e274040605a7fc899a0",
+      "size": 38086939
     },
     "Yoru-Reader.Setup.exe": {
-      "sha256": "8da1b7abdf16a14f4ebcdb13787f3dfcb173a6393f29a81689dcff13843e86b4",
-      "size": 189351541
+      "sha256": "e6193caaa2e3418748711a04508487a74a7b0df7f288e49fa7d4a6f58c122bfd",
+      "size": 189403208
     },
     "Yoru-Reader-arm64.dmg": {
-      "sha256": "fb62624ee53e702501dc5a1b6bc81ab6cb1bec4996bb6ab17f5bef25bd70a13b",
-      "size": 218239989
+      "sha256": "8be8fa376dbceb1278b19aaf3b4bda614841739fba6dc64af1555718321c3084",
+      "size": 218281290
     },
     "Yoru-Reader-x64.dmg": {
-      "sha256": "d289d21d0cc469f7db3c4c544efc23c2501fc9c987a4fb1ea21f4a754c06d672",
-      "size": 220090256
+      "sha256": "097bf8ae800806ed1bd8e7ad98dbcc0152b62c4b8530f4635fa4e5d180b2765d",
+      "size": 220166109
     },
     "Yoru-Reader-x86_64.flatpak": {
-      "sha256": "17fd2c4b968c7106d1f434313de6ecbc727103446dc25f8514ec191113ba66e2",
-      "size": 162049160
+      "sha256": "0542fa60b8d93aff878767cef56b2acaa01634f27c21f5d42452e5108e9b1320",
+      "size": 162075224
     }
   }
 }
