@@ -40,10 +40,40 @@ try {
   console.warn("Could not initialize log file path:", e);
 }
 
+/*
+  Escribir en una salida cerrada no puede tumbar la aplicación.
+
+  Si quien lanzó Yoru deja de leer su salida —una consola que se cierra, o la salida
+  canalizada a un programa que termina antes—, la siguiente escritura lanza
+  `EPIPE: broken pipe`. Como venía de un `console.log` del proceso principal, nadie la
+  recogía y Electron plantaba su cartel de «A JavaScript error occurred in the main
+  process», con la aplicación muerta detrás. Se vio así, arrancándola con la salida
+  canalizada a un programa que la cerraba.
+
+  El registro en fichero ya estaba protegido; faltaba la escritura a la salida de
+  verdad. Se tapa en dos sitios porque el fallo llega de dos maneras: lanzado al
+  escribir, y emitido después por el propio flujo.
+*/
+function salidaRota(e) {
+  return !!e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED' || e.code === 'EBADF');
+}
+for (const flujo of [process.stdout, process.stderr]) {
+  // Sin un oyente de `error`, el flujo lo convierte en excepción no capturada.
+  try { flujo.on('error', (e) => { if (!salidaRota(e)) throw e; }); } catch (e) {}
+}
+
 const originalLog = console.log;
 const originalError = console.error;
+function aLaSalida(fn, args) {
+  try {
+    fn.apply(console, args);
+  } catch (e) {
+    // Nadie escucha al otro lado. El registro en fichero sigue, que es el que importa.
+    if (!salidaRota(e)) throw e;
+  }
+}
 console.log = function(...args) {
-  originalLog.apply(console, args);
+  aLaSalida(originalLog, args);
   if (logPath) {
     try {
       fs.appendFileSync(logPath, args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n');
@@ -51,7 +81,7 @@ console.log = function(...args) {
   }
 };
 console.error = function(...args) {
-  originalError.apply(console, args);
+  aLaSalida(originalError, args);
   if (logPath) {
     try {
       fs.appendFileSync(logPath, '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n');
