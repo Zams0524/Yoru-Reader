@@ -146,3 +146,11 @@ yoru-reader-svelte/node_modules/
 yoru-reader-svelte/*.mjs
 # Auditoría QA en el teléfono (mobile/qa/auditoria.mjs)
 qa-runs/
+
+# Material de trabajo entre Nix y los hilos: capturas, notas y parches sueltos.
+# Se queda en disco, pero no viaja en las ramas. Las capturas son de la biblioteca
+# de zams —sus libros, sus audiolibros, sus servidores— y este repositorio es
+# público: una vez publicadas no se pueden despublicar. Si alguna vez quiere que se
+# vean, se añaden a mano con `git add -f`, que es la decisión que sí se puede deshacer.
+.nix-transfer/
+.nix-patches/
