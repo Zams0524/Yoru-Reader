@@ -447,7 +447,9 @@ export default function Reader({
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsKeepAliveRef = useRef<any>(null);
   const wordAudioRef = useRef<WordAudioPlayback | null>(null);
-  const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10 });
+  // Los cuatro bordes de la palabra, no solo arriba y abajo: en vertical el diccionario
+  // se coloca a un lado, y para eso hacen falta el izquierdo y el derecho.
+  const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10, targetLeft: 10, targetRight: 10 });
   const [popupMaxHeight, setPopupMaxHeight] = useState(Math.max(160, window.innerHeight - 24));
   const [viewportRevision, setViewportRevision] = useState(0);
   const dictPopupRef = useRef<HTMLDivElement | null>(null);
@@ -691,7 +693,7 @@ export default function Reader({
       const anchorBottom = top > window.innerHeight / 2;
       const y = anchorBottom ? top - 6 : bottom + 6;
       
-      setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom });
+      setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom, targetLeft: rect.left, targetRight: rect.right });
       setDictLoading(true);
       setSelectedWord({
         surface: selectedText,
@@ -739,7 +741,7 @@ export default function Reader({
     const anchorBottom = top > window.innerHeight / 2;
     const y = anchorBottom ? top - 6 : bottom + 6;
     
-    setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom });
+    setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom, targetLeft: rect.left, targetRight: rect.right });
     setDictLoading(true);
     
     // Surface text without furigana (<rt>/<rp>), e.g. 彼女 instead of 彼女ヒロイン
@@ -816,20 +818,56 @@ export default function Reader({
       return;
     }
 
+    /*
+      La regla: el diccionario se pone sobre lo que **ya has leído**, nunca sobre lo que
+      viene. Para eso hay que saber hacia dónde se lee, y eso no se deduce de las
+      coordenadas de la palabra: hay que mirar el modo de escritura.
+
+      Antes se decidía solo por el hueco —debajo si cabía, y si no encima—. En texto
+      horizontal eso lo deja casi siempre tapando los renglones siguientes. Y en
+      vertical era peor: la tarjeta mide 380 px y se plantaba a la izquierda de la
+      palabra, que en japonés vertical es justo por donde sigue el texto. Medido en el
+      lector, tapaba tres columnas enteras de lo que estabas a punto de leer.
+
+      Horizontal: lo leído queda arriba, así que se prefiere arriba.
+      Vertical, que se lee de derecha a izquierda: lo leído queda a la derecha, así que
+      va a la derecha, y el alto se alinea con la palabra en vez de pegarse a un borde.
+
+      Y cuando por el lado leído no cabe —una palabra en la primera columna de la página,
+      que en vertical está pegada al borde derecho— no se pone justo al otro lado, que
+      sería taparle lo siguiente que va a leer. Se manda al **extremo** de la página: en
+      vertical, al borde izquierdo, que son las últimas columnas de la hoja; en
+      horizontal, abajo del todo. Eso también tapa texto, pero texto que no va a tocar
+      hasta dentro de un rato, y para entonces el diccionario ya estará cerrado.
+    */
     const bounds = popup.getBoundingClientRect();
-    const spaceAbove = Math.max(0, popupPos.targetTop - margin - gap);
-    const spaceBelow = Math.max(0, window.innerHeight - popupPos.targetBottom - margin - gap);
-    const preferredHeight = Math.min(popup.scrollHeight, 360);
-    const placeBelow = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove;
-    const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2, Math.max(spaceAbove, spaceBelow)));
-    const left = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
-    const top = placeBelow ? popupPos.targetBottom + gap : Math.max(margin, popupPos.targetTop - gap);
+    const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2,
+      Math.max(popupPos.targetTop - margin - gap, window.innerHeight - popupPos.targetBottom - margin - gap)));
+    let left: number;
+    let top: number;
+    let anchorBottom: boolean;
+
+    if (readerSettings.vertical) {
+      const cabeALaDerecha = window.innerWidth - popupPos.targetRight - gap - margin >= bounds.width;
+      left = cabeALaDerecha ? popupPos.targetRight + gap : margin;
+      top = Math.min(Math.max(margin, popupPos.targetTop), Math.max(margin, window.innerHeight - bounds.height - margin));
+      anchorBottom = false;
+    } else {
+      const altoPrevisto = Math.min(popup.scrollHeight, 360);
+      const cabeEncima = popupPos.targetTop - margin - gap >= altoPrevisto;
+      anchorBottom = cabeEncima;
+      left = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
+      top = cabeEncima
+        ? Math.max(margin, popupPos.targetTop - gap)
+        : Math.max(popupPos.targetBottom + gap, window.innerHeight - margin - bounds.height);
+    }
 
     setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
-    setPopupPos(current => current.x === left && current.y === top && current.anchorBottom === !placeBelow
+    setPopupPos(current => current.x === left && current.y === top && current.anchorBottom === anchorBottom
       ? current
-      : { ...current, x: left, y: top, anchorBottom: !placeBelow });
-  }, [selectedWord, dictLoading, dictEntry, popupPos.x, popupPos.targetTop, popupPos.targetBottom, viewportRevision]);
+      : { ...current, x: left, y: top, anchorBottom });
+  }, [selectedWord, dictLoading, dictEntry, popupPos.x, popupPos.targetTop, popupPos.targetBottom,
+    popupPos.targetLeft, popupPos.targetRight, readerSettings.vertical, viewportRevision]);
 
   useEffect(() => {
     const handleResize = () => setViewportRevision(revision => revision + 1);
