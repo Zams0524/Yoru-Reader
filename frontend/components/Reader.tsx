@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ExternalLink, Plus, Volume2, X } from 'lucide-react';
+import { Volume2, X } from 'lucide-react';
 import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
 import { lookupWord } from '../utils/dictionary';
@@ -436,7 +436,6 @@ export default function Reader({
   const [showAllFreqs, setShowAllFreqs] = useState(false);
   const popupSwipeRef = useRef<number | null>(null);
   const [dictLoading, setDictLoading] = useState(false);
-  const [ankiCardExists, setAnkiCardExists] = useState(false);
   const [srsCard, setSrsCard] = useState<any | null>(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [showSettingsPopover, setShowSettingsPopover] = useState(false);
@@ -1602,98 +1601,17 @@ export default function Reader({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const checkAnkiCardExists = async (word: string) => {
-    setAnkiCardExists(false);
-    // AnkiConnect needs Anki on the same computer: never on a phone.
-    if (!word || isPhoneUI()) return;
+  /*
+    Aquí vivían tres cosas que solo servían al botón de Anki del diccionario, que ya no
+    está: preguntarle a AnkiConnect si la palabra ya tenía tarjeta, el efecto que lo
+    hacía en cada palabra, y abrir el navegador de Anki en esa palabra.
 
-    const savedV2 = localStorage.getItem('anki_settings_v2');
-    const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
-    let host = 'http://127.0.0.1:8765';
-    let noteType = 'Lapis';
-    let fieldsConfig: Record<string, string> = { Expression: '{expression}' };
+    De paso se va una llamada a AnkiConnect **en cada palabra que se miraba**, que
+    existía solo para decidir si el botón ponía «Añadir» o «Ver».
 
-    if (ankiSettingsV2) {
-      host = ankiSettingsV2.host || host;
-      const config = ankiSettingsV2.expression || {};
-      noteType = config.noteType || noteType;
-      if (config.fields && Object.keys(config.fields).length > 0) {
-        fieldsConfig = config.fields;
-      }
-    } else {
-      const saved = localStorage.getItem('anki_settings');
-      if (saved) {
-        const legacy = JSON.parse(saved);
-        host = legacy.host || host;
-        noteType = legacy.noteType || noteType;
-        fieldsConfig = { [legacy.wordField || 'Expression']: '{expression}' };
-      }
-    }
-
-    const expressionField = Object.keys(fieldsConfig).find(k => (fieldsConfig as any)[k] === '{expression}') || 'Expression';
-
-    try {
-      const res = await fetch(host, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'findNotes',
-          version: 6,
-          params: {
-            query: `note:"${noteType}" "${expressionField}:${word}"`
-          }
-        })
-      });
-      const data = await res.json();
-      if (data && data.result && data.result.length > 0) {
-        setAnkiCardExists(true);
-      }
-    } catch (e) {
-      console.warn('Could not check card existence in Anki:', e);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedWord) {
-      checkAnkiCardExists(selectedWord.basicForm);
-    } else {
-      setAnkiCardExists(false);
-    }
-  }, [selectedWord]);
-
-  const handleOpenInAnki = async () => {
-    if (!selectedWord) return;
-
-    const savedV2 = localStorage.getItem('anki_settings_v2');
-    const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
-    let host = 'http://127.0.0.1:8765';
-    if (ankiSettingsV2) {
-      host = ankiSettingsV2.host || host;
-    } else {
-      const saved = localStorage.getItem('anki_settings');
-      if (saved) {
-        host = JSON.parse(saved).host || host;
-      }
-    }
-
-    try {
-      await fetch(host, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'guiBrowse',
-          version: 6,
-          params: {
-            query: `"${selectedWord.basicForm}"`
-          }
-        })
-      });
-    } catch (e) {
-      console.error('Error opening Anki browser:', e);
-      showToast(lang === 'es' ? 'No se pudo conectar con Anki. Asegúrate de tener Anki abierto.' : 'Could not connect to Anki. Make sure Anki is open.', 'error');
-    }
-  };
-
+    Mandar una palabra a Anki sigue ahí, con la tecla A, y la integración entera sigue
+    en Ajustes → Diccionarios y vocabulario.
+  */
   const handleMineToAnki = async () => {
     if (isPhoneUI()) return;
     if (!selectedWord) return;
@@ -2096,7 +2014,6 @@ export default function Reader({
             source: existingCard?.source || book?.title || 'Yoru Reader'
           });
         }
-        setAnkiCardExists(true);
         showToast(lang === 'es' ? '¡Tarjeta de Anki creada con éxito! La palabra fue marcada como "Estudiando".' : 'Anki card created successfully! The word was marked as "Learning".', 'success');
       }
     } catch (e) {
@@ -3774,15 +3691,11 @@ export default function Reader({
                   >
                     {es ? 'Ignorar' : 'Ignore'}
                   </button>
-                  {!isPhoneUI() && <button
-                    type="button"
-                    onClick={ankiCardExists ? handleOpenInAnki : handleMineToAnki}
-                    title={ankiCardExists ? (es ? 'Ver en Anki' : 'View in Anki') : (es ? 'Añadir a Anki' : 'Add to Anki')}
-                    style={{ ...action(ankiCardExists, '#a78bfa'), flex: '0 0 auto', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                  >
-                    {ankiCardExists ? <ExternalLink size={11} /> : <Plus size={11} />}
-                    Anki
-                  </button>}
+                  {/*
+                    Aquí había un botón de Anki. Fuera, por decisión de zams (14 nov 2026).
+                    Mandar la palabra a Anki sigue estando con la tecla A, y la
+                    integración entera sigue en Ajustes → Diccionarios y vocabulario.
+                  */}
                 </div>
 
                     {deckSelectorWord === selectedWord.basicForm && (() => {
