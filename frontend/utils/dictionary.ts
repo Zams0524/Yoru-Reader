@@ -22,6 +22,28 @@ export interface DictionaryDefinition {
 
 const JITEN_CACHE = new Map<string, DictionaryEntry>();
 
+/*
+  Qué no tiene sentido ir a buscar a internet.
+
+  Cuando una palabra no está en los diccionarios del usuario se sale a la red, y eso
+  cuesta hasta cinco segundos entre los dos intentos. Midiendo un libro de verdad —300
+  palabras distintas— resultó que parte de ese gasto se va en gramática: partículas como
+  ものの, として, によって, すら o について, y auxiliares como べし. No son palabras que
+  nadie busque en un diccionario, y ninguna búsqueda las va a encontrar.
+
+  Solo se descartan esas dos categorías. Se probó filtrar por más y no se sostiene: los
+  trozos que deja el analizador vienen marcados como 動詞 y 名詞, mezclados con palabras
+  legítimas de la misma categoría —くだる, 間引く, 贋作, 風聞—, así que filtrar por ahí
+  escondería media novela. 助詞 y 助動詞 es lo único seguro.
+
+  La búsqueda local **se sigue haciendo igual**: cuesta medio milisegundo y a veces hay
+  entrada. Lo que se ahorra es el viaje.
+*/
+export function mereceBuscarseFuera(pos: string): boolean {
+  const categoria = (pos || '').split(',')[0].trim();
+  return categoria !== '助詞' && categoria !== '助動詞';
+}
+
 // Look up a word (first in local database, then on Jiten.moe API via CORS proxy)
 export async function lookupWord(word: string, reading: string = '', pos: string = ''): Promise<DictionaryEntry | null> {
   // 1. Clean the word: remove trailing particles or spaces
@@ -58,7 +80,7 @@ export async function lookupWord(word: string, reading: string = '', pos: string
   }
 
   // 3. Fallback to Jiten online definitions if Yomitan DB found nothing OR returned empty definitions
-  if (!entry || !entry.definitions || entry.definitions.length === 0) {
+  if ((!entry || !entry.definitions || entry.definitions.length === 0) && mereceBuscarseFuera(pos)) {
     let jitenEntry: DictionaryEntry | null = null;
     if (JITEN_CACHE.has(cacheKey)) {
       jitenEntry = { ...JITEN_CACHE.get(cacheKey)! };
