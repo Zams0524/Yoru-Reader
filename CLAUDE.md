@@ -17,7 +17,7 @@ Ver especificación técnica y soluciones en `docs/TAREAS_NIX_CLAUDE_CODE.md`:
 2. **Evitar colisión con Furigana en vertical**: Ajustar el cálculo de `run.left` en `drawUnderline()` para no invadir el canal de furigana de la columna vecina izquierda.
 3. **Optimizar paso de páginas rápido (evitar pantalla negra)**: Debounce/cancelación de renders obsoletos y caché de Paths en `NativeReaderPlugin.java` y `NativeReaderView.java`.
 4. **Lazy loading de análisis Kuromoji**: En `nativeReaderWords.ts`, tokenizar de inmediato solo el capítulo visible y el resto en segundo plano.
-5. **Reconectar IPC de parseo local**: En `frontend/App.tsx`, registrar `electronAPI.onParseTextRequest` y responder con `replyParseText` para evitar el timeout de 20s de la extensión.
+5. ~~**Reconectar IPC de parseo local**~~ — **ya está hecho**: `App.tsx` registra `onParseTextRequest` y responde con `replyParseText`, y `preload.cjs` expone las dos. Se deja tachado en vez de borrado para que nadie lo vuelva a empezar. Ojo: `docs/INFORME_INGENIERIA_INVERSA_JITEN_YORU.md` y `docs/TAREAS_NIX_CLAUDE_CODE.md` siguen describiéndolo como pendiente; son informes de su fecha, no el estado de hoy.
 
 ## Archivos clave
 - `frontend/components/Library.tsx`: casi toda la UI (barra superior móvil ~6744, barra inferior ~7714, ajustes `renderSettingsTab` ~3486).
