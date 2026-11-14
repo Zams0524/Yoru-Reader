@@ -27,6 +27,8 @@ import {
 } from '../frontend/utils/readAlongAlignment';
 import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
 import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
+import { juntarOkurigana } from '../frontend/utils/okurigana';
+import { mereceBuscarseFuera } from '../frontend/utils/dictionary';
 import {
   audiobookMatchScore,
   chapterAt,
@@ -540,9 +542,98 @@ function capitulosTests() {
     'Capítulos: si solo quedan capítulos sin texto, es el último');
 }
 
+/*
+  El kanji con furigana y su terminación son la misma palabra.
+
+  Las cuatro primeras salieron de medir su libro: el lector las daba por palabras
+  sueltas, con categoría 名詞 puesta a mano, y ninguna existe en ningún diccionario.
+  El analizador se simula con lo que Kuromoji devuelve de verdad para cada caso, que
+  es lo que esta función consulta.
+*/
+function okuriganaTests() {
+  const analizador = (salidas: Record<string, { surface: string; basicForm: string; pos: string }[]>) =>
+    (texto: string) => salidas[texto] || [{ surface: texto, basicForm: texto, pos: '名詞' }];
+
+  /*
+    Las claves son el texto **tal como se le pasa al analizador**: el kanji más toda la
+    tirada de hiragana que viene detrás, no solo el okurigana. Eso importa: la gracia de
+    la función es que el analizador decida dónde cortar, así que el simulador tiene que
+    devolver varios tokens como haría Kuromoji, no uno.
+  */
+  const kuromoji = analizador({
+    '尊き': [{ surface: '尊き', basicForm: '尊い', pos: '形容詞' }],
+    '自らそれを': [
+      { surface: '自ら', basicForm: '自ら', pos: '副詞' },
+      { surface: 'それ', basicForm: 'それ', pos: '名詞' },
+      { surface: 'を', basicForm: 'を', pos: '助詞' },
+    ],
+    '辿っており': [
+      { surface: '辿っ', basicForm: '辿る', pos: '動詞' },
+      { surface: 'て', basicForm: 'て', pos: '助詞' },
+      { surface: 'おり', basicForm: 'おる', pos: '動詞' },
+    ],
+    '苛立ちを': [
+      { surface: '苛立ち', basicForm: '苛立つ', pos: '動詞' },
+      { surface: 'を', basicForm: 'を', pos: '助詞' },
+    ],
+    // Aquí el kanji va solo: lo que sigue es una partícula, no su terminación.
+    '町に': [{ surface: '町', basicForm: '町', pos: '名詞' }, { surface: 'に', basicForm: 'に', pos: '助詞' }],
+  });
+
+  const r1 = juntarOkurigana('尊', 'き魔術師ならば、', kuromoji);
+  check(r1?.palabra === '尊い' && r1?.okurigana === 'き' && r1?.pos === '形容詞',
+    'Okurigana: 尊 + き es 尊い, no un nombre llamado 尊');
+
+  const r2 = juntarOkurigana('自', 'らそれを生みだそうと', kuromoji);
+  check(r2?.palabra === '自ら' && r2?.okurigana === 'ら',
+    'Okurigana: 自 + ら es 自ら, y deja de salir un ら suelto');
+
+  const r3 = juntarOkurigana('辿', 'っており、', kuromoji);
+  check(r3?.palabra === '辿る' && r3?.okurigana === 'っ',
+    'Okurigana: 辿 + っ es 辿る, que sí está en el diccionario');
+
+  const r4 = juntarOkurigana('苛立', 'ちを覚える', kuromoji);
+  check(r4?.palabra === '苛立つ' && r4?.okurigana === 'ち',
+    'Okurigana: 苛立 + ち es 苛立つ');
+
+  // Lo que NO debe juntarse, que es donde está el riesgo de romper algo.
+  check(juntarOkurigana('町', 'に現れた。', kuromoji) === null,
+    'Okurigana: 町 seguido de に se queda como estaba, la partícula no se traga');
+  check(juntarOkurigana('魔術', '師ならば', kuromoji) === null,
+    'Okurigana: si detrás no hay hiragana, no se toca nada');
+  check(juntarOkurigana('尊', '', kuromoji) === null && juntarOkurigana('', 'き', kuromoji) === null,
+    'Okurigana: sin texto por algún lado, no se inventa nada');
+  check(juntarOkurigana('辿', 'って', () => { throw new Error('el analizador falló'); }) === null,
+    'Okurigana: si el analizador falla, se deja el texto como estaba');
+}
+
+/*
+  Qué palabras no merecen un viaje a internet.
+
+  Las de la primera tanda son las que de verdad fallaban en su libro. Las de la segunda
+  son el motivo de que el filtro sea tan estrecho: palabras legítimas que no están en
+  sus diccionarios y que comparten categoría con la basura del analizador. Si alguna de
+  esas dejara de buscarse, el filtro estaría escondiendo vocabulario.
+*/
+function fueraTests() {
+  const gramatica = ['助詞', '助動詞', '助詞,接続助詞', '助動詞,*,*'];
+  check(gramatica.every((pos) => mereceBuscarseFuera(pos) === false),
+    'Buscar fuera: partículas y auxiliares no salen a internet');
+
+  const palabras = ['名詞', '動詞', '形容詞', '副詞', '連体詞', '接続詞', '感動詞', '接頭詞',
+    '名詞,固有名詞', '動詞,自立'];
+  check(palabras.every((pos) => mereceBuscarseFuera(pos) === true),
+    'Buscar fuera: nombres, verbos, adjetivos y demás sí salen');
+
+  check(mereceBuscarseFuera('') === true && mereceBuscarseFuera(undefined as any) === true,
+    'Buscar fuera: sin categoría, se busca igual, que es lo prudente');
+}
+
 await kavitaTests();
 await absTests();
 seguimientoTests();
 capitulosTests();
+okuriganaTests();
+fueraTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);
