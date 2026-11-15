@@ -840,6 +840,29 @@ export default function Reader({
       hasta dentro de un rato, y para entonces el diccionario ya estará cerrado.
     */
     const bounds = popup.getBoundingClientRect();
+
+    /*
+      Modo «clásico»: el cálculo tal como era antes de la regla de arriba. Decide solo por
+      el hueco —debajo de la palabra si cabe, y si no encima— y no mira el modo de
+      escritura. Tapa lo que viene, pero la tarjeta queda pegada a la palabra, y a zams le
+      sirve así en algunos libros. Se elige en Ajustes del libro.
+    */
+    if (readerSettings.dictPopupPlacement === 'clasico') {
+      const spaceAbove = Math.max(0, popupPos.targetTop - margin - gap);
+      const spaceBelow = Math.max(0, window.innerHeight - popupPos.targetBottom - margin - gap);
+      const preferredHeight = Math.min(popup.scrollHeight, 360);
+      const placeBelow = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove;
+      const maxHeightClasico = Math.max(120, Math.min(window.innerHeight - margin * 2, Math.max(spaceAbove, spaceBelow)));
+      const leftClasico = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
+      const topClasico = placeBelow ? popupPos.targetBottom + gap : Math.max(margin, popupPos.targetTop - gap);
+
+      setPopupMaxHeight(current => current === maxHeightClasico ? current : maxHeightClasico);
+      setPopupPos(current => current.x === leftClasico && current.y === topClasico && current.anchorBottom === !placeBelow
+        ? current
+        : { ...current, x: leftClasico, y: topClasico, anchorBottom: !placeBelow });
+      return;
+    }
+
     const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2,
       Math.max(popupPos.targetTop - margin - gap, window.innerHeight - popupPos.targetBottom - margin - gap)));
     let left: number;
@@ -866,7 +889,8 @@ export default function Reader({
       ? current
       : { ...current, x: left, y: top, anchorBottom });
   }, [selectedWord, dictLoading, dictEntry, popupPos.x, popupPos.targetTop, popupPos.targetBottom,
-    popupPos.targetLeft, popupPos.targetRight, readerSettings.vertical, viewportRevision]);
+    popupPos.targetLeft, popupPos.targetRight, readerSettings.vertical,
+    readerSettings.dictPopupPlacement, viewportRevision]);
 
   useEffect(() => {
     const handleResize = () => setViewportRevision(revision => revision + 1);

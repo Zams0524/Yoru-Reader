@@ -43,6 +43,15 @@ export interface ReaderSettingsState {
   nativeEngine: boolean;
   /** The book's pictures are blurred (spoilers) until tapped. */
   hideImages: boolean;
+  /**
+   * Dónde se coloca la tarjeta del diccionario, en PC y tablet (en el teléfono se acopla
+   * al borde de la pantalla y esto no se usa).
+   * - 'leido': sobre lo que ya has leído, mirando el modo de escritura (arriba en
+   *   horizontal, a la derecha en vertical). Es lo de ahora.
+   * - 'clasico': como antes del cambio, pegada a la palabra y donde haya hueco (debajo si
+   *   cabe, y si no encima).
+   */
+  dictPopupPlacement: 'leido' | 'clasico';
 }
 
 const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
@@ -72,6 +81,7 @@ const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
   hyphenation: 'reader:hyphenation',
   nativeEngine: 'reader:nativeEngine',
   hideImages: 'reader:hideImages',
+  dictPopupPlacement: 'reader:dictPopupPlacement',
 };
 
 function getNumber(key: string, fallback: number): number {
@@ -127,6 +137,7 @@ function loadSettings(): ReaderSettingsState {
     hyphenation: getBool(LS_KEYS.hyphenation, false),
     nativeEngine: getBool(LS_KEYS.nativeEngine, true),
     hideImages: getBool(LS_KEYS.hideImages, false),
+    dictPopupPlacement: getString(LS_KEYS.dictPopupPlacement, 'leido') === 'clasico' ? 'clasico' : 'leido',
   };
 }
 
