@@ -29,6 +29,7 @@ import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
 import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
 import { juntarOkurigana } from '../frontend/utils/okurigana';
 import { mereceBuscarseFuera } from '../frontend/utils/dictionary';
+import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
   audiobookMatchScore,
   chapterAt,
@@ -635,5 +636,52 @@ seguimientoTests();
 capitulosTests();
 okuriganaTests();
 fueraTests();
+
+/*
+  En qué orden mandan los diccionarios.
+
+  Importa porque una palabra la resuelve el primero que la tenga: con el JMdict inglés
+  por debajo del español, esto decide en qué idioma la lees. Lo que se fija aquí es que
+  mande lo que el usuario puso, y que cuando no ha puesto nada no decida la suerte.
+*/
+function ordenTests() {
+  const es = { title: 'JMdict (Spanish)', importedAt: '2026-08-29T10:00:00.000Z' };
+  const en = { title: 'JMdict (English)', importedAt: '2026-11-15T04:40:00.000Z' };
+  const nov = { title: 'Novels', importedAt: '2026-09-01T12:00:00.000Z' };
+
+  check(JSON.stringify(ordenEfectivo([en, es, nov], ['JMdict (Spanish)', 'JMdict (English)', 'Novels']))
+      === JSON.stringify(['JMdict (Spanish)', 'JMdict (English)', 'Novels']),
+    'Orden: manda lo que el usuario guardó, aunque lleguen en otro orden');
+
+  // Sin nada guardado: el que instaló primero. Es el caso de zams antes de ordenarlos.
+  check(JSON.stringify(ordenEfectivo([en, nov, es], []))
+      === JSON.stringify(['JMdict (Spanish)', 'Novels', 'JMdict (English)']),
+    'Orden: sin nada guardado, manda el que se instaló primero');
+
+  // Lo guardado manda; lo que no esté, detrás y por antigüedad.
+  check(JSON.stringify(ordenEfectivo([en, nov, es], ['Novels']))
+      === JSON.stringify(['Novels', 'JMdict (Spanish)', 'JMdict (English)']),
+    'Orden: lo guardado va delante y el resto detrás, por antigüedad');
+
+  // Un título que ya no está instalado no debe colarse en el orden.
+  check(JSON.stringify(ordenEfectivo([es], ['Borrado', 'JMdict (Spanish)']))
+      === JSON.stringify(['JMdict (Spanish)']),
+    'Orden: un diccionario borrado no deja hueco en el orden');
+
+  // Sin fecha no se inventa una: se quedan al final y en el mismo orden en que vinieron.
+  const viejoA = { title: 'Viejo A' };
+  const viejoB = { title: 'Viejo B' };
+  check(JSON.stringify(ordenEfectivo([viejoA, viejoB, es], []))
+      === JSON.stringify(['JMdict (Spanish)', 'Viejo A', 'Viejo B']),
+    'Orden: los que no tienen fecha van al final, sin removerlos entre ellos');
+
+  const orden = ordenEfectivo([en, es], ['JMdict (Spanish)']);
+  check(rangoDeDiccionario('JMdict (Spanish)', orden) === 0
+      && rangoDeDiccionario('JMdict (English)', orden) === 1
+      && rangoDeDiccionario('Ni idea', orden) === 2,
+    'Orden: el rango sitúa cada uno, y los desconocidos al final');
+}
+
+ordenTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

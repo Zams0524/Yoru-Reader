@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { ordenEfectivo, rangoDeDiccionario } from './ordenDiccionarios';
 
 const DB_NAME = 'yoru_yomitan_db';
 const DB_VERSION = 4;
@@ -33,6 +34,7 @@ export function clearYomitanCache(): void {
   _pitchCache.clear();
   _cachedSettings = null;
   _cachedInstalledTitles = null;
+  _cachedInstalledList = null;
 }
 
 /** Lee settings de lectura desde localStorage y los caches para la sesión. */
@@ -58,6 +60,21 @@ function getCachedSettings(): { disabledDicts: string[]; dictOrder: string[] } {
 }
 
 /** Consulta los títulos de dicts instalados una sola vez y los caches. */
+/** Los diccionarios instalados con su fecha, para poder ordenarlos por antigüedad. */
+let _cachedInstalledList: { title: string; importedAt?: string }[] | null = null;
+async function getCachedInstalledList(): Promise<{ title: string; importedAt?: string }[]> {
+  if (_cachedInstalledList) return _cachedInstalledList;
+  const db = await getDB();
+  _cachedInstalledList = await new Promise((resolve) => {
+    const req = db.transaction(STORE_DICTS, 'readonly').objectStore(STORE_DICTS).getAll();
+    req.onsuccess = () => resolve((req.result || [])
+      .filter((d: any) => d.importState !== 'installing')
+      .map((d: any) => ({ title: d.title, importedAt: d.importedAt })));
+    req.onerror = () => resolve([]);
+  });
+  return _cachedInstalledList;
+}
+
 async function getCachedInstalledTitles(): Promise<Set<string>> {
   if (_cachedInstalledTitles) return _cachedInstalledTitles;
   const db = await getDB();
@@ -976,10 +993,17 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
 
     if (results.length > 0) {
       const wantedPos = POS_TO_JMDICT.find(([prefix]) => pos.startsWith(prefix))?.[1] || [];
-      const dictRank = (dictionary: string) => {
-        const index = dictOrder.indexOf(dictionary);
-        return index === -1 ? dictOrder.length : index;
-      };
+      /*
+        Sin orden guardado, manda el que se instaló primero.
+
+        Antes se miraba solo la lista que el usuario ordena en Ajustes, y si estaba
+        vacía —el caso de cualquiera recién instalado— todos empataban y quién ganaba
+        lo decidía la puntuación de la entrada. Desde que una palabra la resuelve el
+        primero que la tiene, eso significaba que el idioma en que la lees salía por
+        suerte. Ver `ordenEfectivo`.
+      */
+      const orden = ordenEfectivo(await getCachedInstalledList(), dictOrder);
+      const dictRank = (dictionary: string) => rangoDeDiccionario(dictionary, orden);
 
       // Group the rows into words (term + reading) and rank the words.
       const groups = new Map<string, { term: string; reading: string; rank: number; rows: TermRow[] }>();
