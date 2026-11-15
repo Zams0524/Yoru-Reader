@@ -1011,10 +1011,24 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
       const isSpanish = (text: string) => SPA_DIACRITICS.test(text) || SPA_WORDS.test(text);
       const isEnglish = (text: string) => !SPA_DIACRITICS.test(text) && ENG_WORDS.test(text) && !SPA_WORDS.test(text);
 
+      /*
+        Manda el primer diccionario que tenga la palabra, y solo ese.
+
+        Las filas vienen ya ordenadas por el orden que el usuario eligió en Ajustes →
+        Diccionarios. Antes se juntaban las acepciones de todos los que la tuvieran, y
+        con un diccionario de respaldo debajo —el JMdict inglés por debajo del español—
+        eso significaba leer la misma palabra dos veces, en dos idiomas, cada vez.
+
+        Ahora el de abajo solo aparece cuando el de arriba no tenía la palabra, que es
+        justo para lo que se pone un respaldo. Y se decide por el orden, no por una
+        lista aparte, así que moverlo o quitarlo se hace desde Ajustes sin tocar código.
+      */
       const fullDefinitions: { dictionary: string; glossary: string; note?: string; partsOfSpeech?: string[] }[] = [];
       const seen = new Set<string>();
       const tagsSet = new Set<string>();
+      let diccionarioQueManda: string | null = null;
       for (const row of main.rows) {
+        if (diccionarioQueManda !== null && row.dictionary !== diccionarioQueManda) continue;
         const partsOfSpeech = row.tags.split(' ').filter(tag => tag && !/^\d+$/.test(tag));
         partsOfSpeech.forEach(tag => tagsSet.add(tag));
         let definitions = row.definitions;
@@ -1028,6 +1042,9 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
         const key = `${row.dictionary}\u0000${glossary}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        // Se fija con la primera acepción que de verdad entra, no con la primera fila:
+        // una fila sin glosa no debe dejar fuera al diccionario siguiente.
+        if (diccionarioQueManda === null) diccionarioQueManda = row.dictionary || '';
         fullDefinitions.push({ dictionary: row.dictionary || '', glossary, note: note || undefined, partsOfSpeech });
       }
 
