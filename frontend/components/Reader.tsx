@@ -3507,7 +3507,16 @@ export default function Reader({
                       ? t(dictEntry.sinConexion ? 'noDefOffline' : 'noDefFound', lang)
                       : typeof def === 'string' ? def : (def?.glossary || '');
                     const dictionary = typeof def === 'string' ? '' : (def?.dictionary || '');
-                    const showDictionary = dictionary !== previousDictionary && (idx > 0 || senses.some((other: any) => other?.dictionary && other.dictionary !== dictionary));
+                    /*
+                      El nombre del diccionario se enseña siempre en la primera acepción.
+
+                      Antes solo salía cuando había acepciones de varios diccionarios
+                      mezcladas. Desde que manda el primero que tiene la palabra eso ya no
+                      pasa nunca, así que la etiqueta no salía jamás: con un diccionario de
+                      respaldo debajo, una palabra podía aparecer de pronto en inglés sin
+                      que nada dijera por qué. Ahora siempre se ve de dónde sale.
+                    */
+                    const showDictionary = !!dictionary && (idx === 0 || dictionary !== previousDictionary);
                     previousDictionary = dictionary;
                     const pos = typeof def === 'string' ? [] : (def?.partsOfSpeech || []);
                     return (
