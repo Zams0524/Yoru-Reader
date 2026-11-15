@@ -10,6 +10,8 @@ export interface DictionaryEntry {
   isFromYomitan?: boolean;
   isFromJisho?: boolean;
   isFallback?: boolean;
+  /** Con `isFallback`: no se pudo preguntar fuera, en vez de haber preguntado y no estar. */
+  sinConexion?: boolean;
   frequencies?: any[];
   pitches?: any[];
 }
@@ -61,6 +63,8 @@ export async function lookupWord(word: string, reading: string = '', pos: string
   const cacheKey = `${searchWord}\u0000${searchReading}`;
 
   let entry: DictionaryEntry | null = null;
+  /** Jiten no llegó a contestar. Distinto de que contestara y no tuviera la palabra. */
+  let noSePudoPreguntar = false;
 
   // 2. Prioritize Yomitan DB (IndexedDB) first, so user's installed dictionaries (Spanish, etc.) take precedence!
   // We use a 1.5-second timeout to prevent any IndexedDB locks/upgrades from hanging the UI
@@ -87,31 +91,32 @@ export async function lookupWord(word: string, reading: string = '', pos: string
     } else {
       try {
         const jitenUrl = `https://api.jiten.moe/api/vocabulary/search?query=${encodeURIComponent(searchWord)}`;
-        const directController = new AbortController();
-        const directId = setTimeout(() => directController.abort(), 2500);
+        /*
+          Si Jiten no contesta, se acaba aquí.
+
+          Antes, cuando Jiten fallaba, la palabra se reenviaba a `api.allorigins.win`,
+          un proxy público ajeno. O sea: cada palabra que el usuario no tenía en sus
+          diccionarios acababa en manos de un tercero con el que nadie había contado, y
+          todo para cubrir el caso de que Jiten ya hubiera fallado. Fuera, por decisión
+          de zams (15 nov 2026). Jiten se queda: ese lo conoce y lo usa.
+
+          De paso, la espera máxima baja de cinco segundos a dos y medio.
+        */
+        const controlador = new AbortController();
+        const plazo = setTimeout(() => controlador.abort(), 2500);
         let fetchedJson: any = null;
         try {
-          const response = await fetch(jitenUrl, { signal: directController.signal });
-          clearTimeout(directId);
+          const response = await fetch(jitenUrl, { signal: controlador.signal });
           if (!response.ok) throw new Error(`Jiten returned HTTP ${response.status}`);
           fetchedJson = await response.json();
         } catch {
-          clearTimeout(directId);
-          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(jitenUrl)}`;
-          const proxyController = new AbortController();
-          const proxyId = setTimeout(() => proxyController.abort(), 2500);
-          try {
-            const response = await fetch(proxyUrl, { signal: proxyController.signal });
-            clearTimeout(proxyId);
-            if (response.ok) {
-              const json = await response.json();
-              fetchedJson = JSON.parse(json.contents);
-            }
-          } catch {
-            clearTimeout(proxyId);
-          }
+          // Sin conexión, Jiten caído, o tardó demasiado. No hay más sitios donde mirar,
+          // y se apunta: «no se pudo preguntar» no es lo mismo que «no existe».
+          noSePudoPreguntar = true;
+        } finally {
+          clearTimeout(plazo);
         }
-        
+
         if (fetchedJson && Array.isArray(fetchedJson.results) && fetchedJson.results.length > 0) {
           const definitions: any[] = [];
           const results = [...fetchedJson.results];
@@ -158,14 +163,28 @@ export async function lookupWord(word: string, reading: string = '', pos: string
     }
   }
 
-  // Fallback if nothing is found at all
+  /*
+    No se encontró en ningún sitio.
+
+    El texto de aquí es el de respaldo; la interfaz lo sustituye por uno traducido
+    mirando `isFallback`. Aun así dice lo que de verdad ha pasado, porque antes decía
+    «pulsa Buscar en Jiten para una búsqueda online» cuando Jiten ya se había
+    intentado y había fallado, y no había ningún botón que pulsar.
+
+    `sinConexion` separa los dos casos, que no son lo mismo para quien lee: que la
+    palabra no exista en ninguna parte, o que no se haya podido preguntar. Lo segundo
+    se arregla solo más tarde.
+  */
   if (!entry) {
     entry = {
       word: searchWord,
       reading: searchReading || '',
       partsOfSpeech: ['Unknown'],
-      definitions: ['No se encontraron definiciones en el diccionario local. Pulsa Buscar en Jiten para una búsqueda online.'],
-      isFallback: true
+      definitions: [noSePudoPreguntar
+        ? 'No está en tus diccionarios y no se pudo consultar Jiten.'
+        : 'No está en tus diccionarios ni en Jiten.'],
+      isFallback: true,
+      sinConexion: noSePudoPreguntar
     };
   }
 

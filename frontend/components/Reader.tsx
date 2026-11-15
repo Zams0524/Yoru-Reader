@@ -3504,7 +3504,7 @@ export default function Reader({
                   ) : visibleSenses.map((def: any, idx: number) => {
                     // The "nothing found" entry from lookupWord is shown in the app's language.
                     const glossary = dictEntry.isFallback
-                      ? t('noDefFound', lang)
+                      ? t(dictEntry.sinConexion ? 'noDefOffline' : 'noDefFound', lang)
                       : typeof def === 'string' ? def : (def?.glossary || '');
                     const dictionary = typeof def === 'string' ? '' : (def?.dictionary || '');
                     const showDictionary = dictionary !== previousDictionary && (idx > 0 || senses.some((other: any) => other?.dictionary && other.dictionary !== dictionary));

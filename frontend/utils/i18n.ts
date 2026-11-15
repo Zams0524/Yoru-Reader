@@ -106,6 +106,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     page: 'Página',
     dictLoading: 'Cargando diccionario...',
     noDefFound: 'No se encontró definición en tus diccionarios.',
+    // Cuando además no se pudo preguntar fuera. No es lo mismo que no exista: esto se
+    // arregla solo cuando vuelva la conexión, y conviene que quien lee lo sepa.
+    noDefOffline: 'No está en tus diccionarios y no se pudo consultar Jiten.',
     mineToAnki: 'Minar a Anki',
     listenPronunciation: 'Escuchar pronunciación',
     statusNew: 'Nuevo',
@@ -229,6 +232,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     page: 'Page',
     dictLoading: 'Loading dictionary...',
     noDefFound: 'No definition found in your dictionaries.',
+    noDefOffline: 'Not in your dictionaries, and Jiten could not be reached.',
     mineToAnki: 'Mine to Anki',
     listenPronunciation: 'Listen pronunciation',
     statusNew: 'New',

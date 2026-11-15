@@ -1075,7 +1075,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                         */}
                         {currentEntry?.isFallback ? (
                           <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>
-                            {t('noDefFound', lang)}
+                            {t(currentEntry.sinConexion ? 'noDefOffline' : 'noDefFound', lang)}
                           </p>
                         ) : currentEntry?.definitions && currentEntry.definitions.length > 0 ? (
                           <ol style={{ paddingLeft: '20px', margin: 0 }}>
