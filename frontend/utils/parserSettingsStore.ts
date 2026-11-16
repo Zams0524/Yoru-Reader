@@ -113,18 +113,58 @@ export function modoAnalizador(): ModoAnalizador {
   return modoAnalizadorPorDefecto();
 }
 
+export type MotivoModoNoDisponible = 'sin-clave' | 'solo-extension' | 'sin-comprobar';
+
+/**
+ * Si la extensión de lectura sabe pararse cuando se lo pedimos. `null` mientras no se ha
+ * comprobado: no es «no», y la interfaz no debe decir que el modo nativo está disponible
+ * hasta que haya respuesta.
+ */
+let extensionSabePararse: boolean | null = null;
+
+/**
+ * Pregunta a la extensión si entiende la pausa, y guarda la respuesta.
+ *
+ * No adivina por número de versión: lee `parsingPaused` por el puente y mira **de qué tipo**
+ * vuelve. La extensión que sabe pararse contesta una booleana, porque devuelve esa clave por
+ * `getParsingPaused`; una anterior la busca en `profile:<id>:parsingPaused`, donde nadie la ha
+ * escrito, y contesta null o una cadena.
+ *
+ * No escribe nada: la lectura ya distingue las dos, así que no hace falta tocar el ajuste de
+ * nadie para averiguarlo.
+ *
+ * Si nadie contesta al puente se queda en `null`, sin decidir. Sería cómodo tomarlo por «no hay
+ * extensión, así que el analizador de la app manda», pero también es lo que pasa cuando la
+ * extensión está y su puente no responde: ahí no podemos pedirle que pare, y ofrecer el modo
+ * nativo sería ofrecer un botón que no hace nada. Mejor decir que no se pudo comprobar.
+ */
+export async function comprobarPausaDeExtension(): Promise<boolean | null> {
+  // Sin extensión, las palabras las parte la app: el modo nativo es justo lo que ya pasa.
+  if (usesLocalParserSettings()) {
+    extensionSabePararse = true;
+    return true;
+  }
+  const valores = await readFromExtension(['parsingPaused']);
+  if (valores === null) return extensionSabePararse;
+  extensionSabePararse = typeof valores.parsingPaused === 'boolean';
+  return extensionSabePararse;
+}
+
 /**
  * Por qué un modo no se puede usar aquí, o null si sí se puede.
  *
  * - `sin-clave`: el parser de Jiten es un servicio, y sin clave de la cuenta no contesta.
- * - `solo-extension`: en escritorio las palabras las parte la extensión de lectura, y la app no
- *   tiene manera de pedirle que pare: su interruptor (`parsingPaused`) vive sin prefijo en
- *   `chrome.storage.local`, mientras que el puente de ajustes escribe `profile:<id>:<clave>`.
- *   Hasta que eso cambie en la extensión, en escritorio no se puede elegir el modo nativo.
+ * - `solo-extension`: en escritorio las palabras las parte la extensión de lectura, y esta
+ *   versión suya no sabe pararse, así que no se puede elegir el analizador de la app.
+ * - `sin-comprobar`: todavía no se le ha preguntado, o la pregunta falló. No es lo mismo que
+ *   «no se puede», y el mensaje tiene que decir eso y no inventarse otro motivo.
  */
-export function motivoModoNoDisponible(modo: ModoAnalizador): 'sin-clave' | 'solo-extension' | null {
+export function motivoModoNoDisponible(modo: ModoAnalizador): MotivoModoNoDisponible | null {
   if (modo === 'jiten') return hayClaveJiten() ? null : 'sin-clave';
-  return usesLocalParserSettings() ? null : 'solo-extension';
+  // Sin extensión de por medio no hay a quién preguntar: las palabras ya las parte la app.
+  if (usesLocalParserSettings()) return null;
+  if (extensionSabePararse === null) return 'sin-comprobar';
+  return extensionSabePararse ? null : 'solo-extension';
 }
 
 let bridgeIdCounter = 0;
@@ -182,19 +222,33 @@ export async function readParserSettings(keys: string[]): Promise<Record<string,
 }
 
 export async function writeParserSettings(entries: Record<string, any>): Promise<boolean> {
+  /*
+    Elegir el analizador en escritorio es, para la extensión, pausar o reanudar su parseo: es
+    quien parte las palabras allí. Va en la misma escritura que el ajuste para que no quede un
+    momento con la elección guardada y la extensión a lo suyo.
+
+    Ojo: la pausa surte efecto en el siguiente parseo, no al instante, porque el aviso no puede
+    llegar desde el puente al parser de su propia pestaña. Que haga falta recargar la vista del
+    lector al cambiar de modo está sin comprobar: se ve con la extensión nueva delante.
+  */
+  const aGuardar =
+    'parserEngine' in entries && !usesLocalParserSettings()
+      ? { ...entries, parsingPaused: entries.parserEngine === 'nativo' }
+      : entries;
+
   // Keep a local copy everywhere so settings survive even when the extension is missing.
   let savedLocally = false;
   try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...readLocal(), ...entries }));
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...readLocal(), ...aGuardar }));
     savedLocally = true;
   } catch {
     savedLocally = false;
   }
 
-  if ('wordStyleConfig' in entries) applyLocalWordStyles();
-  window.dispatchEvent(new CustomEvent('yoru-parser-settings-changed', { detail: { keys: Object.keys(entries) } }));
+  if ('wordStyleConfig' in aGuardar) applyLocalWordStyles();
+  window.dispatchEvent(new CustomEvent('yoru-parser-settings-changed', { detail: { keys: Object.keys(aGuardar) } }));
   if (usesLocalParserSettings()) return savedLocally;
-  return (await writeToExtension(entries)) || savedLocally;
+  return (await writeToExtension(aGuardar)) || savedLocally;
 }
 
 // ── Word-state styles for the native parser ───────────────────────────

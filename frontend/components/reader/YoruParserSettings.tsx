@@ -8,6 +8,7 @@ import {
   usesLocalParserSettings,
   modoAnalizadorPorDefecto,
   motivoModoNoDisponible,
+  comprobarPausaDeExtension,
   type ModoAnalizador,
 } from '../../utils/parserSettingsStore';
 import {
@@ -1732,6 +1733,12 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
 
   useEffect(() => setDraft(apiKey), [apiKey]);
   useEffect(() => onJitenChange(() => setTick((n) => n + 1)), []);
+  /*
+    Se le pregunta a la extensión si sabe pararse, y se repinta con la respuesta. Hasta entonces
+    `motivoModoNoDisponible('nativo')` contesta 'sin-comprobar', así que la tarjeta no afirma que
+    el modo nativo esté disponible mientras no hay respuesta.
+  */
+  useEffect(() => { void comprobarPausaDeExtension().then(() => setTick((n) => n + 1)); }, []);
 
   // Desktop: the key is the reader extension's own "jitenApiKey" (saved through the settings bridge);
   // the extension parses and syncs, so the local parser toggle and sync queue do not apply.
@@ -1901,10 +1908,17 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
               'To use Jiten you need to paste your account key above: its analyser lives on their server.')}
           </div>
         )}
+        {/* Cada motivo dice lo que es: que no se puede, o que todavía no se sabe. */}
         {motivoModoNoDisponible('nativo') === 'solo-extension' && (
           <div style={{ ...descStyle, marginTop: '4px' }}>
-            {t('En el ordenador las palabras las parte la extensión de lectura, y la app todavía no puede pedirle que pare, así que aquí solo está el modo Jiten.',
-              'On the computer the reader extension splits the words, and the app cannot yet ask it to stop, so only Jiten mode is available here.')}
+            {t('En el ordenador las palabras las parte la extensión de lectura, y esta versión suya no sabe pararse, así que aquí solo está el modo Jiten.',
+              'On the computer the reader extension splits the words, and this version of it cannot be stopped, so only Jiten mode is available here.')}
+          </div>
+        )}
+        {motivoModoNoDisponible('nativo') === 'sin-comprobar' && (
+          <div style={{ ...descStyle, marginTop: '4px' }}>
+            {t('No se pudo comprobar si la extensión de lectura sabe pararse, así que de momento no se ofrece el analizador de la app. No quiere decir que no se pueda.',
+              'Whether the reader extension can be stopped could not be checked, so the app’s own analyser is not offered for now. It does not mean it cannot be.')}
           </div>
         )}
       </div>

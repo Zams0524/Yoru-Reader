@@ -34,6 +34,7 @@ import {
   modoAnalizador,
   modoAnalizadorPorDefecto,
   motivoModoNoDisponible,
+  comprobarPausaDeExtension,
 } from '../frontend/utils/parserSettingsStore';
 import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
@@ -77,6 +78,9 @@ const store = new Map<string, string>();
 };
 (globalThis as any).window = globalThis;
 (globalThis as any).window.dispatchEvent = () => true;
+// El puente de ajustes con la extensión habla por eventos de `document`; aquí basta un
+// EventTarget pelado, que es justo lo que usa (addEventListener / dispatchEvent).
+(globalThis as any).document = new EventTarget();
 
 let failures = 0;
 const check = (ok: boolean, label: string) => {
@@ -784,18 +788,68 @@ function analizadorTests() {
     motivo que se da es ese y no «te falta la clave».
   */
   comoEscritorio(true);
-  check(motivoModoNoDisponible('nativo') === 'solo-extension',
-    'Analizador: en escritorio el modo de la app no se ofrece, y se dice que manda la extensión');
   poner({});
   check(modoAnalizadorPorDefecto() === 'jiten',
     'Analizador: en escritorio, sin elegir, parte las palabras la extensión');
+
+  /*
+    Antes de preguntarle a la extensión no se sabe si sabe pararse, y eso no es un «no». La
+    interfaz no puede ofrecer el modo nativo mientras no haya respuesta, pero el motivo que da
+    tiene que decir que no se ha comprobado, no inventarse otro.
+  */
+  check(motivoModoNoDisponible('nativo') === 'sin-comprobar',
+    'Analizador: sin preguntar todavía, no se ofrece el modo de la app, y se dice que falta comprobarlo');
 
   comoEscritorio(false);
   localStorage.removeItem(AJUSTES);
 }
 
+/*
+  Si la extensión de lectura sabe pararse, preguntándoselo y no adivinando por versión.
+
+  La que sabe contesta `parsingPaused` como booleana, porque la devuelve por `getParsingPaused`.
+  Una anterior la busca en `profile:<id>:parsingPaused`, donde nadie la ha escrito, y contesta
+  null o una cadena. Y si no contesta nadie no se decide: podría ser que no haya extensión, pero
+  también que su puente esté roto, y ahí no se le puede pedir que pare.
+*/
+async function pausaTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  // En escritorio: hay electronAPI, así que los ajustes los lleva la extensión.
+  (globalThis as any).window.electronAPI = {};
+  let respuesta: Record<string, unknown> | 'callar' = 'callar';
+
+  // El puente: la página pide por un evento y la extensión contesta por otro.
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    if (respuesta === 'callar') return;
+    document.dispatchEvent(new CustomEvent('yoru-settings-data', {
+      detail: { id: detalle.id, values: respuesta },
+    }));
+  };
+  document.addEventListener('yoru-settings-read', puente);
+
+  respuesta = { parsingPaused: false };
+  check(await comprobarPausaDeExtension() === true && motivoModoNoDisponible('nativo') === null,
+    'Pausa: una booleana (aunque sea false) es la extensión que sabe pararse');
+
+  respuesta = { parsingPaused: 'false' };
+  check(await comprobarPausaDeExtension() === false && motivoModoNoDisponible('nativo') === 'solo-extension',
+    'Pausa: la cadena «false» es una extensión anterior, y no se ofrece el modo de la app');
+
+  respuesta = { parsingPaused: null };
+  check(await comprobarPausaDeExtension() === false,
+    'Pausa: null también es una extensión anterior');
+
+  document.removeEventListener('yoru-settings-read', puente);
+  delete (globalThis as any).window.electronAPI;
+  localStorage.removeItem(AJUSTES);
+}
+
 mensajeTests();
+// Antes del sondeo: así `analizadorTests` ve el estado «sin comprobar» de verdad, no el que
+// deja `pausaTests` detrás.
 analizadorTests();
+await pausaTests();
 ordenTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);
