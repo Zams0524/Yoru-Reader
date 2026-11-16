@@ -2028,8 +2028,7 @@ class ConfigurationUpdatedCommand extends _lib_broadcast_command__WEBPACK_IMPORT
 /* 179 */,
 /* 180 */,
 /* 181 */,
-/* 182 */,
-/* 183 */
+/* 182 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2042,6 +2041,7 @@ const setParsingPaused = async (paused) => {
 
 
 /***/ }),
+/* 183 */,
 /* 184 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
@@ -2453,7 +2453,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _shared_extension_get_tabs__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(46);
 /* harmony import */ var _shared_extension_open_options_page__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(15);
 /* harmony import */ var _shared_extension_open_view__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(16);
-/* harmony import */ var _shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(183);
+/* harmony import */ var _shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(182);
 /* harmony import */ var _shared_host_meta_is_disabled__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(176);
 /* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(178);
 /* harmony import */ var _shared_messages_broadcast_parsing_paused_command__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(184);
