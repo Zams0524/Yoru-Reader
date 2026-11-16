@@ -159,6 +159,54 @@ export async function comprobarPausaDeExtension(): Promise<boolean | null> {
  * - `sin-comprobar`: todavía no se le ha preguntado, o la pregunta falló. No es lo mismo que
  *   «no se puede», y el mensaje tiene que decir eso y no inventarse otro motivo.
  */
+// ── La furigana: una sola idea, con una sola fuente ───────────────────
+
+/**
+ * Si se pudo saber qué dice el ajuste de furigana de la extensión. `sin-leer` no significa
+ * apagada: significa que no lo sabemos, y la pantalla tiene que decir eso.
+ */
+export type EstadoFurigana = 'leida' | 'sin-leer';
+
+let estadoDeFurigana: EstadoFurigana = 'sin-leer';
+
+export function estadoFurigana(): EstadoFurigana {
+  return estadoDeFurigana;
+}
+
+/**
+ * Trae a la copia local el ajuste de furigana que manda, que es el de la extensión.
+ *
+ * «Poner la lectura encima de las palabras que no conozco» es una sola idea, así que no puede
+ * significar algo distinto según quién parta las palabras. En escritorio ese ajuste vive en la
+ * extensión, pero el analizador de la app solo lee la copia local, y si nadie la había escrito
+ * se quedaba en `false`: al elegir el analizador de la app desaparecía toda la furigana.
+ *
+ * Si el puente no contesta no se inventa nada y no se apaga nada: se deja la copia local como
+ * estaba y queda constancia de que no se pudo leer, para que la pantalla lo diga.
+ */
+export async function reflejarFuriganaDeExtension(): Promise<EstadoFurigana> {
+  // Sin extensión, la copia local no es un reflejo: es la fuente.
+  if (usesLocalParserSettings()) {
+    estadoDeFurigana = 'leida';
+    return estadoDeFurigana;
+  }
+  const valores = await readFromExtension(['furiganaNewWords']);
+  if (valores === null || valores.furiganaNewWords === null || valores.furiganaNewWords === undefined) {
+    estadoDeFurigana = 'sin-leer';
+    return estadoDeFurigana;
+  }
+  const valor = valores.furiganaNewWords === true || valores.furiganaNewWords === 'true';
+  estadoDeFurigana = 'leida';
+  // Solo en local: la extensión ya tiene el suyo y no se le pisa.
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...readLocal(), furiganaNewWords: valor }));
+  } catch {
+    /* sin almacenamiento, se queda con lo que haya en memoria */
+  }
+  window.dispatchEvent(new CustomEvent('yoru-parser-settings-changed', { detail: { keys: ['furiganaNewWords'] } }));
+  return estadoDeFurigana;
+}
+
 export function motivoModoNoDisponible(modo: ModoAnalizador): MotivoModoNoDisponible | null {
   if (modo === 'jiten') return hayClaveJiten() ? null : 'sin-clave';
   // Sin extensión de por medio no hay a quién preguntar: las palabras ya las parte la app.

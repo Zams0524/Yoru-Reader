@@ -9,6 +9,8 @@ import {
   modoAnalizadorPorDefecto,
   motivoModoNoDisponible,
   comprobarPausaDeExtension,
+  reflejarFuriganaDeExtension,
+  estadoFurigana,
   type ModoAnalizador,
 } from '../../utils/parserSettingsStore';
 import {
@@ -414,6 +416,16 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
   const [expandedState, setExpandedState] = useState<string | null>(null);
   const [previewVertical, setPreviewVertical] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+  /*
+    Se le pregunta a la extensión por el ajuste de furigana al abrir, y se repinta con la
+    respuesta: hasta entonces `estadoFurigana()` dice «sin leer», y no queremos enseñar ese
+    aviso mientras la pregunta está en el aire.
+  */
+  const [furiganaConsultada, setFuriganaConsultada] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return;
+    void reflejarFuriganaDeExtension().then(() => setFuriganaConsultada((n) => n + 1));
+  }, [isOpen]);
 
   // Load settings on open
   useEffect(() => {
@@ -868,12 +880,18 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
     const config = settings.wordStyleConfig;
     return (
       <>
-        {/* The native reader renders this; on desktop the reader extension draws the text itself. */}
-        {usesLocalParserSettings() && (
-          <>
-            <div style={sectionTitleStyle}>{t('Furigana', 'Furigana')}</div>
-            {furiganaNewWordsToggle}
-          </>
+        {/*
+          Antes esto se escondía en escritorio, porque allí dibuja la extensión. Pero desde que
+          se puede elegir el analizador de la app también en el ordenador, esconderlo dejaba al
+          usuario sin furigana y sin manera de encenderla. Se ve en los dos sitios.
+        */}
+        <div style={sectionTitleStyle}>{t('Furigana', 'Furigana')}</div>
+        {furiganaNewWordsToggle}
+        {furiganaConsultada > 0 && estadoFurigana() === 'sin-leer' && !usesLocalParserSettings() && (
+          <div style={{ ...descStyle, marginTop: '-6px', marginBottom: '12px' }}>
+            {t('No se pudo leer este ajuste de la extensión de lectura, así que lo de arriba puede no ser lo que ella está usando. Si lo cambias aquí, manda lo que elijas.',
+              'This setting could not be read from the reader extension, so the switch above may not match what it is using. If you change it here, your choice wins.')}
+          </div>
         )}
 
         {/* Preset Theme Selector */}

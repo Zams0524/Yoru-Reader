@@ -36,6 +36,8 @@ import {
   motivoModoNoDisponible,
   comprobarPausaDeExtension,
   writeParserSettings,
+  reflejarFuriganaDeExtension,
+  estadoFurigana,
 } from '../frontend/utils/parserSettingsStore';
 import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
@@ -969,7 +971,68 @@ function popupVerticalTests() {
     'Popup vertical: si a la derecha no llega al mínimo legible, no se encoge ahí: busca otro sitio');
 }
 
+/*
+  La furigana: una sola idea, una sola fuente.
+
+  En escritorio ese ajuste vive en la extensión, pero el analizador de la app solo lee la copia
+  local. Si nadie la había escrito se quedaba en `false`, así que al elegir el analizador de la
+  app desaparecía toda la furigana y el interruptor estaba escondido: no había forma de
+  recuperarla. Lo que se fija aquí es que la copia local acabe diciendo lo que dice la
+  extensión, y que cuando no se pueda preguntar **no se invente ni se apague** nada.
+*/
+async function furiganaTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  let respuesta: Record<string, unknown> | 'callar' = 'callar';
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    if (respuesta === 'callar') return;
+    document.dispatchEvent(new CustomEvent('yoru-settings-data', { detail: { id: detalle.id, values: respuesta } }));
+  };
+  document.addEventListener('yoru-settings-read', puente);
+  const leerLocal = () => JSON.parse(localStorage.getItem(AJUSTES) || '{}').furiganaNewWords;
+
+  (globalThis as any).window.electronAPI = {};
+
+  // La extensión la tiene encendida y la copia local no sabía nada: se refleja.
+  localStorage.setItem(AJUSTES, JSON.stringify({}));
+  respuesta = { furiganaNewWords: true };
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === true,
+    'Furigana: lo que dice la extensión pasa a la copia local que lee el analizador de la app');
+
+  // Y apagada también se refleja: mandar es mandar en los dos sentidos.
+  respuesta = { furiganaNewWords: 'false' };
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === false,
+    'Furigana: y si la extensión la tiene apagada, también');
+
+  /*
+    Lo que de verdad importa: si no se puede preguntar, no se apaga nada ni se inventa un
+    valor. La copia local se queda como estaba y queda dicho que no se pudo leer, para que la
+    pantalla no afirme que está apagada cuando lo que pasa es que no lo sabemos.
+  */
+  localStorage.setItem(AJUSTES, JSON.stringify({ furiganaNewWords: true }));
+  respuesta = 'callar';
+  check(await reflejarFuriganaDeExtension() === 'sin-leer' && leerLocal() === true,
+    'Furigana: si el puente no contesta, no se apaga nada y se dice que no se pudo leer');
+  check(estadoFurigana() === 'sin-leer',
+    'Furigana: y ese estado queda a mano de la pantalla');
+
+  // Una clave que la extensión no tiene tampoco es un «apagada».
+  respuesta = { furiganaNewWords: null };
+  check(await reflejarFuriganaDeExtension() === 'sin-leer' && leerLocal() === true,
+    'Furigana: una respuesta vacía no se lee como apagada');
+
+  // En el teléfono no hay a quién preguntar: la copia local es la fuente, no un reflejo.
+  delete (globalThis as any).window.electronAPI;
+  respuesta = 'callar';
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === true,
+    'Furigana: en el teléfono la copia local es la fuente y no hay nada que reflejar');
+
+  document.removeEventListener('yoru-settings-read', puente);
+  localStorage.removeItem(AJUSTES);
+}
+
 popupVerticalTests();
+await furiganaTests();
 mensajeTests();
 // Antes del sondeo: así `analizadorTests` ve el estado «sin comprobar» de verdad, no el que
 // deja `pausaTests` detrás.

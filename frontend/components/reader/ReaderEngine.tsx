@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
+import { reflejarFuriganaDeExtension } from '../../utils/parserSettingsStore';
 import { isPhoneUI } from '../../utils/platform';
 import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
@@ -1310,6 +1311,13 @@ function ReaderEngineComponent({
     };
     window.addEventListener('yoru-parser-settings-changed', refresh);
     const unsubscribe = onJitenChange(refresh);
+    /*
+      El ajuste de furigana que manda es el de la extensión, y el analizador de la app solo lee
+      la copia local. Se pide aquí, con el lector ya montado, porque al arrancar la app el
+      content script puede no estar todavía y no contestaría. El propio reflejo lanza el evento
+      de arriba, así que si el valor cambia, esto se vuelve a dibujar solo.
+    */
+    void reflejarFuriganaDeExtension();
     return () => {
       window.removeEventListener('yoru-parser-settings-changed', refresh);
       unsubscribe();
