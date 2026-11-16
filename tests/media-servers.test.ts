@@ -28,7 +28,8 @@ import {
 import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
 import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
 import { juntarOkurigana } from '../frontend/utils/okurigana';
-import { mereceBuscarseFuera } from '../frontend/utils/dictionary';
+import { mereceBuscarseFuera, mensajeSinDefinicion, FUENTE_POR_DEFECTO } from '../frontend/utils/dictionary';
+import { TRANSLATIONS, t } from '../frontend/utils/i18n';
 import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
   audiobookMatchScore,
@@ -682,6 +683,43 @@ function ordenTests() {
     'Orden: el rango sitúa cada uno, y los desconocidos al final');
 }
 
+/*
+  Lo que se le dice al usuario cuando una palabra no tiene definición.
+
+  Importa porque el mensaje de antes servía para los tres casos y afirmaba cosas que no
+  se habían comprobado: con «solo Jiten» decía que no estaba en sus diccionarios, una
+  búsqueda que no se había hecho; y cuando Jiten no contestaba, decía que la palabra no
+  existe, que es distinto de no haber podido preguntar. Cada mensaje nombra solo dónde
+  se buscó de verdad y qué pasó allí.
+*/
+function mensajeTests() {
+  check(FUENTE_POR_DEFECTO === 'ambos',
+    'Mensaje: por defecto se siguen usando los dos, como hasta ahora');
+
+  check(mensajeSinDefinicion('locales', false) === 'noDefFound'
+      && mensajeSinDefinicion('locales', true) === 'noDefFound',
+    'Mensaje: con solo los suyos, se habla solo de sus diccionarios');
+
+  check(mensajeSinDefinicion('jiten', false) === 'noDefJitenVacio',
+    'Mensaje: con solo Jiten y Jiten contestando, la palabra no está en Jiten');
+  check(mensajeSinDefinicion('jiten', true) === 'noDefJitenCaido',
+    'Mensaje: con solo Jiten y Jiten caído, no se afirma que la palabra no exista');
+
+  check(mensajeSinDefinicion('ambos', false) === 'noDefNinguno',
+    'Mensaje: con los dos y Jiten contestando, no está en ninguno de los dos');
+  check(mensajeSinDefinicion('ambos', true) === 'noDefOffline',
+    'Mensaje: con los dos y sin conexión, se dice que Jiten no se pudo consultar');
+
+  // Las claves tienen que existir en los dos idiomas: una sin traducir se pinta en
+  // crudo («noDefJitenCaido») en la ventana del diccionario.
+  const claves = ['noDefFound', 'noDefOffline', 'noDefNinguno', 'noDefJitenVacio', 'noDefJitenCaido'];
+  check(claves.every((clave) => !!TRANSLATIONS.es[clave] && !!TRANSLATIONS.en[clave]),
+    'Mensaje: las cinco claves están traducidas en español y en inglés');
+  check(claves.every((clave) => t(clave, 'en') !== clave && t(clave, 'es') !== clave),
+    'Mensaje: ninguna clave se pinta en crudo');
+}
+
+mensajeTests();
 ordenTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

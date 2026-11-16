@@ -12,6 +12,8 @@ export interface DictionaryEntry {
   isFallback?: boolean;
   /** Con `isFallback`: no se pudo preguntar fuera, en vez de haber preguntado y no estar. */
   sinConexion?: boolean;
+  /** Con `isFallback`: dónde se buscó, para no decir que algo no está donde no se miró. */
+  fuente?: FuenteDefiniciones;
   frequencies?: any[];
   pitches?: any[];
 }
@@ -20,6 +22,49 @@ export interface DictionaryDefinition {
   dictionary?: string;
   glossary: string;
   partsOfSpeech?: string[];
+}
+
+/**
+ * De dónde salen las definiciones.
+ *
+ * - `locales`: solo los diccionarios instalados. No sale nada a internet.
+ * - `jiten`: solo Jiten. Siempre por la red, con lo que Jiten tenga.
+ * - `ambos`: los locales mandan y Jiten cubre lo que falte. Es lo de siempre.
+ */
+export type FuenteDefiniciones = 'locales' | 'jiten' | 'ambos';
+
+export const FUENTE_POR_DEFECTO: FuenteDefiniciones = 'ambos';
+
+/*
+  Por qué `ambos` por defecto.
+
+  Los diccionarios locales contestan en medio milisegundo y Jiten en unos cien: hay
+  doscientas cincuenta veces de diferencia. Preguntar primero en casa y salir solo
+  cuando falta es lo que hace que leer no se note lento. `jiten` está para quien lo
+  prefiera, pero conviene saber lo que cuesta.
+*/
+function leerFuente(): FuenteDefiniciones {
+  try {
+    const perfil = localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default';
+    const crudo = localStorage.getItem(`migaku_reader_settings_${perfil}`)
+      || localStorage.getItem('migaku_reader_settings');
+    const valor = crudo ? JSON.parse(crudo).definitionSource : null;
+    return valor === 'locales' || valor === 'jiten' ? valor : FUENTE_POR_DEFECTO;
+  } catch {
+    return FUENTE_POR_DEFECTO;
+  }
+}
+
+/**
+ * Qué decir cuando no se encontró nada, sin afirmar lo que no se ha comprobado.
+ *
+ * Con `locales` no se preguntó a Jiten, así que no se puede decir que no esté allí. Y
+ * cuando Jiten no contestó, «no existe» sería mentira: lo que pasa es que no se supo.
+ */
+export function mensajeSinDefinicion(fuente: FuenteDefiniciones, noSePudoPreguntar: boolean): string {
+  if (fuente === 'locales') return 'noDefFound';
+  if (fuente === 'jiten') return noSePudoPreguntar ? 'noDefJitenCaido' : 'noDefJitenVacio';
+  return noSePudoPreguntar ? 'noDefOffline' : 'noDefNinguno';
 }
 
 const JITEN_CACHE = new Map<string, DictionaryEntry>();
@@ -66,9 +111,11 @@ export async function lookupWord(word: string, reading: string = '', pos: string
   /** Jiten no llegó a contestar. Distinto de que contestara y no tuviera la palabra. */
   let noSePudoPreguntar = false;
 
+  const fuente = leerFuente();
+
   // 2. Prioritize Yomitan DB (IndexedDB) first, so user's installed dictionaries (Spanish, etc.) take precedence!
   // We use a 1.5-second timeout to prevent any IndexedDB locks/upgrades from hanging the UI
-  try {
+  if (fuente !== 'jiten') try {
     const yomitanPromise = searchYomitanDB(searchWord, searchReading, pos);
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
     
@@ -83,8 +130,18 @@ export async function lookupWord(word: string, reading: string = '', pos: string
     console.error('Yomitan DB search error:', err);
   }
 
-  // 3. Fallback to Jiten online definitions if Yomitan DB found nothing OR returned empty definitions
-  if ((!entry || !entry.definitions || entry.definitions.length === 0) && mereceBuscarseFuera(pos)) {
+  /*
+    3. Jiten, según de dónde haya dicho el usuario que quiere las definiciones.
+
+    Con `locales` no se sale nunca: lo que no esté en casa, no está. Con `jiten` se
+    pregunta siempre, porque arriba ni se miró la base local. Y con `ambos` —lo de
+    siempre— solo cuando los diccionarios del usuario no tenían la palabra.
+
+    El filtro de partículas sigue mandando en los dos casos en que se sale: ni una
+    partícula ni un auxiliar valen un viaje a la red.
+  */
+  const faltaDefinicion = !entry || !entry.definitions || entry.definitions.length === 0;
+  if (fuente !== 'locales' && faltaDefinicion && mereceBuscarseFuera(pos)) {
     let jitenEntry: DictionaryEntry | null = null;
     if (JITEN_CACHE.has(cacheKey)) {
       jitenEntry = { ...JITEN_CACHE.get(cacheKey)! };
@@ -180,11 +237,10 @@ export async function lookupWord(word: string, reading: string = '', pos: string
       word: searchWord,
       reading: searchReading || '',
       partsOfSpeech: ['Unknown'],
-      definitions: [noSePudoPreguntar
-        ? 'No está en tus diccionarios y no se pudo consultar Jiten.'
-        : 'No está en tus diccionarios ni en Jiten.'],
+      definitions: ['—'],
       isFallback: true,
-      sinConexion: noSePudoPreguntar
+      sinConexion: noSePudoPreguntar,
+      fuente,
     };
   }
 

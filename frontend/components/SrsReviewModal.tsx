@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Volume2, Eye, Clock, Undo2, Ban, Star } from 'lucide-react';
 import { db } from '../utils/db';
-import { lookupWord } from '../utils/dictionary';
+import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
 import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
 import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard, isCardDue } from '../utils/fsrs';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
@@ -1075,7 +1075,7 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                         */}
                         {currentEntry?.isFallback ? (
                           <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>
-                            {t(currentEntry.sinConexion ? 'noDefOffline' : 'noDefFound', lang)}
+                            {t(mensajeSinDefinicion(currentEntry.fuente || 'ambos', !!currentEntry.sinConexion), lang)}
                           </p>
                         ) : currentEntry?.definitions && currentEntry.definitions.length > 0 ? (
                           <ol style={{ paddingLeft: '20px', margin: 0 }}>

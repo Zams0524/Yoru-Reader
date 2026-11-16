@@ -2,7 +2,7 @@
 import { Volume2, X } from 'lucide-react';
 import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
-import { lookupWord } from '../utils/dictionary';
+import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
 import { db } from '../utils/db';
 import { FSRS6, Rating, State, getPreviousSrsState } from '../utils/fsrs';
 import html2canvas from 'html2canvas';
@@ -3528,7 +3528,7 @@ export default function Reader({
                   ) : visibleSenses.map((def: any, idx: number) => {
                     // The "nothing found" entry from lookupWord is shown in the app's language.
                     const glossary = dictEntry.isFallback
-                      ? t(dictEntry.sinConexion ? 'noDefOffline' : 'noDefFound', lang)
+                      ? t(mensajeSinDefinicion(dictEntry.fuente || 'ambos', !!dictEntry.sinConexion), lang)
                       : typeof def === 'string' ? def : (def?.glossary || '');
                     const dictionary = typeof def === 'string' ? '' : (def?.dictionary || '');
                     /*

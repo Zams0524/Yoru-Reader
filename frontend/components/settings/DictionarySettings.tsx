@@ -275,6 +275,44 @@ export default function DictionarySettings({ lang: appLang, settings, onSaveSett
         </>
       )}
 
+      {/*
+        De dónde salen las definiciones.
+
+        Antes no se podía elegir: siempre los diccionarios del usuario primero y Jiten
+        para lo que faltara. Eso sigue siendo lo que viene puesto, porque es lo rápido
+        —los locales contestan en medio milisegundo y Jiten en unos cien—, pero quien
+        quiera leer solo lo suyo, sin que ninguna palabra salga a internet, o leer
+        siempre desde Jiten, ahora puede decirlo.
+      */}
+      <div className="dict-settings-group">
+        <div className="dict-settings-group-head">
+          <span>{tr(lang, 'De dónde salen las definiciones', 'Where definitions come from')}</span>
+        </div>
+        {([
+          ['ambos', tr(lang, 'Los míos, y Jiten si falta', 'Mine, and Jiten when missing'), tr(lang, 'Lo más rápido. Es lo que viene puesto.', 'Fastest. This is the default.')],
+          ['locales', tr(lang, 'Solo mis diccionarios', 'Only my dictionaries'), tr(lang, 'Ninguna palabra sale a internet.', 'No word leaves your computer.')],
+          ['jiten', tr(lang, 'Solo Jiten', 'Only Jiten'), tr(lang, 'Siempre por internet, unos 100 ms por palabra.', 'Always online, about 100 ms per word.')],
+        ] as const).map(([valor, nombre, desc]) => {
+          const elegido = (settings.definitionSource || 'ambos') === valor;
+          return (
+            <div key={valor} className={`dict-settings-item${elegido ? '' : ' off'}`}>
+              <div className="dict-settings-item-text">
+                <div className="dict-settings-item-name">{nombre}</div>
+                <div className="dict-settings-item-desc">{desc}</div>
+              </div>
+              <button
+                type="button"
+                className={`dict-settings-chip-btn${elegido ? ' done' : ''}`}
+                disabled={elegido}
+                onClick={() => onSaveSettings({ ...settings, definitionSource: valor })}
+              >
+                {elegido ? <><Check size={13} /> {tr(lang, 'Elegido', 'Selected')}</> : tr(lang, 'Usar', 'Use')}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
       <button type="button" className="dict-settings-add" onClick={() => setAddOpen(true)}>
         <Plus size={16} /> {tr(lang, 'Añadir diccionario o lista', 'Add a dictionary or list')}
       </button>

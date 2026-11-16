@@ -78,6 +78,8 @@ export interface Settings {
   betaUpdates?: boolean;
   disabledDictionaries?: string[];
   dictionaryOrder?: string[];
+  /** De dónde salen las definiciones. Sin valor, se comporta como `ambos`. */
+  definitionSource?: 'locales' | 'jiten' | 'ambos';
 }
 
 export interface Profile {
@@ -115,6 +117,7 @@ const DEFAULT_SETTINGS: Settings = {
   betaUpdates: false,
   disabledDictionaries: [],
   dictionaryOrder: [],
+  definitionSource: 'ambos',
   discordEnabled: true,
   discordInactivityTimer: 300,
   discordIcon: 'Yoru',

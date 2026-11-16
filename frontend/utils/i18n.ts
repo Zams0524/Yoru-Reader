@@ -109,6 +109,10 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     // Cuando además no se pudo preguntar fuera. No es lo mismo que no exista: esto se
     // arregla solo cuando vuelva la conexión, y conviene que quien lee lo sepa.
     noDefOffline: 'No está en tus diccionarios y no se pudo consultar Jiten.',
+    // Cada uno dice solo lo comprobado: dónde se buscó y qué pasó allí.
+    noDefNinguno: 'No está en tus diccionarios ni en Jiten.',
+    noDefJitenVacio: 'Jiten no tiene esta palabra.',
+    noDefJitenCaido: 'No se pudo consultar Jiten.',
     mineToAnki: 'Minar a Anki',
     listenPronunciation: 'Escuchar pronunciación',
     statusNew: 'Nuevo',
@@ -233,6 +237,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     dictLoading: 'Loading dictionary...',
     noDefFound: 'No definition found in your dictionaries.',
     noDefOffline: 'Not in your dictionaries, and Jiten could not be reached.',
+    noDefNinguno: 'Not in your dictionaries, and not in Jiten.',
+    noDefJitenVacio: 'Jiten does not have this word.',
+    noDefJitenCaido: 'Jiten could not be reached.',
     mineToAnki: 'Mine to Anki',
     listenPronunciation: 'Listen pronunciation',
     statusNew: 'New',
