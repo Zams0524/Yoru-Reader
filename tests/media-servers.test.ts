@@ -35,6 +35,7 @@ import {
   modoAnalizadorPorDefecto,
   motivoModoNoDisponible,
   comprobarPausaDeExtension,
+  writeParserSettings,
 } from '../frontend/utils/parserSettingsStore';
 import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
@@ -845,11 +846,76 @@ async function pausaTests() {
   localStorage.removeItem(AJUSTES);
 }
 
+/*
+  Guardar el modo tiene que avisar al lector y pausar la extensión, en la misma escritura.
+
+  Es el contrato del que depende el repintado: el lector escucha
+  `yoru-parser-settings-changed` y solo vuelve a dibujar cuando entre las claves viene
+  `parserEngine`. Si el aviso no llevara esa clave, al cambiar de modo el texto se quedaría
+  con lo que pintó la extensión —que es justo lo que se midió en el ordenador de zams— y si
+  llevara la clave de más, repintaríamos en cada ajuste y le borraríamos lo pintado mientras
+  lee.
+*/
+async function repintarTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  const avisos: { keys: string[] }[] = [];
+  const dispatchOriginal = (globalThis as any).window.dispatchEvent;
+  (globalThis as any).window.dispatchEvent = (e: any) => {
+    if (e?.type === 'yoru-parser-settings-changed') avisos.push({ keys: e.detail?.keys || [] });
+    return true;
+  };
+
+  // Un puente que acepta lo que le manden y anota lo que le llega.
+  const recibido: Record<string, unknown>[] = [];
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    recibido.push(detalle.entries);
+    document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id: detalle.id, ok: true } }));
+  };
+  document.addEventListener('yoru-settings-write', puente);
+
+  // En escritorio (hay electronAPI): el modo manda sobre la extensión.
+  (globalThis as any).window.electronAPI = {};
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'nativo' });
+  check(avisos.length === 1 && avisos[0].keys.includes('parserEngine'),
+    'Repintar: guardar el modo avisa al lector con la clave que mira');
+  check(recibido.length === 1 && recibido[0].parsingPaused === true,
+    'Repintar: elegir el analizador de la app pausa la extensión de verdad');
+
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'jiten' });
+  check(recibido[0]?.parsingPaused === false,
+    'Repintar: volver a Jiten la reanuda');
+
+  // Otro ajuste cualquiera no debe repintar: borraría lo pintado mientras lee.
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ furiganaNewWords: true });
+  check(avisos.length === 1 && !avisos[0].keys.includes('parserEngine'),
+    'Repintar: cambiar otro ajuste no pide repintado');
+  check(recibido[0] && !('parsingPaused' in recibido[0]),
+    'Repintar: y no toca la pausa de la extensión');
+
+  // En el teléfono no hay extensión que pausar, así que esa clave no se manda.
+  delete (globalThis as any).window.electronAPI;
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'nativo' });
+  check(avisos.length === 1 && avisos[0].keys.includes('parserEngine'),
+    'Repintar: en el teléfono también se avisa al lector');
+  check(recibido.length === 0,
+    'Repintar: y no se manda ninguna pausa, que allí no hay extensión');
+
+  document.removeEventListener('yoru-settings-write', puente);
+  (globalThis as any).window.dispatchEvent = dispatchOriginal;
+  localStorage.removeItem(AJUSTES);
+}
+
 mensajeTests();
 // Antes del sondeo: así `analizadorTests` ve el estado «sin comprobar» de verdad, no el que
 // deja `pausaTests` detrás.
 analizadorTests();
 await pausaTests();
+await repintarTests();
 ordenTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

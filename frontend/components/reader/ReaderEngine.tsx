@@ -1283,10 +1283,30 @@ function ReaderEngineComponent({
   const [jitenEnabled, setJitenEnabled] = useState(() => isJitenParserEnabled());
   // Rendered into the HTML by the tokenizers, so a change re-renders the section.
   const [furiganaNew, setFuriganaNew] = useState(() => isFuriganaOnNewWords());
+  /*
+    Al cambiar de analizador hay que volver a pintar la sección.
+
+    Medido en escritorio con la extensión: cambiar de modo no limpia nada de lo ya pintado.
+    Pausarla solo evita que parsee **lo siguiente**, así que el texto que ya estaba delante se
+    queda con el color y la furigana que le puso ella hasta que el lector lo dibuja otra vez.
+    Esto fuerza ese dibujado; lo de después lo pinta quien toque.
+  */
+  const [repintado, setRepintado] = useState(0);
+  const posicionAlRepintar = useRef<{ top: number; left: number } | null>(null);
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (evento?: Event) => {
       setJitenEnabled(isJitenParserEnabled());
       setFuriganaNew(isFuriganaOnNewWords());
+      const claves = (evento as CustomEvent | undefined)?.detail?.keys;
+      if (Array.isArray(claves) && claves.includes('parserEngine')) {
+        // Se guarda aquí porque React todavía no ha repintado: es el último momento en que
+        // el scroll de ahora sigue siendo el de verdad.
+        const content = contentRef.current;
+        posicionAlRepintar.current = content
+          ? { top: content.scrollTop, left: content.scrollLeft }
+          : null;
+        setRepintado((n) => n + 1);
+      }
     };
     window.addEventListener('yoru-parser-settings-changed', refresh);
     const unsubscribe = onJitenChange(refresh);
@@ -1295,6 +1315,30 @@ function ReaderEngineComponent({
       unsubscribe();
     };
   }, []);
+
+  /*
+    Y devolver la página a donde estaba.
+
+    Reemplazar el HTML deja el contenido al principio, y el efecto que coloca la página
+    depende de `pageIndex`, que no ha cambiado, así que no se vuelve a ejecutar solo. Sin
+    esto, cambiar de analizador te manda al principio del capítulo.
+  */
+  useEffect(() => {
+    if (repintado === 0) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (paginated) {
+        applyPagePosition(pageIndex);
+        return;
+      }
+      const content = contentRef.current;
+      const guardada = posicionAlRepintar.current;
+      if (content && guardada) {
+        content.scrollTop = guardada.top;
+        content.scrollLeft = guardada.left;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [repintado, paginated, pageIndex, applyPagePosition]);
   const jitenPendingRef = useRef<PendingJitenParagraph[]>([]);
 
   // Build current section HTML
@@ -1317,7 +1361,7 @@ function ReaderEngineComponent({
       return currentSection ? renderSection(currentSection) : '';
     }
     return sections.map(renderSection).join('');
-  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled, furiganaNew]);
+  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled, furiganaNew, repintado]);
 
   // Ask Jiten for the paragraphs on screen, then swap them in place (same text, so the page does not move).
   useEffect(() => {
