@@ -53,6 +53,7 @@ import {
   volumeNumberOf,
 } from '../frontend/utils/audiobookshelfService';
 import { normalizeServerUrl } from '../frontend/utils/serverHttp';
+import { sitioEnVertical } from '../frontend/utils/posicionPopupVertical';
 
 type Call = { method: string; url: string; headers: Record<string, string>; body: any };
 const calls: Call[] = [];
@@ -910,6 +911,65 @@ async function repintarTests() {
   localStorage.removeItem(AJUSTES);
 }
 
+/*
+  Dónde se planta la tarjeta del diccionario en vertical.
+
+  El caso de la primera comprobación es el de su captura, medido: ventana de 1920, la palabra
+  夜空 con su borde derecho en 1530, y la tarjeta queriendo 380 px. Por la derecha quedaban 370,
+  diez menos de los que pedía, y la tarjeta se mudaba al borde izquierdo a taparle texto sin
+  leer. Encogerse diez píxeles es mejor que cruzar la pantalla.
+*/
+function popupVerticalTests() {
+  const base = {
+    anchoVentana: 1920,
+    altoVentana: 1080,
+    anchoDeseado: 380,
+    altoTarjeta: 500,
+    margen: 12,
+    hueco: 8,
+    anchoMinimo: 300,
+  };
+  const palabra = (left: number, top: number) => ({ left, right: left + 24, top, bottom: top + 24 });
+
+  const suyo = sitioEnVertical({ ...base, palabra: palabra(1506, 390) });
+  check(suyo.donde === 'derecha' && suyo.left === 1538 && suyo.ancho === 370,
+    'Popup vertical: con 370 px libres a la derecha se encoge y se queda ahí, no cruza la pantalla');
+
+  // Con sitio de sobra, el ancho que quería y pegada a la palabra.
+  const holgado = sitioEnVertical({ ...base, palabra: palabra(900, 300) });
+  check(holgado.donde === 'derecha' && holgado.ancho === 380 && holgado.left === 932,
+    'Popup vertical: con hueco de sobra, a la derecha y con su ancho entero');
+
+  /*
+    La palabra en la primera columna, pegada al borde derecho: por la derecha no cabe ni
+    encogida. Antes se iba directa al borde izquierdo; ahora prueba encima, que en su propia
+    columna es texto ya leído, y se alinea por la derecha para extenderse hacia lo leído.
+  */
+  const encima = sitioEnVertical({ ...base, palabra: palabra(1870, 600) });
+  check(encima.donde === 'encima' && encima.top === 600 - 8 - 500,
+    'Popup vertical: si no cabe a la derecha, va encima de la palabra, sobre lo ya leído');
+  check(encima.left + encima.ancho === 1894,
+    'Popup vertical: y encima se alinea por su derecha, para tapar columnas leídas y no las siguientes');
+
+  /*
+    Ni a la derecha ni encima: palabra en la primera columna y además arriba. Aquí no hay hueco
+    en lo leído y el borde izquierdo es lo menos malo, porque son las últimas columnas de la
+    hoja. Se tapa texto sin leer, pero el que falta más para llegar.
+  */
+  const extremo = sitioEnVertical({ ...base, palabra: palabra(1870, 60) });
+  check(extremo.donde === 'extremo' && extremo.left === 12,
+    'Popup vertical: sin hueco en lo leído, al borde izquierdo, que son las últimas columnas');
+
+  // La tarjeta nunca se parte por abajo ni baja del mínimo legible.
+  const alta = sitioEnVertical({ ...base, altoTarjeta: 1000, palabra: palabra(900, 900) });
+  check(alta.top + 1000 <= base.altoVentana - base.margen + 1 && alta.top >= base.margen,
+    'Popup vertical: una tarjeta alta no se sale por abajo');
+  const estrecha = sitioEnVertical({ ...base, palabra: palabra(1700, 390) });
+  check(estrecha.donde !== 'derecha',
+    'Popup vertical: si a la derecha no llega al mínimo legible, no se encoge ahí: busca otro sitio');
+}
+
+popupVerticalTests();
 mensajeTests();
 // Antes del sondeo: así `analizadorTests` ve el estado «sin comprobar» de verdad, no el que
 // deja `pausaTests` detrás.

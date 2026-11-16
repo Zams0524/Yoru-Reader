@@ -3,6 +3,11 @@ import { Volume2, X } from 'lucide-react';
 import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
 import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
+import { sitioEnVertical } from '../utils/posicionPopupVertical';
+
+/** El ancho que la tarjeta del diccionario querría tener, y lo mínimo con que sigue siendo legible. */
+const ANCHO_POPUP = 380;
+const ANCHO_MINIMO_POPUP = 300;
 import { db } from '../utils/db';
 import { FSRS6, Rating, State, getPreviousSrsState } from '../utils/fsrs';
 import html2canvas from 'html2canvas';
@@ -450,6 +455,12 @@ export default function Reader({
   // se coloca a un lado, y para eso hacen falta el izquierdo y el derecho.
   const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10, targetLeft: 10, targetRight: 10 });
   const [popupMaxHeight, setPopupMaxHeight] = useState(Math.max(160, window.innerHeight - 24));
+  /*
+    El ancho de la tarjeta. Era fijo en 380 px, y por eso en vertical se mudaba al rincón
+    opuesto cuando por el lado leído quedaban 370: diez píxeles de diferencia la mandaban a
+    tapar texto sin leer. Ahora se encoge hasta `ANCHO_MINIMO_POPUP` antes que mudarse.
+  */
+  const [popupMaxWidth, setPopupMaxWidth] = useState(ANCHO_POPUP);
   const [viewportRevision, setViewportRevision] = useState(0);
   const dictPopupRef = useRef<HTMLDivElement | null>(null);
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
@@ -870,11 +881,27 @@ export default function Reader({
     let anchorBottom: boolean;
 
     if (readerSettings.vertical) {
-      const cabeALaDerecha = window.innerWidth - popupPos.targetRight - gap - margin >= bounds.width;
-      left = cabeALaDerecha ? popupPos.targetRight + gap : margin;
-      top = Math.min(Math.max(margin, popupPos.targetTop), Math.max(margin, window.innerHeight - bounds.height - margin));
+      const sitio = sitioEnVertical({
+        anchoVentana: window.innerWidth,
+        altoVentana: window.innerHeight,
+        palabra: {
+          top: popupPos.targetTop,
+          bottom: popupPos.targetBottom,
+          left: popupPos.targetLeft,
+          right: popupPos.targetRight,
+        },
+        anchoDeseado: ANCHO_POPUP,
+        altoTarjeta: bounds.height,
+        margen: margin,
+        hueco: gap,
+        anchoMinimo: ANCHO_MINIMO_POPUP,
+      });
+      left = sitio.left;
+      top = sitio.top;
       anchorBottom = false;
+      setPopupMaxWidth(current => current === sitio.ancho ? current : sitio.ancho);
     } else {
+      setPopupMaxWidth(current => current === ANCHO_POPUP ? current : ANCHO_POPUP);
       const altoPrevisto = Math.min(popup.scrollHeight, 360);
       const cabeEncima = popupPos.targetTop - margin - gap >= altoPrevisto;
       anchorBottom = cabeEncima;
@@ -3417,7 +3444,7 @@ export default function Reader({
             zIndex: 99999,
             transform: popupPos.anchorBottom ? 'translateY(-100%)' : 'none',
             maxHeight: `${popupMaxHeight}px`,
-            width: window.innerWidth < 768 ? 'calc(100vw - 24px)' : 'min(380px, calc(100vw - 24px))',
+            width: window.innerWidth < 768 ? 'calc(100vw - 24px)' : `min(${popupMaxWidth}px, calc(100vw - 24px))`,
             boxSizing: 'border-box',
             background: colors.popoverBg,
             border: `1px solid ${colors.border}`,
