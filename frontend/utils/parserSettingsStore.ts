@@ -81,6 +81,52 @@ export function getLocalParserSetting(key: string): any {
   return readLocal()[key] ?? null;
 }
 
+// ── Qué analizador parte las palabras ─────────────────────────────────
+
+/** `jiten`: el parser de jiten.moe. `nativo`: el analizador que lleva la app (Kuromoji). */
+export type ModoAnalizador = 'jiten' | 'nativo';
+
+/** True cuando hay una clave de Jiten guardada en esta instalación. */
+export function hayClaveJiten(): boolean {
+  const clave = getLocalParserSetting('jitenApiKey');
+  return typeof clave === 'string' && clave.trim().length > 0;
+}
+
+/**
+ * El modo que se usa cuando el usuario no ha elegido ninguno.
+ *
+ * No es «lo que la plataforma puede hacer» sino lo que esta instalación venía haciendo, para
+ * que nadie note el cambio al pasar de deducir el modo a elegirlo: en escritorio parte las
+ * palabras la extensión de lectura, y en el resto mandaba la clave guardada más el interruptor
+ * `jitenUseParser`, que esta elección sustituye.
+ */
+export function modoAnalizadorPorDefecto(): ModoAnalizador {
+  if (!usesLocalParserSettings()) return 'jiten';
+  const usaba = getLocalParserSetting('jitenUseParser');
+  return hayClaveJiten() && usaba !== false && usaba !== 'false' ? 'jiten' : 'nativo';
+}
+
+/** El modo elegido, o el de siempre si no se ha elegido ninguno. */
+export function modoAnalizador(): ModoAnalizador {
+  const guardado = getLocalParserSetting('parserEngine');
+  if (guardado === 'jiten' || guardado === 'nativo') return guardado;
+  return modoAnalizadorPorDefecto();
+}
+
+/**
+ * Por qué un modo no se puede usar aquí, o null si sí se puede.
+ *
+ * - `sin-clave`: el parser de Jiten es un servicio, y sin clave de la cuenta no contesta.
+ * - `solo-extension`: en escritorio las palabras las parte la extensión de lectura, y la app no
+ *   tiene manera de pedirle que pare: su interruptor (`parsingPaused`) vive sin prefijo en
+ *   `chrome.storage.local`, mientras que el puente de ajustes escribe `profile:<id>:<clave>`.
+ *   Hasta que eso cambie en la extensión, en escritorio no se puede elegir el modo nativo.
+ */
+export function motivoModoNoDisponible(modo: ModoAnalizador): 'sin-clave' | 'solo-extension' | null {
+  if (modo === 'jiten') return hayClaveJiten() ? null : 'sin-clave';
+  return usesLocalParserSettings() ? null : 'solo-extension';
+}
+
 let bridgeIdCounter = 0;
 
 function readFromExtension(keys: string[]): Promise<Record<string, any> | null> {

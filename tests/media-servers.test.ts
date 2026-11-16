@@ -30,6 +30,11 @@ import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
 import { juntarOkurigana } from '../frontend/utils/okurigana';
 import { mereceBuscarseFuera, mensajeSinDefinicion, FUENTE_POR_DEFECTO } from '../frontend/utils/dictionary';
 import { TRANSLATIONS, t } from '../frontend/utils/i18n';
+import {
+  modoAnalizador,
+  modoAnalizadorPorDefecto,
+  motivoModoNoDisponible,
+} from '../frontend/utils/parserSettingsStore';
 import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
   audiobookMatchScore,
@@ -719,7 +724,78 @@ function mensajeTests() {
     'Mensaje: ninguna clave se pinta en crudo');
 }
 
+/*
+  Quién parte las palabras: el analizador de Jiten o el de la app.
+
+  Antes no se elegía, se deducía: con clave guardada mandaba Jiten, sin ella el de la app.
+  Lo que se fija aquí es que al pasar a elegirlo nadie note el cambio —quien tenía clave
+  sigue con Jiten, quien no, con el de la app— y que el modo elegido pese por encima de la
+  clave, que es justo lo que no se podía hacer: leer con el analizador de la app teniendo
+  cuenta de Jiten.
+*/
+function analizadorTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  const poner = (valores: Record<string, unknown>) => localStorage.setItem(AJUSTES, JSON.stringify(valores));
+  const comoEscritorio = (si: boolean) => {
+    if (si) (globalThis as any).window.electronAPI = {};
+    else delete (globalThis as any).window.electronAPI;
+  };
+
+  comoEscritorio(false);
+
+  poner({});
+  check(modoAnalizadorPorDefecto() === 'nativo' && modoAnalizador() === 'nativo',
+    'Analizador: sin clave y sin elegir, parte las palabras la app');
+
+  poner({ jitenApiKey: 'ak_de_prueba' });
+  check(modoAnalizadorPorDefecto() === 'jiten' && modoAnalizador() === 'jiten',
+    'Analizador: quien ya tenía clave sigue con Jiten sin tocar nada');
+
+  // El interruptor viejo apagado también se respeta como punto de partida.
+  poner({ jitenApiKey: 'ak_de_prueba', jitenUseParser: false });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: quien había apagado el parser de Jiten arranca con el de la app');
+
+  // Lo nuevo: la elección manda sobre todo lo anterior, en los dos sentidos.
+  poner({ jitenApiKey: 'ak_de_prueba', parserEngine: 'nativo' });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: con cuenta de Jiten se puede leer con el de la app, que antes no se podía');
+  poner({ jitenApiKey: 'ak_de_prueba', jitenUseParser: false, parserEngine: 'jiten' });
+  check(modoAnalizador() === 'jiten',
+    'Analizador: y lo elegido pesa más que el interruptor viejo');
+
+  // Un valor que no es ninguno de los dos no se cuela: se vuelve al de siempre.
+  poner({ parserEngine: 'lo-que-sea' });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: un modo desconocido no se usa, se vuelve al de siempre');
+
+  // Qué no se ofrece, y por qué. Sin clave, Jiten no puede: su analizador es un servicio.
+  poner({});
+  check(motivoModoNoDisponible('jiten') === 'sin-clave' && motivoModoNoDisponible('nativo') === null,
+    'Analizador: sin clave, el modo Jiten no se ofrece, y se dice que falta la clave');
+  poner({ jitenApiKey: 'ak_de_prueba' });
+  check(motivoModoNoDisponible('jiten') === null,
+    'Analizador: con clave, el modo Jiten se ofrece');
+
+  /*
+    En escritorio las palabras las parte la extensión de lectura. La app no puede pedirle que
+    pare: su interruptor (`parsingPaused`) está sin prefijo en chrome.storage.local y el puente
+    de ajustes escribe `profile:<id>:<clave>`. Así que allí el modo nativo no se ofrece, y el
+    motivo que se da es ese y no «te falta la clave».
+  */
+  comoEscritorio(true);
+  check(motivoModoNoDisponible('nativo') === 'solo-extension',
+    'Analizador: en escritorio el modo de la app no se ofrece, y se dice que manda la extensión');
+  poner({});
+  check(modoAnalizadorPorDefecto() === 'jiten',
+    'Analizador: en escritorio, sin elegir, parte las palabras la extensión');
+
+  comoEscritorio(false);
+  localStorage.removeItem(AJUSTES);
+}
+
 mensajeTests();
+analizadorTests();
 ordenTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

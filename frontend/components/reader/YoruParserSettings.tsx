@@ -6,6 +6,9 @@ import {
   type WordStyleThemeConfig,
   DEFAULT_WORD_STYLE_CONFIG,
   usesLocalParserSettings,
+  modoAnalizadorPorDefecto,
+  motivoModoNoDisponible,
+  type ModoAnalizador,
 } from '../../utils/parserSettingsStore';
 import {
   flushJitenQueue,
@@ -70,7 +73,10 @@ interface SettingsValues {
   jitenAutoMineOnReview: boolean;
   // jiten.moe account
   jitenApiKey: string;
+  /** Interruptor de antes. Ya no se muestra: solo decide el modo de arranque de quien lo tenía puesto. */
   jitenUseParser: boolean;
+  /** Qué analizador parte las palabras. Lo que había antes de elegir sale de `modoAnalizadorPorDefecto()`. */
+  parserEngine: ModoAnalizador;
   // Keybinds
   parseKey: string;
   showPopupKey: string;
@@ -267,6 +273,9 @@ const DEFAULTS: SettingsValues = {
   jitenAutoMineOnReview: false,
   jitenApiKey: '',
   jitenUseParser: true,
+  // Solo para que la clave entre en SETTING_KEYS y se lea y se guarde: el valor de partida
+  // de verdad lo pone `modoAnalizadorPorDefecto()` al cargar, que respeta lo que ya se usaba.
+  parserEngine: 'nativo',
   parseKey: 'Alt+P',
   showPopupKey: 'Shift',
   lookupSelectionKey: 'Alt+L',
@@ -451,6 +460,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
         jitenAutoMineOnReview: parseBool(safeVals.jitenAutoMineOnReview, DEFAULTS.jitenAutoMineOnReview),
         jitenApiKey: typeof safeVals.jitenApiKey === 'string' ? safeVals.jitenApiKey : DEFAULTS.jitenApiKey,
         jitenUseParser: parseBool(safeVals.jitenUseParser, DEFAULTS.jitenUseParser),
+        parserEngine: safeVals.parserEngine === 'jiten' || safeVals.parserEngine === 'nativo'
+          ? safeVals.parserEngine
+          : modoAnalizadorPorDefecto(),
         parseKey: parseKeybindDisplay(safeVals.parseKey, DEFAULTS.parseKey),
         showPopupKey: parseKeybindDisplay(safeVals.showPopupKey, DEFAULTS.showPopupKey),
         lookupSelectionKey: parseKeybindDisplay(safeVals.lookupSelectionKey, DEFAULTS.lookupSelectionKey),
@@ -650,9 +662,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
       <div style={sectionTitleStyle}>{t('Sincronizar con Jiten', 'Sync with Jiten')}</div>
       <JitenAccountCard
         apiKey={settings.jitenApiKey}
-        useParser={settings.jitenUseParser}
+        modo={settings.parserEngine}
         onSaveKey={(v) => updateSetting('jitenApiKey', v, true)}
-        onToggleParser={(v) => updateSetting('jitenUseParser', v)}
+        onChangeModo={(v) => updateSetting('parserEngine', v, true)}
         t={t}
         colors={colors}
         cardStyle={cardStyle}
@@ -1699,9 +1711,9 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 
 interface JitenAccountCardProps {
   apiKey: string;
-  useParser: boolean;
+  modo: ModoAnalizador;
   onSaveKey: (key: string) => void;
-  onToggleParser: (value: boolean) => void;
+  onChangeModo: (value: ModoAnalizador) => void;
   t: (es: string, en: string) => string;
   colors: YoruParserSettingsProps['colors'];
   cardStyle: React.CSSProperties;
@@ -1710,7 +1722,7 @@ interface JitenAccountCardProps {
 }
 
 const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
-  apiKey, useParser, onSaveKey, onToggleParser, t, colors, cardStyle, labelStyle, descStyle,
+  apiKey, modo, onSaveKey, onChangeModo, t, colors, cardStyle, labelStyle, descStyle,
 }) => {
   const [draft, setDraft] = useState(apiKey);
   const [showKey, setShowKey] = useState(false);
@@ -1831,19 +1843,71 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
           </div>
         )}
       </div>
-      {!desktop && apiKey && (
-        <div style={cardStyle}>
-          <ToggleRow
-            label={t('Usar el parser de Jiten', "Use Jiten's parser")}
-            desc={t('Divide el texto en palabras con Jiten (necesita internet). Sin conexión se usa el parser local.', 'Splits text into words with Jiten (needs internet). Offline, the local parser is used.')}
-            value={useParser}
-            onChange={onToggleParser}
-            colors={colors}
-            labelStyle={labelStyle}
-            descStyle={descStyle}
-          />
+      {/*
+        Qué analizador parte las palabras, por su nombre. Antes esto no se elegía: salía de si
+        había clave guardada, así que no había manera de leer con el analizador de la app
+        teniendo cuenta de Jiten, ni de saber cuál de los dos estabas usando.
+      */}
+      <div style={cardStyle}>
+        <div style={labelStyle}>{t('Quién parte las palabras', 'What splits the words')}</div>
+        <div style={descStyle}>
+          {t('Los dos modos están en la misma app y se cambian aquí.', 'Both modes are in the same app and are switched here.')}
         </div>
-      )}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+          {([
+            {
+              valor: 'jiten' as ModoAnalizador,
+              titulo: t('Jiten', 'Jiten'),
+              // Solo lo comprobado: hace falta clave, y el reparto lo hace su servidor.
+              motivo: apiKey.trim() ? null : 'sin-clave' as const,
+            },
+            {
+              valor: 'nativo' as ModoAnalizador,
+              titulo: t('El analizador de la app', "The app's own analyser"),
+              motivo: motivoModoNoDisponible('nativo'),
+            },
+          ]).map(({ valor, titulo, motivo }) => {
+            const elegido = modo === valor;
+            return (
+              <button
+                key={valor}
+                type="button"
+                disabled={!!motivo}
+                onClick={() => onChangeModo(valor)}
+                style={{
+                  ...buttonStyle,
+                  background: elegido && !motivo ? colors.accent : colors.cardBg,
+                  color: elegido && !motivo ? '#111' : colors.textMain,
+                  border: elegido && !motivo ? 'none' : `1px solid ${colors.border}`,
+                  cursor: motivo ? 'not-allowed' : 'pointer',
+                  opacity: motivo ? 0.5 : 1,
+                }}
+              >
+                {titulo}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ ...descStyle, marginTop: '8px' }}>
+          {modo === 'jiten'
+            ? t('Las palabras las separa el servidor de Jiten y se pintan con tus estados de Jiten. Necesita internet; sin conexión se usa el de la app.',
+              'Jiten’s server splits the words and they are coloured with your Jiten states. It needs the internet; offline the app’s own is used.')
+            : t('Las palabras las separa la app en tu dispositivo, sin internet y sin cuenta. Los estados y los repasos siguen siendo los tuyos de Yoru.',
+              'The app splits the words on your device, with no internet and no account. States and reviews stay your own Yoru ones.')}
+        </div>
+        {!apiKey.trim() && (
+          <div style={{ ...descStyle, marginTop: '4px' }}>
+            {t('Para usar Jiten hay que pegar arriba la clave de tu cuenta: su analizador vive en su servidor.',
+              'To use Jiten you need to paste your account key above: its analyser lives on their server.')}
+          </div>
+        )}
+        {motivoModoNoDisponible('nativo') === 'solo-extension' && (
+          <div style={{ ...descStyle, marginTop: '4px' }}>
+            {t('En el ordenador las palabras las parte la extensión de lectura, y la app todavía no puede pedirle que pare, así que aquí solo está el modo Jiten.',
+              'On the computer the reader extension splits the words, and the app cannot yet ask it to stop, so only Jiten mode is available here.')}
+          </div>
+        )}
+      </div>
     </>
   );
 };

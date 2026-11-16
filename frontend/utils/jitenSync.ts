@@ -1,4 +1,4 @@
-import { getLocalParserSetting, usesLocalParserSettings } from './parserSettingsStore';
+import { getLocalParserSetting, modoAnalizador, usesLocalParserSettings } from './parserSettingsStore';
 import { furiganaPairsFromAnnotated } from './yoruParserNative';
 
 /**
@@ -75,9 +75,15 @@ export function isJitenSyncEnabled(): boolean {
   return usesLocalParserSettings() && getJitenApiKey().length > 0 && rejectedKey !== getJitenApiKey();
 }
 
+/**
+ * True cuando las palabras las parte Jiten y no el analizador de la app.
+ *
+ * Antes salía del interruptor `jitenUseParser`, que solo aparecía si había clave; ahora el modo
+ * se elige por su nombre en los ajustes del analizador, y el interruptor de antes solo sirve
+ * para decidir en qué modo arranca quien ya lo tenía puesto (`modoAnalizadorPorDefecto`).
+ */
 export function isJitenParserEnabled(): boolean {
-  const useParser = getLocalParserSetting('jitenUseParser');
-  return isJitenSyncEnabled() && useParser !== false && useParser !== 'false';
+  return isJitenSyncEnabled() && modoAnalizador() === 'jiten';
 }
 
 let rejectedKey = '';
