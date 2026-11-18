@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, Search, Shuffle } from 'lucide-react';
 import { BookPoster, EmptyState, EntityCard } from './primitives';
 import { byCreatedAt, byLastRead, formatCount, type EntityGroup, type ShelfBook } from './libraryIndex';
 
@@ -21,6 +21,7 @@ export function BookGridView({
   onOpenDetail,
   onBack,
   filter,
+  action,
 }: {
   title: string;
   subtitle?: string;
@@ -30,6 +31,8 @@ export function BookGridView({
   onBack?: () => void;
   /** Un filtro más, al lado del buscador. El primero de sus valores es el de partida. */
   filter?: GridFilter;
+  /** Un botón propio de la vista, en la cabecera (por ejemplo, «Editar reglas»). */
+  action?: React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<GridSort>('default');
@@ -65,6 +68,24 @@ export function BookGridView({
           <div className="yoru-view-sub">
             {subtitle ?? formatCount(books.length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
           </div>
+        </div>
+        {/*
+          «Sorpréndeme» abre uno al azar de lo que haya filtrado, no de la biblioteca
+          entera: dentro de una colección o de un estante, lo que se pide es uno de
+          *esos*. Con uno solo sobra el botón, porque ya se está viendo.
+        */}
+        <div className="yoru-view-head-actions">
+          {action}
+          {filtered.length > 1 && (
+            <button
+              type="button"
+              className="yoru-btn"
+              onClick={() => onOpenDetail(filtered[Math.floor(Math.random() * filtered.length)])}
+            >
+              <Shuffle size={15} />
+              {es ? 'Sorpréndeme' : 'Surprise me'}
+            </button>
+          )}
         </div>
       </div>
 

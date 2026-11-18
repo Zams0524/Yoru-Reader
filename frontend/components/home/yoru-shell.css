@@ -368,6 +368,9 @@
   gap: 16px;
   margin-bottom: 18px;
 }
+/* Los botones de la cabecera de una vista: «Editar reglas», «Sorpréndeme». */
+.yoru-view-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.yoru-view-head-actions .yoru-btn { display: inline-flex; align-items: center; gap: 6px; }
 .yoru-view-title {
   font-family: var(--font-heading);
   font-size: 26px;
@@ -2126,11 +2129,79 @@
 .yoru-field input:focus,
 .yoru-field select:focus { outline: none; border-color: var(--border-focus); }
 .yoru-field-note { margin: 0; font-size: 12.5px; color: var(--text-muted); }
-.yoru-rule-row { display: flex; gap: 10px; }
+.yoru-rule-row { display: flex; gap: 10px; align-items: flex-end; }
 .yoru-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 
+/*
+  Reglas de una colección dinámica: el «se cumplen todas / basta una», la papelera de
+  cada fila, el botón de añadir y la vista previa.
+
+  La papelera se alinea con los desplegables y no con la fila entera (de ahí el
+  `align-items: flex-end`): arriba quedaría a la altura de los rótulos, que es donde no
+  está el control que borra.
+*/
+.yoru-rule-match { display: flex; gap: 6px; }
+.yoru-rule-match button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-rule-match button.is-active {
+  border-color: var(--primary);
+  color: var(--text-main);
+}
+.yoru-rule-remove {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.yoru-rule-remove:hover { color: var(--text-main); border-color: var(--border-focus); }
+.yoru-rule-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-rule-add:hover { color: var(--text-main); border-color: var(--border-focus); }
+.yoru-rule-preview {
+  margin: -6px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  font-size: 13px;
+  color: var(--text-main);
+}
+.yoru-rule-preview li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-rule-preview li + li { margin-top: 4px; }
+.yoru-rule-preview .is-more { color: var(--text-muted); }
+
 @media (max-width: 460px) {
-  .yoru-rule-row { flex-direction: column; }
+  .yoru-rule-row { flex-direction: column; align-items: stretch; }
+  .yoru-rule-remove { width: 100%; }
 }
 
 /* =========================================================

@@ -7,7 +7,7 @@
  * no hace falta ningún servidor.
  */
 
-import { getDynamicCollections, getManualCollections, matchesRule } from '../../utils/collections';
+import { getDynamicCollections, getManualCollections, matchesCollection } from '../../utils/collections';
 
 export interface ShelfBook {
   id: string;
@@ -161,7 +161,7 @@ export function authorGroups(books: ShelfBook[]): EntityGroup[] {
 
 /**
  * Las colecciones del usuario: las manuales, que son etiquetas de los libros, y las
- * dinámicas, que son una regla que se recalcula aquí mismo.
+ * dinámicas, que son unas reglas que se recalculan aquí mismo.
  *
  * Una manual recién creada sale aunque esté vacía: si no, crear una colección no
  * tendría ningún efecto visible hasta meterle un libro, y parecería que no funcionó.
@@ -179,7 +179,7 @@ export function collectionGroups(books: ShelfBook[]): EntityGroup[] {
   }
 
   for (const entry of getDynamicCollections()) {
-    const matched = visible.filter((book) => matchesRule(book, entry.rule));
+    const matched = visible.filter((book) => matchesCollection(book, entry));
     const existing = groups.find((group) => group.key === entry.name);
     if (existing) existing.books = matched;
     else groups.push({ key: entry.name, name: entry.name, books: matched });

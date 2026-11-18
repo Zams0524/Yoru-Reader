@@ -15,6 +15,7 @@ import {
   Search,
   Server as ServerIcon,
   Settings,
+  SlidersHorizontal,
   Tag,
   User,
   Users,
@@ -43,6 +44,7 @@ import {
   getAudiobookLink,
   unambiguousAudiobook,
 } from '../../utils/audiobookshelfService';
+import { getDynamicCollections, type DynamicCollection } from '../../utils/collections';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
@@ -179,6 +181,8 @@ export default function YoruShell({
   /** El menú del avatar de la cabecera: Perfil y Ajustes. */
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  /** La colección dinámica cuyas reglas se están cambiando, si hay alguna. */
+  const [editingCollection, setEditingCollection] = useState<DynamicCollection | null>(null);
   /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
   const [collectionsVersion, setCollectionsVersion] = useState(0);
 
@@ -442,6 +446,14 @@ export default function YoruShell({
     }
 
     if (view === 'group' && group) {
+      /*
+        Una colección dinámica se mira y, desde la misma pantalla, se afina: es donde se
+        ve que la regla cogió lo que no era. Las manuales no llevan botón porque no
+        tienen reglas que editar; se cambian metiendo y sacando libros.
+      */
+      const dinamica = group.kind === 'collection'
+        ? getDynamicCollections().find((entry) => entry.name === group.name)
+        : undefined;
       return (
         <BookGridView
           title={group.name}
@@ -449,6 +461,12 @@ export default function YoruShell({
           es={es}
           onOpenDetail={openDetail}
           onBack={() => go(groupBackView(group))}
+          action={dinamica && (
+            <button type="button" className="yoru-btn" onClick={() => setEditingCollection(dinamica)}>
+              <SlidersHorizontal size={15} />
+              {es ? 'Editar reglas' : 'Edit rules'}
+            </button>
+          )}
         />
       );
     }
@@ -1040,11 +1058,12 @@ export default function YoruShell({
         <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} />
       )}
 
-      {isCreatingCollection && (
+      {(isCreatingCollection || editingCollection) && (
         <CollectionModal
           books={library}
           es={es}
-          onClose={() => setIsCreatingCollection(false)}
+          editing={editingCollection || undefined}
+          onClose={() => { setIsCreatingCollection(false); setEditingCollection(null); }}
           // Recién creada se abre: así se ve que existe, aunque esté vacía.
           onCreated={(name) => openGroup('collection', name)}
         />
