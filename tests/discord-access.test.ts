@@ -194,34 +194,35 @@ function pantallaTests() {
   console.log('\nQué pantalla toca');
 
   check(
-    pantallaQueToca({ acceso: 'sin-sesion', hayPerfil: false }) === 'entrada',
+    pantallaQueToca({ acceso: 'sin-sesion', tutorialVisto: false }) === 'entrada',
     'Sin sesión: pantalla de entrada',
   );
 
-  // El caso que de verdad importa: con perfil ya creado, la puerta sigue delante.
+  // El caso que de verdad importa: por mucho que ya se haya visto la guía, y por tanto
+  // que sea alguien de siempre, la puerta sigue delante.
   check(
-    pantallaQueToca({ acceso: 'sin-sesion', hayPerfil: true }) === 'entrada',
-    'Sin sesión y con perfil hecho: igualmente la entrada, no la app',
+    pantallaQueToca({ acceso: 'sin-sesion', tutorialVisto: true }) === 'entrada',
+    'Sin sesión y con la guía ya vista: igualmente la entrada, no la app',
   );
 
   check(
-    pantallaQueToca({ acceso: 'permitido', hayPerfil: false }) === 'crear-perfil',
-    'Miembro sin perfil: crear perfil',
+    pantallaQueToca({ acceso: 'permitido', tutorialVisto: false }) === 'guia',
+    'Miembro que no ha visto la guía: la guía',
   );
 
   check(
-    pantallaQueToca({ acceso: 'permitido', hayPerfil: true }) === 'app',
-    'Miembro con perfil: la app',
+    pantallaQueToca({ acceso: 'permitido', tutorialVisto: true }) === 'app',
+    'Miembro que ya la vio: la app',
   );
 
-  // Ni la guía ni restaurar una copia ni entrar con Google viven fuera de la puerta:
-  // todos salen de 'crear-perfil', así que ningún estado que no sea 'permitido' puede
-  // llegar ahí. Se comprueban todos, para que añadir uno nuevo no abra un portillo.
+  // Ni la guía, ni restaurar una copia, ni entrar con Google viven fuera de la puerta.
+  // Se comprueban todos los estados de no-acceso para que añadir uno nuevo mañana no
+  // abra un portillo sin que nadie se entere.
   for (const estado of ['falta-config', 'no-es-miembro', 'sin-conexion', 'sin-sesion'] as const) {
     check(
-      pantallaQueToca({ acceso: estado, hayPerfil: false }) === 'entrada'
-      && pantallaQueToca({ acceso: estado, hayPerfil: true }) === 'entrada',
-      `El estado «${estado}» no deja pasar de la entrada, con perfil o sin él`,
+      pantallaQueToca({ acceso: estado, tutorialVisto: false }) === 'entrada'
+      && pantallaQueToca({ acceso: estado, tutorialVisto: true }) === 'entrada',
+      `El estado «${estado}» no deja pasar de la entrada, haya visto la guía o no`,
     );
   }
 }

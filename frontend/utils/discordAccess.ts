@@ -34,6 +34,17 @@ export interface SesionDiscord {
   expiraEn: number;
   usuarioId: string;
   usuarioNombre: string;
+  /** El hash del avatar en Discord. Vacío si el usuario no tiene foto puesta. */
+  avatarHash?: string;
+  /**
+   * La foto ya descargada, como data URL.
+   *
+   * Se guarda la imagen y no solo su dirección porque el perfil tiene que verse en un
+   * avión: pedirla al CDN de Discord cada vez dejaría un hueco gris justo cuando no
+   * hay red. Si la descarga falla no pasa nada grave, se reintenta en la siguiente
+   * comprobación.
+   */
+  avatarDataUrl?: string;
   /** Última vez que Discord confirmó que sí es miembro. 0 si nunca. */
   ultimaComprobacionOk: number;
   /** Si la última respuesta clara de Discord fue «no está en el servidor». */
@@ -97,20 +108,28 @@ export function tocaRecomprobar({ sesion, hayRed, ahora }: { sesion: SesionDisco
 }
 
 /** Las tres cosas que puede estar enseñando la app al arrancar. */
-export type Pantalla = 'entrada' | 'crear-perfil' | 'app';
+export type Pantalla = 'entrada' | 'guia' | 'app';
 
 /**
  * Qué pantalla toca, en una sola función y sin ambigüedad.
  *
  * El orden no es negociable: **primero Discord, después todo lo demás**. Si no eres
- * miembro no hay nada que ver, ni siquiera el tutorial: ni la guía, ni crear un
- * perfil, ni restaurar una copia, ni entrar con Google. Tener esto en una función en
- * vez de repartido entre condiciones del render es lo que impide que mañana alguien
- * cuele una pantalla por delante de la puerta sin enterarse.
+ * miembro no hay nada que ver, ni siquiera el tutorial: ni la guía, ni restaurar una
+ * copia, ni entrar con Google. Tener esto en una función en vez de repartido entre
+ * condiciones del render es lo que impide que mañana alguien cuele una pantalla por
+ * delante de la puerta sin enterarse.
+ *
+ * Ya no hay pantalla de «crea tu perfil»: el perfil se hace solo con el nombre y la
+ * foto de Discord en cuanto se entra, así que la guía depende de si se ha visto y no
+ * de si hay perfil. Preguntar por un nombre a quien acaba de decirnos el suyo era
+ * pedir dos veces lo mismo.
  */
-export function pantallaQueToca({ acceso, hayPerfil }: { acceso: EstadoAcceso; hayPerfil: boolean }): Pantalla {
+export function pantallaQueToca({
+  acceso,
+  tutorialVisto,
+}: { acceso: EstadoAcceso; tutorialVisto: boolean }): Pantalla {
   if (acceso !== 'permitido') return 'entrada';
-  return hayPerfil ? 'app' : 'crear-perfil';
+  return tutorialVisto ? 'app' : 'guia';
 }
 
 /** Si el token de acceso ya no sirve (o le queda tan poco que no merece usarse). */

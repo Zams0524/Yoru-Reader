@@ -104,13 +104,18 @@ export default function ProfileSettings({
 
   return (
     <div className="settings-rows">
+      {/*
+        El nombre y la foto ya no se editan aquí: vienen de Discord y se ponen al día
+        solos en cada comprobación. Editarlos a mano habría durado hasta el siguiente
+        arranque, que es la peor clase de ajuste: el que parece que funciona.
+      */}
       <div className="settings-row">
         <div className="settings-row-text">
-          <span className="settings-row-label">{es ? 'Foto de perfil' : 'Profile photo'}</span>
+          <span className="settings-row-label">{es ? 'Nombre y foto' : 'Name and photo'}</span>
           <span className="settings-row-desc">
             {es
-              ? 'Una imagen JPG, PNG o WebP. Se queda en este equipo, dentro de tu perfil.'
-              : 'A JPG, PNG or WebP image. It stays on this computer, inside your profile.'}
+              ? 'Los pone tu cuenta de Discord. Si los cambias allí, aquí cambian solos.'
+              : 'They come from your Discord account. Change them there and they change here.'}
           </span>
         </div>
         <div className="settings-row-control settings-profile-photo">
@@ -123,10 +128,7 @@ export default function ProfileSettings({
                 </span>
               )}
           </span>
-          <button type="button" className="settings-btn" onClick={() => fileRef.current?.click()}>
-            {es ? 'Cambiar foto' : 'Change photo'}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={elegirFoto} />
+          <span className="settings-label-text">{profile.name}</span>
         </div>
       </div>
 
@@ -174,27 +176,6 @@ export default function ProfileSettings({
         </div>
       </div>
 
-      <div className="settings-row">
-        <div className="settings-row-text">
-          <span className="settings-row-label">{es ? 'Nombre del perfil' : 'Profile name'}</span>
-          <span className="settings-row-desc">
-            {profileCount > 1
-              ? (es ? 'Con el que lo distingues de tus otros perfiles.' : 'How you tell it apart from your other profiles.')
-              : (es ? 'Como te llama Yoru.' : 'What Yoru calls you.')}
-          </span>
-        </div>
-        <div className="settings-row-control">
-          <input
-            type="text"
-            className="settings-input"
-            value={name}
-            maxLength={40}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') guardar(); }}
-            aria-label={es ? 'Nombre del perfil' : 'Profile name'}
-          />
-        </div>
-      </div>
 
       {/*
         El botón solo se puede pulsar cuando hay algo que guardar. Un «Guardar»

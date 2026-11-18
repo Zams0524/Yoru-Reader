@@ -94,6 +94,8 @@ export function leerSesion(): SesionDiscord | null {
       expiraEn: Number(dato.expiraEn) || 0,
       usuarioId: String(dato.usuarioId || ''),
       usuarioNombre: String(dato.usuarioNombre || ''),
+      avatarHash: typeof dato.avatarHash === 'string' ? dato.avatarHash : '',
+      avatarDataUrl: typeof dato.avatarDataUrl === 'string' ? dato.avatarDataUrl : '',
       ultimaComprobacionOk: Number(dato.ultimaComprobacionOk) || 0,
       noEsMiembro: dato.noEsMiembro === true,
     };
@@ -238,15 +240,105 @@ async function renovar(refreshToken: string): Promise<RespuestaToken> {
   });
 }
 
-async function datosUsuario(accessToken: string): Promise<{ id: string; nombre: string }> {
+async function datosUsuario(accessToken: string): Promise<{ id: string; nombre: string; avatarHash: string }> {
   const respuesta = await peticion(`${API}/users/@me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (respuesta.status !== 200) throw new Error(`usuario-${respuesta.status}`);
   return {
+    // `global_name` es el nombre que la gente ve hoy en Discord; `username` es el de
+    // toda la vida, y queda de reserva para las cuentas que no lo tengan puesto.
     id: String(respuesta.datos?.id || ''),
     nombre: String(respuesta.datos?.global_name || respuesta.datos?.username || ''),
+    avatarHash: String(respuesta.datos?.avatar || ''),
   };
+}
+
+/** La dirección de la foto de perfil en el CDN de Discord. Vacía si no tiene. */
+export function urlAvatar(usuarioId: string, hash: string): string {
+  if (!usuarioId || !hash) return '';
+  return `https://cdn.discordapp.com/avatars/${usuarioId}/${hash}.png?size=256`;
+}
+
+/**
+ * Baja la foto de Discord y la devuelve como data URL, para que se vea sin conexión.
+ *
+ * Se guarda la imagen entera y no su dirección a propósito: el avatar aparece en la
+ * barra, en el perfil y en los ajustes, y pedirlo al CDN cada vez dejaría un hueco
+ * gris justo en un avión o en el metro, que es donde más se lee. Si falla devuelve
+ * vacío y no pasa nada: se reintenta en la siguiente comprobación con red.
+ */
+export async function descargarAvatar(usuarioId: string, hash: string): Promise<string> {
+  const url = urlAvatar(usuarioId, hash);
+  if (!url) return '';
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const nativa = await Promise.race([
+        CapacitorHttp.request({ url, method: 'GET', responseType: 'blob', connectTimeout: TIEMPO_MS, readTimeout: TIEMPO_MS }),
+        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('tiempo')), TIEMPO_MS)),
+      ]);
+      if (nativa.status !== 200 || typeof nativa.data !== 'string') return '';
+      // CapacitorHttp devuelve los binarios en base64, como en wordAudio.ts.
+      return `data:image/png;base64,${nativa.data}`;
+    }
+
+    const control = new AbortController();
+    const reloj = window.setTimeout(() => control.abort(), TIEMPO_MS);
+    try {
+      const respuesta = await fetch(url, { signal: control.signal, credentials: 'omit' });
+      if (!respuesta.ok) return '';
+      const blob = await respuesta.blob();
+      return await new Promise<string>((resolve) => {
+        const lector = new FileReader();
+        lector.onload = () => resolve(typeof lector.result === 'string' ? lector.result : '');
+        lector.onerror = () => resolve('');
+        lector.readAsDataURL(blob);
+      });
+    } finally {
+      window.clearTimeout(reloj);
+    }
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * El perfil de Yoru que le corresponde a esta cuenta de Discord.
+ *
+ * Sin foto de Discord se cae al avatar de reserva de Yoru, el mismo degradado y emoji
+ * que ofrecía la pantalla de creación: así nadie se queda con un hueco.
+ */
+export function perfilDesdeDiscord(sesion: SesionDiscord, idExistente?: string): {
+  id: string;
+  name: string;
+  avatar: string;
+  avatarEmoji: string;
+} {
+  const tieneFoto = Boolean(sesion.avatarDataUrl);
+  return {
+    id: idExistente || `profile-${Date.now()}`,
+    name: sesion.usuarioNombre || 'Yoru',
+    avatar: tieneFoto ? String(sesion.avatarDataUrl) : AVATAR_RESERVA.avatar,
+    avatarEmoji: tieneFoto ? '' : AVATAR_RESERVA.emoji,
+  };
+}
+
+/** El avatar de Yoru para quien no tiene foto en Discord. */
+const AVATAR_RESERVA = { avatar: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)', emoji: '🌙' };
+
+/**
+ * Pone al día la foto guardada si falta o si Discord tiene otra.
+ *
+ * Devuelve la sesión actualizada, o la misma si no había nada que cambiar.
+ */
+export async function refrescarAvatar(sesion: SesionDiscord): Promise<SesionDiscord> {
+  if (!sesion.avatarHash) return sesion;
+  if (sesion.avatarDataUrl) return sesion;
+  const dataUrl = await descargarAvatar(sesion.usuarioId, sesion.avatarHash);
+  if (!dataUrl) return sesion;
+  const actualizada = { ...sesion, avatarDataUrl: dataUrl };
+  guardarSesion(actualizada);
+  return actualizada;
 }
 
 /**
@@ -378,6 +470,10 @@ export async function entrarConDiscord(): Promise<SesionDiscord> {
     expiraEn: Date.now() + tokens.expires_in * 1000,
     usuarioId: usuario.id,
     usuarioNombre: usuario.nombre,
+    avatarHash: usuario.avatarHash,
+    // La foto se baja aquí mismo, mientras hay red garantizada: es el único momento
+    // en que se sabe seguro que la hay. Si falla, se reintenta más adelante.
+    avatarDataUrl: await descargarAvatar(usuario.id, usuario.avatarHash),
     ultimaComprobacionOk: 0,
   };
 

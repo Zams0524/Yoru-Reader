@@ -27,12 +27,13 @@ const PRESET_AVATARS = [
 ];
 
 interface WelcomeScreenProps {
-  onCreateProfile: (profile: any) => void;
+  /** La guía ha terminado (o se ha saltado): a la biblioteca. */
+  onTerminar: () => void;
   settings: any;
   onSaveSettings: (settings: any) => void;
 }
 
-export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSettings }: WelcomeScreenProps) {
+export default function WelcomeScreen({ onTerminar, settings = {}, onSaveSettings }: WelcomeScreenProps) {
   const lang = settings.appLanguage || 'en';
   /*
     El nombre viene puesto con el de Discord, porque a esta pantalla solo se llega
@@ -305,38 +306,25 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
 
-    let avatar = '';
-    let emoji = '';
-
-    if (customAvatarUrl) {
-      avatar = customAvatarUrl;
-    } else {
-      avatar = PRESET_AVATARS[selectedPresetIdx].avatar;
-      emoji = PRESET_AVATARS[selectedPresetIdx].emoji;
-    }
-
-    const newProfile = {
-      id: `profile-${Date.now()}`,
-      name: name.trim(),
-      avatar: avatar,
-      avatarEmoji: emoji
-    };
-
-    localStorage.setItem('yoru_tutorial_seen_v1', 'true');
-    onCreateProfile(newProfile);
-  };
-
-  // First-run guide: welcome → 4 feature slides → dictionary → profile (the form below).
+  // La guía del primer día: bienvenida → 4 diapositivas → diccionario → a leer.
+  // El paso del perfil ya no está: lo trae Discord.
   const slides = featureSlides(lang === 'es' ? 'es' : 'en');
   const guideLang: 'es' | 'en' = lang === 'es' ? 'es' : 'en';
   const [step, setStep] = useState(0);
   const lastGuideStep = slides.length + 1; // 0 welcome, 1..4 slides, 5 dictionary, 6 profile
   const dictionary = useDictionaryInstall(guideLang);
-  const goNext = () => setStep((value) => Math.min(lastGuideStep + 1, value + 1));
+  /** La guía se da por vista una sola vez; después no vuelve a aparecer. */
+  const terminar = () => {
+    try { localStorage.setItem('yoru_tutorial_seen_v1', 'true'); } catch { /* sin almacenamiento, se verá otra vez */ }
+    onTerminar();
+  };
+
+  // Pasado el último paso ya no hay pantalla de perfil que enseñar: se termina.
+  const goNext = () => setStep((value) => {
+    if (value >= lastGuideStep) { terminar(); return value; }
+    return value + 1;
+  });
   const goPrev = () => setStep((value) => Math.max(0, value - 1));
   const swipe = useSwipe(() => { if (step > 0 && step <= lastGuideStep) goNext(); }, () => { if (step > 0 && step <= lastGuideStep) goPrev(); });
   const es = lang === 'es';
@@ -375,8 +363,8 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
             */}
             <p className="guide-tagline guide-tagline-sub">
               {es
-                ? 'Ya has entrado con Discord como miembro del servidor. Queda ver lo que trae y crear tu perfil.'
-                : 'You are signed in with Discord as a member of the server. All that is left is a look around and your profile.'}
+                ? 'Ya has entrado con Discord como miembro del servidor, y tu perfil usa tu nombre y tu foto de allí. Solo queda ver lo que trae.'
+                : 'You are signed in with Discord as a member of the server, and your profile uses your name and picture from there. All that is left is a look around.'}
             </p>
             <ul className="guide-points">
               <li>{es ? 'Diccionario al tocar cualquier palabra' : 'A dictionary on every word you tap'}</li>
@@ -385,8 +373,14 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
             </ul>
             <div className="guide-actions">
               <button type="button" className="guide-primary" onClick={goNext}>{es ? 'Empezar' : 'Get started'}</button>
-              <button type="button" className="guide-link" onClick={() => setStep(lastGuideStep + 1)}>
-                {es ? '¿Ya usabas Yoru? Restaurar una copia' : 'Used Yoru before? Restore a backup'}
+              {/*
+                Antes había aquí un «¿Ya usabas Yoru? Restaurar una copia» que saltaba
+                a la pantalla de perfil, donde estaba el importador. Esa pantalla ya no
+                existe, y la restauración vive en Ajustes → Respaldo, que es su sitio:
+                se puede necesitar cualquier día, no solo el primero.
+              */}
+              <button type="button" className="guide-link" onClick={terminar}>
+                {es ? 'Saltar la guía' : 'Skip the guide'}
               </button>
             </div>
           </div>
@@ -411,7 +405,7 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
               <button type="button" className="guide-primary" onClick={goNext}>
                 {step < lastGuideStep
                   ? (es ? 'Siguiente' : 'Next')
-                  : dictionary.hasDictionary || dictionary.installing ? (es ? 'Crear mi perfil' : 'Create my profile') : (es ? 'Ahora no, crear perfil' : 'Not now, create profile')}
+                  : dictionary.hasDictionary || dictionary.installing ? (es ? 'Empezar a leer' : 'Start reading') : (es ? 'Ahora no, empezar a leer' : 'Not now, start reading')}
                 <ChevronRight size={18} />
               </button>
             </div>
@@ -422,285 +416,14 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
     );
   }
 
-  return (
-    <div className="welcome-screen-container">
-      <div className="welcome-card">
-        {/* Header toolbar: Language Switcher & Theme Switcher */}
-        <button type="button" className="guide-link welcome-back-link" onClick={() => setStep(lastGuideStep)}>
-          ← {es ? 'Volver a la guía' : 'Back to the guide'}
-        </button>
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-          {/* Language Switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Globe size={14} style={{ color: 'var(--text-muted)' }} />
-            <select 
-              value={lang}
-              onChange={(e) => {
-                const selectedLang = e.target.value;
-                localStorage.setItem('app_language', selectedLang);
-                onSaveSettings({ ...settings, appLanguage: selectedLang });
-              }}
-              className="migaku-select"
-              style={{ 
-                width: '110px', 
-                fontSize: '0.78rem', 
-                padding: '5px 8px', 
-                background: 'var(--bg-app)', 
-                border: '1px solid var(--border-light)', 
-                borderRadius: '6px', 
-                color: 'var(--text-main)', 
-                outline: 'none' 
-              }}
-            >
-              <option value="en">English (US)</option>
-              <option value="es">Español</option>
-            </select>
-          </div>
+  /*
+    Aqui estaba la pantalla de «crea tu perfil»: avatar, nombre y «Empezar a leer».
+    Ya no existe. El perfil se hace solo con el nombre y la foto de Discord en cuanto
+    se entra (ver `perfilDesdeDiscord` y el efecto de `App.tsx`), asi que preguntar un
+    nombre a quien acaba de decirnos el suyo era pedir dos veces lo mismo.
 
-          {/* Theme Switcher */}
-          <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-light)', padding: '3px', borderRadius: '8px' }}>
-            {['light', 'sepia', 'dark'].map((tMode) => {
-              const isActive = (settings.theme || 'dark') === tMode;
-              const modeLabel = tMode === 'light' ? (lang === 'es' ? 'Claro' : 'Light') : (tMode === 'sepia' ? (lang === 'es' ? 'Sepia' : 'Sepia') : (lang === 'es' ? 'Oscuro' : 'Dark'));
-              const emoji = tMode === 'light' ? '☀️' : (tMode === 'sepia' ? '📜' : '🌙');
-              const activeBg = 'var(--primary)';
-              const activeColor = tMode === 'dark' ? '#000000' : '#ffffff';
-              
-              return (
-                <button
-                  key={tMode}
-                  type="button"
-                  onClick={() => onSaveSettings({ ...settings, theme: tMode })}
-                  style={{
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '5px 10px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    background: isActive ? activeBg : 'transparent',
-                    color: isActive ? activeColor : 'var(--text-muted)'
-                  }}
-                  title={modeLabel}
-                >
-                  {emoji} {modeLabel}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="welcome-header">
-          <h1 className="welcome-title">{t('welcomeTitle', lang)}</h1>
-          <p className="welcome-subtitle">{t('welcomeSubtitle', lang)}</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="welcome-form">
-          {/* Avatar Preview & Upload */}
-          <div className="welcome-avatar-section">
-            <div className="welcome-avatar-preview-wrapper">
-              <input 
-                type="file" 
-                accept="image/*" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                style={{ display: 'none' }} 
-              />
-              
-              {customAvatarUrl ? (
-                <div 
-                  className="welcome-avatar-preview custom"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={lang === 'es' ? 'Cambiar foto de perfil' : 'Change profile photo'}
-                >
-                  <img src={customAvatarUrl} alt="Avatar" className="welcome-custom-img" />
-                  <div className="welcome-avatar-overlay">
-                    <Camera size={16} />
-                  </div>
-                </div>
-              ) : (
-                <div 
-                  className="welcome-avatar-preview preset"
-                  style={{ background: PRESET_AVATARS[selectedPresetIdx].avatar }}
-                  onClick={() => fileInputRef.current?.click()}
-                  title={lang === 'es' ? 'Subir foto personalizada' : 'Upload custom photo'}
-                >
-                  <span className="welcome-avatar-emoji">
-                    {PRESET_AVATARS[selectedPresetIdx].emoji}
-                  </span>
-                  <div className="welcome-avatar-overlay">
-                    <Camera size={16} />
-                  </div>
-                </div>
-              )}
-            </div>
-            <button 
-              type="button" 
-              className="welcome-upload-btn"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {t('uploadPhoto', lang)}
-            </button>
-          </div>
-
-          {/* Preset Avatars Selection */}
-          <div className="welcome-presets-section">
-            <div className="welcome-presets-label">{t('chooseAvatar', lang)}</div>
-            <div className="welcome-presets-grid">
-              {PRESET_AVATARS.map((p, idx) => {
-                const isSelected = selectedPresetIdx === idx;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    className={`welcome-preset-item ${isSelected ? 'selected' : ''}`}
-                    style={{ background: p.avatar }}
-                    onClick={() => {
-                      setSelectedPresetIdx(idx);
-                      setCustomAvatarUrl(null);
-                    }}
-                  >
-                    <span>{p.emoji}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Name Input */}
-          <div className="welcome-input-group">
-            <label className="welcome-input-label">{t('profileName', lang)}</label>
-            <div className="welcome-input-wrapper">
-              <User className="welcome-input-icon" size={16} />
-              <input 
-                type="text" 
-                placeholder={t('namePlaceholder', lang)} 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="welcome-name-input"
-                maxLength={20}
-                required
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <button type="submit" className="welcome-submit-btn">
-            {t('startReading', lang)}
-          </button>
-        </form>
-
-        <div style={{ margin: '16px 0 12px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-          <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {lang === 'es' ? '¿Ya usas Yoru?' : 'Already use Yoru?'}
-          </span>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {/* hidden input for local restore */}
-          <input 
-            type="file" 
-            ref={localBackupInputRef}
-            accept=".json,.zip"
-            onChange={handleImportLocalBackup}
-            style={{ display: 'none' }}
-          />
-
-          {/* Restaurar Local */}
-          <button 
-            type="button"
-            onClick={() => localBackupInputRef.current?.click()}
-            className="welcome-submit-btn" 
-            style={{ 
-              flex: 1,
-              background: 'var(--bg-app)', 
-              border: '1px solid var(--border-light)', 
-              color: 'var(--text-main)', 
-              fontSize: '0.78rem', 
-              padding: '10px 12px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: '6px', 
-              cursor: 'pointer',
-              textTransform: 'none',
-              boxShadow: 'none',
-              margin: 0,
-              borderRadius: '8px',
-              fontWeight: 600
-            }}
-          >
-            💾 {lang === 'es' ? 'Local' : 'Local'}
-          </button>
-
-          {/* Restaurar Google Drive */}
-          <button 
-            type="button"
-            onClick={canCancelDriveAuth ? cancelDriveSignIn : handleGoogleSignIn}
-            disabled={isSyncing && !canCancelDriveAuth}
-            className="welcome-submit-btn" 
-            style={{ 
-              flex: 1,
-              background: driveBg, 
-              border: driveBorder, 
-              color: driveColor, 
-              fontSize: '0.78rem', 
-              padding: '10px 12px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: '6px', 
-              cursor: 'pointer',
-              textTransform: 'none',
-              boxShadow: 'none',
-              margin: 0,
-              borderRadius: '8px',
-              fontWeight: 600
-            }}
-          >
-            ☁️ {isSyncing 
-              ? canCancelDriveAuth
-                ? (lang === 'es' ? 'Cancelar inicio de sesión' : 'Cancel sign-in')
-                : (lang === 'es' ? 'Entrando...' : 'Signing in...')
-              : (lang === 'es' ? 'Entrar con Google' : 'Sign in with Google')}
-          </button>
-        </div>
-      </div>
-    {/* Custom Toast Notification Styled with App Theme */}
-      {toast.show && (
-        <div className="yoru-toast" style={{
-          position: 'fixed',
-          bottom: '24px',
-          right: '24px',
-          background: '#18181b',
-          color: '#ffffff',
-          padding: '10px 16px',
-          borderRadius: '4px',
-          border: toast.type === 'success' ? '1px solid #34d399' : '1px solid #ef4444',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
-          zIndex: 10000,
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '0.82rem',
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          animation: 'toastIn 0.2s ease-out forwards'
-        }}>
-          <span style={{ 
-            width: '6px', 
-            height: '6px', 
-            borderRadius: '50%', 
-            background: toast.type === 'success' ? '#34d399' : '#ef4444',
-            display: 'inline-block' 
-          }} />
-          <span>{toast.message}</span>
-        </div>
-      )}
-      {confirmModal}
-    </div>
-  );
+    Lo que vivia solo en esa pantalla y no se ha perdido: restaurar una copia sigue en
+    Ajustes → Respaldo, y entrar con Google en Ajustes → Sincronizacion.
+  */
+  return null;
 }
