@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Tag, X } from 'lucide-react';
+import { ChevronRight, Play, Server, Tag, X } from 'lucide-react';
 import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
@@ -478,22 +478,52 @@ export function ServerLibrarySection({
 
   if (items.length === 0) return null;
   return (
-    <div className="library-section">
-      <div className="section-header">
-        <h2 className="section-title">{es ? 'Lo que lees en el servidor' : 'What you read on the server'}</h2>
-        <span className="section-count">{items.length}</span>
+    <section className="yoru-serverlib">
+      <header className="yoru-serverlib-head">
+        <span className="yoru-serverlib-mark" aria-hidden="true"><Server size={17} /></span>
+        <div className="yoru-serverlib-heading">
+          <h2 className="yoru-serverlib-title">
+            {es ? 'Lo que lees en el servidor' : 'What you read on the server'}
+            <span className="yoru-serverlib-count">{items.length}</span>
+          </h2>
+          <p className="yoru-serverlib-sub">
+            {es
+              ? 'Los tomos que llevas abiertos en Kavita, sin descargar nada.'
+              : 'The volumes you have open on Kavita, without downloading anything.'}
+          </p>
+        </div>
         {onExplore && (
-          <button type="button" className="yoru-chip-link" onClick={onExplore}>
+          <button type="button" className="yoru-serverlib-explore" onClick={onExplore}>
             {es ? 'Explorar Kavita' : 'Explore Kavita'}
+            <ChevronRight size={15} />
           </button>
         )}
-      </div>
-      <div className="yoru-grid">
+      </header>
+      <div className="yoru-serverlib-grid">
         {items.map((item) => (
-          <ServerCard key={`bib-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+          <button
+            key={`bib-${item.id}`}
+            type="button"
+            className="yoru-serverlib-card"
+            title={item.title}
+            onClick={() => onOpenItem(item)}
+          >
+            <span className="yoru-serverlib-cover">
+              {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span className="yoru-serverlib-blank" />}
+              <span className="yoru-serverlib-bar" aria-hidden="true">
+                <span style={{ width: `${Math.min(100, Math.max(2, item.percent))}%` }} />
+              </span>
+            </span>
+            <span className="yoru-serverlib-name">{item.title}</span>
+            <span className="yoru-serverlib-meta">
+              {item.percent >= 99
+                ? (es ? 'Terminado' : 'Finished')
+                : `${item.percent} % ${es ? 'leído' : 'read'}`}
+            </span>
+          </button>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
