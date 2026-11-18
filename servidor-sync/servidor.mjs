@@ -286,6 +286,75 @@ export function fichasDeTodos(base) {
   return filas.map((fila) => fichaDe(base, fila.id)).filter(Boolean);
 }
 
+/* ------------------------------------------------------- aguantar el mundo entero */
+
+/**
+ * Cuántas veces seguidas se puede pedir entrar desde la misma dirección.
+ *
+ * Mientras esto solo vivía dentro del tailnet, sobraba: quien llegaba a la puerta ya
+ * había pasado otra. Expuesto a internet con Funnel, `POST /api/sesion` es el único
+ * sitio al que cualquiera puede llamar sin nada, y cada llamada se convierte en dos
+ * peticiones a Discord. Sin un tope, un aburrido con un bucle agota el límite de
+ * Discord y deja fuera a los que sí son miembros.
+ *
+ * Solo se cuentan los intentos que **fallan**. Quien es miembro de verdad puede abrir
+ * la app las veces que quiera desde la misma casa o el mismo móvil sin tropezarse con
+ * esto; quien prueba tokens a ciegas falla siempre, y a los diez fallos se queda sin
+ * puerta durante diez minutos.
+ */
+export const INTENTOS_ENTRADA = 10;
+export const VENTANA_ENTRADA_MS = 10 * 60 * 1000;
+
+function vigentes(mapa, clave, ahora, ventanaMs) {
+  return (mapa.get(clave) || []).filter((momento) => ahora - momento < ventanaMs);
+}
+
+/**
+ * ¿Está esta dirección frenada ahora mismo? Solo mira; no apunta nada.
+ */
+export function frenado(mapa, clave, ahora = Date.now(), max = INTENTOS_ENTRADA, ventanaMs = VENTANA_ENTRADA_MS) {
+  const marcas = vigentes(mapa, clave, ahora, ventanaMs);
+  mapa.set(clave, marcas);
+  return marcas.length >= max;
+}
+
+/**
+ * Apunta un intento fallido.
+ *
+ * El contador vive en memoria y se olvida al reiniciar, y está bien: no es un castigo
+ * que haya que recordar, es freno para una ráfaga.
+ */
+export function anotarFallo(mapa, clave, ahora = Date.now(), ventanaMs = VENTANA_ENTRADA_MS) {
+  const marcas = vigentes(mapa, clave, ahora, ventanaMs);
+  marcas.push(ahora);
+  mapa.set(clave, marcas);
+  // Que el mapa no crezca para siempre con direcciones de paso.
+  if (mapa.size > 10_000) {
+    for (const [otra, suyas] of mapa) {
+      if (!suyas.some((momento) => ahora - momento < ventanaMs)) mapa.delete(otra);
+    }
+  }
+}
+
+/**
+ * De dónde viene esta petición.
+ *
+ * Con Funnel, Tailscale hace de intermediario: la conexión llega desde el propio
+ * equipo y el de fuera queda en `X-Forwarded-For`. Esa cabecera solo se cree **si la
+ * conexión viene de la máquina misma**; de cualquier otro sitio es un dato que manda
+ * quien llama, y creérsela convertiría el tope de arriba en un adorno que cualquiera
+ * esquiva poniendo una dirección distinta en cada intento.
+ */
+export function ipDe(req) {
+  const directa = req.socket?.remoteAddress || '';
+  const esLocal = directa === '127.0.0.1' || directa === '::1' || directa === '::ffff:127.0.0.1';
+  if (esLocal) {
+    const reenviada = String(req.headers?.['x-forwarded-for'] || '').split(',').pop()?.trim();
+    if (reenviada) return reenviada;
+  }
+  return directa || 'desconocida';
+}
+
 /* ------------------------------------------------------------------------- el HTTP */
 
 function responder(res, status, cuerpo) {
@@ -337,6 +406,7 @@ function registrar(...partes) {
 
 export function crearServidor({ base, fetchImpl = fetch } = {}) {
   const bd = base || abrirBase();
+  const intentos = new Map();
 
   const servidor = createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://servidor');
@@ -352,13 +422,20 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
 
       /* Entrar: el token de Discord a cambio de un token nuestro. */
       if (ruta === '/api/sesion' && req.method === 'POST') {
+        const quienLlama = ipDe(req);
+        if (frenado(intentos, quienLlama)) {
+          registrar('frenado', quienLlama);
+          responder(res, 429, { error: 'demasiados-intentos' });
+          return;
+        }
         const cuerpo = await leerCuerpo(req);
         const accessToken = String(cuerpo?.accessToken || '').trim();
-        if (!accessToken) { responder(res, 400, { error: 'falta-token' }); return; }
+        if (!accessToken) { anotarFallo(intentos, quienLlama); responder(res, 400, { error: 'falta-token' }); return; }
 
         const quien = await identificar(accessToken, fetchImpl);
-        if (quien.tipo === 'token-invalido') { responder(res, 401, { error: 'token-invalido' }); return; }
-        if (quien.tipo === 'no-miembro') { responder(res, 403, { error: 'no-miembro' }); return; }
+        // Discord caído no es culpa de quien llama, así que ese no se apunta.
+        if (quien.tipo === 'token-invalido') { anotarFallo(intentos, quienLlama); responder(res, 401, { error: 'token-invalido' }); return; }
+        if (quien.tipo === 'no-miembro') { anotarFallo(intentos, quienLlama); responder(res, 403, { error: 'no-miembro' }); return; }
         if (quien.tipo === 'discord-caido') { responder(res, 503, { error: 'discord-no-responde' }); return; }
 
         const { token, expiraEn } = crearSesion(bd, quien.usuario);

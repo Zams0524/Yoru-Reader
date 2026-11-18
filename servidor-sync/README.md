@@ -2,10 +2,12 @@
 
 Guarda el progreso de lectura de cada miembro del Discord de Yoru (libros, posición,
 marcadores, estados de palabras, tarjetas del SRS y ajustes) en el PC de zams. La app
-lo alcanza por **Tailscale**, así que no hay nada publicado en internet: quien no esté
-en el tailnet no llega.
+lo alcanza por **Tailscale Funnel**, así que los miembros no instalan nada: entran con
+Discord y ya. Eso significa que la puerta está en internet, y lo único que la guarda es
+ser miembro del Discord, más el freno de intentos de `POST /api/sesion`.
 
-- Dirección: `http://desktop-go1ujdd.tail6db786.ts.net:3747`
+- Dirección pública: `https://desktop-go1ujdd.tail6db786.ts.net` (sin puerto)
+- Dentro del tailnet: `http://desktop-go1ujdd.tail6db786.ts.net:3747`
 - IP de Tailscale: `100.121.94.3`
 - Base de datos: `servidor-sync/datos/yoru-sync.db` (SQLite, git la ignora)
 
@@ -20,11 +22,14 @@ node servidor-sync/servidor.mjs
 No hay nada que instalar: usa solo lo que trae Node (`node:http`, `node:sqlite`).
 Hace falta **Node 22.5 o más nuevo** (el PC tiene 24.20).
 
-Para comprobar que está vivo, desde cualquier equipo del tailnet:
+Para comprobar que está vivo, desde cualquier sitio:
 
 ```
-curl http://desktop-go1ujdd.tail6db786.ts.net:3747/api/salud
+curl https://desktop-go1ujdd.tail6db786.ts.net/api/salud
 ```
+
+Si eso no contesta pero `curl http://127.0.0.1:3747/api/salud` sí, el servidor está
+bien y lo que falta es Funnel: ver más abajo.
 
 ## Que arranque solo con Windows
 
@@ -44,6 +49,71 @@ un servidor privado y uno que contesta a toda la red del piso:
 ```powershell
 New-NetFirewallRule -DisplayName "Yoru sync (Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 3747 -RemoteAddress 100.64.0.0/10 -Action Allow
 ```
+
+## La otra opción, sin exponer el PC: compartir el equipo del tailnet
+
+Esto es lo que se hacía antes de Funnel, y sigue valiendo si algún día se prefiere que
+el PC no esté en internet. El precio es que cada miembro instala Tailscale.
+
+Un nombre `.ts.net` **no existe fuera del tailnet**: mientras un aparato no esté
+dentro, la app no llega al servidor. Lo decidido (zams, 18 nov 2026) es **compartir
+solo este equipo** (*node sharing*), no invitar a nadie al tailnet entero: así el
+invitado ve esta máquina y nada más de la red de casa.
+
+En la consola de Tailscale, **Machines** → el equipo `desktop-go1ujdd` → menú `...` →
+**Share**. Dos formas:
+
+- **Copy invite link** → activar **Reusable link** → **Copy share link**. Un enlace
+  que vale para todos, hasta 1.000 usos, y es el que se pega en el Discord.
+- **Share by email**, si se prefiere uno por persona.
+
+Los enlaces sin usar caducan a los 30 días, y hay que tratarlos como una contraseña:
+quien tenga el enlace entra. Para quitar a alguien: Share → `...` → **Revoke invite**.
+
+Quien acepte necesita su propia cuenta de Tailscale (gratuita) y aceptar desde ella.
+El primer aparato que hay que meter es el teléfono de zams, que es lo que hace falta
+para probar el ciclo entero.
+
+Si un invitado llega al tailnet pero el servidor no le responde, es la lista de
+control de acceso del tailnet. La regla que lo abre, en el editor de la consola:
+
+```json
+{ "src": ["autogroup:shared"], "dst": ["100.121.94.3"], "ip": ["3747"] }
+```
+
+Pone el puerto 3747 de este equipo al alcance de los invitados, y solo ese puerto.
+
+## Publicarlo con Funnel — esto es lo que usa la app
+
+Esta es la forma en que la app llega al servidor (decisión de zams, 18 nov 2026:
+«solo quiero que la gente entre y use la app ya»). Compartir el equipo por el tailnet
+obligaba a cada miembro a instalar Tailscale y aceptar una invitación antes de abrir la
+app siquiera. Funnel pone el mismo servidor detrás de una dirección pública con HTTPS
+de verdad, y así no instalan nada:
+
+```powershell
+tailscale funnel --bg 3747
+```
+
+Se queda puesto, también después de reiniciar. Para ver cómo está: `tailscale funnel
+status`. Para quitarlo: `tailscale funnel --bg off` (o `tailscale funnel reset`).
+
+Lo que trae:
+
+- La URL es `https://desktop-go1ujdd.tail6db786.ts.net`, sin puerto (Funnel solo sirve
+  el 443, el 8443 y el 10000). Está en `frontend/config/serverDefaults.ts`.
+- Nadie instala nada. Al ser HTTPS, además Android no necesita ningún permiso de
+  tráfico en claro.
+- A cambio, este PC queda al alcance de cualquiera en internet. La única puerta sin
+  sesión es `POST /api/sesion`, y lo único que la guarda es ser miembro del Discord.
+
+Por eso esa puerta tiene freno: diez **fallos** por dirección cada diez minutos, y
+luego un 429 durante el resto de la ventana. Solo se cuentan los fallos, así que
+abrir la app muchas veces no molesta a nadie; probar tokens a ciegas sí se corta, y
+Discord no recibe la ráfaga. Con Funnel, la dirección de quien llama se lee de
+`X-Forwarded-For`, y solo si la conexión viene de la propia máquina (que es por donde
+entra Tailscale); de cualquier otro sitio esa cabecera se ignora, porque la escribe
+quien llama.
 
 ## Ajustes
 
@@ -81,7 +151,7 @@ los que está: solo su ID, su nombre y su progreso.
 | | | |
 | --- | --- | --- |
 | `GET` | `/api/salud` | `{ ok: true }`. Sin token |
-| `POST` | `/api/sesion` | `{ accessToken }` → `{ token, expiraEn, usuarioId, nombre }` |
+| `POST` | `/api/sesion` | `{ accessToken }` → `{ token, expiraEn, usuarioId, nombre }`, o **429** tras diez fallos |
 | `DELETE` | `/api/sesion` | Cierra la sesión de ese token |
 | `GET` | `/api/progreso` | **Lo tuyo, entero**: `{ version, actualizadoEn, datos }` |
 | `PUT` | `/api/progreso` | `{ baseVersion, datos }` → `{ version, actualizadoEn }`, o **409** |

@@ -23,7 +23,7 @@ function check(condicion: boolean, nombre: string) {
 }
 
 const AHORA = 1_700_000_000_000;
-const SERVIDOR = 'http://desktop-go1ujdd.tail6db786.ts.net:3747';
+const SERVIDOR = 'https://desktop-go1ujdd.tail6db786.ts.net';
 
 function datos(cambios: Partial<Parameters<typeof decidirSincronizacion>[0]> = {}) {
   return {

@@ -32,8 +32,9 @@ Los valores OAuth de Google Drive están en `.env.local` (git-ignorado; plantill
 Kavita y Audiobookshelf vienen puestos y se conectan solos al arrancar: **la app ya no tiene pantalla para editarlos** (decisión de zams, 7 nov 2026). Para cambiar dirección o credenciales se edita `frontend/config/serverDefaults.ts`, o se ponen `VITE_KAVITA_URL`, `VITE_KAVITA_API_KEY`, `VITE_ABS_URL` y `VITE_ABS_TOKEN` en `.env.local`, que manda sobre el fichero.
 Si un servidor no responde, la pantalla lo dice y el motivo queda en la consola con el host (`[servidor] …`): es el único diagnóstico que queda.
 
-## Sincronización de progreso (Discord + Tailscale)
-El progreso de cada miembro del Discord de Yoru se guarda en un servidor propio que corre en el PC de zams (`servidor-sync/`, Node a secas + SQLite, sin dependencias) y se alcanza por Tailscale: `http://desktop-go1ujdd.tail6db786.ts.net:3747`. Entrar con Discord es lo único que hace falta; no hay nada que configurar en la app.
+## Sincronización de progreso (Discord + Tailscale Funnel)
+El progreso de cada miembro del Discord de Yoru se guarda en un servidor propio que corre en el PC de zams (`servidor-sync/`, Node a secas + SQLite, sin dependencias) y sale a internet con Tailscale Funnel: `https://desktop-go1ujdd.tail6db786.ts.net` (sin puerto; Funnel solo sirve 443/8443/10000). Entrar con Discord es lo único que hace falta; nadie instala Tailscale ni configura nada en la app. Dentro del tailnet el mismo servidor sigue en `http://desktop-go1ujdd.tail6db786.ts.net:3747`, que es lo que usa `VITE_YORU_SYNC_URL` para probar.
+Al estar expuesto, `POST /api/sesion` es la única puerta sin sesión y tiene freno: diez **fallos** por dirección cada diez minutos → 429. Los aciertos no cuentan, así que abrir la app no gasta intentos.
 No sustituye a Google Drive, son dos sitios donde dejar lo mismo, y **comparten combinador**: los dos usan `mergeDatabaseExports` (`frontend/utils/cloudMerge.ts`). El servidor no combina nada, solo guarda y lleva un contador de versiones (409 cuando otro aparato escribió entremedias).
 Detalles en `docs/SINCRONIZACION_YORU.md`; cómo arrancar el servidor y dejarlo arrancado, en `servidor-sync/README.md`.
 
