@@ -17,7 +17,6 @@ import UpdateSettings from './settings/UpdateSettings';
 import TextStyleSettings from './settings/TextStyleSettings';
 import AppearanceSettings from './settings/AppearanceSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
-import { sharesServerProgress } from '../utils/serverProgress';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
@@ -45,7 +44,6 @@ const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnó
 
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
 const KavitaBrowser = React.lazy(() => import('./KavitaBrowser'));
-const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan progreso progress compartir share cuenta account perfil profile';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const SrsReviewModal = React.lazy(() => import('./SrsReviewModal'));
 const ProgressDashboard = React.lazy(() => import('./ProgressDashboard'));
@@ -3158,50 +3156,11 @@ const Library = React.memo(function Library({
           )}
 
           {/*
-            Vive con el perfil, no con los servidores: la sección «Servidores
-            multimedia» se quitó a propósito (zams: los suyos vienen puestos y no
-            quiere tocar nada), y esto no configura un servidor, sino de quién es el
-            progreso.
+            Aquí estaba «Progreso del servidor» (compartir el progreso con la cuenta de
+            Kavita/Audiobookshelf). zams pidió quitarla de Ajustes el 18 nov 2026. El
+            ajuste `shareServerProgress` sigue existiendo y conserva el valor que tuviera
+            cada perfil; lo que desaparece es el interruptor.
           */}
-          {matchesSearch(MEDIA_SERVER_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-profile') && (
-            <div id="sec-server-progress" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Server size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Progreso del servidor' : 'Server progress'}</span>
-              </h3>
-
-              {/*
-                La cuenta de Kavita/Audiobookshelf suele ser compartida: con esto apagado
-                (lo normal), cada app guarda su propio progreso y no lee el de los demás.
-              */}
-              <div className="settings-row-control" style={{ marginTop: '16px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span className="settings-label-text">
-                    {lang === 'es' ? 'Compartir el progreso con la cuenta del servidor' : 'Share progress with the server account'}
-                  </span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {lang === 'es'
-                      ? 'Apagado, tu progreso de lectura y escucha se guarda solo en este dispositivo, en tu perfil, y no ves el de la cuenta. Viene encendido solo en el primer perfil; los perfiles nuevos empiezan apagados.'
-                      : 'Off: your reading and listening progress stays on this device, in your profile, and you do not see the account\'s. Only the first profile starts with it on; new profiles start off.'}
-                  </span>
-                </div>
-                <label className="migaku-switch">
-                  <input
-                    type="checkbox"
-                    checked={sharesServerProgress()}
-                    onChange={(e) => {
-                      onSaveSettings({ ...settings, shareServerProgress: e.target.checked });
-                      // La portada vuelve a leer la caché, que ya filtra el «seguir leyendo» de la cuenta.
-                      void import('../utils/serverCatalog')
-                        .then(({ refreshServerCatalog }) => refreshServerCatalog())
-                        .finally(() => window.dispatchEvent(new Event('yoru-server-catalog-updated')));
-                    }}
-                  />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-            </div>
-          )}
 
           {/* Card: Discord Rich Presence */}
           {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
