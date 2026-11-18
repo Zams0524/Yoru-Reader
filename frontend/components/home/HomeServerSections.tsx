@@ -423,6 +423,55 @@ function ServerItemMenu({
 }
 
 /**
+ * Los libros del servidor dentro de la Biblioteca.
+ *
+ * La Biblioteca enseñaba solo lo importado, así que un perfil recién hecho la veía
+ * vacía aunque detrás hubiera un Kavita lleno: dos botones y nada más. Lo que lees
+ * del servidor es tuyo igual que lo descargado, así que sale aquí, en su sección, sin
+ * tener que importarlo. Lo pidió zams (18 nov 2026).
+ *
+ * Sale de la misma caché que Inicio, así que aparece al momento y sin pedir nada; sin
+ * servidor o sin caché no se pinta, ni deja hueco ni un cartel de error.
+ */
+export function ServerLibrarySection({
+  es,
+  onOpenItem,
+  onExplore,
+}: {
+  es: boolean;
+  onOpenItem: (item: ServerItem) => void;
+  /** Lleva a «Explorar Kavita», para ver el servidor entero. */
+  onExplore?: () => void;
+}) {
+  const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
+  useEffect(() => {
+    const onUpdate = () => setCatalog(getCachedServerCatalog());
+    window.addEventListener('yoru-server-catalog-updated', onUpdate);
+    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+  }, []);
+
+  if (catalog.kavita.length === 0) return null;
+  return (
+    <div className="library-section">
+      <div className="section-header">
+        <h2 className="section-title">{es ? 'En tu servidor' : 'On your server'}</h2>
+        <span className="section-count">{catalog.kavita.length}</span>
+        {onExplore && (
+          <button type="button" className="yoru-chip-link" onClick={onExplore}>
+            {es ? 'Explorar Kavita' : 'Explore Kavita'}
+          </button>
+        )}
+      </div>
+      <div className="yoru-grid">
+        {catalog.kavita.map((item) => (
+          <ServerCard key={`bib-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Una portada del servidor.
  *
  * Es un `<button>` y no un `<div>` con `onClick` a propósito: así llega el foco con

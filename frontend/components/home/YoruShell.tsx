@@ -32,6 +32,7 @@ import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
+import { ServerLibrarySection } from './HomeServerSections';
 import {
   audiobookLinkState,
   audiobookMatchScore,
@@ -359,6 +360,19 @@ export default function YoruShell({
               onOpenInfo={onOpenInfo}
               initialTab={embeddedTab}
               embedded
+              /*
+                Los libros del servidor, dentro de la Biblioteca y no solo en Inicio:
+                para quien lee de Kavita son sus libros igual que los descargados.
+              */
+              serverSection={view === 'catalog'
+                ? (
+                  <ServerLibrarySection
+                    es={es}
+                    onOpenItem={openServerItem}
+                    onExplore={() => go('kavita')}
+                  />
+                )
+                : undefined}
               navigateTo={libraryProps.navigateTo}
               /*
                 La salida de Ajustes. Se la damos a `Library` porque la flecha va

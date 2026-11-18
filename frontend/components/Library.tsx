@@ -74,6 +74,11 @@ interface LibraryProps {
   embedded?: boolean;
   /** Sale de Ajustes y vuelve a donde se estaba. Solo llega a pantalla completa. */
   onExitSettings?: () => void;
+  /**
+   * La sección de libros del servidor, que pinta el shell y aquí solo se coloca,
+   * dentro de la Biblioteca. Sin servidor llega vacía y no ocupa nada.
+   */
+  serverSection?: React.ReactNode;
   /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
   navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
@@ -160,6 +165,7 @@ const Library = React.memo(function Library({
   initialTab,
   embedded = false,
   onExitSettings,
+  serverSection,
   navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
@@ -168,6 +174,23 @@ const Library = React.memo(function Library({
   const backupInputRef = useRef(null);
   const profileWidgetRef = useRef(null);
   const customAvatarInputRef = useRef(null);
+
+  /*
+    Si la Biblioteca tiene libros del servidor delante. Solo sirve para no soltar el
+    cartel de «tu biblioteca está vacía» encima de una rejilla llena de tomos de
+    Kavita. Sale de la caché que ya alimenta Inicio: ni una petición más.
+  */
+  const [hayLibrosDeServidor, setHayLibrosDeServidor] = useState(false);
+  useEffect(() => {
+    const mirar = () => {
+      void import('../utils/serverCatalog')
+        .then(({ getCachedServerCatalog }) => setHayLibrosDeServidor(getCachedServerCatalog().kavita.length > 0))
+        .catch(() => setHayLibrosDeServidor(false));
+    };
+    mirar();
+    window.addEventListener('yoru-server-catalog-updated', mirar);
+    return () => window.removeEventListener('yoru-server-catalog-updated', mirar);
+  }, []);
 
   const { showConfirm, confirmModal } = useConfirm();
   const [deleteAllState, setDeleteAllState] = useState(null); // null | 'confirm' | 'deleting' | 'success'
@@ -5743,7 +5766,26 @@ const Library = React.memo(function Library({
                 </div>
               );
             })()}
-            {books.length === 0 ? (
+            {/*
+              Los libros del servidor, antes de lo importado: quien lee de Kavita
+              tiene aquí su biblioteca aunque no haya descargado nada. Lo pinta el
+              shell y aquí solo se coloca; sin servidor no hay nada que colocar.
+            */}
+            {serverSection}
+            {books.length === 0 && hayLibrosDeServidor ? (
+              /*
+                Con libros del servidor delante, el cartelón de «biblioteca vacía» era
+                mentira y además tapaba lo que sí hay. Queda la de importar, que es lo
+                único que aquí no se puede hacer de otra forma; el servidor entero
+                está a un clic en «Explorar Kavita», en la cabecera de la sección.
+              */
+              <div className="empty-hero-actions" style={{ marginTop: '8px' }}>
+                <button className="empty-add-btn" onClick={triggerFileInput}>
+                  <span style={{ marginRight: '8px' }}>📄</span>
+                  {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
+                </button>
+              </div>
+            ) : books.length === 0 ? (
               <div className="library-empty-hero">
                 {/* Left: decorative book cover stack */}
                 <div className="empty-hero-covers">
