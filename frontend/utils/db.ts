@@ -1,4 +1,5 @@
 import type { BookHighlight } from './highlights';
+import { recordHourActivity } from './statsHabits';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
 /** Un parte de lectura: un libro, un dia. `listeningTime` puede faltar en los viejos. */
@@ -531,6 +532,9 @@ export const db = {
   },
 
   async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0, listeningToAdd = 0): Promise<void> {
+    // La hora del día va aparte del parte diario (ver `statsHabits.ts`): mismo tiempo,
+    // mismo momento, pero sin tocar el registro que se sincroniza.
+    recordHourActivity(secondsToAdd, listeningToAdd);
     return new Promise((resolve) => {
       const request = indexedDB.open('books', 4);
       request.onupgradeneeded = (e: any) => {

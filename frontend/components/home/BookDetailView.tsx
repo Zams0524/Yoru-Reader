@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Headphones, Info, Play, X } from 'lucide-react';
 import { BookRail, Cover } from './primitives';
-import { bookStatus, sameAuthor, sameSeries, type ShelfBook } from './libraryIndex';
+import { bookStatus, sameAuthor, sameSeries, similarBooks, type ShelfBook } from './libraryIndex';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 
 type Tab = 'summary' | 'chapters';
@@ -78,6 +78,7 @@ export default function BookDetailView({
   const linkState = useMemo(() => audiobookLinkState(book.id), [book.id]);
   const series = useMemo(() => sameSeries(books, book), [books, book]);
   const byAuthor = useMemo(() => sameAuthor(books, book), [books, book]);
+  const similar = useMemo(() => similarBooks(books, book), [books, book]);
 
   const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
   const status = bookStatus(book);
@@ -291,6 +292,12 @@ export default function BookDetailView({
         <BookRail
           title={es ? 'Más de este autor' : 'More from this author'}
           books={byAuthor}
+          onOpen={onOpenDetail}
+          es={es}
+        />
+        <BookRail
+          title={es ? 'Títulos parecidos' : 'Similar titles'}
+          books={similar}
           onOpen={onOpenDetail}
           es={es}
         />

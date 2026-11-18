@@ -1375,6 +1375,7 @@
   margin-bottom: 34px;
 }
 .yoru-stats-dial { position: relative; text-align: center; }
+.yoru-stats-dial-arc { position: relative; }
 .yoru-stats-dial svg { width: 100%; max-width: 300px; display: block; margin: 0 auto; }
 .yoru-stats-dial-text {
   position: absolute;
@@ -1500,6 +1501,87 @@
 .yoru-stats-weekday-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
 .yoru-stats-weekday-track span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--primary); }
 .yoru-stats-weekday .yoru-stats-bar-label { position: static; }
+
+/* Varias tarjetas seguidas dentro de una misma sección (Hábitos). */
+.yoru-stats-section > .yoru-stats-card + .yoru-stats-card { margin-top: 16px; }
+
+/* Meta diaria, debajo del arco de hoy */
+.yoru-stats-goal-link {
+  margin-top: 14px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.yoru-stats-goal-link:hover,
+.yoru-stats-goal-link:focus-visible { color: var(--text-main); background: var(--surface-hover, rgba(127, 127, 127, 0.12)); }
+.yoru-stats-goal-editor { margin-top: 14px; }
+.yoru-stats-goal-actions { display: flex; justify-content: center; gap: 6px; }
+.yoru-stats-goal-actions .yoru-stats-goal-link { margin-top: 8px; }
+
+/* Media diaria y navegación entre periodos, encima de las barras */
+.yoru-stats-period {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.yoru-stats-period > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+.yoru-stats-period-nav { display: flex; align-items: center; gap: 6px; }
+.yoru-stats-period-range { font-size: 14px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
+.yoru-stats-period-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.yoru-stats-period-btn:hover:not(:disabled),
+.yoru-stats-period-btn:focus-visible { color: var(--text-main); background: var(--surface-hover, rgba(127, 127, 127, 0.12)); }
+.yoru-stats-period-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Horas del día */
+.yoru-stats-hours { display: flex; gap: 4px; height: 130px; }
+.yoru-stats-hour { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
+.yoru-stats-hour-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.yoru-stats-hour-track span { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--primary); }
+.yoru-stats-hour-track span[data-empty] { background: var(--border-light); border-radius: 2px; }
+.yoru-stats-hour-label { height: 14px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Semana, hora a hora: una fila por día y un punto por hora */
+.yoru-stats-weekgrid { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
+.yoru-stats-weekgrid-row {
+  display: grid;
+  grid-template-columns: 38px repeat(24, minmax(10px, 1fr));
+  align-items: center;
+  justify-items: center;
+  min-width: 320px;
+}
+.yoru-stats-weekgrid-day { justify-self: start; font-size: 12px; color: var(--text-muted); text-transform: capitalize; }
+.yoru-stats-weekgrid-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-light);
+}
+.yoru-stats-weekgrid-dot[data-on] { width: 16px; height: 16px; background: var(--primary); }
+.yoru-stats-weekgrid-row { height: 18px; }
+.yoru-stats-weekgrid-row.is-axis { height: 16px; }
+.yoru-stats-weekgrid-hour { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+@media (max-width: 600px) {
+  .yoru-stats-weekgrid-dot[data-on] { width: 11px; height: 11px; }
+  .yoru-stats-hours { gap: 2px; }
+}
 
 /* Mapa de calor */
 .yoru-heatmap { overflow-x: auto; }

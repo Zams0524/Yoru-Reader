@@ -204,6 +204,31 @@ export function sameAuthor(books: ShelfBook[], book: ShelfBook): ShelfBook[] {
     .slice(0, 18);
 }
 
+/**
+ * «Títulos parecidos»: otros libros que comparten colecciones con este.
+ *
+ * En la biblioteca local lo único que dice de qué va un libro son sus etiquetas, que
+ * son las colecciones en las que el usuario lo metió. Cuantas más comparta otro
+ * libro, más arriba sale. Quedan fuera los de la misma serie y los del mismo autor,
+ * que ya tienen su fila en la ficha: repetirlos aquí sería enseñar lo mismo tres veces.
+ */
+export function similarBooks(books: ShelfBook[], book: ShelfBook, limit = 18): ShelfBook[] {
+  const own = new Set((book.tags || []).map((tag) => tag.trim()).filter(Boolean));
+  if (own.size === 0) return [];
+  return visibleBooks(books)
+    .filter((other) => other.id !== book.id)
+    .filter((other) => !(book.series && other.series === book.series))
+    .filter((other) => !(book.author && other.author === book.author))
+    .map((other) => ({
+      other,
+      shared: (other.tags || []).reduce((count, tag) => count + (own.has(tag.trim()) ? 1 : 0), 0),
+    }))
+    .filter((entry) => entry.shared > 0)
+    .sort((a, b) => b.shared - a.shared || byLastRead(a.other, b.other))
+    .slice(0, limit)
+    .map((entry) => entry.other);
+}
+
 export function searchBooks(books: ShelfBook[], query: string, limit = 30): ShelfBook[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];

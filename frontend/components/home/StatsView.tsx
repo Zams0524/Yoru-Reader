@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { db, type DailyStatRecord } from '../../utils/db';
 import type { ShelfBook } from './libraryIndex';
 import { bookStatus, visibleBooks } from './libraryIndex';
+import {
+  HABITS_EVENT,
+  getDailyGoalMinutes,
+  getHourLog,
+  setDailyGoalMinutes,
+  type HourBuckets,
+} from '../../utils/statsHabits';
 
 /**
  * Estadísticas de lectura, sobre los partes diarios que guarda `db.getReadingStats()`
@@ -11,8 +18,13 @@ import { bookStatus, visibleBooks } from './libraryIndex';
  * Solo hay paneles para lo que esos datos sostienen. Quedan fuera, a propósito:
  *  - Los récords por sesión: solo agregamos por día, así que los de aquí son «día con
  *    más …», y el rótulo lo dice.
- *  - El reparto por horas del día: no guardamos la hora de cada sesión.
+ *
+ * El reparto por horas del día sale de `statsHabits.ts`, que lo apunta aparte desde
+ * que existe: lo leído antes tiene día pero no hora, y la pantalla lo dice.
  */
+
+/** Las metas que se ofrecen de un toque, en minutos. */
+const GOAL_CHOICES = [15, 30, 45, 60, 90, 120];
 
 type Lens = 'all' | 'reading' | 'listening';
 type Metric = 'time' | 'chars';
@@ -104,13 +116,36 @@ function streaks(days: Map<string, DayTotals>): { current: number; best: number;
   return { current, best, active: keys.length };
 }
 
-function spanStart(span: Span, today: Date): Date {
-  const start = new Date(today);
-  if (span === 'week') start.setDate(start.getDate() - 6);
-  else if (span === 'month') start.setDate(start.getDate() - 29);
-  else start.setDate(start.getDate() - 364);
-  start.setHours(0, 0, 0, 0);
+/** Cuántos días abarca cada periodo de la tendencia. */
+const SPAN_DAYS: Record<Span, number> = { week: 7, month: 30, year: 364 };
+
+/** El último día del periodo: hoy, o tantos periodos atrás como diga `offset`. */
+function spanEnd(span: Span, today: Date, offset: number): Date {
+  const end = new Date(today);
+  end.setDate(end.getDate() - offset * SPAN_DAYS[span]);
+  end.setHours(0, 0, 0, 0);
+  return end;
+}
+
+function spanStart(span: Span, today: Date, offset = 0): Date {
+  const start = spanEnd(span, today, offset);
+  start.setDate(start.getDate() - (SPAN_DAYS[span] - 1));
   return start;
+}
+
+/** Los segundos de una hora bajo la lente elegida. */
+function hourSeconds(buckets: HourBuckets, hour: number, lens: Lens): number {
+  if (lens === 'reading') return buckets.reading[hour] || 0;
+  if (lens === 'listening') return buckets.listening[hour] || 0;
+  return (buckets.reading[hour] || 0) + (buckets.listening[hour] || 0);
+}
+
+/** En qué tramo del día cae una hora, para la frase de «sueles leer…». */
+function dayPart(hour: number, es: boolean): string {
+  if (hour >= 5 && hour < 12) return es ? 'por la mañana' : 'in the morning';
+  if (hour >= 12 && hour < 19) return es ? 'por la tarde' : 'in the afternoon';
+  if (hour >= 19 && hour < 23) return es ? 'por la noche' : 'in the evening';
+  return es ? 'de madrugada' : 'late at night';
 }
 
 export default function StatsView({ books, es }: { books: ShelfBook[]; es: boolean }) {
@@ -118,6 +153,11 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
   const [lens, setLens] = useState<Lens>('all');
   const [metric, setMetric] = useState<Metric>('time');
   const [span, setSpan] = useState<Span>('week');
+  /** Cuántos periodos hacia atrás está mirando la tendencia; 0 es el actual. */
+  const [offset, setOffset] = useState(0);
+  const [goal, setGoal] = useState(() => getDailyGoalMinutes());
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [hourLog, setHourLog] = useState(() => getHourLog());
 
   useEffect(() => {
     let alive = true;
@@ -126,6 +166,21 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
       .catch(() => { if (alive) setRecords([]); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      setGoal(getDailyGoalMinutes());
+      setHourLog(getHourLog());
+    };
+    window.addEventListener(HABITS_EVENT, refresh);
+    return () => window.removeEventListener(HABITS_EVENT, refresh);
+  }, []);
+
+  /** Cambiar de periodo vuelve al actual: «hace 3» no significa lo mismo en semanas que en meses. */
+  const changeSpan = (next: Span) => {
+    setSpan(next);
+    setOffset(0);
+  };
 
   const rows = useMemo(() => records || [], [records]);
   const days = useMemo(() => totalsByDay(rows, lens), [rows, lens]);
@@ -149,10 +204,13 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
     return { key, value };
   }, [days]);
 
-  const periodRows = useMemo(() => {
-    const from = ymd(spanStart(span, new Date()));
-    return rows.filter((row) => row.dateKey >= from && row.dateKey <= today);
-  }, [rows, span, today]);
+  const periodFrom = ymd(spanStart(span, new Date(), offset));
+  const periodTo = ymd(spanEnd(span, new Date(), offset));
+
+  const periodRows = useMemo(
+    () => rows.filter((row) => row.dateKey >= periodFrom && row.dateKey <= periodTo),
+    [rows, periodFrom, periodTo]
+  );
 
   const periodDays = useMemo(() => totalsByDay(periodRows, lens), [periodRows, lens]);
 
@@ -181,8 +239,8 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
   /** Barras del periodo: un punto por día, con su reparto lectura / escucha. */
   const bars = useMemo(() => {
     const out: { key: string; label: string; reading: number; listening: number; chars: number }[] = [];
-    const start = spanStart(span, new Date());
-    const count = span === 'week' ? 7 : span === 'month' ? 30 : 364;
+    const start = spanStart(span, new Date(), offset);
+    const count = SPAN_DAYS[span];
     const step = span === 'year' ? 7 : 1;
     for (let i = 0; i < count; i += step) {
       const date = new Date(start);
@@ -206,9 +264,32 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
       });
     }
     return out;
-  }, [days, span, es]);
+  }, [days, span, offset, es]);
 
-  /** El día de la semana con más tiempo acumulado. Sale del día; la hora no la guardamos. */
+  /**
+   * Las horas del día: el total de cada una y el reparto por día de la semana.
+   * Solo desde que se apuntan (ver `statsHabits.ts`), y bajo la lente elegida.
+   */
+  const hours = useMemo(() => {
+    const byHour = new Array(24).fill(0) as number[];
+    const grid = Array.from({ length: 7 }, () => new Array(24).fill(0) as number[]);
+    let total = 0;
+    for (const [key, buckets] of hourLog) {
+      const weekday = parseYmd(key).getDay();
+      for (let hour = 0; hour < 24; hour += 1) {
+        const value = hourSeconds(buckets, hour, lens);
+        if (value <= 0) continue;
+        byHour[hour] += value;
+        grid[weekday][hour] += value;
+        total += value;
+      }
+    }
+    let peak = -1; let peakValue = 0;
+    byHour.forEach((value, hour) => { if (value > peakValue) { peakValue = value; peak = hour; } });
+    return { byHour, grid, total, peak, max: Math.max(1, peakValue), gridMax: Math.max(1, ...grid.flat()) };
+  }, [hourLog, lens]);
+
+  /** El día de la semana con más tiempo acumulado, sobre todos los partes diarios. */
   const strongestWeekday = useMemo(() => {
     const totals = new Array(7).fill(0) as number[];
     for (const [key, value] of days) totals[parseYmd(key).getDay()] += value.seconds;
@@ -259,6 +340,26 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
     ...bars.map((bar) => (metric === 'time' ? bar.reading + bar.listening : bar.chars))
   );
 
+  /** Con qué se llena el arco de hoy: la meta si la hay, una hora si no. */
+  const dialFull = goal > 0 ? goal * 60 : 3600;
+  const goalReached = goal > 0 && todayTotals.seconds >= goal * 60;
+
+  /** El rango de fechas del periodo que se está mirando, para saber dónde se está. */
+  const rangeLabel = (() => {
+    const from = parseYmd(periodFrom);
+    const to = parseYmd(periodTo);
+    const locale = es ? 'es' : 'en';
+    const sameYear = from.getFullYear() === to.getFullYear();
+    const left = from.toLocaleDateString(locale, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+    const right = to.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${left} – ${right}`;
+  })();
+
+  /** Media por día del periodo, contando todos sus días y no solo los activos. */
+  const dailyAverage = metric === 'time'
+    ? minutes(periodTotals.seconds / SPAN_DAYS[span])
+    : Math.round(periodTotals.chars / SPAN_DAYS[span]).toLocaleString(es ? 'es' : 'en');
+
   return (
     <div className="yoru-stats">
       <div className="yoru-view-head">
@@ -287,6 +388,12 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
       {/* Hoy, rachas y días activos */}
       <section className="yoru-stats-card yoru-stats-today">
         <div className="yoru-stats-dial">
+          {/*
+            El arco y sus cifras van en su propia caja: las cifras se colocan contra el
+            fondo del arco, no contra el de toda la columna. Sin esta caja, lo que haya
+            debajo (el reparto lectura/escucha, la meta) las empujaba encima de sí mismo.
+          */}
+          <div className="yoru-stats-dial-arc">
           <svg viewBox="0 0 200 118" role="img" aria-label={es ? 'Tiempo de hoy' : "Today's time"}>
             <path d="M16 110 A84 84 0 0 1 184 110" fill="none" stroke="var(--border-light)" strokeWidth="16" strokeLinecap="round" />
             {todayTotals.seconds > 0 && (
@@ -298,7 +405,7 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
                 strokeLinecap="round"
                 pathLength={100}
                 strokeDasharray={100}
-                strokeDashoffset={100 - Math.min(100, (todayTotals.seconds / 3600) * 100)}
+                strokeDashoffset={100 - Math.min(100, (todayTotals.seconds / dialFull) * 100)}
               />
             )}
           </svg>
@@ -309,11 +416,54 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
               {todayTotals.chars.toLocaleString(es ? 'es' : 'en')} {es ? 'caracteres' : 'characters'}
             </span>
           </div>
+          </div>
           {hasListening && (
             <div className="yoru-stats-split">
               <span><i className="yoru-dot is-reading" />{es ? 'Lectura' : 'Reading'} · {minutes(todayTotals.readingSeconds)}</span>
               <span><i className="yoru-dot is-listening" />{es ? 'Escucha' : 'Listening'} · {minutes(todayTotals.listeningSeconds)}</span>
             </div>
+          )}
+
+          {/*
+            La meta diaria. Sin meta, el arco se llena a la hora, como siempre; con
+            meta, se llena al cumplirla, y debajo se lee cuánto falta.
+          */}
+          {editingGoal ? (
+            <div className="yoru-stats-goal-editor" role="group" aria-label={es ? 'Meta diaria' : 'Daily goal'}>
+              <div className="yoru-chip-row" style={{ marginBottom: 0, justifyContent: 'center' }}>
+                {GOAL_CHOICES.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`yoru-chip${goal === value ? ' active' : ''}`}
+                    onClick={() => { setDailyGoalMinutes(value); setEditingGoal(false); }}
+                  >
+                    {value} min
+                  </button>
+                ))}
+              </div>
+              <div className="yoru-stats-goal-actions">
+                {goal > 0 && (
+                  <button type="button" className="yoru-stats-goal-link" onClick={() => { setDailyGoalMinutes(0); setEditingGoal(false); }}>
+                    {es ? 'Quitar la meta' : 'Remove goal'}
+                  </button>
+                )}
+                <button type="button" className="yoru-stats-goal-link" onClick={() => setEditingGoal(false)}>
+                  {es ? 'Cancelar' : 'Cancel'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="yoru-stats-goal-link" onClick={() => setEditingGoal(true)}>
+              {goal > 0
+                ? goalReached
+                  ? (es ? `Meta de ${goal} min cumplida` : `${goal} min goal reached`)
+                  : (es
+                      ? `Meta: ${goal} min · faltan ${Math.max(1, Math.ceil((goal * 60 - todayTotals.seconds) / 60))} min`
+                      : `Goal: ${goal} min · ${Math.max(1, Math.ceil((goal * 60 - todayTotals.seconds) / 60))} min to go`)
+                : (es ? 'Fijar una meta diaria' : 'Set a daily goal')}
+              <span aria-hidden="true"> ›</span>
+            </button>
           )}
         </div>
 
@@ -357,14 +507,42 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
               <button type="button" className={`yoru-chip${metric === 'chars' ? ' active' : ''}`} onClick={() => setMetric('chars')}>{es ? 'Caracteres' : 'Characters'}</button>
             </div>
             <div className="yoru-chip-row" style={{ marginBottom: 0 }}>
-              <button type="button" className={`yoru-chip${span === 'week' ? ' active' : ''}`} onClick={() => setSpan('week')}>{es ? 'Semana' : 'Week'}</button>
-              <button type="button" className={`yoru-chip${span === 'month' ? ' active' : ''}`} onClick={() => setSpan('month')}>{es ? 'Mes' : 'Month'}</button>
-              <button type="button" className={`yoru-chip${span === 'year' ? ' active' : ''}`} onClick={() => setSpan('year')}>{es ? 'Año' : 'Year'}</button>
+              <button type="button" className={`yoru-chip${span === 'week' ? ' active' : ''}`} onClick={() => changeSpan('week')}>{es ? 'Semana' : 'Week'}</button>
+              <button type="button" className={`yoru-chip${span === 'month' ? ' active' : ''}`} onClick={() => changeSpan('month')}>{es ? 'Mes' : 'Month'}</button>
+              <button type="button" className={`yoru-chip${span === 'year' ? ' active' : ''}`} onClick={() => changeSpan('year')}>{es ? 'Año' : 'Year'}</button>
             </div>
           </div>
         </div>
 
         <div className="yoru-stats-card">
+          {/* Media diaria y, al lado, por qué periodo se va: se puede ir hacia atrás. */}
+          <div className="yoru-stats-period">
+            <div>
+              <span className="yoru-stats-figure-label">{es ? 'Media diaria' : 'Daily average'}</span>
+              <strong className="yoru-stats-figure">{dailyAverage}</strong>
+            </div>
+            <div className="yoru-stats-period-nav">
+              <button
+                type="button"
+                className="yoru-stats-period-btn"
+                onClick={() => setOffset((value) => value + 1)}
+                aria-label={es ? 'Periodo anterior' : 'Previous period'}
+              >
+                ‹
+              </button>
+              <span className="yoru-stats-period-range">{rangeLabel}</span>
+              <button
+                type="button"
+                className="yoru-stats-period-btn"
+                onClick={() => setOffset((value) => Math.max(0, value - 1))}
+                disabled={offset === 0}
+                aria-label={es ? 'Periodo siguiente' : 'Next period'}
+              >
+                ›
+              </button>
+            </div>
+          </div>
+
           <div className="yoru-stats-bars" role="img" aria-label={es ? 'Tendencia del periodo' : 'Trend for the period'}>
             {bars.map((bar) => {
               const value = metric === 'time' ? bar.reading + bar.listening : bar.chars;
@@ -457,10 +635,79 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
         </div>
       </section>
 
-      {/* Hábitos: solo el día de la semana, que es lo que los datos sostienen */}
-      {strongestWeekday && (
+      {/* Hábitos: a qué hora, y qué día de la semana */}
+      {(strongestWeekday || hours.total > 0) && (
         <section className="yoru-stats-section">
           <h2 className="yoru-stats-title">{es ? 'Hábitos' : 'Habits'}</h2>
+
+          {/*
+            Las horas del día. Solo cuentan desde que se apuntan, así que al principio
+            esta tarjeta está vacía aunque haya meses de lectura: lo dice ella misma,
+            en vez de enseñar un gráfico plano que parece un fallo.
+          */}
+          <div className="yoru-stats-card">
+            <p className="yoru-stats-lead">
+              {hours.total > 0 && hours.peak >= 0 ? (
+                <>
+                  {lens === 'listening'
+                    ? (es ? 'Sueles escuchar ' : 'You usually listen ')
+                    : lens === 'reading'
+                      ? (es ? 'Sueles leer ' : 'You usually read ')
+                      : (es ? 'Sueles leer o escuchar ' : 'You usually read or listen ')}
+                  <strong>{dayPart(hours.peak, es)}</strong>
+                </>
+              ) : (
+                es ? 'Tus horas aparecerán cuando registres sesiones' : 'Your hours will appear once you record sessions'
+              )}
+            </p>
+            <div className="yoru-stats-hours" role="img" aria-label={es ? 'Tiempo por hora del día' : 'Time by hour of day'}>
+              {hours.byHour.map((value, hour) => (
+                <div
+                  key={hour}
+                  className="yoru-stats-hour"
+                  title={`${String(hour).padStart(2, '0')}:00 · ${value > 0 ? minutes(value) : es ? 'sin actividad' : 'no activity'}`}
+                >
+                  <div className="yoru-stats-hour-track">
+                    <span style={{ height: value > 0 ? `${Math.max(4, Math.round((value / hours.max) * 100))}%` : '2px' }} data-empty={value > 0 ? undefined : 'true'} />
+                  </div>
+                  <span className="yoru-stats-hour-label">{hour % 6 === 0 ? String(hour).padStart(2, '0') : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {hours.total > 0 && (
+            <div className="yoru-stats-card">
+              <p className="yoru-stats-lead">{es ? 'Tu semana, hora a hora' : 'Your week, hour by hour'}</p>
+              <div className="yoru-stats-weekgrid" role="img" aria-label={es ? 'Tiempo por día de la semana y hora' : 'Time by weekday and hour'}>
+                {[1, 2, 3, 4, 5, 6, 0].map((weekday) => {
+                  const day = new Date(2024, 0, 7 + weekday);
+                  return (
+                    <div key={weekday} className="yoru-stats-weekgrid-row">
+                      <span className="yoru-stats-weekgrid-day">{day.toLocaleDateString(es ? 'es' : 'en', { weekday: 'short' })}</span>
+                      {hours.grid[weekday].map((value, hour) => (
+                        <i
+                          key={hour}
+                          className="yoru-stats-weekgrid-dot"
+                          data-on={value > 0 ? 'true' : undefined}
+                          style={value > 0 ? { transform: `scale(${(0.45 + 0.55 * Math.sqrt(value / hours.gridMax)).toFixed(2)})` } : undefined}
+                          title={`${day.toLocaleDateString(es ? 'es' : 'en', { weekday: 'long' })} ${String(hour).padStart(2, '0')}:00 · ${value > 0 ? minutes(value) : es ? 'sin actividad' : 'no activity'}`}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+                <div className="yoru-stats-weekgrid-row is-axis">
+                  <span className="yoru-stats-weekgrid-day" />
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <span key={hour} className="yoru-stats-weekgrid-hour">{hour % 6 === 0 ? String(hour).padStart(2, '0') : ''}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {strongestWeekday && (
           <div className="yoru-stats-card">
             <p className="yoru-stats-lead">
               {es ? 'Tu día más fuerte: ' : 'Your strongest day: '}
@@ -483,6 +730,7 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
               })}
             </div>
           </div>
+          )}
         </section>
       )}
 

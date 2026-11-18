@@ -558,6 +558,29 @@ export default function YoruShell({
           books={listenable}
           es={es}
           onOpenDetail={openDetail}
+          /*
+            «Listos» son los que tienen los capítulos del audio casados con los del
+            libro: los únicos en los que el texto sigue a la voz capítulo a capítulo.
+            Solo se ofrece el filtro si hay de los dos tipos; con uno solo no filtra nada.
+          */
+          filter={withChapters > 0 && withChapters < total
+            ? {
+                label: es ? 'Alineación' : 'Alignment',
+                options: [
+                  { id: 'all', label: es ? 'Todos' : 'All', test: () => true },
+                  {
+                    id: 'ready',
+                    label: es ? 'Listos (con capítulos)' : 'Ready (with chapters)',
+                    test: (book) => audiobookLinkState(book.id) === 'chapters',
+                  },
+                  {
+                    id: 'pending',
+                    label: es ? 'Sin capítulos' : 'Without chapters',
+                    test: (book) => audiobookLinkState(book.id) !== 'chapters',
+                  },
+                ],
+              }
+            : undefined}
         />
       );
     }
