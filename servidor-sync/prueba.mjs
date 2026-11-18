@@ -11,7 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { abrirBase, crearServidor, GUILD_YORU } from './servidor.mjs';
+import { abrirBase, crearServidor, GUILD_YORU, frenado, anotarFallo, ipDe, INTENTOS_ENTRADA } from './servidor.mjs';
 
 /** Un Discord de mentira: un mapa de token a lo que contestaría Discord. */
 function discordDeMentira(cuentas) {
@@ -245,6 +245,41 @@ await prueba('la lista de miembros trae a todos los que han sincronizado', async
 await prueba('preguntar por alguien que no existe es un 404, no un vacío', async () => {
   const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
   assert.equal((await pedir('/api/progreso/987654321', { headers: auth })).status, 404);
+});
+
+await prueba('el freno aguanta unos cuantos fallos y luego corta', async () => {
+  const mapa = new Map();
+  const ahora = 1_000_000;
+  for (let i = 0; i < INTENTOS_ENTRADA; i += 1) {
+    assert.equal(frenado(mapa, '1.2.3.4', ahora), false, `al fallo ${i + 1} todavía se puede probar`);
+    anotarFallo(mapa, '1.2.3.4', ahora);
+  }
+  assert.equal(frenado(mapa, '1.2.3.4', ahora), true, 'pasado el tope, la puerta se cierra');
+  assert.equal(frenado(mapa, '5.6.7.8', ahora), false, 'frenar a uno no frena a los demás');
+});
+
+await prueba('el freno se suelta cuando pasa la ventana', async () => {
+  const mapa = new Map();
+  const ahora = 1_000_000;
+  for (let i = 0; i < INTENTOS_ENTRADA; i += 1) anotarFallo(mapa, '1.2.3.4', ahora);
+  assert.equal(frenado(mapa, '1.2.3.4', ahora), true);
+  assert.equal(frenado(mapa, '1.2.3.4', ahora + 11 * 60 * 1000), false, 'al rato se vuelve a poder entrar');
+});
+
+await prueba('solo nos creemos X-Forwarded-For si el que llama es el de casa', async () => {
+  const cabeceras = { 'x-forwarded-for': '9.9.9.9, 8.8.8.8' };
+  assert.equal(ipDe({ socket: { remoteAddress: '127.0.0.1' }, headers: cabeceras }), '8.8.8.8');
+  assert.equal(ipDe({ socket: { remoteAddress: '203.0.113.7' }, headers: cabeceras }), '203.0.113.7');
+  assert.equal(ipDe({ socket: {}, headers: {} }), 'desconocida');
+});
+
+// Esta va al final a propósito: deja la puerta frenada para 127.0.0.1 y cualquier
+// prueba que entrara después se encontraría un 429 que no esperaba.
+await prueba('el servidor corta al que insiste con tokens que no valen', async () => {
+  let ultimo = 0;
+  for (let i = 0; i < INTENTOS_ENTRADA + 2; i += 1) ultimo = (await entrar('tok-inventado')).status;
+  assert.equal(ultimo, 429, 'tras unos cuantos fallos el servidor deja de preguntarle a Discord');
+  assert.equal((await entrar('tok-zams')).status, 429, 'y el freno es por dirección, no por token');
 });
 
 await new Promise((listo) => servidor.close(listo));

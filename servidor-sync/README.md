@@ -75,6 +75,36 @@ control de acceso del tailnet. La regla que lo abre, en el editor de la consola:
 
 Pone el puerto 3747 de este equipo al alcance de los invitados, y solo ese puerto.
 
+## La otra opción: abrirlo a internet (Funnel)
+
+Compartir el equipo tiene un precio: cada miembro tiene que instalar Tailscale y
+aceptar la invitación antes de poder usar la app. Tailscale Funnel evita eso. Pone el
+servidor detrás de una dirección pública con HTTPS de verdad:
+
+```powershell
+tailscale funnel --bg 3747
+```
+
+Lo que cambia:
+
+- La URL pasa a ser `https://desktop-go1ujdd.tail6db786.ts.net`, sin puerto (Funnel
+  solo sirve el 443, el 8443 y el 10000). Hay que ponerla en
+  `frontend/config/serverDefaults.ts`.
+- Nadie instala nada. Al ser HTTPS, además sobra el permiso de tráfico en claro que
+  Android necesitaba para la dirección del tailnet.
+- A cambio, este PC queda al alcance de cualquiera en internet. La única puerta sin
+  sesión es `POST /api/sesion`, y lo único que la guarda es ser miembro del Discord.
+
+Por eso esa puerta tiene freno: diez **fallos** por dirección cada diez minutos, y
+luego un 429 durante el resto de la ventana. Solo se cuentan los fallos, así que
+abrir la app muchas veces no molesta a nadie; probar tokens a ciegas sí se corta, y
+Discord no recibe la ráfaga. Con Funnel, la dirección de quien llama se lee de
+`X-Forwarded-For`, y solo si la conexión viene de la propia máquina (que es por donde
+entra Tailscale); de cualquier otro sitio esa cabecera se ignora, porque la escribe
+quien llama.
+
+Para quitarlo: `tailscale funnel --bg off` (o `tailscale funnel reset`).
+
 ## Ajustes
 
 Todo por variables de entorno, y todas tienen un valor por defecto que ya sirve:
@@ -111,7 +141,7 @@ los que está: solo su ID, su nombre y su progreso.
 | | | |
 | --- | --- | --- |
 | `GET` | `/api/salud` | `{ ok: true }`. Sin token |
-| `POST` | `/api/sesion` | `{ accessToken }` → `{ token, expiraEn, usuarioId, nombre }` |
+| `POST` | `/api/sesion` | `{ accessToken }` → `{ token, expiraEn, usuarioId, nombre }`, o **429** tras diez fallos |
 | `DELETE` | `/api/sesion` | Cierra la sesión de ese token |
 | `GET` | `/api/progreso` | **Lo tuyo, entero**: `{ version, actualizadoEn, datos }` |
 | `PUT` | `/api/progreso` | `{ baseVersion, datos }` → `{ version, actualizadoEn }`, o **409** |
