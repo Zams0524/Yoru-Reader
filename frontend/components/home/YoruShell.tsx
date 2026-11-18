@@ -45,6 +45,7 @@ import {
   unambiguousAudiobook,
 } from '../../utils/audiobookshelfService';
 import { getDynamicCollections, type DynamicCollection } from '../../utils/collections';
+import { descartar } from '../../utils/recomendaciones';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
@@ -328,6 +329,12 @@ export default function YoruShell({
         onUpdateBookDetails(book.id, { tags });
       },
       onHideFromContinue: (book: ShelfBook) => onUpdateBookDetails(book.id, { hiddenFromContinue: true }),
+      /*
+        «No me interesa» no toca el libro: solo apunta su identificador en una lista del
+        perfil. Apartar una recomendación no es borrar nada ni marcar nada, y el libro
+        sigue en el catálogo, en su estante y en su serie.
+      */
+      onNotInterested: (book: ShelfBook) => descartar(book.id),
       onCreateCollection: () => setIsCreatingCollection(true),
     }),
     [es, openDetail, onSelectBook, groups.collections, onUpdateBookDetails]

@@ -5,6 +5,8 @@ import { ServerContinueCard, useApartados, useServerRails } from './HomeServerSe
 import { useBookActions, useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
+import { motivoTexto, RECS_EVENT } from '../../utils/recomendaciones';
+import { restanteDeLibro } from '../../utils/historialLibro';
 import { LOCAL_PROGRESS_EVENT, localContinueEntries, type LocalContinueEntry } from '../../utils/serverProgress';
 import { kavitaSeriesCoverUrl, kavitaVolumeCoverUrl } from '../../utils/kavitaService';
 import { absCoverUrl } from '../../utils/audiobookshelfService';
@@ -16,10 +18,18 @@ import {
   formatCount,
   recentlyAdded,
   seriesGroups,
-  suggestions,
+  suggestionsWithReason,
   type EntityGroup,
   type ShelfBook,
 } from './libraryIndex';
+
+/** «2 h 10», «35 min»: lo que queda, corto, para que quepa en una tarjeta. */
+function restanteCorto(seconds: number): string {
+  const horas = Math.floor(seconds / 3600);
+  const mins = Math.round((seconds % 3600) / 60);
+  if (horas === 0) return `${Math.max(1, mins)} min`;
+  return mins === 0 ? `${horas} h` : `${horas} h ${mins} min`;
+}
 
 /**
  * Vista «Inicio»: la portada de la app, con «Continuar» y los carruseles de la
@@ -99,15 +109,26 @@ export default function HomeView({
     onOpenSeries: onOpenServerSeries,
   });
 
+  /*
+    Apartar una recomendación tiene que quitarla ya. Lo apartado no está en los libros,
+    así que un cambio ahí no repinta nada por sí solo: se escucha el aviso y se recuenta.
+  */
+  const [recsVersion, setRecsVersion] = useState(0);
+  useEffect(() => {
+    const onUpdate = () => setRecsVersion((previo) => previo + 1);
+    window.addEventListener(RECS_EVENT, onUpdate);
+    return () => window.removeEventListener(RECS_EVENT, onUpdate);
+  }, []);
+
   const data = useMemo(
     () => ({
       continuing: continueReading(books),
       recent: recentlyAdded(books),
-      forYou: suggestions(books),
+      forYou: suggestionsWithReason(books),
       collections: collectionGroups(books).slice(0, 12),
       series: seriesGroups(books).filter((group) => group.books.length > 1).slice(0, 12),
     }),
-    [books]
+    [books, recsVersion]
   );
 
   /*
@@ -178,6 +199,14 @@ export default function HomeView({
           // `coverImage` / `coverTint`, igual que en el resto de la concha.
           const cover = coverImage(book);
           const tint = coverTint(book);
+          /*
+            Y lo que falta para acabarlo, al lado del porcentaje. Un «45 %» dice cuánto
+            llevas; lo que se quiere saber al volver a un libro es si se termina esta
+            tarde. Se estima con lo que el libro ya guarda —caracteres, tiempo y
+            porcentaje—, sin leer los partes diarios: son varias tarjetas y saldría una
+            lectura de IndexedDB por cada una.
+          */
+          const queda = restanteDeLibro(book);
           return (
             <span key={book.id} className="yoru-continue-slot">
             <button
@@ -197,7 +226,10 @@ export default function HomeView({
               <span className="yoru-continue-body">
                 <span className="yoru-continue-title">{book.title}</span>
                 <span className="yoru-continue-author">{book.author || (es ? 'Sin autor' : 'Unknown author')}</span>
-                <span className="yoru-continue-state">{es ? 'Novela' : 'Novel'} · {percent} %</span>
+                <span className="yoru-continue-state">
+                  {es ? 'Novela' : 'Novel'} · {percent} %
+                  {queda ? (es ? ` · quedan ${restanteCorto(queda.segundos)}` : ` · ${restanteCorto(queda.segundos)} left`) : ''}
+                </span>
                 <span className="yoru-continue-bar">
                   <span style={{ width: `${percent}%` }} />
                 </span>
@@ -316,8 +348,21 @@ export default function HomeView({
   }
 
   if (data.forYou.length > 0) {
+    /*
+      El motivo va donde iba el autor: «Sigue <serie>», «De <autor>, que ya lees». Una
+      fila de portadas sin motivo no se distingue de una lista al azar, y cuando acierta
+      tampoco se nota. Y con el clic derecho se aparta la que no interesa.
+    */
+    const motivos = new Map(data.forYou.map((entry) => [entry.book.id, motivoTexto(entry.reason, es)]));
     localRails['for-you'] = (
-      <BookRail title={es ? 'Libros para ti' : 'Books for you'} books={data.forYou} onOpen={onOpenDetail} es={es} />
+      <BookRail
+        title={es ? 'Libros para ti' : 'Books for you'}
+        books={data.forYou.map((entry) => entry.book)}
+        onOpen={onOpenDetail}
+        es={es}
+        subtitleOf={(book) => motivos.get(book.id)}
+        menuOptions={{ fromSuggestions: true }}
+      />
     );
   }
 

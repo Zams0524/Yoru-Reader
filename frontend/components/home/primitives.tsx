@@ -41,10 +41,13 @@ export function BookPoster({
   book,
   subtitle,
   onOpen,
+  menuOptions,
 }: {
   book: ShelfBook;
   subtitle?: string;
   onOpen: (book: ShelfBook) => void;
+  /** De dónde sale esta portada, para que el menú ofrezca lo que toque. */
+  menuOptions?: { fromContinue?: boolean; fromSuggestions?: boolean };
 }) {
   const showTitles = React.useContext(PosterTitlesContext);
   const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
@@ -55,7 +58,7 @@ export function BookPoster({
       type="button"
       className="yoru-poster"
       onClick={() => onOpen(book)}
-      onContextMenu={openMenu ? (event) => openMenu(book, event) : undefined}
+      onContextMenu={openMenu ? (event) => openMenu(book, event, menuOptions) : undefined}
       title={book.title}
     >
       <span className="yoru-poster-frame">
@@ -187,6 +190,8 @@ export function BookRail({
   onMore,
   moreLabel,
   es = true,
+  subtitleOf,
+  menuOptions,
 }: {
   title: string;
   books: ShelfBook[];
@@ -194,12 +199,22 @@ export function BookRail({
   onMore?: () => void;
   moreLabel?: string;
   es?: boolean;
+  /** Qué poner bajo la portada en lugar del autor (en «Para ti», el motivo). */
+  subtitleOf?: (book: ShelfBook) => string | undefined;
+  /** De dónde sale la fila, para el menú del clic derecho. */
+  menuOptions?: { fromContinue?: boolean; fromSuggestions?: boolean };
 }) {
   if (books.length === 0) return null;
   return (
     <Rail title={title} onMore={onMore} moreLabel={moreLabel} es={es}>
       {books.map((book) => (
-        <BookPoster key={book.id} book={book} onOpen={onOpen} />
+        <BookPoster
+          key={book.id}
+          book={book}
+          onOpen={onOpen}
+          subtitle={subtitleOf?.(book)}
+          menuOptions={menuOptions}
+        />
       ))}
     </Rail>
   );

@@ -51,6 +51,30 @@ export interface HistorialLibro {
   fechaFin: string | null;
 }
 
+/**
+ * Lo que le queda a un libro, con lo que el propio libro guarda y nada más.
+ *
+ * Es la versión de bolsillo de `historialDeLibro`, para las tarjetas de «Continuar»:
+ * ahí no se pueden leer los partes diarios —son varias tarjetas y saldría una lectura
+ * de IndexedDB por cada una—, pero el libro ya trae caracteres leídos, segundos y
+ * porcentaje, que es todo lo que hace falta.
+ *
+ * Devuelve null cuando no se puede estimar: sin tiempo medido no hay ritmo, y por
+ * debajo del 2 % el porcentaje redondeado se come la cuenta del total.
+ */
+export function restanteDeLibro(libro: {
+  progress?: { percent?: number; charactersRead?: number; secondsRead?: number };
+}): { caracteres: number; segundos: number } | null {
+  const leidos = libro.progress?.charactersRead || 0;
+  const tiempo = libro.progress?.secondsRead || 0;
+  const percent = libro.progress?.percent ?? 0;
+  if (leidos <= 0 || tiempo <= 60 || percent < 2 || percent >= 100) return null;
+  const total = Math.round(leidos / (percent / 100));
+  const caracteres = Math.max(0, total - leidos);
+  if (caracteres === 0) return null;
+  return { caracteres, segundos: Math.round(caracteres / (leidos / tiempo)) };
+}
+
 /** La clave del día de una fecha, en hora local, como la escribe el parte diario. */
 export function claveDia(date: Date): string {
   const mes = String(date.getMonth() + 1).padStart(2, '0');

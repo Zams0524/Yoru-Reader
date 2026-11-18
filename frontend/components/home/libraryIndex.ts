@@ -8,6 +8,7 @@
  */
 
 import { getDynamicCollections, getManualCollections, matchesCollection } from '../../utils/collections';
+import { descartados, type MotivoRecomendacion } from '../../utils/recomendaciones';
 
 export interface ShelfBook {
   id: string;
@@ -106,11 +107,21 @@ export function recentlyAdded(books: ShelfBook[], limit = 18): ShelfBook[] {
   return visibleBooks(books).sort(byCreatedAt).slice(0, limit);
 }
 
+/** Una recomendación: el libro y por qué está en la fila. */
+export interface Suggestion {
+  book: ShelfBook;
+  reason: MotivoRecomendacion;
+}
+
 /**
  * «Para ti»: lo que queda sin abrir, priorizando series y autores que el usuario ya lee,
  * en lugar de la lista aleatoria de la plantilla.
+ *
+ * Cada recomendación sale con su motivo —la serie o el autor que la trajo—, que es lo
+ * que la fila enseña debajo de la portada. Sin motivo, una fila de portadas no se
+ * distingue de una lista al azar; con él se puede estar de acuerdo o apartarla.
  */
-export function suggestions(books: ShelfBook[], limit = 18): ShelfBook[] {
+export function suggestionsWithReason(books: ShelfBook[], limit = 18): Suggestion[] {
   const list = visibleBooks(books);
   const readSeries = new Set<string>();
   const readAuthors = new Set<string>();
@@ -119,17 +130,35 @@ export function suggestions(books: ShelfBook[], limit = 18): ShelfBook[] {
     if (book.series) readSeries.add(book.series);
     if (book.author) readAuthors.add(book.author);
   }
+  // Lo que el usuario dijo que no le interesa no vuelve a la fila.
+  const fuera = new Set(descartados());
   return list
-    .filter((book) => !book.lastRead && bookStatus(book) !== 'completed')
+    .filter((book) => !book.lastRead && bookStatus(book) !== 'completed' && !fuera.has(book.id))
     .map((book) => {
       let score = 0;
-      if (book.series && readSeries.has(book.series)) score += 2;
-      if (book.author && readAuthors.has(book.author)) score += 1;
-      return { book, score };
+      let reason: MotivoRecomendacion = { kind: 'new' };
+      /*
+        La serie manda sobre el autor: que te falte un tomo de algo que ya estás leyendo
+        es mejor razón que compartir autor con otro libro cualquiera. Y el motivo que se
+        enseña es uno, el que puntuó, porque en una línea cabe uno.
+      */
+      if (book.series && readSeries.has(book.series)) {
+        score += 2;
+        reason = { kind: 'series', value: book.series };
+      }
+      if (book.author && readAuthors.has(book.author)) {
+        score += 1;
+        if (reason.kind === 'new') reason = { kind: 'author', value: book.author };
+      }
+      return { book, reason, score };
     })
     .sort((a, b) => b.score - a.score || byCreatedAt(a.book, b.book))
     .slice(0, limit)
-    .map((entry) => entry.book);
+    .map(({ book, reason }) => ({ book, reason }));
+}
+
+export function suggestions(books: ShelfBook[], limit = 18): ShelfBook[] {
+  return suggestionsWithReason(books, limit).map((entry) => entry.book);
 }
 
 function groupBy(books: ShelfBook[], pick: (book: ShelfBook) => string[]): EntityGroup[] {
