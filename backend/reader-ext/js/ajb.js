@@ -13820,14 +13820,32 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(7);
 /* harmony import */ var _shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(8);
-/* harmony import */ var _shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(2);
-/* harmony import */ var _shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(12);
-/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(178);
+/* harmony import */ var _shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(150);
+/* harmony import */ var _shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(2);
+/* harmony import */ var _shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(182);
+/* harmony import */ var _shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(12);
+/* harmony import */ var _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(178);
 
 
 
 
 
+
+
+/**
+ * The one key that is not a per-profile setting, and so must not be profile-prefixed here.
+ *
+ * `parsingPaused` is the extension's own pause switch: `getParsingPaused` reads it bare from
+ * `chrome.storage.local` and the widget's pause button writes it there, so routing it through
+ * `getProfileKey` would store a key nobody reads. It also has to stay a real boolean. The generic
+ * write path below stringifies values, and the extension only tests `if (paused)`, so the string
+ * "false" would read as paused and parsing would never come back on.
+ *
+ * Reading it back as a boolean is also how the Yoru page tells this build apart from an older one:
+ * an extension without this bridge answers with a string or null, and the app then knows it cannot
+ * ask the extension to stop and says so, instead of offering a switch that would do nothing.
+ */
+const PARSING_PAUSED_KEY = 'parsingPaused';
 /**
  * Lets the Yoru Reader page (main world) read and write this extension's settings for the active
  * profile, since the content script and the page live in separate JavaScript worlds in Electron.
@@ -13843,7 +13861,10 @@ const installYoruSettingsBridge = () => {
             const values = {};
             for (const key of keys) {
                 try {
-                    values[key] = (await (0,_shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_2__.readStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key))) ?? null;
+                    values[key] =
+                        key === PARSING_PAUSED_KEY
+                            ? await (0,_shared_extension_get_parsing_paused__WEBPACK_IMPORTED_MODULE_2__.getParsingPaused)()
+                            : ((await (0,_shared_extension_read_storage__WEBPACK_IMPORTED_MODULE_3__.readStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key))) ?? null);
                 }
                 catch {
                     values[key] = null;
@@ -13858,11 +13879,26 @@ const installYoruSettingsBridge = () => {
             try {
                 const profileId = await (0,_shared_configuration_profiles_state__WEBPACK_IMPORTED_MODULE_1__.getActiveProfileId)();
                 for (const [key, value] of Object.entries(entries)) {
-                    await (0,_shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_3__.writeStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key), typeof value === 'object'
+                    if (key === PARSING_PAUSED_KEY) {
+                        // A real boolean, where the extension and its widget already look for it. The page may
+                        // send either, since it stores its own copy of every setting as a string.
+                        await (0,_shared_extension_set_parsing_paused__WEBPACK_IMPORTED_MODULE_4__.setParsingPaused)(value === true || value === 'true');
+                        continue;
+                    }
+                    await (0,_shared_extension_write_storage__WEBPACK_IMPORTED_MODULE_5__.writeStorage)((0,_shared_configuration_profile_constants__WEBPACK_IMPORTED_MODULE_0__.getProfileKey)(profileId, key), typeof value === 'object'
                         ? JSON.stringify(value)
                         : String(value));
                 }
-                new _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_4__.ConfigurationUpdatedCommand().send();
+                /*
+                  No ParsingPausedCommand here on purpose. A broadcast sent from a content script cannot
+                  reach the parser running beside it: `runtime.sendMessage` never delivers back to the
+                  sender's own context, and `BroadcastCommand.send` reaches other tabs through
+                  `chrome.tabs.query`, which is not part of the content-script API. So the pause takes
+                  effect on the next parse, and the page has to reload its reader view to see the change.
+                  Making it immediate needs a BackgroundCommand: the background worker does have
+                  `chrome.tabs`, so it can write the flag and then broadcast to every tab, this one too.
+                */
+                new _shared_messages_broadcast_configuration_updated_command__WEBPACK_IMPORTED_MODULE_6__.ConfigurationUpdatedCommand().send();
                 document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id, ok: true } }));
             }
             catch (error) {
@@ -13872,6 +13908,20 @@ const installYoruSettingsBridge = () => {
             }
         })();
     });
+};
+
+
+/***/ }),
+/* 182 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   setParsingPaused: () => (/* binding */ setParsingPaused)
+/* harmony export */ });
+const setParsingPaused = async (paused) => {
+    await chrome.storage.local.set({ parsingPaused: paused });
 };
 
 

@@ -28,6 +28,7 @@ export default function ReaderSettingsPopover({
   const fontWeight = settings.fontWeight || 400;
   const textAlign = settings.textAlign || 'original';
   const hyphenation = !!settings.hyphenation;
+  const dictPopupPlacement = settings.dictPopupPlacement === 'clasico' ? 'clasico' : 'leido';
   const es = lang === 'es';
   const nativeAvailable = isNativeReaderAvailable();
 
@@ -167,6 +168,15 @@ export default function ReaderSettingsPopover({
               { value: 'horizontal', label: es ? 'Escritura horizontal' : 'Horizontal writing' },
             ]}
             onChange={(value) => setDirection(value as 'auto' | 'vertical' | 'horizontal')}
+          />
+          <PickerRow
+            label={es ? 'Posición del diccionario' : 'Dictionary position'}
+            value={dictPopupPlacement}
+            options={[
+              { value: 'leido', label: es ? 'Sobre lo ya leído' : 'Over what you read' },
+              { value: 'clasico', label: es ? 'Junto a la palabra (clásico)' : 'Next to the word (classic)' },
+            ]}
+            onChange={(value) => onSettingChange('dictPopupPlacement', value === 'clasico' ? 'clasico' : 'leido')}
           />
           <SwitchRow
             label={es ? 'Barra de progreso' : 'Progress line'}

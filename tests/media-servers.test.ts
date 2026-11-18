@@ -4,6 +4,8 @@ import JSZip from 'jszip';
 import {
   extractKavitaDownload,
   getKavitaLibraries,
+  getKavitaOnDeck,
+  getKavitaProgressPercent,
   getKavitaSeries,
   getKavitaVolumes,
   kavitaChapterForPercent,
@@ -25,9 +27,26 @@ import {
   timeOfParagraph,
   timeOfText,
 } from '../frontend/utils/readAlongAlignment';
+import { decidirSeguimiento } from '../frontend/utils/seguimientoAudio';
+import { capituloVecino, tieneTexto } from '../frontend/utils/capitulos';
+import { juntarOkurigana } from '../frontend/utils/okurigana';
+import { mereceBuscarseFuera, mensajeSinDefinicion, FUENTE_POR_DEFECTO } from '../frontend/utils/dictionary';
+import { TRANSLATIONS, t } from '../frontend/utils/i18n';
+import {
+  modoAnalizador,
+  modoAnalizadorPorDefecto,
+  motivoModoNoDisponible,
+  comprobarPausaDeExtension,
+  writeParserSettings,
+  reflejarFuriganaDeExtension,
+  estadoFurigana,
+} from '../frontend/utils/parserSettingsStore';
+import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccionarios';
 import {
   audiobookMatchScore,
   chapterAt,
+  closeAudiobookSession,
+  getAudiobookProgress,
   getAudiobooks,
   locateTrack,
   loginAudiobookshelf,
@@ -35,11 +54,19 @@ import {
   saveAudiobookshelfConfig,
   searchAudiobooks,
   startAudiobookPlayback,
+  syncAudiobookSession,
   testAudiobookshelfConnection,
   updateAudiobookProgress,
   volumeNumberOf,
 } from '../frontend/utils/audiobookshelfService';
 import { normalizeServerUrl } from '../frontend/utils/serverHttp';
+import { sitioEnVertical } from '../frontend/utils/posicionPopupVertical';
+import {
+  getLocalAudiobookProgress,
+  localContinueEntries,
+  saveLocalKavitaProgress,
+  sharesServerProgress,
+} from '../frontend/utils/serverProgress';
 
 type Call = { method: string; url: string; headers: Record<string, string>; body: any };
 const calls: Call[] = [];
@@ -66,6 +93,9 @@ const store = new Map<string, string>();
 };
 (globalThis as any).window = globalThis;
 (globalThis as any).window.dispatchEvent = () => true;
+// El puente de ajustes con la extensión habla por eventos de `document`; aquí basta un
+// EventTarget pelado, que es justo lo que usa (addEventListener / dispatchEvent).
+(globalThis as any).document = new EventTarget();
 
 let failures = 0;
 const check = (ok: boolean, label: string) => {
@@ -250,6 +280,31 @@ async function kavitaTests() {
   check(timeOfParagraph(idx, 99) === null, 'Índice: un párrafo sin alinear no da tiempo');
   check(paragraphAtTime(idx, 4000)?.paragraphId === 11, 'Índice: del segundo al párrafo');
   check(paragraphAtTime(idx, 0) === null, 'Índice: antes del primer cue no hay párrafo');
+
+  /*
+    Dónde cae cada frase dentro de su párrafo. Es lo que permite resaltar la frase y
+    no el párrafo entero, y se mide en caracteres ya normalizados: el párrafo
+    「吾輩は猫である。」 normaliza a 吾輩は猫である, siete caracteres desde el cero,
+    porque los corchetes y el punto se caen.
+  */
+  check(idx.offsetInParagraph[0] === 0 && idx.lengthOfCue[0] === 7,
+    'Índice: la primera frase empieza al principio de su párrafo');
+  check(idx.offsetInParagraph[1] === 0 && idx.lengthOfCue[1] === 7,
+    'Índice: y la segunda, al principio del suyo');
+
+  // Dos frases en un mismo párrafo: la segunda tiene que empezar donde acaba la primera.
+  const dosEnUno = buildAlignmentIndex(
+    parseAlignment([
+      '1', '00:00:01,000 --> 00:00:02,000', '吾輩は猫である',
+      '', '2', '00:00:02,000 --> 00:00:03,000', '名前はまだ無い',
+    ].join(String.fromCharCode(10))),
+    [{ sectionIndex: 0, paragraphId: 5, text: '「吾輩は猫である。名前はまだ無い。」' }],
+  );
+  check(dosEnUno.offsetInParagraph[0] === 0 && dosEnUno.lengthOfCue[0] === 7
+    && dosEnUno.offsetInParagraph[1] === 7 && dosEnUno.lengthOfCue[1] === 7,
+    'Índice: dos frases en un párrafo no se pisan');
+  check(idx.offsetInParagraph.length === idx.cues.length,
+    'Índice: hay un desplazamiento por cue, colocado o no');
   // Lo que de verdad importa: en un hueco sin alinear **no se inventa** un párrafo. El
   // lector se queda quieto en vez de saltar al más cercano.
   check(paragraphAtTime(idx, 15_000) === null,
@@ -349,10 +404,73 @@ async function absTests() {
   check(volumeNumberOf('本好きの下剋上 第三部「領主の養女1」') === 1 && volumeNumberOf('Vol. 4') === 4 && volumeNumberOf('第12巻') === 12, 'Número de volumen');
   check(normalizeTitle('【オーディオブック】薬屋のひとりごと 第2巻') === normalizeTitle('薬屋のひとりごと'), 'Normalización de títulos');
 
+  /*
+    El mismo tomo, escrito como lo escriben los dos servidores de zams.
+
+    Kavita cuelga la colección al final —`(MFブックス)`— y eso tapaba el número de
+    tomo, que va justo delante: el título se quedaba sin tomo, y sin tomo el cuarto
+    y el séptimo puntuaban igual contra cualquier audiolibro de la serie.
+  */
+  const kavita4 = '無職転生 ～異世界行ったら本気だす～ 4 (MFブックス)';
+  const abs4 = '[4巻] 無職転生 ～異世界行ったら本気だす～ 4';
+  check(
+    volumeNumberOf(kavita4) === 4 && volumeNumberOf(abs4) === 4,
+    `Tomo con colección detrás y con prefijo [N巻] (${volumeNumberOf(kavita4)} y ${volumeNumberOf(abs4)})`
+  );
+  check(normalizeTitle(kavita4) === normalizeTitle(abs4), 'Mismo título en los dos catálogos');
+
+  const mushoku = (vol: number) => ({
+    id: `m${vol}`, libraryId: 'li1', title: `[${vol}巻] 無職転生 ～異世界行ったら本気だす～ ${vol}`,
+    author: '理不尽な孫の手', duration: 0, coverUrl: '',
+  });
+  const libroMushoku4 = { title: kavita4, author: '理不尽な孫の手' };
+  const propio = audiobookMatchScore(libroMushoku4, mushoku(4));
+  const otroTomo = audiobookMatchScore(libroMushoku4, mushoku(7));
+  check(propio >= 0.9, `El tomo 4 reconoce su audiolibro (${propio.toFixed(2)})`);
+  // Lo que de verdad estaba roto: el tomo 7 puntuaba igual que el 4.
+  check(otroTomo < propio - 0.2, `Otro tomo de la misma serie puntúa menos (${otroTomo.toFixed(2)} < ${propio.toFixed(2)})`);
+
+  // Dos series distintas con el mismo número de tomo no se emparejan.
+  const rezero4 = {
+    id: 'r4', libraryId: 'li1', title: '[4巻] Re:ゼロから始める異世界生活 4',
+    author: '長月達平', duration: 0, coverUrl: '',
+  };
+  const cruzado = audiobookMatchScore(libroMushoku4, rezero4);
+  check(cruzado < 0.3, `Series distintas, mismo tomo, no emparejan (${cruzado.toFixed(2)})`);
+
+  // Un paréntesis que es solo un número sí es el tomo, y se respeta.
+  check(volumeNumberOf('ソードアート・オンライン (3)') === 3, 'Tomo escrito entre paréntesis');
+  // Y un título que es solo la colección no se queda vacío.
+  check(normalizeTitle('(MFブックス)').length > 0, 'Un título que es solo la colección no se vacía');
+
+  /*
+    El mismo tomo dos veces en el servidor no es una duda.
+
+    Pasa: una copia vieja, un fichero repetido. Los dos candidatos empatan, y la
+    regla de «el segundo a más de 0.1» lo leía como ambigüedad y mandaba a elegir
+    entre dos entradas idénticas. Si apuntan al mismo tomo, da igual cuál se coja.
+  */
+  const duplicado = { ...mushoku(4), id: 'm4bis' };
+  const empate = audiobookMatchScore(libroMushoku4, duplicado);
+  check(
+    empate === propio && volumeNumberOf(duplicado.title) === volumeNumberOf(mushoku(4).title),
+    'Dos copias del mismo tomo empatan y son el mismo tomo'
+  );
+
+  // Lo de abajo es el modo de siempre: el progreso va y viene de la cuenta.
+  shareProgress('p1', true);
   const session = await startAudiobookPlayback('li1');
   const playCall = calls.find((c) => c.url.endsWith('/play'))!;
   check(playCall.body.forceDirectPlay === true && playCall.body.deviceInfo.clientName === 'Yoru Reader', 'Sesión con reproducción directa');
-  check(session.tracks[0].startOffset === 0 && session.tracks[1].url === `${A}/api/items/li1/file/222?token=abs-token`, 'Pistas ordenadas con token');
+  // Por la ruta pública de la sesión, no por el fichero con el testigo en la dirección:
+  // eso último lo contesta el servidor con 401, y el navegador, que no sabe leer esa
+  // respuesta, lo reporta como «Format error». La prueba anterior fijaba ese fallo.
+  check(
+    session.tracks[0].startOffset === 0
+      && session.tracks[0].url === `${A}/public/session/sess1/track/1`
+      && session.tracks[1].url === `${A}/public/session/sess1/track/2`,
+    'Pistas ordenadas y servidas por la sesión, sin testigo en la dirección'
+  );
   check(session.currentTime === 4000 && session.chapters.length === 2, 'Posición y capítulos del servidor');
   const at = locateTrack(session.tracks, 4000);
   check(at.trackIndex === 1 && at.offset === 400, 'Tiempo global → pista y segundo');
@@ -363,7 +481,662 @@ async function absTests() {
   check(patch.body.isFinished === true && patch.body.currentTime === 7190, 'Progreso PATCH /api/me/progress');
 }
 
+/** Cuándo el texto sigue al audio y cuándo se queda quieto. */
+function seguimientoTests() {
+  // Una ventana de 1000 px: la banda cómoda va de 220 a 720.
+  const ventana = { inicio: 0, fin: 1000 };
+  const enLaBanda = { inicio: 400, fin: 500 };   // centro 450
+  const masAbajo = { inicio: 740, fin: 800 };    // centro 770, fuera de la banda pero visible
+  const fuera = { inicio: 1200, fin: 1300 };     // ni se ve
+  const aMedias = { inicio: 950, fin: 1100 };    // empieza dentro, acaba fuera
+
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', frase: enLaBanda, ventana }).mover === false,
+    'En la banda cómoda el texto no se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', frase: masAbajo, ventana }).mover === true,
+    'Visible pero fuera de la banda: se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: masAbajo, ventana }).mover === false,
+    'En paginado, visible basta: no se mueve',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: aMedias, ventana }).mover === true,
+    'Media frase asomando no cuenta como visible',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: fuera, ventana }).mover === true,
+    'Fuera de la página: se mueve',
+  );
+
+  const decision = decidirSeguimiento({ modo: 'suspendido', frase: fuera, ventana });
+  check(
+    decision.mover === false && decision.ofrecerVolver === true,
+    'Suspendido: no se mueve nada y se ofrece volver',
+  );
+  check(
+    decidirSeguimiento({ modo: 'suspendido', forzar: true, frase: fuera, ventana }).mover === false,
+    'Ni forzando se mueve algo suspendido',
+  );
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', forzar: true, frase: enLaBanda, ventana }).mover === true,
+    'Forzar mueve aunque ya se viera',
+  );
+
+  // La barra del reproductor tapa los últimos 300 px: lo de debajo no está visible.
+  const tapadoPorLaBarra = { inicio: 780, fin: 860 };
+  check(
+    decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: tapadoPorLaBarra, ventana }).mover === false
+      && decidirSeguimiento({ modo: 'siguiendo', estrategia: 'visibilidad', frase: tapadoPorLaBarra, ventana, margenFin: 300 }).mover === true,
+    'Una frase detrás de los mandos no cuenta como visible',
+  );
+}
+
+/** A qué capítulo llevan «siguiente» y «anterior». */
+function capitulosTests() {
+  const con = (desde: number, hasta: number) => ({ startParagraphId: desde, lastIndex: hasta });
+  // Un capítulo sin párrafos: el motor lo guarda con lastIndex = startParagraphId - 1.
+  const vacio = (en: number) => ({ startParagraphId: en, lastIndex: en - 1 });
+
+  check(tieneTexto(con(10, 40)) && !tieneTexto(vacio(41)),
+    'Capítulos: un rango vacío no cuenta como capítulo con texto');
+
+  const normales = [con(0, 9), con(10, 19), con(20, 29)];
+  check(capituloVecino(normales, 1, 1) === 2 && capituloVecino(normales, 1, -1) === 0,
+    'Capítulos: con todos llenos, siguiente y anterior son el de al lado');
+  check(capituloVecino(normales, 2, 1) === null && capituloVecino(normales, 0, -1) === null,
+    'Capítulos: en los extremos no hay vecino');
+
+  /*
+    El caso que se nos escapó y rompió la tecla M.
+
+    Entre dos capítulos con texto hay una ilustración, que no tiene párrafos. Ir hacia
+    delante caía en uno con texto y funcionaba; ir hacia atrás caía en el vacío, y como
+    el salto buscaba la sección por el número de párrafo —y un rango vacío no contiene
+    ninguno—, no encontraba nada y la tecla se quedaba muda. En un sentido sí y en el
+    otro no.
+  */
+  const conIlustracion = [con(0, 9), vacio(10), con(10, 19)];
+  check(capituloVecino(conIlustracion, 2, -1) === 0,
+    'Capítulos: hacia atrás se salta la ilustración y llega al capítulo con texto');
+  check(capituloVecino(conIlustracion, 0, 1) === 2,
+    'Capítulos: y hacia delante, igual');
+
+  // Varias seguidas, y al final del libro solo quedan vacíos.
+  const alFinal = [con(0, 9), vacio(10), vacio(10), vacio(10)];
+  check(capituloVecino(alFinal, 0, 1) === null,
+    'Capítulos: si solo quedan capítulos sin texto, es el último');
+}
+
+/*
+  El kanji con furigana y su terminación son la misma palabra.
+
+  Las cuatro primeras salieron de medir su libro: el lector las daba por palabras
+  sueltas, con categoría 名詞 puesta a mano, y ninguna existe en ningún diccionario.
+  El analizador se simula con lo que Kuromoji devuelve de verdad para cada caso, que
+  es lo que esta función consulta.
+*/
+function okuriganaTests() {
+  const analizador = (salidas: Record<string, { surface: string; basicForm: string; pos: string }[]>) =>
+    (texto: string) => salidas[texto] || [{ surface: texto, basicForm: texto, pos: '名詞' }];
+
+  /*
+    Las claves son el texto **tal como se le pasa al analizador**: el kanji más toda la
+    tirada de hiragana que viene detrás, no solo el okurigana. Eso importa: la gracia de
+    la función es que el analizador decida dónde cortar, así que el simulador tiene que
+    devolver varios tokens como haría Kuromoji, no uno.
+  */
+  const kuromoji = analizador({
+    '尊き': [{ surface: '尊き', basicForm: '尊い', pos: '形容詞' }],
+    '自らそれを': [
+      { surface: '自ら', basicForm: '自ら', pos: '副詞' },
+      { surface: 'それ', basicForm: 'それ', pos: '名詞' },
+      { surface: 'を', basicForm: 'を', pos: '助詞' },
+    ],
+    '辿っており': [
+      { surface: '辿っ', basicForm: '辿る', pos: '動詞' },
+      { surface: 'て', basicForm: 'て', pos: '助詞' },
+      { surface: 'おり', basicForm: 'おる', pos: '動詞' },
+    ],
+    '苛立ちを': [
+      { surface: '苛立ち', basicForm: '苛立つ', pos: '動詞' },
+      { surface: 'を', basicForm: 'を', pos: '助詞' },
+    ],
+    // Aquí el kanji va solo: lo que sigue es una partícula, no su terminación.
+    '町に': [{ surface: '町', basicForm: '町', pos: '名詞' }, { surface: 'に', basicForm: 'に', pos: '助詞' }],
+  });
+
+  const r1 = juntarOkurigana('尊', 'き魔術師ならば、', kuromoji);
+  check(r1?.palabra === '尊い' && r1?.okurigana === 'き' && r1?.pos === '形容詞',
+    'Okurigana: 尊 + き es 尊い, no un nombre llamado 尊');
+
+  const r2 = juntarOkurigana('自', 'らそれを生みだそうと', kuromoji);
+  check(r2?.palabra === '自ら' && r2?.okurigana === 'ら',
+    'Okurigana: 自 + ら es 自ら, y deja de salir un ら suelto');
+
+  const r3 = juntarOkurigana('辿', 'っており、', kuromoji);
+  check(r3?.palabra === '辿る' && r3?.okurigana === 'っ',
+    'Okurigana: 辿 + っ es 辿る, que sí está en el diccionario');
+
+  const r4 = juntarOkurigana('苛立', 'ちを覚える', kuromoji);
+  check(r4?.palabra === '苛立つ' && r4?.okurigana === 'ち',
+    'Okurigana: 苛立 + ち es 苛立つ');
+
+  // Lo que NO debe juntarse, que es donde está el riesgo de romper algo.
+  check(juntarOkurigana('町', 'に現れた。', kuromoji) === null,
+    'Okurigana: 町 seguido de に se queda como estaba, la partícula no se traga');
+  check(juntarOkurigana('魔術', '師ならば', kuromoji) === null,
+    'Okurigana: si detrás no hay hiragana, no se toca nada');
+  check(juntarOkurigana('尊', '', kuromoji) === null && juntarOkurigana('', 'き', kuromoji) === null,
+    'Okurigana: sin texto por algún lado, no se inventa nada');
+  check(juntarOkurigana('辿', 'って', () => { throw new Error('el analizador falló'); }) === null,
+    'Okurigana: si el analizador falla, se deja el texto como estaba');
+}
+
+/*
+  Qué palabras no merecen un viaje a internet.
+
+  Las de la primera tanda son las que de verdad fallaban en su libro. Las de la segunda
+  son el motivo de que el filtro sea tan estrecho: palabras legítimas que no están en
+  sus diccionarios y que comparten categoría con la basura del analizador. Si alguna de
+  esas dejara de buscarse, el filtro estaría escondiendo vocabulario.
+*/
+function fueraTests() {
+  const gramatica = ['助詞', '助動詞', '助詞,接続助詞', '助動詞,*,*'];
+  check(gramatica.every((pos) => mereceBuscarseFuera(pos) === false),
+    'Buscar fuera: partículas y auxiliares no salen a internet');
+
+  const palabras = ['名詞', '動詞', '形容詞', '副詞', '連体詞', '接続詞', '感動詞', '接頭詞',
+    '名詞,固有名詞', '動詞,自立'];
+  check(palabras.every((pos) => mereceBuscarseFuera(pos) === true),
+    'Buscar fuera: nombres, verbos, adjetivos y demás sí salen');
+
+  check(mereceBuscarseFuera('') === true && mereceBuscarseFuera(undefined as any) === true,
+    'Buscar fuera: sin categoría, se busca igual, que es lo prudente');
+}
+
+/** El perfil activo y si comparte el progreso con la cuenta del servidor. */
+function shareProgress(profileId: string, share: boolean) {
+  store.set('migaku_reader_active_profile_id', profileId);
+  store.set(`migaku_reader_settings_${profileId}`, JSON.stringify({ shareServerProgress: share }));
+}
+
+/**
+ * Cuenta compartida: sin `shareServerProgress`, el progreso se queda en el dispositivo
+ * y por perfil, y no se lee ni se escribe el de la cuenta.
+ */
+async function localProgressTests() {
+  routes = [
+    (c) => c.url.startsWith(`${K}/api/Plugin/authenticate`) ? json({ username: 'zams', token: 'jwt-2', apiKey: 'key-1' }) : null,
+    (c) => c.url === `${K}/api/Series/volumes?seriesId=5` ? json([
+      { id: 50, seriesId: 5, name: '1', minNumber: 1, pages: 100, pagesRead: 80, lastReadingProgressUtc: '2026-11-01T00:00:00Z',
+        chapters: [{ id: 500, pages: 100, lastReadingProgressUtc: '2026-11-01T00:00:00Z' }] },
+    ]) : null,
+    (c) => c.url.includes('/api/Reader/get-progress') ? json({ pageNum: 90 }) : null,
+    (c) => c.url.includes('/api/Series/on-deck') ? json([{ id: 5, name: 'de otra persona' }]) : null,
+    (c) => c.url === `${A}/api/items/li1/play` && c.method === 'POST' ? json({
+      id: 'sess2', currentTime: 4000, duration: 7200,
+      audioTracks: [{ index: 1, startOffset: 0, duration: 7200, contentUrl: '/api/items/li1/file/111', mimeType: 'audio/mpeg' }],
+    }) : null,
+  ];
+  saveKavitaConfig({ serverUrl: K, apiKey: 'key-1' } as any);
+  // Un perfil sin nada: «p1» ya apuntó lo escuchado en las pruebas de arriba.
+  shareProgress('pl', false);
+  calls.length = 0;
+
+  const [before] = await getKavitaVolumes(5);
+  check(!before.pagesRead && !before.lastReadingProgressUtc && !before.chapters[0].lastReadingProgressUtc,
+    'Local: el tomo no enseña lo leído por la cuenta');
+  check(await getKavitaProgressPercent(500, 100) === 0 && !calls.some((c) => c.url.includes('get-progress')),
+    'Local: abrir un tomo no retoma el progreso de la cuenta');
+  check((await getKavitaOnDeck(10)).length === 0 && !calls.some((c) => c.url.includes('on-deck')),
+    'Local: sin «seguir leyendo» de la cuenta');
+
+  saveLocalKavitaProgress({ chapterId: 500, volumeId: 50, seriesId: 5, pages: 100, percent: 25 });
+  const [after] = await getKavitaVolumes(5);
+  check(after.pagesRead === 25 && !!after.lastReadingProgressUtc, 'Local: el tomo enseña lo leído en este perfil');
+  check(await getKavitaProgressPercent(500, 100) === 25, 'Local: abrir un tomo retoma el progreso del perfil');
+
+  const fresh = await startAudiobookPlayback('li1');
+  check(fresh.currentTime === 0, 'Local: el audiolibro no empieza donde lo dejó la cuenta');
+  await updateAudiobookProgress('li1', 1234, 7200);
+  await syncAudiobookSession(fresh.id, { currentTime: 1234, timeListened: 30, duration: 7200 });
+  await closeAudiobookSession(fresh.id, { currentTime: 1234, timeListened: 0, duration: 7200 });
+  check(!calls.some((c) => c.method === 'PATCH' || c.url.includes('/api/session/')),
+    'Local: escuchar no toca el progreso ni la sesión de la cuenta');
+  check((await getAudiobookProgress('li1'))?.currentTime === 1234, 'Local: la ficha enseña lo escuchado en este perfil');
+  check((await startAudiobookPlayback('li1')).currentTime === 1234, 'Local: el audiolibro retoma donde lo dejó el perfil');
+
+  const continuing = localContinueEntries();
+  check(continuing.length === 2 && continuing.some((e) => e.kind === 'kavita' && e.percent === 25)
+    && continuing.some((e) => e.kind === 'audiobook' && e.percent === 17),
+    'Local: «Continuar» tiene el tomo y el audiolibro a medias del perfil');
+
+  shareProgress('p2', false);
+  check(await getAudiobookProgress('li1') === null && await getKavitaProgressPercent(500, 100) === 0
+    && localContinueEntries().length === 0,
+    'Local: otro perfil empieza de cero');
+
+  // Sin ajuste no comparte nadie, ni el primero de la lista ni el único que haya:
+  // esto es lo que falló al borrar los perfiles y crear uno nuevo, que pasaba a ser
+  // el primero y heredaba el progreso de la cuenta.
+  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p1', name: 'zams' }, { id: 'p3', name: 'otro' }]));
+  store.delete('migaku_reader_settings_p1');
+  store.set('migaku_reader_active_profile_id', 'p1');
+  const primeroComparte = sharesServerProgress();
+  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p9', name: 'nuevo' }]));
+  store.delete('migaku_reader_settings_p9');
+  store.set('migaku_reader_active_profile_id', 'p9');
+  check(!primeroComparte && !sharesServerProgress(),
+    'Sin ajuste no comparte nadie, ni el primer perfil ni un perfil recién creado');
+
+  // Compartiendo, el progreso sube a la cuenta y también queda en el perfil.
+  shareProgress('p1', true);
+  calls.length = 0;
+  routes.push((c) => c.url === `${A}/api/me/progress/li1` && c.method === 'PATCH' ? json({}) : null);
+  await updateAudiobookProgress('li1', 3600, 7200);
+  check(calls.some((c) => c.method === 'PATCH') && getLocalAudiobookProgress('li1')?.currentTime === 3600,
+    'Compartiendo: sube a la cuenta y queda apuntado en el perfil');
+}
+
 await kavitaTests();
 await absTests();
+seguimientoTests();
+capitulosTests();
+okuriganaTests();
+fueraTests();
+
+/*
+  En qué orden mandan los diccionarios.
+
+  Importa porque una palabra la resuelve el primero que la tenga: con el JMdict inglés
+  por debajo del español, esto decide en qué idioma la lees. Lo que se fija aquí es que
+  mande lo que el usuario puso, y que cuando no ha puesto nada no decida la suerte.
+*/
+function ordenTests() {
+  const es = { title: 'JMdict (Spanish)', importedAt: '2026-08-29T10:00:00.000Z' };
+  const en = { title: 'JMdict (English)', importedAt: '2026-11-15T04:40:00.000Z' };
+  const nov = { title: 'Novels', importedAt: '2026-09-01T12:00:00.000Z' };
+
+  check(JSON.stringify(ordenEfectivo([en, es, nov], ['JMdict (Spanish)', 'JMdict (English)', 'Novels']))
+      === JSON.stringify(['JMdict (Spanish)', 'JMdict (English)', 'Novels']),
+    'Orden: manda lo que el usuario guardó, aunque lleguen en otro orden');
+
+  // Sin nada guardado: el que instaló primero. Es el caso de zams antes de ordenarlos.
+  check(JSON.stringify(ordenEfectivo([en, nov, es], []))
+      === JSON.stringify(['JMdict (Spanish)', 'Novels', 'JMdict (English)']),
+    'Orden: sin nada guardado, manda el que se instaló primero');
+
+  // Lo guardado manda; lo que no esté, detrás y por antigüedad.
+  check(JSON.stringify(ordenEfectivo([en, nov, es], ['Novels']))
+      === JSON.stringify(['Novels', 'JMdict (Spanish)', 'JMdict (English)']),
+    'Orden: lo guardado va delante y el resto detrás, por antigüedad');
+
+  // Un título que ya no está instalado no debe colarse en el orden.
+  check(JSON.stringify(ordenEfectivo([es], ['Borrado', 'JMdict (Spanish)']))
+      === JSON.stringify(['JMdict (Spanish)']),
+    'Orden: un diccionario borrado no deja hueco en el orden');
+
+  // Sin fecha no se inventa una: se quedan al final y en el mismo orden en que vinieron.
+  const viejoA = { title: 'Viejo A' };
+  const viejoB = { title: 'Viejo B' };
+  check(JSON.stringify(ordenEfectivo([viejoA, viejoB, es], []))
+      === JSON.stringify(['JMdict (Spanish)', 'Viejo A', 'Viejo B']),
+    'Orden: los que no tienen fecha van al final, sin removerlos entre ellos');
+
+  const orden = ordenEfectivo([en, es], ['JMdict (Spanish)']);
+  check(rangoDeDiccionario('JMdict (Spanish)', orden) === 0
+      && rangoDeDiccionario('JMdict (English)', orden) === 1
+      && rangoDeDiccionario('Ni idea', orden) === 2,
+    'Orden: el rango sitúa cada uno, y los desconocidos al final');
+}
+
+/*
+  Lo que se le dice al usuario cuando una palabra no tiene definición.
+
+  Importa porque el mensaje de antes servía para los tres casos y afirmaba cosas que no
+  se habían comprobado: con «solo Jiten» decía que no estaba en sus diccionarios, una
+  búsqueda que no se había hecho; y cuando Jiten no contestaba, decía que la palabra no
+  existe, que es distinto de no haber podido preguntar. Cada mensaje nombra solo dónde
+  se buscó de verdad y qué pasó allí.
+*/
+function mensajeTests() {
+  check(FUENTE_POR_DEFECTO === 'ambos',
+    'Mensaje: por defecto se siguen usando los dos, como hasta ahora');
+
+  check(mensajeSinDefinicion('locales', false) === 'noDefFound'
+      && mensajeSinDefinicion('locales', true) === 'noDefFound',
+    'Mensaje: con solo los suyos, se habla solo de sus diccionarios');
+
+  check(mensajeSinDefinicion('jiten', false) === 'noDefJitenVacio',
+    'Mensaje: con solo Jiten y Jiten contestando, la palabra no está en Jiten');
+  check(mensajeSinDefinicion('jiten', true) === 'noDefJitenCaido',
+    'Mensaje: con solo Jiten y Jiten caído, no se afirma que la palabra no exista');
+
+  check(mensajeSinDefinicion('ambos', false) === 'noDefNinguno',
+    'Mensaje: con los dos y Jiten contestando, no está en ninguno de los dos');
+  check(mensajeSinDefinicion('ambos', true) === 'noDefOffline',
+    'Mensaje: con los dos y sin conexión, se dice que Jiten no se pudo consultar');
+
+  // Las claves tienen que existir en los dos idiomas: una sin traducir se pinta en
+  // crudo («noDefJitenCaido») en la ventana del diccionario.
+  const claves = ['noDefFound', 'noDefOffline', 'noDefNinguno', 'noDefJitenVacio', 'noDefJitenCaido'];
+  check(claves.every((clave) => !!TRANSLATIONS.es[clave] && !!TRANSLATIONS.en[clave]),
+    'Mensaje: las cinco claves están traducidas en español y en inglés');
+  check(claves.every((clave) => t(clave, 'en') !== clave && t(clave, 'es') !== clave),
+    'Mensaje: ninguna clave se pinta en crudo');
+}
+
+/*
+  Quién parte las palabras: el analizador de Jiten o el de la app.
+
+  Antes no se elegía, se deducía: con clave guardada mandaba Jiten, sin ella el de la app.
+  Lo que se fija aquí es que al pasar a elegirlo nadie note el cambio —quien tenía clave
+  sigue con Jiten, quien no, con el de la app— y que el modo elegido pese por encima de la
+  clave, que es justo lo que no se podía hacer: leer con el analizador de la app teniendo
+  cuenta de Jiten.
+*/
+function analizadorTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  const poner = (valores: Record<string, unknown>) => localStorage.setItem(AJUSTES, JSON.stringify(valores));
+  const comoEscritorio = (si: boolean) => {
+    if (si) (globalThis as any).window.electronAPI = {};
+    else delete (globalThis as any).window.electronAPI;
+  };
+
+  comoEscritorio(false);
+
+  poner({});
+  check(modoAnalizadorPorDefecto() === 'nativo' && modoAnalizador() === 'nativo',
+    'Analizador: sin clave y sin elegir, parte las palabras la app');
+
+  poner({ jitenApiKey: 'ak_de_prueba' });
+  check(modoAnalizadorPorDefecto() === 'jiten' && modoAnalizador() === 'jiten',
+    'Analizador: quien ya tenía clave sigue con Jiten sin tocar nada');
+
+  // El interruptor viejo apagado también se respeta como punto de partida.
+  poner({ jitenApiKey: 'ak_de_prueba', jitenUseParser: false });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: quien había apagado el parser de Jiten arranca con el de la app');
+
+  // Lo nuevo: la elección manda sobre todo lo anterior, en los dos sentidos.
+  poner({ jitenApiKey: 'ak_de_prueba', parserEngine: 'nativo' });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: con cuenta de Jiten se puede leer con el de la app, que antes no se podía');
+  poner({ jitenApiKey: 'ak_de_prueba', jitenUseParser: false, parserEngine: 'jiten' });
+  check(modoAnalizador() === 'jiten',
+    'Analizador: y lo elegido pesa más que el interruptor viejo');
+
+  // Un valor que no es ninguno de los dos no se cuela: se vuelve al de siempre.
+  poner({ parserEngine: 'lo-que-sea' });
+  check(modoAnalizador() === 'nativo',
+    'Analizador: un modo desconocido no se usa, se vuelve al de siempre');
+
+  // Qué no se ofrece, y por qué. Sin clave, Jiten no puede: su analizador es un servicio.
+  poner({});
+  check(motivoModoNoDisponible('jiten') === 'sin-clave' && motivoModoNoDisponible('nativo') === null,
+    'Analizador: sin clave, el modo Jiten no se ofrece, y se dice que falta la clave');
+  poner({ jitenApiKey: 'ak_de_prueba' });
+  check(motivoModoNoDisponible('jiten') === null,
+    'Analizador: con clave, el modo Jiten se ofrece');
+
+  /*
+    En escritorio las palabras las parte la extensión de lectura. La app no puede pedirle que
+    pare: su interruptor (`parsingPaused`) está sin prefijo en chrome.storage.local y el puente
+    de ajustes escribe `profile:<id>:<clave>`. Así que allí el modo nativo no se ofrece, y el
+    motivo que se da es ese y no «te falta la clave».
+  */
+  comoEscritorio(true);
+  poner({});
+  check(modoAnalizadorPorDefecto() === 'jiten',
+    'Analizador: en escritorio, sin elegir, parte las palabras la extensión');
+
+  /*
+    Antes de preguntarle a la extensión no se sabe si sabe pararse, y eso no es un «no». La
+    interfaz no puede ofrecer el modo nativo mientras no haya respuesta, pero el motivo que da
+    tiene que decir que no se ha comprobado, no inventarse otro.
+  */
+  check(motivoModoNoDisponible('nativo') === 'sin-comprobar',
+    'Analizador: sin preguntar todavía, no se ofrece el modo de la app, y se dice que falta comprobarlo');
+
+  comoEscritorio(false);
+  localStorage.removeItem(AJUSTES);
+}
+
+/*
+  Si la extensión de lectura sabe pararse, preguntándoselo y no adivinando por versión.
+
+  La que sabe contesta `parsingPaused` como booleana, porque la devuelve por `getParsingPaused`.
+  Una anterior la busca en `profile:<id>:parsingPaused`, donde nadie la ha escrito, y contesta
+  null o una cadena. Y si no contesta nadie no se decide: podría ser que no haya extensión, pero
+  también que su puente esté roto, y ahí no se le puede pedir que pare.
+*/
+async function pausaTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  // En escritorio: hay electronAPI, así que los ajustes los lleva la extensión.
+  (globalThis as any).window.electronAPI = {};
+  let respuesta: Record<string, unknown> | 'callar' = 'callar';
+
+  // El puente: la página pide por un evento y la extensión contesta por otro.
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    if (respuesta === 'callar') return;
+    document.dispatchEvent(new CustomEvent('yoru-settings-data', {
+      detail: { id: detalle.id, values: respuesta },
+    }));
+  };
+  document.addEventListener('yoru-settings-read', puente);
+
+  respuesta = { parsingPaused: false };
+  check(await comprobarPausaDeExtension() === true && motivoModoNoDisponible('nativo') === null,
+    'Pausa: una booleana (aunque sea false) es la extensión que sabe pararse');
+
+  respuesta = { parsingPaused: 'false' };
+  check(await comprobarPausaDeExtension() === false && motivoModoNoDisponible('nativo') === 'solo-extension',
+    'Pausa: la cadena «false» es una extensión anterior, y no se ofrece el modo de la app');
+
+  respuesta = { parsingPaused: null };
+  check(await comprobarPausaDeExtension() === false,
+    'Pausa: null también es una extensión anterior');
+
+  document.removeEventListener('yoru-settings-read', puente);
+  delete (globalThis as any).window.electronAPI;
+  localStorage.removeItem(AJUSTES);
+}
+
+/*
+  Guardar el modo tiene que avisar al lector y pausar la extensión, en la misma escritura.
+
+  Es el contrato del que depende el repintado: el lector escucha
+  `yoru-parser-settings-changed` y solo vuelve a dibujar cuando entre las claves viene
+  `parserEngine`. Si el aviso no llevara esa clave, al cambiar de modo el texto se quedaría
+  con lo que pintó la extensión —que es justo lo que se midió en el ordenador de zams— y si
+  llevara la clave de más, repintaríamos en cada ajuste y le borraríamos lo pintado mientras
+  lee.
+*/
+async function repintarTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  const avisos: { keys: string[] }[] = [];
+  const dispatchOriginal = (globalThis as any).window.dispatchEvent;
+  (globalThis as any).window.dispatchEvent = (e: any) => {
+    if (e?.type === 'yoru-parser-settings-changed') avisos.push({ keys: e.detail?.keys || [] });
+    return true;
+  };
+
+  // Un puente que acepta lo que le manden y anota lo que le llega.
+  const recibido: Record<string, unknown>[] = [];
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    recibido.push(detalle.entries);
+    document.dispatchEvent(new CustomEvent('yoru-settings-written', { detail: { id: detalle.id, ok: true } }));
+  };
+  document.addEventListener('yoru-settings-write', puente);
+
+  // En escritorio (hay electronAPI): el modo manda sobre la extensión.
+  (globalThis as any).window.electronAPI = {};
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'nativo' });
+  check(avisos.length === 1 && avisos[0].keys.includes('parserEngine'),
+    'Repintar: guardar el modo avisa al lector con la clave que mira');
+  check(recibido.length === 1 && recibido[0].parsingPaused === true,
+    'Repintar: elegir el analizador de la app pausa la extensión de verdad');
+
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'jiten' });
+  check(recibido[0]?.parsingPaused === false,
+    'Repintar: volver a Jiten la reanuda');
+
+  // Otro ajuste cualquiera no debe repintar: borraría lo pintado mientras lee.
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ furiganaNewWords: true });
+  check(avisos.length === 1 && !avisos[0].keys.includes('parserEngine'),
+    'Repintar: cambiar otro ajuste no pide repintado');
+  check(recibido[0] && !('parsingPaused' in recibido[0]),
+    'Repintar: y no toca la pausa de la extensión');
+
+  // En el teléfono no hay extensión que pausar, así que esa clave no se manda.
+  delete (globalThis as any).window.electronAPI;
+  avisos.length = 0; recibido.length = 0;
+  await writeParserSettings({ parserEngine: 'nativo' });
+  check(avisos.length === 1 && avisos[0].keys.includes('parserEngine'),
+    'Repintar: en el teléfono también se avisa al lector');
+  check(recibido.length === 0,
+    'Repintar: y no se manda ninguna pausa, que allí no hay extensión');
+
+  document.removeEventListener('yoru-settings-write', puente);
+  (globalThis as any).window.dispatchEvent = dispatchOriginal;
+  localStorage.removeItem(AJUSTES);
+}
+
+/*
+  Dónde se planta la tarjeta del diccionario en vertical.
+
+  El caso de la primera comprobación es el de su captura, medido: ventana de 1920, la palabra
+  夜空 con su borde derecho en 1530, y la tarjeta queriendo 380 px. Por la derecha quedaban 370,
+  diez menos de los que pedía, y la tarjeta se mudaba al borde izquierdo a taparle texto sin
+  leer. Encogerse diez píxeles es mejor que cruzar la pantalla.
+*/
+function popupVerticalTests() {
+  const base = {
+    anchoVentana: 1920,
+    altoVentana: 1080,
+    anchoDeseado: 380,
+    altoTarjeta: 500,
+    margen: 12,
+    hueco: 8,
+    anchoMinimo: 300,
+  };
+  const palabra = (left: number, top: number) => ({ left, right: left + 24, top, bottom: top + 24 });
+
+  const suyo = sitioEnVertical({ ...base, palabra: palabra(1506, 390) });
+  check(suyo.donde === 'derecha' && suyo.left === 1538 && suyo.ancho === 370,
+    'Popup vertical: con 370 px libres a la derecha se encoge y se queda ahí, no cruza la pantalla');
+
+  // Con sitio de sobra, el ancho que quería y pegada a la palabra.
+  const holgado = sitioEnVertical({ ...base, palabra: palabra(900, 300) });
+  check(holgado.donde === 'derecha' && holgado.ancho === 380 && holgado.left === 932,
+    'Popup vertical: con hueco de sobra, a la derecha y con su ancho entero');
+
+  /*
+    La palabra en la primera columna, pegada al borde derecho: por la derecha no cabe ni
+    encogida. Antes se iba directa al borde izquierdo; ahora prueba encima, que en su propia
+    columna es texto ya leído, y se alinea por la derecha para extenderse hacia lo leído.
+  */
+  const encima = sitioEnVertical({ ...base, palabra: palabra(1870, 600) });
+  check(encima.donde === 'encima' && encima.top === 600 - 8 - 500,
+    'Popup vertical: si no cabe a la derecha, va encima de la palabra, sobre lo ya leído');
+  check(encima.left + encima.ancho === 1894,
+    'Popup vertical: y encima se alinea por su derecha, para tapar columnas leídas y no las siguientes');
+
+  /*
+    Ni a la derecha ni encima: palabra en la primera columna y además arriba. Aquí no hay hueco
+    en lo leído y el borde izquierdo es lo menos malo, porque son las últimas columnas de la
+    hoja. Se tapa texto sin leer, pero el que falta más para llegar.
+  */
+  const extremo = sitioEnVertical({ ...base, palabra: palabra(1870, 60) });
+  check(extremo.donde === 'extremo' && extremo.left === 12,
+    'Popup vertical: sin hueco en lo leído, al borde izquierdo, que son las últimas columnas');
+
+  // La tarjeta nunca se parte por abajo ni baja del mínimo legible.
+  const alta = sitioEnVertical({ ...base, altoTarjeta: 1000, palabra: palabra(900, 900) });
+  check(alta.top + 1000 <= base.altoVentana - base.margen + 1 && alta.top >= base.margen,
+    'Popup vertical: una tarjeta alta no se sale por abajo');
+  const estrecha = sitioEnVertical({ ...base, palabra: palabra(1700, 390) });
+  check(estrecha.donde !== 'derecha',
+    'Popup vertical: si a la derecha no llega al mínimo legible, no se encoge ahí: busca otro sitio');
+}
+
+/*
+  La furigana: una sola idea, una sola fuente.
+
+  En escritorio ese ajuste vive en la extensión, pero el analizador de la app solo lee la copia
+  local. Si nadie la había escrito se quedaba en `false`, así que al elegir el analizador de la
+  app desaparecía toda la furigana y el interruptor estaba escondido: no había forma de
+  recuperarla. Lo que se fija aquí es que la copia local acabe diciendo lo que dice la
+  extensión, y que cuando no se pueda preguntar **no se invente ni se apague** nada.
+*/
+async function furiganaTests() {
+  const AJUSTES = 'yoru_parser_settings_v1';
+  let respuesta: Record<string, unknown> | 'callar' = 'callar';
+  const puente = (e: Event) => {
+    const detalle = (e as CustomEvent).detail;
+    if (respuesta === 'callar') return;
+    document.dispatchEvent(new CustomEvent('yoru-settings-data', { detail: { id: detalle.id, values: respuesta } }));
+  };
+  document.addEventListener('yoru-settings-read', puente);
+  const leerLocal = () => JSON.parse(localStorage.getItem(AJUSTES) || '{}').furiganaNewWords;
+
+  (globalThis as any).window.electronAPI = {};
+
+  // La extensión la tiene encendida y la copia local no sabía nada: se refleja.
+  localStorage.setItem(AJUSTES, JSON.stringify({}));
+  respuesta = { furiganaNewWords: true };
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === true,
+    'Furigana: lo que dice la extensión pasa a la copia local que lee el analizador de la app');
+
+  // Y apagada también se refleja: mandar es mandar en los dos sentidos.
+  respuesta = { furiganaNewWords: 'false' };
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === false,
+    'Furigana: y si la extensión la tiene apagada, también');
+
+  /*
+    Lo que de verdad importa: si no se puede preguntar, no se apaga nada ni se inventa un
+    valor. La copia local se queda como estaba y queda dicho que no se pudo leer, para que la
+    pantalla no afirme que está apagada cuando lo que pasa es que no lo sabemos.
+  */
+  localStorage.setItem(AJUSTES, JSON.stringify({ furiganaNewWords: true }));
+  respuesta = 'callar';
+  check(await reflejarFuriganaDeExtension() === 'sin-leer' && leerLocal() === true,
+    'Furigana: si el puente no contesta, no se apaga nada y se dice que no se pudo leer');
+  check(estadoFurigana() === 'sin-leer',
+    'Furigana: y ese estado queda a mano de la pantalla');
+
+  // Una clave que la extensión no tiene tampoco es un «apagada».
+  respuesta = { furiganaNewWords: null };
+  check(await reflejarFuriganaDeExtension() === 'sin-leer' && leerLocal() === true,
+    'Furigana: una respuesta vacía no se lee como apagada');
+
+  // En el teléfono no hay a quién preguntar: la copia local es la fuente, no un reflejo.
+  delete (globalThis as any).window.electronAPI;
+  respuesta = 'callar';
+  check(await reflejarFuriganaDeExtension() === 'leida' && leerLocal() === true,
+    'Furigana: en el teléfono la copia local es la fuente y no hay nada que reflejar');
+
+  document.removeEventListener('yoru-settings-read', puente);
+  localStorage.removeItem(AJUSTES);
+}
+
+popupVerticalTests();
+await furiganaTests();
+mensajeTests();
+// Antes del sondeo: así `analizadorTests` ve el estado «sin comprobar» de verdad, no el que
+// deja `pausaTests` detrás.
+analizadorTests();
+await pausaTests();
+await repintarTests();
+ordenTests();
+await localProgressTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

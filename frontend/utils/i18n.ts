@@ -9,7 +9,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
 
     // Welcome Screen
     welcomeTitle: 'YORU READER',
-    welcomeSubtitle: 'Crea tu perfil para empezar a leer japonés',
+    // Ya se entró con Discord antes de llegar aquí, así que el perfil es el último
+    // paso y no el primero: el texto lo dice para que no parezca que vuelve a empezar.
+    welcomeSubtitle: 'Ya estás dentro. Crea tu perfil y empieza a leer japonés',
     profileName: 'Nombre de perfil',
     namePlaceholder: 'Introduce tu nombre...',
     chooseAvatar: 'O elige un avatar rápido:',
@@ -106,6 +108,13 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     page: 'Página',
     dictLoading: 'Cargando diccionario...',
     noDefFound: 'No se encontró definición en tus diccionarios.',
+    // Cuando además no se pudo preguntar fuera. No es lo mismo que no exista: esto se
+    // arregla solo cuando vuelva la conexión, y conviene que quien lee lo sepa.
+    noDefOffline: 'No está en tus diccionarios y no se pudo consultar Jiten.',
+    // Cada uno dice solo lo comprobado: dónde se buscó y qué pasó allí.
+    noDefNinguno: 'No está en tus diccionarios ni en Jiten.',
+    noDefJitenVacio: 'Jiten no tiene esta palabra.',
+    noDefJitenCaido: 'No se pudo consultar Jiten.',
     mineToAnki: 'Minar a Anki',
     listenPronunciation: 'Escuchar pronunciación',
     statusNew: 'Nuevo',
@@ -132,7 +141,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
 
     // Welcome Screen
     welcomeTitle: 'YORU READER',
-    welcomeSubtitle: 'Create your profile to start reading Japanese',
+    welcomeSubtitle: 'You are in. Create your profile and start reading Japanese',
     profileName: 'Profile Name',
     namePlaceholder: 'Enter your name...',
     chooseAvatar: 'Or choose a quick avatar:',
@@ -229,6 +238,10 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     page: 'Page',
     dictLoading: 'Loading dictionary...',
     noDefFound: 'No definition found in your dictionaries.',
+    noDefOffline: 'Not in your dictionaries, and Jiten could not be reached.',
+    noDefNinguno: 'Not in your dictionaries, and not in Jiten.',
+    noDefJitenVacio: 'Jiten does not have this word.',
+    noDefJitenCaido: 'Jiten could not be reached.',
     mineToAnki: 'Mine to Anki',
     listenPronunciation: 'Listen pronunciation',
     statusNew: 'New',

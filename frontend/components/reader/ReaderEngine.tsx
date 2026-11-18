@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 'react';
 import { ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJitenParagraph, isFuriganaOnNewWords } from '../../utils/yoruParserNative';
+import { reflejarFuriganaDeExtension } from '../../utils/parserSettingsStore';
 import { isPhoneUI } from '../../utils/platform';
 import { t } from '../../utils/i18n';
 import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
@@ -363,10 +364,17 @@ function ReaderEngineComponent({
   // Height of the page box (the content element; its height is fixed at 100%, the container may
   // add padding): a vertical-text page is exactly this tall (see contentStyle).
   const [boxHeight, setBoxHeight] = useState(() => window.innerHeight);
+  // Y el ancho, que para el texto horizontal es lo que el alto para el vertical: el paso de
+  // una página a la siguiente. Se mide el mismo elemento del que sale `clientWidth` en el
+  // cálculo de páginas, para que las dos cuentas no puedan discrepar.
+  const [boxWidth, setBoxWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setBoxHeight(content.clientHeight || window.innerHeight));
+    const observer = new ResizeObserver(() => {
+      setBoxHeight(content.clientHeight || window.innerHeight);
+      setBoxWidth(content.clientWidth || window.innerWidth);
+    });
     observer.observe(content);
     return () => observer.disconnect();
   }, []);
@@ -484,8 +492,35 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
         width: '100%',
         height: '100%',
-        columnGap: `calc(${hp} * 2)`,
-        columnWidth: `calc(100vw - ${hp} * 2)`,
+        /*
+          Dos columnas cuando la ventana da para ello, como un libro abierto.
+
+          En una pantalla ancha, una sola columna obliga a recorrer con la vista toda
+          la ventana en cada renglón, que es justo lo que cansa al leer. Dos columnas
+          parten el renglón por la mitad. El umbral son 1000 px de caja por columna,
+          el mismo que usa Nanahoshi, y nunca pasa de dos: con tres, cada columna se
+          queda tan estrecha que las palabras largas se parten. (De Nanahoshi sale el
+          umbral, no el código; la cesión de Natsume está en THIRD-PARTY-GRANTS.md.)
+
+          La cuenta mantiene intacto el paso de página. Con hueco `g = 2·margen` y
+          columna `c = caja/n − g`, n columnas ocupan exactamente una caja: la primera
+          empieza en el margen, la última acaba en el margen opuesto, y la primera de
+          la página siguiente cae justo una caja más allá. Eso importa porque el resto
+          del motor (contar páginas, ir a un párrafo, volver de una búsqueda) da por
+          hecho que una página mide `clientWidth`; si el paso cambiara, la posición de
+          lectura se movería sola al redimensionar o al cambiar el tamaño de letra.
+        */
+        ...(() => {
+          const hpPx = Math.max(10, window.innerWidth * (horizontalPadding / 100));
+          const columnas = Math.min(2, Math.max(1, Math.ceil(boxWidth / 1000)));
+          const hueco = hpPx * 2;
+          const ancho = boxWidth / columnas - hueco;
+          // Si la columna sale ridícula (ventana estrecha con márgenes grandes), una sola.
+          if (columnas > 1 && ancho < 280) {
+            return { columnGap: `${hueco}px`, columnWidth: `${Math.max(120, boxWidth - hueco)}px` };
+          }
+          return { columnGap: `${hueco}px`, columnWidth: `${Math.max(120, ancho)}px` };
+        })(),
         columnFill: 'auto',
       };
     } else if (!paginated && vertical) {
@@ -507,7 +542,7 @@ function ReaderEngineComponent({
         overflowX: 'hidden',
       };
     }
-  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, bottomReserve]);
+  }, [fontSize, lineHeight, verticalPadding, horizontalPadding, vertical, paginated, fontFamily, colors.bg, colors.textMain, fontWeight, textAlign, hyphenation, boxHeight, boxWidth, bottomReserve]);
 
   // Update current chars read based on visible elements
   const updateChars = useCallback(() => {
@@ -1249,18 +1284,69 @@ function ReaderEngineComponent({
   const [jitenEnabled, setJitenEnabled] = useState(() => isJitenParserEnabled());
   // Rendered into the HTML by the tokenizers, so a change re-renders the section.
   const [furiganaNew, setFuriganaNew] = useState(() => isFuriganaOnNewWords());
+  /*
+    Al cambiar de analizador hay que volver a pintar la sección.
+
+    Medido en escritorio con la extensión: cambiar de modo no limpia nada de lo ya pintado.
+    Pausarla solo evita que parsee **lo siguiente**, así que el texto que ya estaba delante se
+    queda con el color y la furigana que le puso ella hasta que el lector lo dibuja otra vez.
+    Esto fuerza ese dibujado; lo de después lo pinta quien toque.
+  */
+  const [repintado, setRepintado] = useState(0);
+  const posicionAlRepintar = useRef<{ top: number; left: number } | null>(null);
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (evento?: Event) => {
       setJitenEnabled(isJitenParserEnabled());
       setFuriganaNew(isFuriganaOnNewWords());
+      const claves = (evento as CustomEvent | undefined)?.detail?.keys;
+      if (Array.isArray(claves) && claves.includes('parserEngine')) {
+        // Se guarda aquí porque React todavía no ha repintado: es el último momento en que
+        // el scroll de ahora sigue siendo el de verdad.
+        const content = contentRef.current;
+        posicionAlRepintar.current = content
+          ? { top: content.scrollTop, left: content.scrollLeft }
+          : null;
+        setRepintado((n) => n + 1);
+      }
     };
     window.addEventListener('yoru-parser-settings-changed', refresh);
     const unsubscribe = onJitenChange(refresh);
+    /*
+      El ajuste de furigana que manda es el de la extensión, y el analizador de la app solo lee
+      la copia local. Se pide aquí, con el lector ya montado, porque al arrancar la app el
+      content script puede no estar todavía y no contestaría. El propio reflejo lanza el evento
+      de arriba, así que si el valor cambia, esto se vuelve a dibujar solo.
+    */
+    void reflejarFuriganaDeExtension();
     return () => {
       window.removeEventListener('yoru-parser-settings-changed', refresh);
       unsubscribe();
     };
   }, []);
+
+  /*
+    Y devolver la página a donde estaba.
+
+    Reemplazar el HTML deja el contenido al principio, y el efecto que coloca la página
+    depende de `pageIndex`, que no ha cambiado, así que no se vuelve a ejecutar solo. Sin
+    esto, cambiar de analizador te manda al principio del capítulo.
+  */
+  useEffect(() => {
+    if (repintado === 0) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (paginated) {
+        applyPagePosition(pageIndex);
+        return;
+      }
+      const content = contentRef.current;
+      const guardada = posicionAlRepintar.current;
+      if (content && guardada) {
+        content.scrollTop = guardada.top;
+        content.scrollLeft = guardada.left;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [repintado, paginated, pageIndex, applyPagePosition]);
   const jitenPendingRef = useRef<PendingJitenParagraph[]>([]);
 
   // Build current section HTML
@@ -1283,7 +1369,7 @@ function ReaderEngineComponent({
       return currentSection ? renderSection(currentSection) : '';
     }
     return sections.map(renderSection).join('');
-  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled, furiganaNew]);
+  }, [book.chapters, sections, currSection, paginated, wordStatuses, parserReady, jitenEnabled, furiganaNew, repintado]);
 
   // Ask Jiten for the paragraphs on screen, then swap them in place (same text, so the page does not move).
   useEffect(() => {

@@ -1,14 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Play } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { MoreVertical, Play, Tag, Trash2, X } from 'lucide-react';
 import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
   getCachedServerCatalog,
   sample,
+  serverItemId,
   type ServerItem,
   type ServerSeries,
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
+import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
+import { LOCAL_PROGRESS_EVENT, forgetKavitaSeries, localKavitaSeriesRead } from '../../utils/serverProgress';
+import { kavitaVolumeCoverUrl } from '../../utils/kavitaService';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -18,14 +22,89 @@ import type { RailId } from '../../utils/homeRails';
  *
  * En lugar de «Popular» (que ningún servidor expone como ranking) va «Continuar en el
  * servidor», que es el `on-deck` de Kavita: lo que ese servidor tiene a medias.
+ *
+ * Lo que se aparta a mano de las dos filas de «continuar» del servidor se guarda
+ * aquí, en la app: el servidor sigue sabiendo que ese libro está a medias, que es la
+ * verdad, y no se lo quitamos a los demás aparatos que lo usan. Lo pidió zams (18 nov
+ * 2026) al encontrarse con que en esas tarjetas el clic derecho no hacía nada.
  */
+const APARTADOS = 'yoru_server_continue_hidden_v1';
+const APARTADOS_EVENTO = 'yoru-server-continue-hidden';
+
+/**
+ * Lo apartado, con el momento en que se apartó.
+ *
+ * Antes era una lista de ids sin fecha, y apartar era para siempre: quitabas un
+ * audiolibro de «Continuar», lo seguías escuchando y ya no volvía nunca, aunque su
+ * ficha dijera 50 %. Le pasó a zams (18 nov 2026). Con la fecha, apartar significa
+ * «ahora no»: en cuanto vuelves a leerlo o escucharlo, regresa a la fila. Las listas
+ * viejas se leen como apartadas sin fecha, o sea, cualquier avance las devuelve.
+ */
+function leerApartados(): Record<string, string> {
+  try {
+    const crudo = localStorage.getItem(APARTADOS);
+    const dato = crudo ? JSON.parse(crudo) : {};
+    if (Array.isArray(dato)) {
+      return Object.fromEntries(dato.filter((id): id is string => typeof id === 'string').map((id) => [id, '']));
+    }
+    if (!dato || typeof dato !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(dato).filter((par): par is [string, string] => typeof par[1] === 'string')
+    );
+  } catch {
+    return {};
+  }
+}
+
+function apartar(id: string): void {
+  const mapa = leerApartados();
+  mapa[id] = new Date().toISOString();
+  try {
+    localStorage.setItem(APARTADOS, JSON.stringify(mapa));
+  } catch {
+    /* Sin sitio en el almacén: se queda sin apartar, que es mejor que romper la vista. */
+  }
+  window.dispatchEvent(new Event(APARTADOS_EVENTO));
+}
+
+/**
+ * Lo apartado a mano de las filas de «continuar», y cómo apartar más.
+ * Lo usan las filas del servidor y también el «Continuar» de Inicio, que pinta ahí
+ * mismo los tomos del servidor que lleva este perfil.
+ *
+ * `estaApartado(id, at)` es la pregunta buena cuando se sabe cuándo fue el último
+ * avance (`at`): lo apartado antes de ese avance ya no cuenta. `apartados` queda para
+ * las filas que vienen de la cuenta del servidor, donde no hay fecha que comparar.
+ */
+export function useApartados(): {
+  apartados: Set<string>;
+  apartar: (id: string) => void;
+  estaApartado: (id: string, at?: string) => boolean;
+} {
+  const [mapa, setMapa] = useState(() => leerApartados());
+  useEffect(() => {
+    const onUpdate = () => setMapa(leerApartados());
+    window.addEventListener(APARTADOS_EVENTO, onUpdate);
+    return () => window.removeEventListener(APARTADOS_EVENTO, onUpdate);
+  }, []);
+  const apartados = useMemo(() => new Set(Object.keys(mapa)), [mapa]);
+  const estaApartado = (id: string, at?: string) => {
+    if (!(id in mapa)) return false;
+    return !at || at <= mapa[id];
+  };
+  return { apartados, apartar, estaApartado };
+}
+
 export function useServerRails({
   es,
   localTitles,
+  skipSeriesIds,
   onOpenItem,
   onOpenSeries,
 }: {
   es: boolean;
+  /** Series que ya salen en «Continuar» (leídas en este perfil), para no repetirlas. */
+  skipSeriesIds?: Set<string>;
   /** Títulos que ya están en la biblioteca local, para no repetirlos. */
   localTitles?: Set<string>;
   /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
@@ -39,16 +118,50 @@ export function useServerRails({
   useEffect(() => {
     const onUpdate = () => setCatalog(getCachedServerCatalog());
     window.addEventListener('yoru-server-catalog-updated', onUpdate);
-    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+    // «Seguir escuchando» sale de lo apuntado en este perfil cuando no comparte el
+    // progreso de la cuenta, así que cambia al escuchar, sin pasar por el servidor.
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    return () => {
+      window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+      window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    };
   }, []);
 
 
 
 
+  /*
+    Tu lista guarda ids, no títulos, así que los audiolibros salen de la misma caché
+    que alimenta el resto de carruseles. Un id que ya no esté en el servidor
+    sencillamente no aparece, en vez de dejar una tarjeta rota.
+  */
+  const { apartados } = useApartados();
+  const quitar = (item: ServerItem) => apartar(item.id);
+
+  const [listIds, setListIds] = useState(() => audiobookList());
+  useEffect(() => {
+    const onUpdate = () => setListIds(audiobookList());
+    window.addEventListener('yoru-audiobook-list-updated', onUpdate);
+    return () => window.removeEventListener('yoru-audiobook-list-updated', onUpdate);
+  }, []);
+  const listed = useMemo(() => {
+    if (listIds.length === 0) return [];
+    const byId = new Map(catalog.audiobooks.map((item) => [serverItemId(item), item]));
+    return listIds.map((id) => byId.get(id)).filter((item): item is ServerItem => Boolean(item));
+  }, [listIds, catalog.audiobooks]);
+
   // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
   const onDeck = useMemo(
-    () => catalog.onDeck.filter((item) => !localTitles || !localTitles.has(item.title)),
-    [catalog.onDeck, localTitles]
+    () => catalog.onDeck.filter((item) => (!localTitles || !localTitles.has(item.title))
+      && (!skipSeriesIds || !skipSeriesIds.has(serverItemId(item)))
+      && !apartados.has(item.id)),
+    [catalog.onDeck, localTitles, skipSeriesIds, apartados]
+  );
+  // Tampoco repite lo que «Continuar» ya enseña de este perfil.
+  const continueAudio = useMemo(
+    () => catalog.continueAudio.filter((item) => !apartados.has(item.id)
+      && (!skipSeriesIds || !skipSeriesIds.has(serverItemId(item)))),
+    [catalog.continueAudio, apartados, skipSeriesIds]
   );
   const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
@@ -61,11 +174,43 @@ export function useServerRails({
   */
   const rails: Partial<Record<RailId, React.ReactNode>> = {};
 
+  /*
+    Lo que apartaste tú con «Añadir a lista». Va de los primeros porque es lo único
+    de esta pantalla que elegiste a mano: todo lo demás te lo proponemos nosotros.
+  */
+  if (listed.length > 0) {
+    rails['server-list'] = (
+      <Rail title={es ? 'Tu lista' : 'Your list'} es={es}>
+        {listed.map((item) => (
+          <ServerCard key={`l-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
+        ))}
+      </Rail>
+    );
+  }
+
+  /*
+    «Seguir escuchando»: los audiolibros a medias, con su barra de avance.
+
+    Faltaba, y se notaba: los libros tenían su «Continuar» con el porcentaje desde el
+    principio y los audiolibros no tenían nada, aunque el servidor sepa perfectamente
+    por dónde vas. Lo pidió zams (18 nov 2026). Sale del `items-in-progress` del
+    propio Audiobookshelf, así que dice lo mismo que su app.
+  */
+  if (continueAudio.length > 0) {
+    rails['server-audio-continue'] = (
+      <Rail title={es ? 'Seguir escuchando' : 'Keep listening'} es={es}>
+        {continueAudio.map((item) => (
+          <ServerContinueCard key={`c-${item.id}`} item={item} es={es} onOpen={onOpenItem} onHide={quitar} />
+        ))}
+      </Rail>
+    );
+  }
+
   if (onDeck.length > 0) {
     rails['server-ondeck'] = (
       <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
         {onDeck.map((item) => (
-          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
+          <ServerContinueCard key={item.id} item={item} es={es} onOpen={onOpenItem} onHide={quitar} />
         ))}
       </Rail>
     );
@@ -135,6 +280,356 @@ export function useServerRails({
 }
 
 /**
+ * Una fila de «seguir donde lo dejaste», para lo que está a medias en el servidor.
+ *
+ * Es la misma tarjeta ancha que el «Continuar» local (`.yoru-continue-card`), y a
+ * propósito: zams lo pidió así (18 nov 2026) porque las tres filas de «continuar»
+ * caen juntas arriba de Inicio y mezclar póster grande con fila ancha las hacía
+ * parecer secciones distintas. Lo único que cambia es la línea de estado, que dice
+ * si es novela o audiolibro.
+ */
+export function ServerContinueCard({
+  item,
+  es,
+  onOpen,
+  onHide,
+}: {
+  item: ServerItem;
+  es: boolean;
+  onOpen: (item: ServerItem) => void;
+  /** Aparta la tarjeta de la fila, solo en esta app. */
+  onHide: (item: ServerItem) => void;
+}) {
+  const isAudio = item.source === 'audiobookshelf';
+  const percent = typeof item.percent === 'number' ? Math.min(100, Math.max(0, item.percent)) : 0;
+  const tipo = isAudio ? (es ? 'Audiolibro' : 'Audiobook') : (es ? 'Novela' : 'Novel');
+  // Sin autor no se escribe «Sin autor»: eso es afirmar algo que no sabemos. Kavita
+  // solo da el escritor en los metadatos de la serie, y de ahí sale cuando los trae.
+  const subtitulo = item.author || item.series || '';
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="yoru-continue-slot"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}
+    >
+      <button type="button" className="yoru-continue-card" title={item.title} onClick={() => onOpen(item)}>
+        <span className="yoru-continue-cover">
+          <img src={item.cover} alt="" loading="lazy" />
+        </span>
+        <span className="yoru-continue-body">
+          <span className="yoru-continue-title">{item.title}</span>
+          {subtitulo && <span className="yoru-continue-author">{subtitulo}</span>}
+          <span className="yoru-continue-state">
+            {tipo} · {percent} %
+          </span>
+          <span className="yoru-continue-bar">
+            <span style={{ width: `${percent}%` }} />
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        className="yoru-continue-remove"
+        title={es ? 'Quitar de esta fila' : 'Remove from this row'}
+        aria-label={es ? 'Quitar de esta fila' : 'Remove from this row'}
+        onClick={(event) => {
+          event.stopPropagation();
+          onHide(item);
+        }}
+      >
+        <X size={14} />
+      </button>
+      {menu && (
+        <ServerItemMenu
+          item={item}
+          es={es}
+          x={menu.x}
+          y={menu.y}
+          onOpen={onOpen}
+          onHide={onHide}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </span>
+  );
+}
+
+/**
+ * El menú del clic derecho de una tarjeta del servidor.
+ *
+ * No es el de los libros de tu biblioteca: lo que hay aquí no es un libro tuyo, así
+ * que no puede ir a una colección ni tiene ficha local. Lo que sí puede hacer está
+ * todo aquí, con la misma pinta que el otro. Lo pidió zams (18 nov 2026).
+ */
+function ServerItemMenu({
+  item,
+  es,
+  x,
+  y,
+  onOpen,
+  onHide,
+  onClose,
+  removeLabel,
+  destructive,
+}: {
+  item: ServerItem;
+  es: boolean;
+  x: number;
+  y: number;
+  onOpen: (item: ServerItem) => void;
+  onHide: (item: ServerItem) => void;
+  onClose: () => void;
+  /** Cómo se llama aquí lo de quitar; por defecto, quitarlo de la fila. */
+  removeLabel?: string;
+  /** Si quitar borra algo de verdad (lo leído), se pinta como acción destructiva. */
+  destructive?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState({ left: x, top: y, ready: false });
+
+  // Que no se salga de la ventana: se mide ya pintado y se recoloca si hace falta.
+  useEffect(() => {
+    const caja = ref.current?.getBoundingClientRect();
+    if (!caja) return;
+    setPlace({
+      left: Math.max(8, Math.min(x, window.innerWidth - caja.width - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - caja.height - 8)),
+      ready: true,
+    });
+  }, [x, y]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const isAudio = item.source === 'audiobookshelf';
+  const id = serverItemId(item);
+  const enLista = isAudio && isAudiobookInList(id);
+  const run = (action: () => void) => () => { action(); onClose(); };
+
+  return (
+    <div
+      className="yoru-menu-scrim"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onContextMenu={(event) => { event.preventDefault(); onClose(); }}
+    >
+      <div
+        ref={ref}
+        className="yoru-menu"
+        role="menu"
+        aria-label={item.title}
+        style={{ left: place.left, top: place.top, visibility: place.ready ? 'visible' : 'hidden' }}
+      >
+        <div className="yoru-menu-head" title={item.title}>{item.title}</div>
+
+        <button type="button" className="yoru-menu-item" role="menuitem" onClick={run(() => onOpen(item))}>
+          <Play size={15} />
+          {isAudio ? (es ? 'Seguir escuchando' : 'Keep listening') : es ? 'Continuar' : 'Continue'}
+        </button>
+
+        {isAudio && (
+          <button
+            type="button"
+            className="yoru-menu-item"
+            role="menuitem"
+            onClick={run(() => toggleAudiobookInList(id))}
+          >
+            <Tag size={15} />
+            {enLista
+              ? (es ? 'Quitar de tu lista' : 'Remove from your list')
+              : (es ? 'Añadir a tu lista' : 'Add to your list')}
+          </button>
+        )}
+
+        <div className="yoru-menu-sep" />
+
+        <button
+          type="button"
+          className={`yoru-menu-item${destructive ? ' is-danger' : ''}`}
+          role="menuitem"
+          onClick={run(() => onHide(item))}
+        >
+          {destructive ? <Trash2 size={15} /> : <X size={15} />}
+          {removeLabel || (es ? 'Quitar de esta fila' : 'Remove from this row')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Los libros del servidor que lees, dentro de la Biblioteca.
+ *
+ * La Biblioteca enseñaba solo lo importado, así que quien lee de Kavita sin descargar
+ * nada la veía vacía. Un tomo que lees en el servidor es tuyo igual que uno
+ * descargado, así que entra aquí con su avance en cuanto lo abres. Lo pidió zams
+ * (18 nov 2026).
+ *
+ * No es el servidor entero: eso es «Explorar Kavita», y meterlo aquí convertía la
+ * Biblioteca en un escaparate de treinta y seis libros que nadie había abierto. Lo
+ * leído es de este perfil, apuntado en el aparato; los títulos y las portadas salen
+ * de la caché que ya alimenta Inicio, así que no se pide nada al servidor.
+ */
+export function ServerLibrarySection({
+  es,
+  onOpenItem,
+  onExplore,
+}: {
+  es: boolean;
+  onOpenItem: (item: ServerItem) => void;
+  /** Lleva a «Explorar Kavita», para ver el servidor entero. */
+  onExplore?: () => void;
+}) {
+  const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
+  const [leidas, setLeidas] = useState(() => localKavitaSeriesRead());
+  useEffect(() => {
+    const onCatalog = () => setCatalog(getCachedServerCatalog());
+    const onProgress = () => setLeidas(localKavitaSeriesRead());
+    window.addEventListener('yoru-server-catalog-updated', onCatalog);
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+    return () => {
+      window.removeEventListener('yoru-server-catalog-updated', onCatalog);
+      window.removeEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+    };
+  }, []);
+
+  const items = useMemo(() => {
+    const delServidor = new Map(catalog.kavita.map((item) => [serverItemId(item), item]));
+    return leidas.map((serie) => {
+      const conocida = delServidor.get(String(serie.seriesId));
+      return {
+        id: `kavita-${serie.seriesId}`,
+        serverId: String(serie.seriesId),
+        title: conocida?.title || serie.title,
+        // La portada es la del tomo por el que vas, no la de la serie.
+        cover: kavitaVolumeCoverUrl(serie.volumeId) || conocida?.cover || '',
+        source: 'kavita' as const,
+        author: conocida?.author,
+        percent: serie.percent,
+      };
+    });
+  }, [leidas, catalog.kavita]);
+
+  if (items.length === 0) return null;
+  return (
+    /*
+      El mismo encabezado que los apartados de la Biblioteca («Sin iniciar»,
+      «Leyendo actualmente»), y a propósito: esto es un apartado más de la misma
+      pantalla. Antes iba en un panel aparte, con su recuadro y su explicación, y
+      parecía un cartel pegado encima en vez de parte de la página.
+    */
+    <div className="library-section">
+      <div className="section-header">
+        <h2 className="section-title">{es ? 'Leyendo' : 'Reading'}</h2>
+        <span className="section-count">{items.length}</span>
+        {onExplore && (
+          <button type="button" className="yoru-chip-link" onClick={onExplore}>
+            {es ? 'Explorar Kavita' : 'Explore Kavita'}
+          </button>
+        )}
+      </div>
+      <div className="yoru-serverlib-grid">
+        {items.map((item) => (
+          <ServerLibraryCard
+            key={`bib-${item.id}`}
+            item={item}
+            es={es}
+            onOpen={onOpenItem}
+            onForget={() => forgetKavitaSeries(Number(item.serverId))}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Una tarjeta de «Leyendo», con el mismo menú que los libros de la Biblioteca.
+ *
+ * Las tarjetas locales tienen su botón de tres puntos arriba a la derecha y su menú;
+ * estas no tenían nada, así que en la misma pantalla unas portadas respondían al menú
+ * y otras no. Ahora llevan el mismo botón, en el mismo sitio, y el menú abre con el
+ * botón o con el clic derecho. Lo pidió zams (18 nov 2026).
+ */
+function ServerLibraryCard({
+  item,
+  es,
+  onOpen,
+  onForget,
+}: {
+  item: ServerItem;
+  es: boolean;
+  onOpen: (item: ServerItem) => void;
+  /** Olvida lo leído de esta serie en este perfil: la saca de «Leyendo». */
+  onForget: () => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const percent = Math.min(100, Math.max(0, item.percent || 0));
+  const abrirMenu = (x: number, y: number) => setMenu({ x, y });
+  return (
+    <div
+      className="yoru-serverlib-slot"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        abrirMenu(event.clientX, event.clientY);
+      }}
+    >
+      <button
+        type="button"
+        className="yoru-serverlib-card"
+        title={item.title}
+        onClick={() => onOpen(item)}
+      >
+        <span className="yoru-serverlib-cover">
+          {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span className="yoru-serverlib-blank" />}
+          <span className="yoru-serverlib-bar" aria-hidden="true">
+            <span style={{ width: `${Math.max(2, percent)}%` }} />
+          </span>
+        </span>
+        <span className="yoru-serverlib-name">{item.title}</span>
+        <span className="yoru-serverlib-meta">
+          {percent >= 99 ? (es ? 'Terminado' : 'Finished') : `${percent} % ${es ? 'leído' : 'read'}`}
+        </span>
+      </button>
+      <div className="card-menu-wrapper yoru-serverlib-menu">
+        <button
+          type="button"
+          className="card-menu-trigger-btn"
+          aria-label={es ? 'Opciones del libro' : 'Book options'}
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          onClick={(event) => {
+            event.stopPropagation();
+            const caja = event.currentTarget.getBoundingClientRect();
+            abrirMenu(caja.right, caja.bottom + 4);
+          }}
+        >
+          <MoreVertical size={14} />
+        </button>
+      </div>
+      {menu && (
+        <ServerItemMenu
+          item={item}
+          es={es}
+          x={menu.x}
+          y={menu.y}
+          onOpen={onOpen}
+          onHide={() => onForget()}
+          onClose={() => setMenu(null)}
+          removeLabel={es ? 'Eliminar de Leyendo' : 'Remove from Reading'}
+          destructive
+        />
+      )}
+    </div>
+  );
+}
+
+/**
  * Una portada del servidor.
  *
  * Es un `<button>` y no un `<div>` con `onClick` a propósito: así llega el foco con
@@ -157,10 +652,18 @@ function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpe
             <Play size={18} />
           </span>
         )}
+        {/* Lo que llevas escuchado, sobre la portada, como en «Continuar». */}
+        {typeof item.percent === 'number' && item.percent > 0 && (
+          <span className="yoru-poster-progress" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, item.percent)}%` }} />
+          </span>
+        )}
       </span>
       <span className="yoru-poster-title">{item.title}</span>
       <span className="yoru-poster-meta">
-        {item.author
+        {typeof item.percent === 'number' && item.percent > 0
+          ? `${item.percent} % ${isAudio ? (es ? 'escuchado' : 'listened') : (es ? 'leído' : 'read')}`
+          : item.author
           || (item.hours
             ? `~${Math.round(item.hours)} h ${es ? 'de lectura' : 'to read'}`
             : isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}

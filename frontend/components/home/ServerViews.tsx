@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Headphones, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Server, Settings as SettingsIcon, Unlink } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, BookOpen, Check, Headphones, Link2, ListPlus, Loader2, Pause, Play, Server, Unlink } from 'lucide-react';
 import {
   absCoverUrl,
   audiobookMatchScore,
@@ -15,7 +15,8 @@ import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrati
 import { describeServerError } from '../../utils/serverHttp';
 import { getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import { Rail } from './primitives';
-import { useAudiobookPlayback } from './useAudiobookPlayback';
+import { useAudiobookPlayer } from './AudiobookPlayerBar';
+import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
 
 /**
  * Las vistas de servidor dentro del lienzo del shell: el contenido de Kavita y el de
@@ -26,11 +27,9 @@ import { useAudiobookPlayback } from './useAudiobookPlayback';
 export function ServerEmptyState({
   kind,
   es,
-  onOpenSettings,
 }: {
   kind: 'kavita' | 'audiobookshelf';
   es: boolean;
-  onOpenSettings: () => void;
 }) {
   const isKavita = kind === 'kavita';
   const Icon = isKavita ? Server : Headphones;
@@ -41,21 +40,17 @@ export function ServerEmptyState({
       <p className="yoru-empty-note">
         {isKavita
           ? es
-            ? 'Conecta tu servidor Kavita y tus novelas aparecerán aquí, listas para leer o descargar.'
-            : 'Connect your Kavita server and your novels show up here, ready to read or download.'
+            ? 'No se puede hablar con tu servidor de Kavita ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+            : 'Cannot reach your Kavita server right now. Check that it is running and come back.'
           : es
-            ? 'Conecta tu servidor Audiobookshelf y tus audiolibros aparecerán aquí.'
-            : 'Connect your Audiobookshelf server and your audiobooks show up here.'}
+            ? 'No se puede hablar con tu servidor de Audiobookshelf ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+            : 'Cannot reach your Audiobookshelf server right now. Check that it is running and come back.'}
       </p>
-      <button type="button" className="yoru-btn yoru-btn-primary" onClick={onOpenSettings}>
-        <SettingsIcon size={16} />
-        {es ? 'Configurar servidor' : 'Set up the server'}
-      </button>
     </div>
   );
 }
 
-function formatDuration(seconds: number, es: boolean): string | undefined {
+function formatDuration(seconds: number): string | undefined {
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
@@ -71,6 +66,29 @@ function formatClock(seconds: number): string {
   const rest = total % 60;
   const pad = (value: number) => String(value).padStart(2, '0');
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
+}
+
+/**
+ * El texto de una sinopsis que viene con HTML dentro.
+ *
+ * Los saltos (`<br>`, `</p>`) se conservan como saltos de línea de verdad, el resto
+ * de etiquetas se quita y las entidades se descodifican. No se inyecta como HTML a
+ * propósito: lo que manda el servidor no entra en la página como marcado.
+ */
+function plainText(raw: string): string {
+  if (!raw) return '';
+  const withBreaks = raw
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(p|div|li)\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '');
+  const decoded = withBreaks
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
+  return decoded.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Fila que no existe cuando no hay valor; la ficha no pinta huecos. */
@@ -93,6 +111,22 @@ function MetaRow({ label, value }: { label: string; value?: string | number }) {
  * ASIN, duración, capítulos) y, si algún libro de la biblioteca apunta a este
  * audiolibro, el botón para abrirlo.
  */
+/**
+ * Cuántos audiolibros por tanda.
+ *
+ * Suficientes para llenar la pantalla de sobra y que la cascada no vaya pidiendo
+ * cada dos filas, y pocos para que la primera tanda aparezca pronto.
+ */
+const AUDIO_PAGE_SIZE = 48;
+
+/** Las pestañas de la ficha, en el orden en que se necesitan. */
+const TABS: { id: 'summary' | 'technical' | 'chapters' | 'history'; es: string; en: string }[] = [
+  { id: 'summary', es: 'Resumen', en: 'Summary' },
+  { id: 'technical', es: 'Técnico', en: 'Technical' },
+  { id: 'chapters', es: 'Capítulos', en: 'Chapters' },
+  { id: 'history', es: 'Historial de escucha', en: 'Listening history' },
+];
+
 function AudiobookDetail({
   item,
   es,
@@ -115,7 +149,16 @@ function AudiobookDetail({
   // Por dónde iba, según el servidor, para poder decir «Continuar · N %» antes de
   // abrir sesión. Sin esto habría que empezar a sonar para saberlo.
   const [saved, setSaved] = useState<{ currentTime: number; duration: number } | null>(null);
-  const playback = useAudiobookPlayback(item.id, es);
+  /*
+    El reproductor ya no es de esta ficha: vive en la barra de abajo, que sobrevive a
+    salir de aquí. Esta pantalla solo le dice qué poner y le pregunta por dónde va.
+  */
+  const player = useAudiobookPlayer();
+  const playback = player.playback;
+  /** ¿Lo que suena es este audiolibro? Si no, sus mandos no hablan de esta ficha. */
+  const isCurrent = player.current?.id === item.id;
+  const [tab, setTab] = useState<'summary' | 'technical' | 'chapters' | 'history'>('summary');
+  const [inList, setInList] = useState(() => isAudiobookInList(item.id));
 
   // La cuadrícula pide los items en modo reducido, así que el detalle hay que pedirlo
   // aparte; mientras llega se enseña lo que ya se tenía en lugar de una pantalla vacía.
@@ -136,8 +179,8 @@ function AudiobookDetail({
   }, [item]);
 
   const chapters = full.chapters || [];
-  const duration = playback.session?.duration || full.duration || saved?.duration || 0;
-  const listening = playback.phase.kind === 'ready';
+  const duration = (isCurrent && playback.session?.duration) || full.duration || saved?.duration || 0;
+  const listening = isCurrent && playback.phase.kind === 'ready';
   const position = listening ? playback.time : (saved?.currentTime || 0);
   const percent = duration > 0 ? Math.min(100, Math.round((position / duration) * 100)) : 0;
   const nowChapter = chapters.findIndex(
@@ -161,7 +204,13 @@ function AudiobookDetail({
    * fueran candidatos es peor que admitir que no hay ninguno: invita a vincular mal.
    */
   const likely = (scored[0]?.score ?? 0) >= 0.3;
-  const description = full.description || '';
+  /*
+    Audiobookshelf devuelve la sinopsis con HTML dentro, y salía en crudo: el lector
+    veía «<br />» escrito en mitad de la frase. Aquí se pasa a texto — los saltos de
+    línea se respetan, las etiquetas se van — en vez de inyectarlo como HTML, que
+    sería meter en la página lo que mande el servidor.
+  */
+  const description = plainText(full.description || '');
   const longDescription = description.length > 420;
 
   return (
@@ -179,17 +228,23 @@ function AudiobookDetail({
           <h1 className="yoru-detail-title">{full.title}</h1>
           {full.author && <div className="yoru-detail-author">{full.author}</div>}
           {full.narrator && (
-            <div className="yoru-detail-author">{es ? 'Narra' : 'Narrated by'} {full.narrator}</div>
+            <div className="yoru-detail-author">{es ? 'Narrado por' : 'Narrated by'} {full.narrator}</div>
           )}
 
+          {/*
+            Qué es esto y en qué formatos lo tienes, en una línea y en este orden:
+            primero que es un audiolibro, y al final que además existe el libro, que
+            es justamente lo que esta app viene a juntar.
+          */}
+          <div className="yoru-detail-kinds">
+            <span>{es ? 'Audiolibro' : 'Audiobook'}</span>
+            {full.publishedYear && <span>{full.publishedYear}</span>}
+            {formatDuration(full.duration) && <span>{formatDuration(full.duration)}</span>}
+            {chapters.length > 1 && <span>{chapters.length} {es ? 'capítulos' : 'chapters'}</span>}
+            {linkedBookId && <span className="is-linked">{es ? 'Libro electrónico' : 'Ebook'}</span>}
+          </div>
+
           <div className="yoru-detail-badges">
-            {formatDuration(full.duration, es) && <span className="yoru-badge">{formatDuration(full.duration, es)}</span>}
-            {chapters.length > 1 && (
-              <span className="yoru-badge">
-                {chapters.length} {es ? 'capítulos' : 'chapters'}
-              </span>
-            )}
-            {full.publishedYear && <span className="yoru-badge">{full.publishedYear}</span>}
             {full.series && <span className="yoru-badge">{full.series}</span>}
           </div>
 
@@ -203,99 +258,117 @@ function AudiobookDetail({
             <button
               type="button"
               className="yoru-btn yoru-btn-primary"
-              onClick={() => (playback.playing ? playback.pause() : playback.start())}
-              disabled={playback.phase.kind === 'loading'}
+              onClick={() => (isCurrent && playback.playing ? playback.pause() : player.open(full))}
+              disabled={isCurrent && playback.phase.kind === 'loading'}
             >
-              {playback.phase.kind === 'loading' ? <Loader2 size={16} className="guide-spin" />
-                : playback.playing ? <Pause size={16} />
+              {isCurrent && playback.phase.kind === 'loading' ? <Loader2 size={16} className="guide-spin" />
+                : isCurrent && playback.playing ? <Pause size={16} />
                 : <Play size={16} />}
-              {playback.phase.kind === 'loading' ? (es ? 'Preparando' : 'Preparing')
-                : playback.playing ? (es ? 'Pausar' : 'Pause')
+              {isCurrent && playback.phase.kind === 'loading' ? (es ? 'Preparando' : 'Preparing')
+                : isCurrent && playback.playing ? (es ? 'Pausar' : 'Pause')
                 : percent > 0 ? (es ? `Continuar · ${percent} %` : `Continue · ${percent}%`)
                 : (es ? 'Escuchar' : 'Listen')}
             </button>
+
+            {/*
+              «Leer y escuchar» solo cuando se puede leer y escuchar de verdad, o
+              sea cuando este audiolibro tiene su novela al lado. Es el mismo criterio
+              que decide qué entra en la sección «Leer y escuchar», y tiene que ser el
+              mismo: un botón que aparece en sitios donde esa sección no te llevaría
+              promete algo que no hay. Sin par no se pinta nada aquí; para conseguirlo
+              está «Vincular con un libro tuyo», ahí abajo, que es una acción de
+              verdad y no un aviso apagado.
+            */}
             {linkedBookId && onOpenLocalBook && (
-              <>
-                <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId, true)}>
-                  <Headphones size={16} />
-                  {es ? 'Leer escuchando' : 'Read along'}
-                </button>
-                <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId)}>
-                  <BookOpen size={16} />
-                  {es ? 'Abrir el libro' : 'Open the book'}
-                </button>
-              </>
+              <button
+                type="button"
+                className="yoru-btn"
+                onClick={() => onOpenLocalBook(linkedBookId, true)}
+              >
+                <Headphones size={16} />
+                {es ? 'Leer y escuchar' : 'Read and listen'}
+              </button>
             )}
+
+            {/*
+              Una lista de verdad, no un menú que no lleva a ningún sitio: lo que se
+              añade aquí sale en «Tu lista» en Inicio. Por eso es un interruptor y no
+              un desplegable de estantes — los estantes se calculan del progreso de
+              los libros tuyos, y este audiolibro no es tuyo, es del servidor.
+            */}
+            <button
+              type="button"
+              className={`yoru-btn${inList ? ' is-on' : ''}`}
+              onClick={() => { toggleAudiobookInList(full.id); setInList(isAudiobookInList(full.id)); }}
+              aria-pressed={inList}
+            >
+              {inList ? <Check size={16} /> : <ListPlus size={16} />}
+              {inList ? (es ? 'En tu lista' : 'In your list') : (es ? 'Añadir a lista' : 'Add to list')}
+            </button>
+
           </div>
 
           {playback.phase.kind === 'error' && (
             <p className="yoru-stats-empty" role="alert">{playback.phase.message}</p>
           )}
 
-          {listening && playback.session && (
-            <div className="yoru-ab-player">
-              <audio
-                ref={playback.audioRef}
-                preload="metadata"
-                onLoadedMetadata={playback.handlers.onLoadedMetadata}
-                onTimeUpdate={playback.handlers.onTimeUpdate}
-                onPlay={playback.handlers.onPlay}
-                onPause={playback.handlers.onPause}
-                onEnded={playback.handlers.onEnded}
-              />
-              <div className="yoru-ab-seek">
-                <span>{formatClock(position)}</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(1, Math.floor(duration))}
-                  value={Math.floor(position)}
-                  onChange={(e) => playback.seekTo(Number(e.target.value))}
-                  aria-label={es ? 'Posición' : 'Position'}
-                />
-                <span>-{formatClock(Math.max(0, duration - position))}</span>
-              </div>
-              <div className="yoru-ab-controls">
-                <button type="button" className="yoru-btn" onClick={() => playback.seekTo(position - 15)}>
-                  <RotateCcw size={16} /> 15
-                </button>
-                <button
-                  type="button"
-                  className="yoru-btn yoru-btn-primary"
-                  onClick={() => (playback.playing ? playback.pause() : playback.play())}
-                  aria-label={playback.playing ? (es ? 'Pausar' : 'Pause') : (es ? 'Reproducir' : 'Play')}
-                >
-                  {playback.playing ? <Pause size={18} /> : <Play size={18} />}
-                </button>
-                <button type="button" className="yoru-btn" onClick={() => playback.seekTo(position + 30)}>
-                  <RotateCw size={16} /> 30
-                </button>
-                <button type="button" className="yoru-btn" onClick={playback.nextRate} aria-label={es ? 'Velocidad' : 'Speed'}>
-                  {playback.rate}×
-                </button>
-              </div>
-            </div>
-          )}
+          {/*
+            Los mandos ya no están aquí: están en la barra de abajo, que no se va al
+            cambiar de pantalla. Repetirlos en la ficha sería tener dos reproductores
+            para un solo audio, y el de aquí desaparecería al salir.
+          */}
 
-          {description && (
-            <div className="yoru-server-summary">
-              <p className={longDescription && !descriptionOpen ? 'is-clamped' : ''}>{description}</p>
-              {longDescription && (
-                <button type="button" className="yoru-server-more" onClick={() => setDescriptionOpen((open) => !open)}>
-                  {descriptionOpen ? (es ? 'Leer menos' : 'Read less') : (es ? 'Leer más' : 'Read more')}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
+      {/*
+        Cuatro pestañas en vez de una columna infinita. Antes la ficha era sinopsis,
+        tabla de datos y lista de capítulos, una detrás de otra: en un audiolibro de
+        sesenta capítulos había que bajar media pantalla para llegar a lo que se
+        venía a ver.
+
+        El orden es el de siempre: primero de qué va, luego los datos, luego por
+        dónde ir, y al final lo que ya escuchaste.
+      */}
+      <div className="yoru-detail-tabs" role="tablist">
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            className={`yoru-detail-tab${tab === entry.id ? ' active' : ''}`}
+            onClick={() => setTab(entry.id)}
+          >
+            {es ? entry.es : entry.en}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'summary' && (
+        description ? (
+          <div className="yoru-server-summary">
+            <p className={longDescription && !descriptionOpen ? 'is-clamped' : ''}>{description}</p>
+            {longDescription && (
+              <button type="button" className="yoru-server-more" onClick={() => setDescriptionOpen((open) => !open)}>
+                {descriptionOpen ? (es ? 'Leer menos' : 'Read less') : (es ? 'Leer más' : 'Read more')}
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="yoru-stats-empty">
+            {es ? 'Este audiolibro no trae sinopsis.' : 'This audiobook has no summary.'}
+          </p>
+        )
+      )}
+
+      {tab === 'technical' && (
       <table className="yoru-meta-table">
         <tbody>
           <MetaRow label={es ? 'Autor' : 'Author'} value={full.author} />
           <MetaRow label={es ? 'Narrador' : 'Narrator'} value={full.narrator} />
           <MetaRow label={es ? 'Serie' : 'Series'} value={full.series} />
-          <MetaRow label={es ? 'Duración' : 'Duration'} value={formatDuration(full.duration, es)} />
+          <MetaRow label={es ? 'Duración' : 'Duration'} value={formatDuration(full.duration)} />
           <MetaRow label={es ? 'Capítulos' : 'Chapters'} value={chapters.length > 1 ? chapters.length : undefined} />
           <MetaRow label={es ? 'Editorial' : 'Publisher'} value={full.publisher} />
           <MetaRow label={es ? 'Año' : 'Year'} value={full.publishedYear} />
@@ -304,50 +377,126 @@ function AudiobookDetail({
           <MetaRow label="ASIN" value={full.asin} />
         </tbody>
       </table>
+      )}
 
       {loading && (
         <p className="yoru-stats-empty"><Loader2 size={16} className="guide-spin" /></p>
       )}
 
-      {chapters.length > 1 && (
-        <>
-          <h2 className="yoru-rail-title yoru-server-section">{es ? 'Capítulos' : 'Chapters'}</h2>
-          {/* Estaban ahí con sus duraciones pidiendo que los pulsaras, y no hacían nada. */}
+      {tab === 'chapters' && (
+        chapters.length > 1 ? (
+          /* Estaban ahí con sus duraciones pidiendo que los pulsaras, y no hacían nada. */
           <div className="yoru-chapter-list">
             {chapters.map((chapter, index) => (
               <button
                 key={chapter.id}
                 type="button"
                 className={`yoru-chapter-row${index === nowChapter ? ' current' : ''}`}
-                onClick={() => playback.start(chapter.start)}
+                onClick={() => player.open(full, chapter.start)}
               >
                 <span className="yoru-chapter-index">{index + 1}</span>
                 <span className="yoru-chapter-title">{chapter.title}</span>
-                <span className="yoru-chapter-time">{formatDuration(chapter.end - chapter.start, es)}</span>
+                <span className="yoru-chapter-time">{formatDuration(chapter.end - chapter.start)}</span>
               </button>
             ))}
           </div>
-        </>
+        ) : (
+          <p className="yoru-stats-empty">
+            {es ? 'Este audiolibro viene de una pieza, sin capítulos.' : 'This audiobook comes in one piece, with no chapters.'}
+          </p>
+        )
       )}
 
       {/*
-        Vincular con un libro vive aquí abajo, no arriba: se hace una vez por
-        audiolibro y no es a lo que se viene. Donde de verdad vive «leer escuchando»
-        es en su propia sección de la barra lateral.
+        El historial sale del propio servidor, que es quien lleva la cuenta y la
+        comparte con el móvil. Decimos lo que sabe —por dónde vas y cuánto queda— y
+        no fingimos una lista de sesiones que Audiobookshelf no nos da por audiolibro.
+      */}
+      {tab === 'history' && (
+        saved || listening ? (
+          <table className="yoru-meta-table">
+            <tbody>
+              <MetaRow
+                label={es ? 'Por dónde vas' : 'Where you are'}
+                value={`${formatClock(position)} ${es ? 'de' : 'of'} ${formatClock(duration)}`}
+              />
+              <MetaRow label={es ? 'Escuchado' : 'Listened'} value={`${percent} %`} />
+              <MetaRow
+                label={es ? 'Te queda' : 'Left'}
+                value={formatDuration(Math.max(0, duration - position))}
+              />
+              {nowChapter >= 0 && (
+                <MetaRow label={es ? 'Capítulo actual' : 'Current chapter'} value={chapters[nowChapter].title} />
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <p className="yoru-stats-empty">
+            {es ? 'Todavía no has escuchado nada de este audiolibro.' : 'You have not listened to any of this audiobook yet.'}
+          </p>
+        )
+      )}
+
+      {/*
+        Vincular vive aquí abajo, debajo de la fila de botones.
+
+        Estuvo un rato dentro de un menú de tres puntos y era peor: esconde detrás de
+        un icono sin nombre lo único que hay que hacer para que un audiolibro se pueda
+        leer escuchando. Aquí se lee, y la lista de candidatos tiene el sitio que
+        necesita para desplegarse.
       */}
       <div className="yoru-server-section">
         {linkedBookId ? (
-          <button
-            type="button"
-            className="yoru-server-more"
-            onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}
-          >
-            <Unlink size={14} /> {es ? 'Deshacer el vínculo con el libro' : 'Unlink from the book'}
-          </button>
+          <div className="yoru-detail-actions">
+            {onOpenLocalBook && (
+              <button type="button" className="yoru-btn" onClick={() => onOpenLocalBook(linkedBookId)}>
+                <BookOpen size={15} /> {es ? 'Abrir el libro' : 'Open the book'}
+              </button>
+            )}
+            <button type="button" className="yoru-server-more" onClick={() => setLinking((open) => !open)}>
+              <Link2 size={14} /> {es ? 'Cambiar el libro vinculado' : 'Change the linked book'}
+            </button>
+            <button
+              type="button"
+              className="yoru-server-more"
+              onClick={() => { setAudiobookLink(linkedBookId, null); setLinkedBookId(null); }}
+            >
+              <Unlink size={14} /> {es ? 'Deshacer el vínculo' : 'Unlink'}
+            </button>
+          </div>
         ) : (
           <button type="button" className="yoru-server-more" onClick={() => setLinking((open) => !open)}>
             <Link2 size={14} /> {es ? 'Vincular con un libro tuyo' : 'Link to one of your books'}
           </button>
+        )}
+
+        {linkedBookId && linking && (
+          candidates.length === 0 ? (
+            <p className="yoru-empty-note">
+              {es
+                ? 'Tu biblioteca está vacía. Descarga el libro desde Explorar Kavita y vuelve aquí.'
+                : 'Your library is empty. Download the book from Explore Kavita and come back.'}
+            </p>
+          ) : (
+            <ul className="yoru-link-list">
+              {candidates.map((candidate) => (
+                <li key={candidate.id}>
+                  <button
+                    type="button"
+                    className="yoru-link-row"
+                    onClick={() => {
+                      setAudiobookLink(candidate.id, { itemId: full.id, title: full.title, chapters: chapters.length });
+                      setLinkedBookId(candidate.id);
+                      setLinking(false);
+                    }}
+                  >
+                    <span className="yoru-link-title">{candidate.title}</span>
+                    {candidate.author && <span className="yoru-link-author">{candidate.author}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
         )}
 
         {!linkedBookId && linking && (
@@ -485,13 +634,11 @@ export function AudiobookSeriesView({
 /** El catálogo de audiolibros del servidor, biblioteca a biblioteca. */
 export function AudiobookshelfView({
   es,
-  onOpenSettings,
   onOpenLocalBook,
   libraryBooks,
   initialItemId,
 }: {
   es: boolean;
-  onOpenSettings: () => void;
   /** Ficha que hay que abrir al entrar, cuando se llega pulsando una portada de Inicio. */
   initialItemId?: string;
   /** Abre un libro de la biblioteca; con `listen`, con el audiolibro desplegado. */
@@ -507,6 +654,8 @@ export function AudiobookshelfView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [seed, setSeed] = useState(1);
+  /** El servidor dejó de dar aunque su cuenta dijera otra cosa. Corta la cascada. */
+  const [agotado, setAgotado] = useState(false);
 
   const configured = isAudiobookshelfConfigured();
 
@@ -533,12 +682,32 @@ export function AudiobookshelfView({
     return () => { alive = false; };
   }, [configured, es]);
 
-  const load = useCallback((id: string) => {
+  /*
+    El catálogo, por tandas y en cascada.
+
+    Antes pedía las primeras 48 y ahí se acababa: la cabecera decía «256 audiolibros»
+    y la cuadrícula enseñaba 48, sin botón ni nada. Los otros doscientos y pico no
+    había forma de verlos.
+
+    Ahora cada tanda se suma a la anterior y la siguiente la pide el centinela de
+    abajo al asomar. `pagina` va en base cero, que es como la cuenta el servidor.
+  */
+  const load = useCallback((id: string, pagina: number) => {
     let alive = true;
     setLoading(true);
     setError('');
-    getAudiobooks(id, 0, 48)
-      .then((page) => { if (alive) { setItems(page.items); setTotal(page.total); } })
+    getAudiobooks(id, pagina, AUDIO_PAGE_SIZE)
+      .then((page) => {
+        if (!alive) return;
+        /*
+          Una tanda vacía corta la cascada. Si el servidor dice que hay 256 pero deja
+          de dar, `items.length` no alcanza nunca a `total` y el centinela pediría
+          sin parar. Más vale enseñar lo que hay y decir que se acabó.
+        */
+        if (pagina > 0 && page.items.length === 0) { setAgotado(true); return; }
+        setItems((prev) => (pagina === 0 ? page.items : [...prev, ...page.items]));
+        setTotal(page.total);
+      })
       .catch((err) => { if (alive) setError(describeServerError(err, es)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -546,8 +715,39 @@ export function AudiobookshelfView({
 
   useEffect(() => {
     if (!libraryId) return undefined;
-    return load(libraryId);
+    setItems([]);
+    setAgotado(false);
+    return load(libraryId, 0);
   }, [libraryId, load]);
+
+  /*
+    Igual que en Kavita: lo que el observador necesita se lee de una referencia y no
+    de las dependencias, para que no se desmonte en mitad de cada tanda. Y no pide
+    nada mientras ya está pidiendo, ni después de un fallo.
+  */
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const quedan = items.length < total && !agotado;
+  const estado = useRef({ libraryId, items, total, loading, error, load, agotado });
+  estado.current = { libraryId, items, total, loading, error, load, agotado };
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        const ahora = estado.current;
+        if (!ahora.libraryId || ahora.loading || ahora.error || ahora.agotado) return;
+        if (ahora.items.length >= ahora.total) return;
+        ahora.load(ahora.libraryId, Math.floor(ahora.items.length / AUDIO_PAGE_SIZE));
+      },
+      // Seiscientos píxeles por delante: la tanda siguiente llega antes de que se
+      // toque fondo, así que no hay parón al final de la cuadrícula.
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [libraryId, quedan]);
 
   /*
     Se llega desde una portada de Inicio: la ficha se abre sola. El detalle hay que
@@ -563,7 +763,7 @@ export function AudiobookshelfView({
     return () => { alive = false; };
   }, [configured, initialItemId]);
 
-  if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} onOpenSettings={onOpenSettings} />;
+  if (!configured) return <ServerEmptyState kind="audiobookshelf" es={es} />;
 
   if (open) {
     return (
@@ -647,7 +847,7 @@ export function AudiobookshelfView({
           {es ? 'Cargando…' : 'Loading…'}
         </div>
       ) : (
-        <div className="yoru-grid is-covers">
+        <div className="yoru-grid is-covers" aria-busy={loading}>
           {items.map((item) => (
             <button key={item.id} type="button" className="yoru-poster" onClick={() => setOpen(item)} title={item.title}>
               <span className="yoru-poster-frame">
@@ -658,6 +858,36 @@ export function AudiobookshelfView({
             </button>
           ))}
         </div>
+      )}
+
+      {/*
+        El centinela de la cascada. Solo mientras queden audiolibros por traer; el
+        botón aparece únicamente si la tanda falló, porque reintentar solo contra un
+        servidor que no responde es machacarlo.
+      */}
+      {quedan && (
+        <div ref={sentinelRef} className="yoru-more-zone" aria-hidden={!loading && !error}>
+          {loading && items.length > 0 && (
+            <span className="yoru-more-loading" role="status" aria-live="polite">
+              <Loader2 size={18} className="guide-spin" />
+              {es ? 'Trayendo más…' : 'Fetching more…'}
+            </span>
+          )}
+          {!loading && error && libraryId && (
+            <button
+              type="button"
+              className="yoru-btn"
+              onClick={() => load(libraryId, Math.floor(items.length / AUDIO_PAGE_SIZE))}
+            >
+              {es ? 'Reintentar' : 'Try again'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Que se ha llegado al final se dice; cortar en seco deja dudando. */}
+      {!quedan && items.length > 0 && (
+        <p className="yoru-more-end">{es ? 'No hay más audiolibros.' : 'No more audiobooks.'}</p>
       )}
 
       {!loading && !error && !items.length && (

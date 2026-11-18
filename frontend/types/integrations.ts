@@ -126,6 +126,9 @@ export interface KavitaBookSource {
   chapterId: number;
   libraryId: number;
   pages: number;
+  /** Nombre de la serie y del tomo, para enseñarlo en «Continuar» sin preguntar al servidor. */
+  seriesName?: string;
+  volumeTitle?: string;
 }
 
 // ── Audiobookshelf ──────────────────────────────────────────────────────
@@ -180,8 +183,13 @@ export interface AudioTrack {
   /** Seconds from the start of the audiobook where this file starts. */
   startOffset: number;
   duration: number;
-  /** Absolute URL, with the token in the query string so an <audio> element can load it. */
+  /**
+   * La dirección que se le da al `<audio>`: la ruta de la sesión de reproducción.
+   * **Sin testigo** — el servidor dejó de aceptarlo en la dirección.
+   */
   url: string;
+  /** La del fichero original, solo para poder preguntarle al servidor qué acepta. */
+  fileUrl?: string;
   mimeType?: string;
 }
 

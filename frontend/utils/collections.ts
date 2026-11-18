@@ -27,16 +27,72 @@ const BASE_KEY = 'yoru_collections';
  * traído de Kavita no se distingue de uno arrastrado a la ventana: no se guarda de
  * dónde vino. Ofrecerlos sería poner dos desplegables que no pueden filtrar nada.
  */
-export type RuleField = 'author' | 'series' | 'status' | 'tag';
+export type RuleField =
+  | 'author'
+  | 'series'
+  | 'status'
+  | 'tag'
+  | 'percent'
+  | 'chars'
+  | 'chapters'
+  | 'added'
+  | 'lastRead';
+
+/**
+ * Lo que la regla hace con el valor.
+ *
+ * Con un solo operador —«el autor **es** X»— una colección dinámica solo sabe recoger
+ * lo que ya estaba clasificado. Lo que hace falta para una lista de lectura son las
+ * comparaciones: «menos del 20 % leído», «añadido después de marzo», «más de diez
+ * capítulos». De ahí los seis.
+ */
+export type RuleOp = 'is' | 'isNot' | 'contains' | 'gte' | 'lte' | 'before' | 'after';
 
 export interface CollectionRule {
   field: RuleField;
   value: string;
+  /** Sin operador se entiende `is`, que es lo que valía cuando solo había uno. */
+  op?: RuleOp;
 }
 
 export interface DynamicCollection {
   name: string;
+  /**
+   * La primera regla, suelta.
+   *
+   * Se sigue escribiendo —y leyendo— para que las colecciones guardadas antes de que
+   * hubiera varias reglas funcionen sin migrar nada, y para que una versión de Yoru
+   * que vaya por detrás entienda al menos la primera.
+   */
   rule: CollectionRule;
+  /** Todas las reglas, la primera incluida. Si falta, la colección es de una sola. */
+  rules?: CollectionRule[];
+  /** `all`: se cumplen todas. `any`: basta una. Por omisión, `all`. */
+  match?: 'all' | 'any';
+}
+
+/** Los operadores que tienen sentido en cada campo, en el orden en que se ofrecen. */
+export function opsForField(field: RuleField): RuleOp[] {
+  if (field === 'author' || field === 'series' || field === 'tag') return ['is', 'isNot', 'contains'];
+  if (field === 'status') return ['is', 'isNot'];
+  if (field === 'added' || field === 'lastRead') return ['after', 'before'];
+  return ['gte', 'lte'];
+}
+
+/** Si el campo se compara con un número escrito a mano en vez de con una lista. */
+export function isNumberField(field: RuleField): boolean {
+  return field === 'percent' || field === 'chars' || field === 'chapters';
+}
+
+/** Si el campo se compara con una fecha. */
+export function isDateField(field: RuleField): boolean {
+  return field === 'added' || field === 'lastRead';
+}
+
+/** Las reglas de una colección, venga de donde venga lo guardado. */
+export function rulesOf(collection: DynamicCollection): CollectionRule[] {
+  if (Array.isArray(collection.rules) && collection.rules.length > 0) return collection.rules;
+  return [collection.rule];
 }
 
 interface Stored {
@@ -51,15 +107,30 @@ function key(): string {
   return `${BASE_KEY}_${db.getActiveProfileId() || 'profile-default'}`;
 }
 
-function isDynamic(entry: unknown): entry is DynamicCollection {
-  const candidate = entry as DynamicCollection;
+const FIELDS: string[] = ['author', 'series', 'status', 'tag', 'percent', 'chars', 'chapters', 'added', 'lastRead'];
+const OPS: string[] = ['is', 'isNot', 'contains', 'gte', 'lte', 'before', 'after'];
+
+function isRule(entry: unknown): entry is CollectionRule {
+  const candidate = entry as CollectionRule;
   return Boolean(
     candidate
-      && typeof candidate.name === 'string'
-      && candidate.rule
-      && typeof candidate.rule.value === 'string'
-      && ['author', 'series', 'status', 'tag'].includes(candidate.rule.field)
+      && typeof candidate.value === 'string'
+      && FIELDS.includes(candidate.field)
+      && (candidate.op === undefined || OPS.includes(candidate.op))
   );
+}
+
+function isDynamic(entry: unknown): entry is DynamicCollection {
+  const candidate = entry as DynamicCollection;
+  if (!candidate || typeof candidate.name !== 'string' || !isRule(candidate.rule)) return false;
+  /*
+    Una regla rota tira la colección entera y no solo esa regla: callarse una condición
+    cambiaría lo que la colección significa —«sin empezar **y** de este autor» pasaría a
+    ser «sin empezar»— y llenaría la lista de libros que el usuario no pidió.
+  */
+  if (candidate.rules !== undefined && (!Array.isArray(candidate.rules) || !candidate.rules.every(isRule))) return false;
+  if (candidate.match !== undefined && candidate.match !== 'all' && candidate.match !== 'any') return false;
+  return true;
 }
 
 function read(): Stored {
@@ -115,11 +186,16 @@ export function addDynamicCollection(collection: DynamicCollection): void {
   const trimmed = collection.name.trim();
   if (!trimmed) return;
   const data = read();
+  /*
+    La primera regla se copia en `rule` al guardar, no al leer: así lo guardado tiene
+    siempre las dos formas al día y nadie tiene que acordarse de cuál manda.
+  */
+  const reglas = rulesOf(collection);
   write({
     ...data,
     dynamic: [
       ...data.dynamic.filter((entry) => entry.name.toLowerCase() !== trimmed.toLowerCase()),
-      { ...collection, name: trimmed },
+      { ...collection, name: trimmed, rule: reglas[0], rules: reglas },
     ],
   });
 }
@@ -139,7 +215,10 @@ interface RuleBook {
   series?: string;
   tags?: string[];
   status?: string;
-  progress?: { percent?: number };
+  createdAt?: string;
+  lastRead?: string;
+  chapters?: unknown[];
+  progress?: { percent?: number; charactersRead?: number };
 }
 
 function statusOf(book: RuleBook): string {
@@ -159,10 +238,71 @@ export function ruleValues(books: RuleBook[], field: RuleField): string[] {
   return [...values].sort((a, b) => a.localeCompare(b, 'ja'));
 }
 
+/** El valor numérico del libro para un campo de número. */
+function numberOf(book: RuleBook, field: RuleField): number {
+  if (field === 'percent') return book.progress?.percent ?? 0;
+  if (field === 'chars') return book.progress?.charactersRead ?? 0;
+  return Array.isArray(book.chapters) ? book.chapters.length : 0;
+}
+
+/** El día del libro para un campo de fecha, en milisegundos, o null si no lo tiene. */
+function dateOf(book: RuleBook, field: RuleField): number | null {
+  const raw = field === 'added' ? book.createdAt : book.lastRead;
+  if (!raw) return null;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Los textos del libro que un campo de texto compara. Un libro puede tener varios. */
+function textsOf(book: RuleBook, field: RuleField): string[] {
+  if (field === 'author') return book.author ? [book.author] : [];
+  if (field === 'series') return book.series ? [book.series] : [];
+  if (field === 'tag') return book.tags || [];
+  return [statusOf(book)];
+}
+
 /** Si un libro entra en la regla. */
 export function matchesRule(book: RuleBook, rule: CollectionRule): boolean {
-  if (rule.field === 'author') return book.author === rule.value;
-  if (rule.field === 'series') return book.series === rule.value;
-  if (rule.field === 'tag') return (book.tags || []).includes(rule.value);
-  return statusOf(book) === rule.value;
+  const op: RuleOp = rule.op || 'is';
+
+  if (isNumberField(rule.field)) {
+    const limite = Number(rule.value);
+    // Un número sin escribir no filtra nada: la regla a medias no deja fuera a nadie.
+    if (!Number.isFinite(limite)) return true;
+    const valor = numberOf(book, rule.field);
+    return op === 'lte' ? valor <= limite : valor >= limite;
+  }
+
+  if (isDateField(rule.field)) {
+    const limite = Date.parse(rule.value);
+    if (!Number.isFinite(limite)) return true;
+    const valor = dateOf(book, rule.field);
+    /*
+      Sin fecha el libro queda fuera, con cualquiera de los dos operadores. Un libro que
+      no se ha leído nunca no se leyó «antes de marzo»: no se leyó.
+    */
+    if (valor === null) return false;
+    return op === 'before' ? valor <= limite : valor >= limite;
+  }
+
+  const textos = textsOf(book, rule.field);
+  const needle = rule.value.trim().toLowerCase();
+  if (!needle) return true;
+  if (op === 'contains') return textos.some((texto) => texto.toLowerCase().includes(needle));
+  const igual = textos.some((texto) => texto === rule.value);
+  return op === 'isNot' ? !igual : igual;
+}
+
+/**
+ * Si un libro entra en la colección, con todas sus reglas.
+ *
+ * Sin ninguna regla no entra nadie, y no todo el mundo: una colección vacía de reglas
+ * es un formulario a medio hacer, y enseñar la biblioteca entera como si fuera una
+ * colección del usuario es peor que enseñarla vacía.
+ */
+export function matchesCollection(book: RuleBook, collection: DynamicCollection): boolean {
+  const reglas = rulesOf(collection).filter(Boolean);
+  if (reglas.length === 0) return false;
+  if (collection.match === 'any') return reglas.some((rule) => matchesRule(book, rule));
+  return reglas.every((rule) => matchesRule(book, rule));
 }

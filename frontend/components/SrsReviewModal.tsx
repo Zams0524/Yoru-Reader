@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Volume2, Eye, Clock, Undo2, Ban, Star } from 'lucide-react';
 import { db } from '../utils/db';
-import { lookupWord } from '../utils/dictionary';
+import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
 import { updateDiscordReview, clearDiscordPresence } from '../utils/discordRpc';
 import { FSRS6, Rating, State, getPreviousSrsState, isNewSrsCard, isCardDue } from '../utils/fsrs';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
@@ -10,6 +10,7 @@ import { syncJitenReview } from '../utils/jitenSync';
 import { isPhoneUI } from '../utils/platform';
 import { getDeckLimitsLeft, getDeckName, getDeckOptions } from '../utils/srsDeckOptions';
 import { isSrsCardInactive } from '../utils/srsCardKeys';
+import { t } from '../utils/i18n';
 
 interface PitchAccentGraphProps {
   reading: string;
@@ -1063,7 +1064,20 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
                         fontSize: fontSizeMode === 'S' ? '0.85rem' : (fontSizeMode === 'M' ? '0.98rem' : '1.15rem'), 
                         lineHeight: '1.6' 
                       }}>
-                        {currentEntry?.definitions && currentEntry.definitions.length > 0 ? (
+                        {/*
+                          Cuando no se encuentra nada, `lookupWord` devuelve una entrada de
+                          relleno cuyo texto dice «Pulsa Buscar en Jiten para una búsqueda
+                          online». Aquí eso era mentira por partida doble: la búsqueda en
+                          Jiten ya se intentó y falló antes de llegar a esta pantalla, y aquí
+                          no hay ningún botón que pulsar. Y salía siempre en español, aunque
+                          la app estuviera en inglés. El lector ya miraba `isFallback` y
+                          ponía en su lugar el texto corto y traducido; esta pantalla no.
+                        */}
+                        {currentEntry?.isFallback ? (
+                          <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>
+                            {t(mensajeSinDefinicion(currentEntry.fuente || 'ambos', !!currentEntry.sinConexion), lang)}
+                          </p>
+                        ) : currentEntry?.definitions && currentEntry.definitions.length > 0 ? (
                           <ol style={{ paddingLeft: '20px', margin: 0 }}>
                             {currentEntry.definitions.slice(0, 5).map((def: any, i: number) => {
                               const text = typeof def === 'string' ? def : (def.glossary || '');

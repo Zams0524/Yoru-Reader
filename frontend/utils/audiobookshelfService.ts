@@ -1,3 +1,4 @@
+import { AUDIOBOOKSHELF_DEFAULTS } from '../config/serverDefaults';
 import type {
   AudiobookItem,
   AudiobookshelfConfig,
@@ -8,6 +9,7 @@ import type {
   ConnectionTestResult,
 } from '../types/integrations';
 import { describeServerError, normalizeServerUrl, serverRequest, ServerHttpError } from './serverHttp';
+import { getLocalAudiobookProgress, saveLocalAudiobookProgress, sharesServerProgress } from './serverProgress';
 
 /**
  * Audiobookshelf client (https://www.audiobookshelf.org): find the audiobook of the novel being
@@ -29,12 +31,19 @@ export const AUDIOBOOKSHELF_DEFAULT_URL = 'http://localhost:13378';
  * está listo es `isAudiobookshelfConfigured()`, que exige el token.
  */
 export function getAudiobookshelfConfig(): AudiobookshelfConfig {
-  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULT_URL, token: '' } as AudiobookshelfConfig;
+  // Igual que en Kavita: lo de fábrica solo entra cuando el usuario no tiene nada.
+  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULTS.serverUrl, token: AUDIOBOOKSHELF_DEFAULTS.token } as AudiobookshelfConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;
     const config = JSON.parse(raw) as AudiobookshelfConfig;
-    return config?.serverUrl ? config : { ...fallback, ...config, serverUrl: AUDIOBOOKSHELF_DEFAULT_URL };
+    // Un testigo guardado pero vacío no tapa al de fábrica; el porqué, en Kavita.
+    return {
+      ...fallback,
+      ...config,
+      serverUrl: config?.serverUrl || fallback.serverUrl,
+      token: config?.token?.trim() || fallback.token,
+    };
   } catch {
     return fallback;
   }
@@ -79,6 +88,64 @@ export function absMediaUrl(path: string, config: AudiobookshelfConfig | null = 
 
 export function absCoverUrl(itemId: string): string {
   return absMediaUrl(`/api/items/${encodeURIComponent(itemId)}/cover`);
+}
+
+/**
+ * La dirección de una pista para reproducirla.
+ *
+ * **No lleva testigo, y es a propósito.** Yoru pedía el fichero original con el
+ * testigo metido en la dirección (`/api/items/…/file/…?token=…`), que es la única
+ * forma que tiene un `<audio>` de autenticarse porque no puede mandar cabeceras.
+ * Audiobookshelf dejó de aceptar eso: responde `401 Unauthorized` en texto plano, y
+ * el navegador, que no sabe leerlo, lo reporta como «Format error» — por eso parecía
+ * un problema de códec cuando era de permisos.
+ *
+ * La vía buena es la que usa el propio cliente del servidor: `/public/session/…`, una
+ * ruta **pública** en la que la credencial es la sesión de reproducción, que ya
+ * abrimos antes de sonar. Comprobado contra el servidor: la ruta vieja da 401 y esta
+ * da 404 con una sesión inventada, o sea que existe y no pide autenticación.
+ *
+ * Y vale en los tres sitios —escritorio, navegador y Android— porque no depende de
+ * poder tocar las cabeceras de la petición.
+ */
+function sessionTrackUrl(sessionId: string, contentUrl: unknown, index: number, config: AudiobookshelfConfig): string {
+  const base = normalizeServerUrl(config.serverUrl);
+  // El transcodificado trae su propia dirección de HLS; la reproducción directa, no.
+  if (typeof contentUrl === 'string' && contentUrl.startsWith('/hls')) return `${base}${contentUrl}`;
+  return `${base}/public/session/${encodeURIComponent(sessionId)}/track/${index}`;
+}
+
+/**
+ * Pregunta al servidor cómo quiere que le pidan el audio.
+ *
+ * Un `<audio src>` no puede mandar cabeceras, así que el testigo tiene que ir en la
+ * dirección. Pero las versiones nuevas de Audiobookshelf dejaron de aceptarlo así en
+ * los ficheros de medios y contestan `401 Unauthorized` — que el navegador no
+ * distingue de un fichero ilegible y reporta como «Format error». De ahí que el
+ * reproductor pareciera un problema de códec cuando era de permisos.
+ *
+ * Esto pide **un solo byte** de cada forma y devuelve lo que respondió cada una. El
+ * testigo no sale de aquí: solo se informa del código.
+ */
+export async function probeMediaAuth(sessionUrl: string, fileUrl: string): Promise<string> {
+  const config = getAudiobookshelfConfig();
+  const token = config?.token?.trim() || '';
+  const auth = token ? { Authorization: `Bearer ${token}` } : {};
+  const withToken = (url: string) => `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  const ask = async (target: string, headers: Record<string, string>): Promise<number> => {
+    try {
+      return (await fetch(target, { headers: { Range: 'bytes=0-1', ...headers } })).status;
+    } catch {
+      return 0;
+    }
+  };
+  const [a, b, c, d] = await Promise.all([
+    ask(sessionUrl, {}),
+    ask(sessionUrl, auth),
+    ask(fileUrl ? withToken(fileUrl) : sessionUrl, {}),
+    ask(fileUrl || sessionUrl, auth),
+  ]);
+  return `sesión sin nada ${a}, sesión con cabecera ${b}, fichero con testigo ${c}, fichero con cabecera ${d}`;
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────
@@ -161,12 +228,85 @@ function text(value: unknown): string | undefined {
 export async function getAudiobookPersonalized(libraryId: string, limit = 12): Promise<AudiobookItem[]> {
   const shelves = await absRequest<any[]>('/api/libraries/' + libraryId + '/personalized?limit=' + limit);
   const list = Array.isArray(shelves.data) ? shelves.data : [];
+  // Las estanterías que salen de lo escuchado son de la cuenta: sin compartir el
+  // progreso, serían lo que escucha otra persona.
+  const local = !sharesServerProgress();
+  const fromProgress = new Set(['continue-listening', 'continue-series', 'listen-again', 'continue-reading', 'read-again']);
   for (const shelf of list) {
+    if (local && fromProgress.has(String(shelf?.id || ''))) continue;
     const entities = Array.isArray(shelf?.entities) ? shelf.entities : [];
     const books = entities.filter((entity: any) => entity?.media);
     if (books.length) return books.slice(0, limit).map(toAudiobookItem);
   }
   return [];
+}
+
+/**
+ * Lo que el usuario tiene a medias, en el orden en que lo escuchó por última vez.
+ *
+ * Es el `items-in-progress` del propio Audiobookshelf, o sea lo mismo que enseña su
+ * app en «Continue listening»: así los dos sitios dicen lo mismo. El avance de cada
+ * uno se pide aparte (ver dentro) y sale en tanto por ciento, para la barra.
+ *
+ * Si el servidor no contesta, devuelve una lista vacía: no poder saber por dónde vas
+ * no es motivo para dejar Inicio sin audiolibros.
+ */
+export async function getAudiobooksInProgress(limit = 12): Promise<{ item: AudiobookItem; percent: number }[]> {
+  try {
+    const { data } = await absRequest<any>(`/api/me/items-in-progress?limit=${limit}`);
+    const list = Array.isArray(data?.libraryItems) ? data.libraryItems : [];
+    if (list.length === 0) return [];
+
+    /*
+      El avance se pide aparte, y no se saca de esta misma respuesta.
+
+      `items-in-progress` dice *qué* tienes a medias, pero los que vienen en esa lista
+      no traen el progreso en ningún sitio fijo: según la versión del servidor está en
+      `progress`, en `mediaProgress`, o en ninguno. Fiarse de eso dejaba la barra a
+      cero y la tarjeta enseñando el autor en vez del porcentaje.
+
+      `/api/me` sí lo tiene siempre, en `mediaProgress`, y es **una** petición para
+      toda la lista. Si tampoco estuviera ahí, se pregunta uno a uno por
+      `/api/me/progress/{id}`, que es el camino que ya usa la ficha.
+    */
+    const porItem = new Map<string, number>();
+    try {
+      const { data: me } = await absRequest<any>('/api/me');
+      const progresos = Array.isArray(me?.mediaProgress) ? me.mediaProgress : [];
+      for (const entrada of progresos) {
+        const id = String(entrada?.libraryItemId || entrada?.id || '');
+        if (!id) continue;
+        const avance = Number(entrada?.progress);
+        const pasado = Number(entrada?.currentTime);
+        const total = Number(entrada?.duration);
+        const fraccion = Number.isFinite(avance) && avance > 0
+          ? avance
+          : total > 0 && Number.isFinite(pasado) ? pasado / total : 0;
+        if (fraccion > 0) porItem.set(id, fraccion);
+      }
+    } catch {
+      /* se intenta uno a uno más abajo */
+    }
+
+    const items: AudiobookItem[] = list.filter((raw: any) => raw?.media).slice(0, limit).map(toAudiobookItem);
+    // Como mucho ocho sueltos: esto es una barra de progreso, no vale una tanda de peticiones.
+    const sueltos = items.filter((item) => !porItem.has(item.id)).slice(0, 8);
+    if (sueltos.length > 0) {
+      const encontrados = await Promise.all(sueltos.map(async (item) => {
+        const progreso = await getAudiobookProgress(item.id);
+        if (!progreso || !(progreso.duration > 0)) return null;
+        return [item.id, progreso.currentTime / progreso.duration] as const;
+      }));
+      for (const par of encontrados) if (par) porItem.set(par[0], par[1]);
+    }
+
+    return items.map((item) => ({
+      item,
+      percent: Math.min(100, Math.max(0, Math.round((porItem.get(item.id) ?? 0) * 100))),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /** One page (0-based) of a library's audiobooks, sorted by title. */
@@ -195,6 +335,10 @@ export async function searchAudiobooks(query: string, limit = 12): Promise<Audio
  * saber el progreso no debe impedir enseñar la ficha.
  */
 export async function getAudiobookProgress(itemId: string): Promise<{ currentTime: number; duration: number } | null> {
+  if (!sharesServerProgress()) {
+    const local = getLocalAudiobookProgress(itemId);
+    return local && local.currentTime > 0 ? { currentTime: local.currentTime, duration: local.duration } : null;
+  }
   try {
     const { data } = await absRequest<any>(`/api/me/progress/${encodeURIComponent(itemId)}`);
     const currentTime = Number(data?.currentTime);
@@ -237,23 +381,38 @@ export async function startAudiobookPlayback(itemId: string): Promise<Audiobooks
       supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/x-m4b', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/wav'],
     },
   });
+  const sessionId = String(data?.id || '');
   const tracks: AudioTrack[] = (Array.isArray(data?.audioTracks) ? data.audioTracks : [])
-    .map((track: any, index: number) => ({
-      index: track.index ?? index,
-      startOffset: Number(track.startOffset) || 0,
-      duration: Number(track.duration) || 0,
-      url: absMediaUrl(track.contentUrl, config),
-      mimeType: track.mimeType,
-    }))
+    .map((track: any, index: number) => {
+      const trackIndex = track.index ?? index;
+      return {
+        index: trackIndex,
+        startOffset: Number(track.startOffset) || 0,
+        duration: Number(track.duration) || 0,
+        url: sessionTrackUrl(sessionId, track.contentUrl, trackIndex, config),
+        fileUrl: typeof track.contentUrl === 'string' ? normalizeServerUrl(config.serverUrl) + track.contentUrl : undefined,
+        mimeType: track.mimeType,
+      };
+    })
     .sort((a: AudioTrack, b: AudioTrack) => a.startOffset - b.startOffset);
+  const serverTime = Number(data.currentTime) || 0;
+  // Sin compartir, se retoma donde lo dejó este perfil, no donde lo dejó la cuenta.
+  const shared = sharesServerProgress();
+  if (!shared && data.id) localSessions.add(data.id);
+  const localTime = getLocalAudiobookProgress(itemId)?.currentTime || 0;
+  // Compartiendo, manda la cuenta; si no sabe nada, lo apuntado en el perfil.
+  const startTime = shared ? (serverTime || localTime) : localTime;
   if (tracks.length === 0) throw new Error('Audiobookshelf no devolvió pistas de audio para este libro.');
+  const title = data.displayTitle || data.mediaMetadata?.title || '';
+  const author = data.displayAuthor || data.mediaMetadata?.authorName || '';
+  playingMeta.set(itemId, { title, author });
   return {
     id: data.id,
     itemId,
-    title: data.displayTitle || data.mediaMetadata?.title || '',
-    author: data.displayAuthor || data.mediaMetadata?.authorName || '',
+    title,
+    author,
     coverUrl: absCoverUrl(itemId),
-    currentTime: Number(data.currentTime) || 0,
+    currentTime: startTime,
     duration: Number(data.duration) || tracks.reduce((sum, track) => sum + track.duration, 0),
     chapters: toChapters(data.chapters),
     tracks,
@@ -267,15 +426,35 @@ export interface ListeningUpdate {
   duration: number;
 }
 
+/**
+ * Sesiones abiertas sin compartir el progreso. Ni se sincronizan ni se cierran con
+ * datos: las dos cosas escriben el progreso de la cuenta, y devolverle el punto que
+ * tenía al abrir pisaría lo que otra persona haya escuchado mientras tanto. La
+ * sesión queda abierta y el propio servidor retira las que llevan tiempo calladas.
+ */
+const localSessions = new Set<string>();
+
 export async function syncAudiobookSession(sessionId: string, update: ListeningUpdate): Promise<void> {
+  if (localSessions.has(sessionId) || !sharesServerProgress()) return;
   await absRequest(`/api/session/${encodeURIComponent(sessionId)}/sync`, { method: 'POST', body: update });
 }
 
 export async function closeAudiobookSession(sessionId: string, update: ListeningUpdate): Promise<void> {
+  if (localSessions.has(sessionId) || !sharesServerProgress()) {
+    localSessions.delete(sessionId);
+    return;
+  }
   await absRequest(`/api/session/${encodeURIComponent(sessionId)}/close`, { method: 'POST', body: update });
 }
 
+/** Título y autor de lo que se está escuchando, para que «Continuar» lo pinte sin preguntar. */
+const playingMeta = new Map<string, { title?: string; author?: string }>();
+
 export async function updateAudiobookProgress(itemId: string, currentTime: number, duration: number): Promise<void> {
+  // Siempre se apunta en el perfil (es lo que pinta «Continuar»). A la cuenta solo
+  // sube si el perfil comparte su progreso.
+  saveLocalAudiobookProgress(itemId, currentTime, duration, playingMeta.get(itemId));
+  if (!sharesServerProgress()) return;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   await absRequest(`/api/me/progress/${encodeURIComponent(itemId)}`, {
     method: 'PATCH',
@@ -358,9 +537,38 @@ export function setAudiobookLink(bookId: string, link: AudiobookLink | null): vo
   localStorage.setItem(LINKS_KEY, JSON.stringify(links));
 }
 
+/**
+ * Quita del final las notas entre paréntesis o corchetes que no son el tomo.
+ *
+ * Los catálogos cuelgan ahí la colección o la editorial: `… 4 (MFブックス)`,
+ * `… (角川文庫)`, `… (Light Novel)`. Eso tapaba el número de tomo, que va justo
+ * delante, y dejaba el título sin tomo. Y sin tomo no hay forma de distinguir el
+ * cuarto del séptimo: todos los tomos de una serie puntuaban igual contra
+ * cualquier audiolibro de esa serie.
+ *
+ * Un paréntesis que contiene solo un número **sí** es el tomo (`… (4)`), y ese se
+ * respeta. La regla mira si lo de dentro es un número, no de qué editorial se
+ * trata: vale para cualquier catálogo, no para una serie en concreto.
+ */
+function stripEditionNotes(title: string): string {
+  const NOTA_FINAL = /[(（[［【〔]([^)）\]］】〕]*)[)）\]］】〕]\s*$/u;
+  let out = title.trim();
+  for (;;) {
+    const match = out.match(NOTA_FINAL);
+    if (!match || match.index === undefined) break;
+    // `(4)` es el tomo, no una nota: ahí se para.
+    if (/^\s*\d+\s*$/.test(match[1])) break;
+    const recortado = out.slice(0, match.index).trim();
+    // Un título que es solo la nota se queda como está; quitarlo todo no ayuda.
+    if (!recortado || recortado === out) break;
+    out = recortado;
+  }
+  return out;
+}
+
 /** Volume number written in a title: 第3巻, 3巻, Vol. 3, (3), 3 at the end… */
 export function volumeNumberOf(title: string): number | null {
-  const text = title.normalize('NFKC');
+  const text = stripEditionNotes(title.normalize('NFKC'));
   const match = text.match(/第\s*(\d+)\s*[巻卷部]/) || text.match(/(\d+)\s*[巻卷]/)
     || text.match(/\b(?:vol(?:ume)?|v)\.?\s*(\d+)/i) || text.match(/[(（[［]\s*(\d+)\s*[)）\]］]/)
     || text.match(/(\d+)\s*[」』)）\]］]*\s*$/);
@@ -369,8 +577,9 @@ export function volumeNumberOf(title: string): number | null {
 
 /** Title reduced for comparison: NFKC, lower case, no bracketed notes, volume marks or punctuation. */
 export function normalizeTitle(title: string): string {
-  return title
-    .normalize('NFKC')
+  // La nota de editorial fuera también aquí, o el mismo tomo en dos catálogos se
+  // compara como «…本気だす4mfブックス» contra «…本気だす» y no acaba de casar.
+  return stripEditionNotes(title.normalize('NFKC'))
     .toLowerCase()
     .replace(/【[^】]*】|〔[^〕]*〕|\[[^\]]*\]/g, ' ')
     .replace(/第\s*\d+\s*[巻卷部]|\d+\s*[巻卷]|\b(?:vol(?:ume)?|v)\.?\s*\d+/gi, ' ')
@@ -427,6 +636,31 @@ export function audiobookSearchQuery(title: string): string {
 }
 
 export const AUDIOBOOK_AUTO_MATCH_SCORE = 0.8;
+
+/**
+ * El audiolibro de este libro, si no hay duda de cuál es.
+ *
+ * Una sola regla, en un solo sitio, porque dos sitios la preguntan y tienen que
+ * contestar lo mismo: el lector, cuando abre un libro y busca su audio, y la
+ * sección «Leer y escuchar», que enseña los libros que tienen las dos mitades. Si
+ * cada uno decidiera por su cuenta, la sección prometería pares que el lector luego
+ * no haría, o al revés.
+ *
+ * Lo que pide: que el mejor candidato pase del umbral y que no haya empate con
+ * otro **tomo distinto**. Un empate entre dos copias del mismo tomo no es duda —
+ * pasa cuando el servidor tiene el fichero repetido—, así que no estorba.
+ */
+export function unambiguousAudiobook<T extends { title: string; author?: string }>(
+  candidates: { item: T; score: number }[]
+): T | null {
+  const [best, second] = candidates;
+  if (!best || best.score < AUDIOBOOK_AUTO_MATCH_SCORE) return null;
+  const mismoTomo = Boolean(second)
+    && volumeNumberOf(best.item.title) !== null
+    && volumeNumberOf(best.item.title) === volumeNumberOf(second.item.title);
+  const sinDuda = !second || second.score < best.score - 0.1 || mismoTomo;
+  return sinDuda ? best.item : null;
+}
 
 /** Audiobooks that may be this book, best first. */
 export async function findAudiobookMatches(book: { title: string; author?: string }): Promise<{ item: AudiobookItem; score: number }[]> {

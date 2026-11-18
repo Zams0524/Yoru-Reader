@@ -1,4 +1,5 @@
 import { getTokenizerInstance, initTokenizer, katakanaToHiragana } from './japanese';
+import { juntarOkurigana } from './okurigana';
 import { getLocalParserSetting } from './parserSettingsStore';
 
 export function getStatusClass(status?: string): string {
@@ -193,17 +194,34 @@ export function tokenizeJapaneseText(
   const escapeText = escapeHtmlText;
   const escapeAttribute = escapeHtmlText;
 
-  for (const part of parts) {
+  for (let indice = 0; indice < parts.length; indice++) {
+    const part = parts[indice];
     if (!part) continue;
 
     // Preserve author-provided furigana, including rb/rp wrappers and ruby attributes.
     const rubyData = readRubyMarkup(part);
     if (rubyData) {
       const { surface: rawSurface, reading: rawReading, html } = rubyData;
-      const status = wordStatuses[rawSurface] || 'new';
+      /*
+        El furigana cubre el kanji, no la palabra: `<ruby>尊<rt>とうと</rt></ruby>き`.
+        Tomar el bloque de ruby como palabra entera dejaba la terminación fuera, en el
+        trozo siguiente, y se analizaba por separado: el lector creía que 尊 era una
+        palabra —y un nombre, porque la categoría iba puesta a mano— y que き era otra.
+        尊 no existe en ningún diccionario, así que cada una de esas era una búsqueda
+        perdida que encima salía a internet. Ahora se le pregunta al analizador si el
+        kana de detrás es la terminación; si lo es, se la queda y la palabra va entera.
+      */
+      const junto = tokenizer
+        ? juntarOkurigana(rawSurface, parts[indice + 1] || '', (texto) => tokenizeWithCache(tokenizer, texto))
+        : null;
+      if (junto) parts[indice + 1] = parts[indice + 1].slice(junto.okurigana.length);
+      const palabra = junto ? junto.palabra : rawSurface;
+      const categoria = junto ? junto.pos : '名詞';
+      const status = wordStatuses[palabra] || wordStatuses[rawSurface] || 'new';
       const cls = getStatusClass(status);
       const ruby = rawReading ? html : escapeText(rawSurface);
-      resultHtml += `<span class="${cls}" data-word="${escapeAttribute(rawSurface)}" data-reading="${escapeAttribute(rawReading)}" data-pos="名詞">${ruby}</span>`;
+      const cola = junto ? escapeText(junto.okurigana) : '';
+      resultHtml += `<span class="${cls}" data-word="${escapeAttribute(palabra)}" data-reading="${escapeAttribute(rawReading)}" data-pos="${escapeAttribute(categoria)}">${ruby}${cola}</span>`;
       continue;
     }
 

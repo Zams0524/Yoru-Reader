@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
-import { useServerRails } from './HomeServerSections';
-import { useBookMenu } from './BookContextMenu';
+import { ServerContinueCard, useApartados, useServerRails } from './HomeServerSections';
+import { useBookActions, useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
+import { motivoTexto, RECS_EVENT } from '../../utils/recomendaciones';
+import { restanteDeLibro } from '../../utils/historialLibro';
+import { LOCAL_PROGRESS_EVENT, localContinueEntries, type LocalContinueEntry } from '../../utils/serverProgress';
+import { kavitaSeriesCoverUrl, kavitaVolumeCoverUrl } from '../../utils/kavitaService';
+import { absCoverUrl } from '../../utils/audiobookshelfService';
 import {
   collectionGroups,
   continueReading,
@@ -12,10 +18,18 @@ import {
   formatCount,
   recentlyAdded,
   seriesGroups,
-  suggestions,
+  suggestionsWithReason,
   type EntityGroup,
   type ShelfBook,
 } from './libraryIndex';
+
+/** «2 h 10», «35 min»: lo que queda, corto, para que quepa en una tarjeta. */
+function restanteCorto(seconds: number): string {
+  const horas = Math.floor(seconds / 3600);
+  const mins = Math.round((seconds % 3600) / 60);
+  if (horas === 0) return `${Math.max(1, mins)} min`;
+  return mins === 0 ? `${horas} h` : `${horas} h ${mins} min`;
+}
 
 /**
  * Vista «Inicio»: la portada de la app, con «Continuar» y los carruseles de la
@@ -48,11 +62,13 @@ export default function HomeView({
   onOpenServerSeries: (series: ServerSeries) => void;
 }) {
   const openMenu = useBookMenu();
+  const menuActions = useBookActions();
+  const { apartar, estaApartado } = useApartados();
 
   /*
     El orden de los carruseles lo decide el usuario en Ajustes → Organizar inicio.
-    Se lee aquí, antes de cualquier salida temprana, porque son hooks: con la
-    biblioteca vacía esta vista devuelve el estado vacío y no llega a pintarlos.
+    Se lee aquí, antes de cualquier salida temprana, porque son hooks: sin nada que
+    enseñar esta vista devuelve el estado vacío y no llega a pintarlos.
   */
   const [layout, setLayout] = useState(() => getHomeLayout());
   useEffect(() => {
@@ -61,40 +77,98 @@ export default function HomeView({
     return () => window.removeEventListener('yoru-home-rails-updated', onUpdate);
   }, []);
 
+  /*
+    Lo empezado en el servidor sin importarlo (tomos de Kavita leídos de paso,
+    audiolibros) también va en «Continuar»: es lo que lee este perfil, apuntado en
+    el dispositivo, no lo que la cuenta del servidor tenga a medias.
+  */
+  const [serverContinue, setServerContinue] = useState<LocalContinueEntry[]>(() => localContinueEntries());
+  useEffect(() => {
+    const onUpdate = () => setServerContinue(localContinueEntries());
+    onUpdate();
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    return () => window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+  }, [books]);
+
   const localTitles = useMemo(() => new Set(books.map((book) => book.title)), [books]);
+  /*
+    Lo que ya sale en «Continuar», para que las filas del servidor no lo repitan:
+    las series de Kavita y los audiolibros a medias de este perfil. Sin esto, el
+    audiolibro que estás oyendo salía dos veces en la pestaña «Audiolibros», en
+    «Continuar» y en «Seguir escuchando».
+  */
+  const continuingSeries = useMemo(
+    () => new Set(serverContinue.map((entry) => (entry.kind === 'kavita' ? String(entry.seriesId) : entry.itemId))),
+    [serverContinue]
+  );
   const serverRails = useServerRails({
     es,
     localTitles,
+    skipSeriesIds: continuingSeries,
     onOpenItem: onOpenServerItem,
     onOpenSeries: onOpenServerSeries,
   });
+
+  /*
+    Apartar una recomendación tiene que quitarla ya. Lo apartado no está en los libros,
+    así que un cambio ahí no repinta nada por sí solo: se escucha el aviso y se recuenta.
+  */
+  const [recsVersion, setRecsVersion] = useState(0);
+  useEffect(() => {
+    const onUpdate = () => setRecsVersion((previo) => previo + 1);
+    window.addEventListener(RECS_EVENT, onUpdate);
+    return () => window.removeEventListener(RECS_EVENT, onUpdate);
+  }, []);
 
   const data = useMemo(
     () => ({
       continuing: continueReading(books),
       recent: recentlyAdded(books),
-      forYou: suggestions(books),
+      forYou: suggestionsWithReason(books),
       collections: collectionGroups(books).slice(0, 12),
       series: seriesGroups(books).filter((group) => group.books.length > 1).slice(0, 12),
     }),
-    [books]
+    [books, recsVersion]
   );
 
   /*
-    Inicio / Libros / Audiolibros.
+    Inicio / Libros / Audiolibros: filtran esta misma pantalla, sin salir de ella.
 
-    Antes eran un filtro de esta misma pantalla, y filtraban a medias: con
-    «Audiolibros» elegido seguían saliendo «Añadidos recientemente», «Libros para ti»
-    y «Series», que son libros locales. Ahora llevan a su sección de verdad, que es lo
-    que una pestaña promete. Inicio no navega: ya estás en Inicio.
+    Fueron un filtro, luego pasaron a navegar —porque filtraban a medias: con
+    «Audiolibros» puesto seguían saliendo «Añadidos recientemente», «Libros para ti» y
+    «Series», que son libros— y ahora vuelven a filtrar, pero de verdad: cada carrusel
+    sabe si es de libros o de audio y solo sale el que toca. Lo pidió zams (18 nov
+    2026): «el botón de Libros me lleva a catálogo en vez de mostrarme la sección de
+    libros ahí mismo». Para ir a la sección entera están el menú de la izquierda y el
+    «Ver todo» de debajo de las pestañas.
   */
-  const scopes: { key: 'all' | 'books' | 'audio'; label: string; go?: () => void }[] = [
+  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
+  const scopes: { key: 'all' | 'books' | 'audio'; label: string }[] = [
     { key: 'all', label: es ? 'Inicio' : 'Home' },
-    { key: 'books', label: es ? 'Libros' : 'Books', go: onGoCatalog },
-    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks', go: onGoAudiobooks },
+    { key: 'books', label: es ? 'Libros' : 'Books' },
+    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks' },
   ];
 
-  if (books.length === 0) {
+  /** Los carruseles que son de audio; el resto son de libros. */
+  const RAILES_DE_AUDIO = new Set<RailId>([
+    'server-audio-continue',
+    'server-list',
+    'server-foryou-audio',
+    'server-audio-series',
+    'server-random-audio',
+  ]);
+
+  /*
+    Vacío de verdad: ni un libro propio ni nada en ninguno de los dos servidores.
+
+    Antes bastaba con no tener libros locales para que Inicio dijera «tu biblioteca
+    está vacía», aunque detrás hubiera un Kavita con sus series y doscientos y pico
+    audiolibros esperando. Eso es decirle a alguien que no tiene nada mientras lo
+    tiene todo, y encima tapando lo que sí hay.
+  */
+  const sinLibrosPropios = books.length === 0 && serverContinue.length === 0;
+  const sinServidores = Object.keys(serverRails).length === 0;
+  if (sinLibrosPropios && sinServidores) {
     return (
       <EmptyState
         title={es ? 'Tu biblioteca está vacía' : 'Your library is empty'}
@@ -114,19 +188,28 @@ export default function HomeView({
   */
   const localRails: Partial<Record<RailId, React.ReactNode>> = {};
 
-  if (data.continuing.length > 0) {
-    localRails.continue = (
-      <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
-        {data.continuing.map((book) => {
+  if (data.continuing.length > 0 || serverContinue.length > 0) {
+    // Libros propios y lo empezado en el servidor, juntos y por fecha: lo último, primero.
+    const bookCards = data.continuing.map((book) => ({
+      at: String((book as any).lastRead || ''),
+      node: (() => {
           const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
           // Miniatura de 56 px: aquí el respaldo es solo color, sin el título, que a
           // ese tamaño no se lee. Quién tiene imagen y quién degradado lo decide
           // `coverImage` / `coverTint`, igual que en el resto de la concha.
           const cover = coverImage(book);
           const tint = coverTint(book);
+          /*
+            Y lo que falta para acabarlo, al lado del porcentaje. Un «45 %» dice cuánto
+            llevas; lo que se quiere saber al volver a un libro es si se termina esta
+            tarde. Se estima con lo que el libro ya guarda —caracteres, tiempo y
+            porcentaje—, sin leer los partes diarios: son varias tarjetas y saldría una
+            lectura de IndexedDB por cada una.
+          */
+          const queda = restanteDeLibro(book);
           return (
+            <span key={book.id} className="yoru-continue-slot">
             <button
-              key={book.id}
               type="button"
               className="yoru-continue-card"
               onClick={() => onContinue(book)}
@@ -143,16 +226,112 @@ export default function HomeView({
               <span className="yoru-continue-body">
                 <span className="yoru-continue-title">{book.title}</span>
                 <span className="yoru-continue-author">{book.author || (es ? 'Sin autor' : 'Unknown author')}</span>
-                <span className="yoru-continue-state">{es ? 'Novela' : 'Novel'} · {percent} %</span>
+                <span className="yoru-continue-state">
+                  {es ? 'Novela' : 'Novel'} · {percent} %
+                  {queda ? (es ? ` · quedan ${restanteCorto(queda.segundos)}` : ` · ${restanteCorto(queda.segundos)} left`) : ''}
+                </span>
                 <span className="yoru-continue-bar">
                   <span style={{ width: `${percent}%` }} />
                 </span>
               </span>
             </button>
+            {/*
+              La misma acción que «Quitar de Continuar» del menú, pero a un clic.
+              El menú del clic derecho no se ve, y zams fue a quitar un libro de aquí
+              pulsando encima (18 nov 2026): lo único que pasaba era que se abría.
+            */}
+            {menuActions && (
+              <button
+                type="button"
+                className="yoru-continue-remove"
+                title={es ? 'Quitar de Continuar' : 'Remove from Continue'}
+                aria-label={es ? 'Quitar de Continuar' : 'Remove from Continue'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  menuActions.onHideFromContinue(book);
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+            </span>
           );
-        })}
-      </Rail>
-    );
+      })(),
+    }));
+
+    /*
+      Lo del servidor que lleva a medias este perfil: tomos y audiolibros. Los
+      audiolibros vuelven aquí porque su avance tiene que verse arriba, al lado del de
+      las novelas; lo pidió zams (18 nov 2026). Lo que no quiere es verlos en la
+      pestaña «Libros», y de eso se encarga el filtro de abajo, no esta lista.
+
+      Un tomo de Kavita ya importado sale como libro propio: no se repite. Y lo
+      apartado a mano de las filas de «continuar» tampoco vuelve por aquí.
+    */
+    const serverCards = serverContinue
+      .filter((entry) => !(entry.kind === 'kavita' && localTitles.has(entry.title)))
+      .map((entry) => {
+      // Pulsar abre la ficha: la serie en Kavita (con su «Seguir leyendo»), el tomo
+      // en Audiobookshelf. Las dos retoman donde lo dejó este perfil.
+      const esAudio = entry.kind === 'audiobook';
+      const seriesId = entry.kind === 'kavita' ? entry.seriesId : 0;
+      const seriesName = entry.kind === 'kavita' ? entry.seriesName : undefined;
+      const item: ServerItem = esAudio
+        ? {
+          id: `abs-${entry.kind === 'audiobook' ? entry.itemId : ''}`,
+          serverId: entry.kind === 'audiobook' ? entry.itemId : '',
+          title: entry.title,
+          cover: absCoverUrl(entry.kind === 'audiobook' ? entry.itemId : ''),
+          source: 'audiobookshelf',
+          author: entry.kind === 'audiobook' ? entry.author : undefined,
+          percent: entry.percent,
+        }
+        : {
+          id: `kavita-${seriesId}`,
+          serverId: String(seriesId),
+          title: entry.title,
+          // La portada es la del tomo que se está leyendo, no la de la serie.
+          cover: kavitaVolumeCoverUrl(entry.kind === 'kavita' ? entry.volumeId : 0),
+          source: 'kavita',
+          series: seriesName && seriesName !== entry.title ? seriesName : 'Kavita',
+          percent: entry.percent,
+        };
+      return {
+        at: entry.at,
+        esAudio,
+        // Apartado solo cuenta si no se ha avanzado después de apartarlo.
+        hidden: estaApartado(item.id, entry.at),
+        node: (
+          <ServerContinueCard
+            key={entry.key}
+            item={item}
+            es={es}
+            onOpen={() => onOpenServerItem(esAudio ? item : { ...item, title: seriesName || entry.title })}
+            onHide={() => apartar(item.id)}
+          />
+        ),
+      };
+    })
+      .filter((card) => !card.hidden);
+
+    /*
+      La pestaña manda sobre el contenido de la fila: en «Libros» no salen los
+      audiolibros —que es lo que molestaba— y en «Audiolibros» solo salen ellos. Si no
+      queda nada, la fila no se pinta.
+    */
+    const continueCards = [
+      ...bookCards.map((card) => ({ ...card, esAudio: false })),
+      ...serverCards,
+    ]
+      .filter((card) => (scope === 'books' ? !card.esAudio : scope === 'audio' ? card.esAudio : true))
+      .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    if (continueCards.length > 0) {
+      localRails.continue = (
+        <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
+          {continueCards.map((card) => card.node)}
+        </Rail>
+      );
+    }
   }
 
   if (data.recent.length > 0) {
@@ -169,8 +348,21 @@ export default function HomeView({
   }
 
   if (data.forYou.length > 0) {
+    /*
+      El motivo va donde iba el autor: «Sigue <serie>», «De <autor>, que ya lees». Una
+      fila de portadas sin motivo no se distingue de una lista al azar, y cuando acierta
+      tampoco se nota. Y con el clic derecho se aparta la que no interesa.
+    */
+    const motivos = new Map(data.forYou.map((entry) => [entry.book.id, motivoTexto(entry.reason, es)]));
     localRails['for-you'] = (
-      <BookRail title={es ? 'Libros para ti' : 'Books for you'} books={data.forYou} onOpen={onOpenDetail} es={es} />
+      <BookRail
+        title={es ? 'Libros para ti' : 'Books for you'}
+        books={data.forYou.map((entry) => entry.book)}
+        onOpen={onOpenDetail}
+        es={es}
+        subtitleOf={(book) => motivos.get(book.id)}
+        menuOptions={{ fromSuggestions: true }}
+      />
     );
   }
 
@@ -216,18 +408,65 @@ export default function HomeView({
           <button
             key={item.key}
             type="button"
-            className={`yoru-chip${item.go ? '' : ' active'}`}
-            aria-current={item.go ? undefined : 'page'}
-            onClick={() => item.go?.()}
+            className={`yoru-chip${scope === item.key ? ' active' : ''}`}
+            aria-current={scope === item.key ? 'page' : undefined}
+            onClick={() => setScope(item.key)}
           >
             {item.label}
           </button>
         ))}
+        {scope !== 'all' && (
+          <button
+            type="button"
+            className="yoru-chip-link"
+            onClick={() => (scope === 'books' ? onGoCatalog() : onGoAudiobooks())}
+          >
+            {es ? 'Ver todo' : 'See all'}
+          </button>
+        )}
       </div>
 
-      {layout.order
-        .filter((id) => !hidden.has(id) && all[id])
-        .map((id) => <React.Fragment key={id}>{all[id]}</React.Fragment>)}
+      {/*
+        Con servidor y sin libros propios, «importa una novela» sigue siendo verdad,
+        pero es una nota al pie: lo que se viene a ver es el catálogo.
+      */}
+      {sinLibrosPropios && (
+        <p className="yoru-home-hint">
+          {es
+            ? 'Esto es lo que hay en tus servidores. Importa una novela y también aparecerá aquí.'
+            : 'This is what your servers have. Import a novel and it will show up here too.'}
+        </p>
+      )}
+
+      {(() => {
+        const visibles = layout.order.filter((id) => {
+          if (hidden.has(id) || !all[id]) return false;
+          /*
+            «Continuar» lleva las dos cosas, y lo que filtra es su contenido, no el
+            carrusel entero: con «Audiolibros» puesto trae los audiolibros a medias, y
+            con «Libros», los tomos. Si en esa pestaña no le queda nada, no se ha
+            construido y ya no está aquí.
+          */
+          if (id === 'continue') return true;
+          if (scope === 'books') return !RAILES_DE_AUDIO.has(id);
+          if (scope === 'audio') return RAILES_DE_AUDIO.has(id);
+          return true;
+        });
+        // Filtrar y no enseñar nada deja la pantalla en blanco sin decir por qué.
+        if (visibles.length === 0) {
+          return (
+            <EmptyState
+              title={scope === 'audio'
+                ? (es ? 'Aún no hay audiolibros aquí' : 'No audiobooks here yet')
+                : (es ? 'Aún no hay libros aquí' : 'No books here yet')}
+              sub={scope === 'audio'
+                ? (es ? 'Conecta Audiobookshelf para verlos en Inicio.' : 'Connect Audiobookshelf to see them on Home.')
+                : (es ? 'Importa una novela o conecta Kavita.' : 'Import a novel or connect Kavita.')}
+            />
+          );
+        }
+        return visibles.map((id) => <React.Fragment key={id}>{all[id]}</React.Fragment>);
+      })()}
     </div>
   );
 }

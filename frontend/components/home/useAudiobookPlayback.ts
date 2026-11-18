@@ -3,11 +3,13 @@ import type { AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
   closeAudiobookSession,
   locateTrack,
+  probeMediaAuth,
   startAudiobookPlayback,
   syncAudiobookSession,
   updateAudiobookProgress,
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
+import { saveLocalAudiobookProgress } from '../../utils/serverProgress';
 import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
 
 /**
@@ -24,6 +26,7 @@ import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/o
  */
 
 const SYNC_INTERVAL_MS = 15_000;
+const LOCAL_SAVE_INTERVAL_MS = 3_000;
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export type PlaybackPhase =
@@ -53,7 +56,26 @@ export interface AudiobookPlayback {
     onPlay: () => void;
     onPause: () => void;
     onEnded: () => void;
+    /** Sin esto, una pista que no carga deja el reproductor mudo y en 0:00. */
+    onError: () => void;
   };
+}
+
+/** Lo que significa cada código de `MediaError`, dicho para quien lo lee en pantalla. */
+function mediaErrorMessage(code: number | undefined, es: boolean): string {
+  if (code === 1) return es ? 'Se canceló la carga del audio.' : 'Loading the audio was cancelled.';
+  if (code === 2) {
+    return es
+      ? 'No se pudo traer el audio del servidor. Comprueba que Audiobookshelf sigue encendido.'
+      : 'Could not fetch the audio from the server. Check that Audiobookshelf is still up.';
+  }
+  if (code === 3) return es ? 'El audio llegó, pero no se pudo descodificar.' : 'The audio arrived but could not be decoded.';
+  if (code === 4) {
+    return es
+      ? 'El servidor no dio el audio, o este formato no se puede reproducir aquí.'
+      : 'The server did not serve the audio, or this format cannot be played here.';
+  }
+  return es ? 'No se pudo reproducir el audio.' : 'The audio could not be played.';
 }
 
 export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlayback {
@@ -70,12 +92,28 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
   const listenedRef = useRef(0);
   const lastTickRef = useRef<number | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  /** La pista que hay que cargar en cuanto exista el `<audio>`. Ver el efecto de abajo. */
+  const pendingStartRef = useRef<{ session: AudiobookshelfPlaybackSession; from: number } | null>(null);
   const playAfterLoadRef = useRef(false);
   const trackIndexRef = useRef(0);
   trackIndexRef.current = trackIndex;
 
-  // Un audiolibro distinto es una sesión distinta: lo de antes no vale.
-  useEffect(() => {
+  /*
+    Un audiolibro distinto es una sesión distinta: lo de antes no vale.
+
+    Esto se hace durante el render y no en un efecto, y la diferencia importa. El
+    hook vive en el proveedor, y quien pide reproducir es la barra, que es su hija;
+    los efectos de los hijos corren antes que los del padre. Con el reinicio en un
+    efecto, al pasar de un audiolibro a otro la barra arrancaba primero y se
+    encontraba la sesión del anterior: el reproductor aparecía con el minuto del
+    audiolibro que acababas de dejar, y lo de verdad no sonaba.
+
+    Reiniciar aquí es el patrón que React documenta para el estado que depende de
+    una prop, y deja todo limpio antes de que corra ningún efecto.
+  */
+  const [lastItemId, setLastItemId] = useState(itemId);
+  if (itemId !== lastItemId) {
+    setLastItemId(itemId);
     setPhase({ kind: 'idle' });
     setSession(null);
     setPlaying(false);
@@ -84,7 +122,24 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     sessionRef.current = null;
     timeRef.current = 0;
     listenedRef.current = 0;
-  }, [itemId]);
+  }
+
+  /*
+    Apuntar por dónde vas en el aparato, al momento.
+
+    Es lo que pinta «Continuar», y antes solo se apuntaba cada quince segundos, solo
+    mientras sonaba y después de esperar la respuesta del servidor. Saltar a la mitad
+    con el audio en pausa no guardaba nada: la tarjeta decía 1 % con el reproductor en
+    4:21:06. Lo vio zams (18 nov 2026). Guardar aquí es escribir en el almacén local,
+    no cuesta red, así que se hace al saltar, al pausar y cada pocos segundos.
+  */
+  const lastLocalSaveRef = useRef(0);
+  const saveLocal = useCallback(() => {
+    const current = sessionRef.current;
+    if (!current) return;
+    lastLocalSaveRef.current = performance.now();
+    saveLocalAudiobookProgress(current.itemId, timeRef.current, current.duration);
+  }, []);
 
   const report = useCallback(async (close: boolean) => {
     const current = sessionRef.current;
@@ -95,6 +150,8 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       duration: current.duration,
     };
     listenedRef.current = 0;
+    // Lo local primero: no depende de que el servidor conteste.
+    saveLocalAudiobookProgress(current.itemId, update.currentTime, current.duration);
     try {
       if (close) await closeAudiobookSession(current.id, update);
       else await syncAudiobookSession(current.id, update);
@@ -116,12 +173,13 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
 
   const loadTrack = useCallback((target: AudiobookshelfPlaybackSession, globalTime: number, autoplay: boolean) => {
     const audio = audioRef.current;
-    if (!audio) return;
+    // Que no haya `<audio>` todavía no es normal: lo encauza el efecto de más abajo.
+    if (!audio) { console.warn('[Audiobookshelf] loadTrack sin <audio> montado; se reintenta al pintar.'); return; }
     const { trackIndex: index, offset } = locateTrack(target.tracks, globalTime);
     playAfterLoadRef.current = autoplay;
     if (index === trackIndexRef.current && audio.src === target.tracks[index].url && audio.readyState > 0) {
       audio.currentTime = offset;
-      if (autoplay) void audio.play().catch(() => setPlaying(false));
+      if (autoplay) void audio.play().catch((error) => { setPlaying(false); console.warn('[Audiobookshelf] play() rechazado:', error); });
       return;
     }
     pendingSeekRef.current = offset;
@@ -153,20 +211,43 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
         const from = typeof at === 'number' ? at : started.currentTime;
         timeRef.current = from;
         setTime(from);
+        /*
+          El <audio> solo aparece con la fase «ready», así que aquí todavía no existe
+          el elemento al que darle la fuente. Antes esto se resolvía con un
+          `setTimeout(…, 0)`, que no es una garantía de nada: es una carrera contra el
+          pintado de React, y la perdía. `loadTrack` se encontraba `audioRef.current`
+          a null, se iba por su cláusula de guarda y no cargaba nada — en silencio. El
+          reproductor salía pintado, con su duración y su minuto, y mudo. Al segundo
+          intento sí sonaba, porque para entonces el elemento ya estaba.
+
+          Se deja encargado y lo recoge el efecto de abajo, que por definición corre
+          con el DOM ya pintado. Es como lo hace el reproductor del lector
+          (`reader/AudioSyncPlayer.tsx`), y por lo mismo.
+        */
+        pendingStartRef.current = { session: started, from };
         setPhase({ kind: 'ready' });
-        // El <audio> aparece con la fase «ready», así que la pista se carga después
-        // de pintar: antes no hay elemento al que darle la fuente.
-        window.setTimeout(() => loadTrack(started, from, true), 0);
       })
       .catch((error) => setPhase({ kind: 'error', message: describeServerError(error, es) }));
   }, [itemId, es, loadTrack]);
+
+  /*
+    Recoge el encargo que dejó `start()`, ya con el `<audio>` en el DOM. Depende de
+    `phase` porque es el cambio a «ready» el que lo monta: ese render es justo el que
+    hace falta esperar.
+  */
+  useEffect(() => {
+    const pending = pendingStartRef.current;
+    if (!pending || !audioRef.current) return;
+    pendingStartRef.current = null;
+    loadTrack(pending.session, pending.from, true);
+  }, [phase, loadTrack]);
 
   const play = useCallback(() => {
     const audio = audioRef.current;
     const current = sessionRef.current;
     if (!audio || !current) return;
     if (!audio.src) { loadTrack(current, timeRef.current, true); return; }
-    void audio.play().catch(() => setPlaying(false));
+    void audio.play().catch(reportPlayRejection);
   }, [loadTrack]);
 
   const pause = useCallback(() => { audioRef.current?.pause(); }, []);
@@ -178,8 +259,9 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     timeRef.current = clamped;
     setTime(clamped);
     lastTickRef.current = null;
+    saveLocal();
     loadTrack(current, clamped, playing);
-  }, [loadTrack, playing, start]);
+  }, [loadTrack, playing, start, saveLocal]);
 
   const nextRate = useCallback(() => {
     setRate((current) => {
@@ -188,6 +270,25 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       return next;
     });
   }, []);
+
+  /*
+    Un rechazo de `play()` se tragaba el motivo. Los dos que importan son distintos y
+    hay que distinguirlos: el navegador bloqueando la reproducción sin un gesto del
+    usuario, y la pista que no se puede reproducir.
+  */
+  const reportPlayRejection = useCallback((error: unknown) => {
+    setPlaying(false);
+    const name = error instanceof Error ? error.name : '';
+    console.warn(`[Audiobookshelf] play() rechazado: ${name || error}`);
+    if (name === 'NotAllowedError') {
+      setPhase({
+        kind: 'error',
+        message: es
+          ? 'El navegador no deja empezar a sonar solo. Pulsa el botón de reproducir.'
+          : 'The browser will not start playback on its own. Press play.',
+      });
+    }
+  }, [es]);
 
   const handlers = {
     onLoadedMetadata: () => {
@@ -198,7 +299,35 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
         audio.currentTime = pendingSeekRef.current;
         pendingSeekRef.current = null;
       }
-      if (playAfterLoadRef.current) void audio.play().catch(() => setPlaying(false));
+      if (playAfterLoadRef.current) void audio.play().catch(reportPlayRejection);
+    },
+    /*
+      Que la pista no cargara no se enteraba nadie: el `<audio>` no tenía manejador de
+      error, así que el reproductor se quedaba pintado en 0:00 y en silencio, sin una
+      sola línea en ningún sitio. Un reproductor que falla callado es el peor caso,
+      porque parece que el fallo lo tienes tú.
+    */
+    onError: () => {
+      const audio = audioRef.current;
+      const code = audio?.error?.code;
+      const detail = audio?.error?.message || '';
+      const url = audio?.currentSrc || audio?.src || '';
+      // El testigo viaja en la dirección; no se escribe en el registro.
+      const safeUrl = url.replace(/([?&]token=)[^&]*/i, '$1…');
+      console.warn(`[Audiobookshelf] la pista no cargó (código ${code ?? '?'}) ${detail} — ${safeUrl}`);
+      setPlaying(false);
+      setPhase({ kind: 'error', message: mediaErrorMessage(code, es) });
+      /*
+        «Format error» no dice si el fichero es ilegible o si el servidor contestó un
+        401 que el navegador no sabe interpretar. Preguntándoselo de las dos maneras se
+        sabe cuál de las dos es, que son arreglos opuestos.
+      */
+      const track = sessionRef.current?.tracks[trackIndexRef.current];
+      if (url) {
+        void probeMediaAuth(url, track?.fileUrl || '').then((resumen) => {
+          console.warn(`[Audiobookshelf] el servidor responde: ${resumen}`);
+        });
+      }
     },
     onTimeUpdate: () => {
       const audio = audioRef.current;
@@ -213,9 +342,12 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       lastTickRef.current = audio.paused ? null : now;
       timeRef.current = globalTime;
       setTime(globalTime);
+      // Mientras suena, se apunta cada pocos segundos; el servidor sigue yendo cada quince.
+      if (!audio.paused && now - lastLocalSaveRef.current > LOCAL_SAVE_INTERVAL_MS) saveLocal();
     },
     onPlay: () => setPlaying(true),
-    onPause: () => { setPlaying(false); lastTickRef.current = null; },
+    // Al pausar se guarda en el aparato y se avisa al servidor, sin esperar al reloj.
+    onPause: () => { setPlaying(false); lastTickRef.current = null; void report(false); },
     onEnded: () => {
       const current = sessionRef.current;
       if (!current) return;

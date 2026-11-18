@@ -1,8 +1,13 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ExternalLink, Plus, Volume2, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Volume2, X } from 'lucide-react';
 import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
-import { lookupWord } from '../utils/dictionary';
+import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
+import { sitioEnVertical } from '../utils/posicionPopupVertical';
+
+/** El ancho que la tarjeta del diccionario querría tener, y lo mínimo con que sigue siendo legible. */
+const ANCHO_POPUP = 380;
+const ANCHO_MINIMO_POPUP = 300;
 import { db } from '../utils/db';
 import { FSRS6, Rating, State, getPreviousSrsState } from '../utils/fsrs';
 import html2canvas from 'html2canvas';
@@ -11,7 +16,8 @@ import { synthesizeSpeechAzure } from '../utils/azureTtsService';
 import { updateDiscordReading, clearDiscordPresence } from '../utils/discordRpc';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
-import { syncJitenReview } from '../utils/jitenSync';
+import { syncJitenReview, syncJitenForget } from '../utils/jitenSync';
+import { modoAnalizador } from '../utils/parserSettingsStore';
 
 // Direct reader engine imports
 import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reader/ReaderEngine';
@@ -22,6 +28,9 @@ import AudioSyncPlayer from './reader/AudioSyncPlayer';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
 import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
+import { decidirSeguimiento } from '../utils/seguimientoAudio';
+import { pintarFrase, rangoDeFrase } from '../utils/anclajeFrase';
+import { capituloVecino } from '../utils/capitulos';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
 import BookSearchPanel from './reader/BookSearchPanel';
@@ -43,6 +52,7 @@ import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from '../utils/platform';
+import { componiendoConIME, esCampoDeTexto, escribiendoEnAlgo } from '../utils/escrituraIME';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
@@ -433,7 +443,6 @@ export default function Reader({
   const [showAllFreqs, setShowAllFreqs] = useState(false);
   const popupSwipeRef = useRef<number | null>(null);
   const [dictLoading, setDictLoading] = useState(false);
-  const [ankiCardExists, setAnkiCardExists] = useState(false);
   const [srsCard, setSrsCard] = useState<any | null>(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [showSettingsPopover, setShowSettingsPopover] = useState(false);
@@ -444,8 +453,16 @@ export default function Reader({
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsKeepAliveRef = useRef<any>(null);
   const wordAudioRef = useRef<WordAudioPlayback | null>(null);
-  const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10 });
+  // Los cuatro bordes de la palabra, no solo arriba y abajo: en vertical el diccionario
+  // se coloca a un lado, y para eso hacen falta el izquierdo y el derecho.
+  const [popupPos, setPopupPos] = useState({ x: 10, y: 10, anchorBottom: false, targetTop: 10, targetBottom: 10, targetLeft: 10, targetRight: 10 });
   const [popupMaxHeight, setPopupMaxHeight] = useState(Math.max(160, window.innerHeight - 24));
+  /*
+    El ancho de la tarjeta. Era fijo en 380 px, y por eso en vertical se mudaba al rincón
+    opuesto cuando por el lado leído quedaban 370: diez píxeles de diferencia la mandaban a
+    tapar texto sin leer. Ahora se encoge hasta `ANCHO_MINIMO_POPUP` antes que mudarse.
+  */
+  const [popupMaxWidth, setPopupMaxWidth] = useState(ANCHO_POPUP);
   const [viewportRevision, setViewportRevision] = useState(0);
   const dictPopupRef = useRef<HTMLDivElement | null>(null);
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
@@ -473,7 +490,26 @@ export default function Reader({
   // al abrir el libro, porque empareja los cues con el texto de ahora y no con el de
   // cuando se alineó.
   const [alignment, setAlignment] = useState<LoadedAlignment | null>(null);
+  /*
+    El índice, también en una referencia.
+
+    Lo lee quien marca la frase que suena, y eso corre varias veces por segundo desde
+    un `useCallback` que no debe rehacerse: si dependiera del estado, cada carga de
+    alineación crearía una función nueva y el reproductor volvería a engancharse.
+  */
+  const alignmentRef = useRef<LoadedAlignment | null>(null);
+  alignmentRef.current = alignment;
   const [followsAudio, setFollowsAudio] = useState(false);
+  /*
+    Seguir el texto se enciende una vez; apartarlo a mano lo suspende, no lo apaga.
+
+    El mando sigue siendo uno solo, el del reproductor. Esto no es un segundo
+    interruptor: mientras el seguimiento está encendido, en cuanto el usuario pasa una
+    página o desplaza el texto por su cuenta, se deja de mover solo y se le ofrece
+    volver. Antes, el siguiente párrafo se lo arrancaba de las manos, y la única salida
+    era apagar el seguimiento y acordarse de volver a encenderlo.
+  */
+  const [seguimientoSuspendido, setSeguimientoSuspendido] = useState(false);
   const audioSeekRef = useRef<((seconds: number) => void) | null>(null);
   /** El último párrafo al que llevó el audio: evita repetir el salto en cada tick. */
   const lastFollowedRef = useRef<number | null>(null);
@@ -669,7 +705,7 @@ export default function Reader({
       const anchorBottom = top > window.innerHeight / 2;
       const y = anchorBottom ? top - 6 : bottom + 6;
       
-      setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom });
+      setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom, targetLeft: rect.left, targetRight: rect.right });
       setDictLoading(true);
       setSelectedWord({
         surface: selectedText,
@@ -717,7 +753,7 @@ export default function Reader({
     const anchorBottom = top > window.innerHeight / 2;
     const y = anchorBottom ? top - 6 : bottom + 6;
     
-    setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom });
+    setPopupPos({ x, y, anchorBottom, targetTop: rect.top, targetBottom: rect.bottom, targetLeft: rect.left, targetRight: rect.right });
     setDictLoading(true);
     
     // Surface text without furigana (<rt>/<rp>), e.g. 彼女 instead of 彼女ヒロイン
@@ -794,20 +830,96 @@ export default function Reader({
       return;
     }
 
+    /*
+      La regla: el diccionario se pone sobre lo que **ya has leído**, nunca sobre lo que
+      viene. Para eso hay que saber hacia dónde se lee, y eso no se deduce de las
+      coordenadas de la palabra: hay que mirar el modo de escritura.
+
+      Antes se decidía solo por el hueco —debajo si cabía, y si no encima—. En texto
+      horizontal eso lo deja casi siempre tapando los renglones siguientes. Y en
+      vertical era peor: la tarjeta mide 380 px y se plantaba a la izquierda de la
+      palabra, que en japonés vertical es justo por donde sigue el texto. Medido en el
+      lector, tapaba tres columnas enteras de lo que estabas a punto de leer.
+
+      Horizontal: lo leído queda arriba, así que se prefiere arriba.
+      Vertical, que se lee de derecha a izquierda: lo leído queda a la derecha, así que
+      va a la derecha, y el alto se alinea con la palabra en vez de pegarse a un borde.
+
+      Y cuando por el lado leído no cabe —una palabra en la primera columna de la página,
+      que en vertical está pegada al borde derecho— no se pone justo al otro lado, que
+      sería taparle lo siguiente que va a leer. Se manda al **extremo** de la página: en
+      vertical, al borde izquierdo, que son las últimas columnas de la hoja; en
+      horizontal, abajo del todo. Eso también tapa texto, pero texto que no va a tocar
+      hasta dentro de un rato, y para entonces el diccionario ya estará cerrado.
+    */
     const bounds = popup.getBoundingClientRect();
-    const spaceAbove = Math.max(0, popupPos.targetTop - margin - gap);
-    const spaceBelow = Math.max(0, window.innerHeight - popupPos.targetBottom - margin - gap);
-    const preferredHeight = Math.min(popup.scrollHeight, 360);
-    const placeBelow = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove;
-    const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2, Math.max(spaceAbove, spaceBelow)));
-    const left = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
-    const top = placeBelow ? popupPos.targetBottom + gap : Math.max(margin, popupPos.targetTop - gap);
+
+    /*
+      Modo «clásico»: el cálculo tal como era antes de la regla de arriba. Decide solo por
+      el hueco —debajo de la palabra si cabe, y si no encima— y no mira el modo de
+      escritura. Tapa lo que viene, pero la tarjeta queda pegada a la palabra, y a zams le
+      sirve así en algunos libros. Se elige en Ajustes del libro.
+    */
+    if (readerSettings.dictPopupPlacement === 'clasico') {
+      const spaceAbove = Math.max(0, popupPos.targetTop - margin - gap);
+      const spaceBelow = Math.max(0, window.innerHeight - popupPos.targetBottom - margin - gap);
+      const preferredHeight = Math.min(popup.scrollHeight, 360);
+      const placeBelow = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove;
+      const maxHeightClasico = Math.max(120, Math.min(window.innerHeight - margin * 2, Math.max(spaceAbove, spaceBelow)));
+      const leftClasico = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
+      const topClasico = placeBelow ? popupPos.targetBottom + gap : Math.max(margin, popupPos.targetTop - gap);
+
+      setPopupMaxHeight(current => current === maxHeightClasico ? current : maxHeightClasico);
+      setPopupPos(current => current.x === leftClasico && current.y === topClasico && current.anchorBottom === !placeBelow
+        ? current
+        : { ...current, x: leftClasico, y: topClasico, anchorBottom: !placeBelow });
+      return;
+    }
+
+    const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2,
+      Math.max(popupPos.targetTop - margin - gap, window.innerHeight - popupPos.targetBottom - margin - gap)));
+    let left: number;
+    let top: number;
+    let anchorBottom: boolean;
+
+    if (readerSettings.vertical) {
+      const sitio = sitioEnVertical({
+        anchoVentana: window.innerWidth,
+        altoVentana: window.innerHeight,
+        palabra: {
+          top: popupPos.targetTop,
+          bottom: popupPos.targetBottom,
+          left: popupPos.targetLeft,
+          right: popupPos.targetRight,
+        },
+        anchoDeseado: ANCHO_POPUP,
+        altoTarjeta: bounds.height,
+        margen: margin,
+        hueco: gap,
+        anchoMinimo: ANCHO_MINIMO_POPUP,
+      });
+      left = sitio.left;
+      top = sitio.top;
+      anchorBottom = false;
+      setPopupMaxWidth(current => current === sitio.ancho ? current : sitio.ancho);
+    } else {
+      setPopupMaxWidth(current => current === ANCHO_POPUP ? current : ANCHO_POPUP);
+      const altoPrevisto = Math.min(popup.scrollHeight, 360);
+      const cabeEncima = popupPos.targetTop - margin - gap >= altoPrevisto;
+      anchorBottom = cabeEncima;
+      left = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
+      top = cabeEncima
+        ? Math.max(margin, popupPos.targetTop - gap)
+        : Math.max(popupPos.targetBottom + gap, window.innerHeight - margin - bounds.height);
+    }
 
     setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
-    setPopupPos(current => current.x === left && current.y === top && current.anchorBottom === !placeBelow
+    setPopupPos(current => current.x === left && current.y === top && current.anchorBottom === anchorBottom
       ? current
-      : { ...current, x: left, y: top, anchorBottom: !placeBelow });
-  }, [selectedWord, dictLoading, dictEntry, popupPos.x, popupPos.targetTop, popupPos.targetBottom, viewportRevision]);
+      : { ...current, x: left, y: top, anchorBottom });
+  }, [selectedWord, dictLoading, dictEntry, popupPos.x, popupPos.targetTop, popupPos.targetBottom,
+    popupPos.targetLeft, popupPos.targetRight, readerSettings.vertical,
+    readerSettings.dictPopupPlacement, viewportRevision]);
 
   useEffect(() => {
     const handleResize = () => setViewportRevision(revision => revision + 1);
@@ -860,6 +972,13 @@ export default function Reader({
 
     // Global KeyDown to support pressing Shift while hovering
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      /*
+        Shift no es solo «mira esta palabra»: escribiendo japonés con un IME es la tecla de
+        pasar a katakana y la de las mayúsculas del romaji, así que se pulsa a cada rato. Sin
+        esto, teclear en el buscador del libro iba abriendo el diccionario encima del panel una
+        y otra vez. Con el foco en un recuadro, o con el IME componiendo, Shift es suyo.
+      */
+      if (componiendoConIME(e) || escribiendoEnAlgo()) return;
       if (e.key === 'Shift') {
         if (hoveredElementRef.current) {
           const wordSpan = hoveredElementRef.current.closest('[data-word], [wordId], .jiten-word') as HTMLElement;
@@ -982,6 +1101,17 @@ export default function Reader({
     setHighlights(next);
     void db.saveBookHighlights(book.id, next);
   }, [book.id]);
+
+  /*
+    Borra un subrayado desde el panel «Subrayados y notas».
+
+    Hasta ahora solo se podía quitar abriendo su nota y vaciándola, que es el camino largo y no
+    se le ocurre a nadie. El panel pide confirmación en la propia fila antes de llamar aquí.
+  */
+  const handleDeleteHighlight = useCallback((item: BookHighlight) => {
+    saveHighlights(highlights.filter((h) => h.id !== item.id));
+    showToast(lang === 'es' ? 'Subrayado borrado' : 'Highlight deleted', 'success');
+  }, [highlights, saveHighlights, showToast, lang]);
 
   /** Adds a highlight, replacing any that overlap it in the same paragraph. */
   const withHighlight = useCallback((list: BookHighlight[], item: BookHighlight) => [
@@ -1110,10 +1240,70 @@ export default function Reader({
     );
   }, [book.id, book.chapters, lang, showToast]);
 
-  /** El audio avanzó: si el texto va detrás, llevarlo al párrafo que suena. */
+  /*
+    Marca el párrafo que está sonando y desmarca el de antes.
+
+    Se hace tocando la clase en el DOM, sin pasar por React. El audio avisa varias
+    veces por segundo, y repintar a ese ritmo un libro paginado es inviable: la
+    paginación por columnas se recalcula en cada repintado y el texto daría saltos.
+    Aquí son dos operaciones: quitar una clase y poner otra.
+
+    Marcar no es seguir. La marca se pone siempre que haya alineación, aunque el
+    usuario tenga el seguimiento apagado o se haya ido a leer a otra parte: saber
+    cuál suena es útil precisamente cuando vas por tu cuenta. Lo que no se hace sin
+    permiso es mover la vista; de eso sigue encargándose `followsAudio`.
+  */
+  const sonandoRef = useRef<{ id: number; cue: number; elemento: Element } | null>(null);
+  const marcarParrafoSonando = useCallback((paragraphId: number | null, cueIndex = -1) => {
+    const actual = sonandoRef.current;
+    /*
+      No basta con comparar los números: el motor rehace el capítulo entero al cambiar
+      de página, de tamaño de letra o de orientación, y en ese momento el párrafo
+      marcado deja de existir aunque siga sonando el mismo. Mirando `isConnected` se
+      vuelve a marcar el nuevo; comparando solo el número, el resaltado desaparecía
+      hasta la frase siguiente.
+    */
+    if (actual && actual.id === paragraphId && actual.cue === cueIndex && actual.elemento.isConnected) return;
+    if (actual) actual.elemento.classList.remove('is-sonando');
+    sonandoRef.current = null;
+    if (paragraphId === null) {
+      pintarFrase(null);
+      return;
+    }
+    const elemento = engineApiRef.current?.getContent()?.querySelector(`p.chapter-content[index="${paragraphId}"]`);
+    if (!elemento) {
+      pintarFrase(null);
+      return;
+    }
+
+    /*
+      La frase si se puede, el párrafo si no.
+
+      Resaltar la frase exacta es lo que de verdad ayuda: un párrafo de dieciocho
+      líneas marcado entero no dice por dónde va el narrador. Pero el anclaje puede no
+      resolver —el motor acaba de rehacer el capítulo, o el texto del DOM no es
+      exactamente el que se indexó— y entonces no se deja de marcar nada: se cae al
+      párrafo, que es lo que había antes y sigue siendo útil.
+    */
+    const índice = alignmentRef.current?.index;
+    const rango = (índice && cueIndex >= 0)
+      ? rangoDeFrase(elemento, índice.offsetInParagraph[cueIndex], índice.lengthOfCue[cueIndex])
+      : null;
+    if (!pintarFrase(rango)) elemento.classList.add('is-sonando');
+    sonandoRef.current = { id: paragraphId, cue: cueIndex, elemento };
+  }, []);
+
+  /** Sin alineación no hay nada que suene: que no se quede una marca colgada. */
+  useEffect(() => {
+    if (!alignment) marcarParrafoSonando(null);
+  }, [alignment, marcarParrafoSonando]);
+
+  /** El audio avanzó: marcar lo que suena y, si el texto va detrás, llevarlo allí. */
   const handleAudioTime = useCallback((ms: number) => {
-    if (!followsAudio || !alignment) return;
+    if (!alignment) return;
     const donde = paragraphAtTime(alignment.index, ms);
+    marcarParrafoSonando(donde ? donde.paragraphId : null, donde ? donde.cue.index : -1);
+    if (!followsAudio) return;
     if (!donde) {
       // Ahí no hay texto alineado. **No se salta a ojo**: el lector se queda donde está
       // y se dice una vez. Un salto aproximado en un libro para aprender japonés
@@ -1128,8 +1318,80 @@ export default function Reader({
     warnedUnalignedRef.current = false;
     if (lastFollowedRef.current === donde.paragraphId) return;
     lastFollowedRef.current = donde.paragraphId;
+
+    /*
+      Antes se saltaba al párrafo en cuanto cambiaba. Ahora se pregunta si hace falta.
+
+      En lectura continua la frase vive en una banda y el texto solo se mueve cuando se
+      sale de ella: así la narración avanza unos renglones sin arrastrar la página en
+      cada frase. En paginada no hay banda que valga, o está en la página o no está.
+      Y si el usuario apartó el texto a mano, no se mueve nada.
+    */
+    const api = engineApiRef.current;
+    const contenido = api?.getContent();
+    const elemento = contenido?.querySelector(`p.chapter-content[index="${donde.paragraphId}"]`);
+    if (contenido && elemento) {
+      const caja = contenido.getBoundingClientRect();
+      const frase = elemento.getBoundingClientRect();
+      // El eje por el que se desplaza: el vertical japonés en lectura continua corre en X.
+      const ejeY = contenido.scrollHeight > contenido.clientHeight + 2;
+      const tapado = (isReadAloudOpen || isAudiobookOpen) ? readAloudReach.current : 0;
+      const { mover } = decidirSeguimiento({
+        modo: seguimientoSuspendido ? 'suspendido' : 'siguiendo',
+        estrategia: api?.isPaginated() ? 'visibilidad' : 'comodidad',
+        frase: ejeY ? { inicio: frase.top, fin: frase.bottom } : { inicio: frase.left, fin: frase.right },
+        ventana: ejeY ? { inicio: caja.top, fin: caja.bottom } : { inicio: caja.left, fin: caja.right },
+        // La barra del reproductor tapa el borde de abajo: una frase detrás de los
+        // mandos no está visible por mucho que caiga dentro de la caja.
+        margenFin: ejeY ? tapado : 0,
+      });
+      if (!mover) return;
+    } else if (seguimientoSuspendido) {
+      return;
+    }
     goToParagraphAnywhere(donde.paragraphId);
-  }, [followsAudio, alignment, lang, showToast]);
+  }, [followsAudio, alignment, lang, showToast, marcarParrafoSonando, seguimientoSuspendido,
+    isReadAloudOpen, isAudiobookOpen, readAloudReach]);
+
+  /*
+    Mover el texto a mano suspende el seguimiento.
+
+    Se escuchan los gestos del usuario, no el desplazamiento: el propio seguimiento mueve
+    la página, y si mirásemos `scroll` se suspendería él solo en cuanto hiciera su trabajo.
+    El paso de página llega por `onPageTurn`, que el motor solo dispara cuando lo pide
+    alguien (toque, tecla o arrastre); los saltos de la búsqueda o del audio no pasan por ahí.
+  */
+  const suspenderSeguimiento = useCallback(() => {
+    if (!followsAudio) return;
+    setSeguimientoSuspendido(true);
+  }, [followsAudio]);
+
+  useEffect(() => {
+    if (!followsAudio) return;
+    const esDelLector = (e: Event) => {
+      const destino = e.target as Node | null;
+      const contenido = engineApiRef.current?.getContent();
+      return !!contenido && !!destino && contenido.contains(destino);
+    };
+    const alGesto = (e: Event) => { if (esDelLector(e)) suspenderSeguimiento(); };
+    window.addEventListener('wheel', alGesto, { capture: true, passive: true });
+    window.addEventListener('touchmove', alGesto, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('wheel', alGesto, true);
+      window.removeEventListener('touchmove', alGesto, true);
+    };
+  }, [followsAudio, suspenderSeguimiento]);
+
+  /** Encender o apagar el seguimiento siempre parte de cero. */
+  useEffect(() => { setSeguimientoSuspendido(false); }, [followsAudio]);
+
+  /** «Volver a la narración»: retomar el seguimiento y llevar el texto allí ya. */
+  const volverALaNarracion = useCallback(() => {
+    setSeguimientoSuspendido(false);
+    lastFollowedRef.current = null;
+    const id = sonandoRef.current?.id;
+    if (id !== undefined) goToParagraphAnywhere(id);
+  }, []);
 
   /** Desde la frase elegida, poner el audiolibro justo ahí. */
   const handleListenFromSelection = useCallback(() => {
@@ -1161,6 +1423,32 @@ export default function Reader({
       }, 150);
     }
   }, []);
+
+  /**
+   * Al capítulo de al lado, por su primer párrafo. En los extremos solo avisa.
+   *
+   * El salto va **por el número de capítulo**, que ya lo sabemos, y no por el de
+   * párrafo. Pasando por `goToParagraphAnywhere` había que volver a averiguar de qué
+   * capítulo era ese párrafo, y eso falla justo donde más duele: un capítulo sin texto
+   * —una ilustración, una portadilla— tiene un rango vacío que no contiene ni su
+   * propio primer párrafo, así que no se encontraba, el salto se quedaba donde estaba
+   * y la tecla parecía muerta. En un sentido sí y en el otro no, según de qué lado
+   * cayera el capítulo vacío.
+   */
+  const cambiarCapitulo = useCallback((direccion: 1 | -1) => {
+    const api = engineApiRef.current;
+    if (!api) return;
+    const secciones = api.getSections();
+    const destino = capituloVecino(secciones, api.getCurrentSection(), direccion);
+    if (destino === null) {
+      showToast(direccion > 0
+        ? (lang === 'es' ? 'Es el último capítulo.' : 'This is the last chapter.')
+        : (lang === 'es' ? 'Es el primer capítulo.' : 'This is the first chapter.'), 'info');
+      return;
+    }
+    skipNextReadingPositionRef.current = true;
+    api.goToParagraph(destino, secciones[destino].startParagraphId);
+  }, [lang, showToast]);
 
   const handleExportHighlights = useCallback(() => {
     const text = exportHighlights(book.title || '', highlights, lang);
@@ -1384,98 +1672,17 @@ export default function Reader({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const checkAnkiCardExists = async (word: string) => {
-    setAnkiCardExists(false);
-    // AnkiConnect needs Anki on the same computer: never on a phone.
-    if (!word || isPhoneUI()) return;
+  /*
+    Aquí vivían tres cosas que solo servían al botón de Anki del diccionario, que ya no
+    está: preguntarle a AnkiConnect si la palabra ya tenía tarjeta, el efecto que lo
+    hacía en cada palabra, y abrir el navegador de Anki en esa palabra.
 
-    const savedV2 = localStorage.getItem('anki_settings_v2');
-    const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
-    let host = 'http://127.0.0.1:8765';
-    let noteType = 'Lapis';
-    let fieldsConfig: Record<string, string> = { Expression: '{expression}' };
+    De paso se va una llamada a AnkiConnect **en cada palabra que se miraba**, que
+    existía solo para decidir si el botón ponía «Añadir» o «Ver».
 
-    if (ankiSettingsV2) {
-      host = ankiSettingsV2.host || host;
-      const config = ankiSettingsV2.expression || {};
-      noteType = config.noteType || noteType;
-      if (config.fields && Object.keys(config.fields).length > 0) {
-        fieldsConfig = config.fields;
-      }
-    } else {
-      const saved = localStorage.getItem('anki_settings');
-      if (saved) {
-        const legacy = JSON.parse(saved);
-        host = legacy.host || host;
-        noteType = legacy.noteType || noteType;
-        fieldsConfig = { [legacy.wordField || 'Expression']: '{expression}' };
-      }
-    }
-
-    const expressionField = Object.keys(fieldsConfig).find(k => (fieldsConfig as any)[k] === '{expression}') || 'Expression';
-
-    try {
-      const res = await fetch(host, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'findNotes',
-          version: 6,
-          params: {
-            query: `note:"${noteType}" "${expressionField}:${word}"`
-          }
-        })
-      });
-      const data = await res.json();
-      if (data && data.result && data.result.length > 0) {
-        setAnkiCardExists(true);
-      }
-    } catch (e) {
-      console.warn('Could not check card existence in Anki:', e);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedWord) {
-      checkAnkiCardExists(selectedWord.basicForm);
-    } else {
-      setAnkiCardExists(false);
-    }
-  }, [selectedWord]);
-
-  const handleOpenInAnki = async () => {
-    if (!selectedWord) return;
-
-    const savedV2 = localStorage.getItem('anki_settings_v2');
-    const ankiSettingsV2 = savedV2 ? JSON.parse(savedV2) : null;
-    let host = 'http://127.0.0.1:8765';
-    if (ankiSettingsV2) {
-      host = ankiSettingsV2.host || host;
-    } else {
-      const saved = localStorage.getItem('anki_settings');
-      if (saved) {
-        host = JSON.parse(saved).host || host;
-      }
-    }
-
-    try {
-      await fetch(host, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'guiBrowse',
-          version: 6,
-          params: {
-            query: `"${selectedWord.basicForm}"`
-          }
-        })
-      });
-    } catch (e) {
-      console.error('Error opening Anki browser:', e);
-      showToast(lang === 'es' ? 'No se pudo conectar con Anki. Asegúrate de tener Anki abierto.' : 'Could not connect to Anki. Make sure Anki is open.', 'error');
-    }
-  };
-
+    Mandar una palabra a Anki sigue ahí, con la tecla A, y la integración entera sigue
+    en Ajustes → Diccionarios y vocabulario.
+  */
   const handleMineToAnki = async () => {
     if (isPhoneUI()) return;
     if (!selectedWord) return;
@@ -1878,7 +2085,6 @@ export default function Reader({
             source: existingCard?.source || book?.title || 'Yoru Reader'
           });
         }
-        setAnkiCardExists(true);
         showToast(lang === 'es' ? '¡Tarjeta de Anki creada con éxito! La palabra fue marcada como "Estudiando".' : 'Anki card created successfully! The word was marked as "Learning".', 'success');
       }
     } catch (e) {
@@ -2127,17 +2333,21 @@ export default function Reader({
   const handleReaderKeydown = useCallback((e: KeyboardEvent) => {
     if (!e.isTrusted) return;
     if (isExtSettingsOpen || isJumpModalOpen || isGalleryOpen) return;
-    const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      return;
-    }
+    // Mientras el IME compone, las flechas y el espacio recorren sus candidatos: no son del lector.
+    if (componiendoConIME(e)) return;
+    if (esCampoDeTexto(e.target) || escribiendoEnAlgo()) return;
 
-    const keybindings = settings.keybindings || {
+    const keybindings = {
       toggleFullscreen: 'f',
       nextPage: 'ArrowRight',
       prevPage: 'ArrowLeft',
       toggleMenu: 'Escape',
-      readAloud: 't'
+      readAloud: 't',
+      toggleBookmark: 'b',
+      goToBookmark: 'r',
+      nextChapter: 'n',
+      prevChapter: 'm',
+      ...(settings.keybindings || {}),
     };
 
     const matchKey = (boundKey: string, pressedEvent: KeyboardEvent) => {
@@ -2214,6 +2424,50 @@ export default function Reader({
       return;
     }
 
+    /*
+      Guardar el sitio, volver a él y cambiar de capítulo.
+
+      Las cuatro teclas vienen de Nanahoshi, de Natsume, que las tiene como B, R, N y
+      M; de ahí sale la elección, no el código. Su cesión: THIRD-PARTY-GRANTS.md.
+
+      Guardar y volver no estrenan nada: usan los marcadores de página que ya hay, los
+      mismos que pinta la cinta y que lista la barra lateral. Una segunda lista de
+      «puntos de lectura» en paralelo a los marcadores sería lo mismo con otro nombre,
+      y el usuario tendría que acordarse de en cuál guardó.
+
+      El capítulo no se invierte en vertical. El sentido de la escritura invierte lo
+      espacial —la página siguiente está a la izquierda—, pero un capítulo no está a
+      ningún lado: el siguiente es el siguiente, se lea como se lea.
+    */
+    if (matchKey(keybindings.toggleBookmark, e)) {
+      e.preventDefault();
+      handleTogglePageBookmark();
+      return;
+    }
+
+    if (matchKey(keybindings.goToBookmark, e)) {
+      e.preventDefault();
+      const ultimo = bookmarks[bookmarks.length - 1];
+      if (!ultimo) {
+        showToast(lang === 'es' ? 'No hay ningún marcador todavía.' : 'No bookmarks yet.', 'info');
+      } else {
+        goToParagraphAnywhere(ultimo.paragraphId);
+      }
+      return;
+    }
+
+    if (matchKey(keybindings.nextChapter, e)) {
+      e.preventDefault();
+      cambiarCapitulo(1);
+      return;
+    }
+
+    if (matchKey(keybindings.prevChapter, e)) {
+      e.preventDefault();
+      cambiarCapitulo(-1);
+      return;
+    }
+
     if (matchKey(keybindings.toggleMenu, e)) {
       e.preventDefault();
       setIsHeaderVisible(prev => !prev);
@@ -2239,7 +2493,8 @@ export default function Reader({
       }
       return;
     }
-  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, dictEntry, handleMineToAnki]);
+  }, [settings, readerSettings.vertical, setReaderSetting, onSaveSettings, lang, showToast, isExtSettingsOpen, isJumpModalOpen, isGalleryOpen, toggleFullscreen, triggerTtuKeyboardAction, isTtsPlaying, selectedWord, dictEntry, handleMineToAnki,
+    bookmarks, handleTogglePageBookmark, goToParagraphAnywhere, cambiarCapitulo]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleReaderKeydown);
@@ -2423,7 +2678,9 @@ export default function Reader({
   hideBarsOnPageTurnRef.current = !showSettingsPopover && !sidebarMode && !isSearchOpen;
   const handlePageTurn = useCallback(() => {
     if (hideBarsOnPageTurnRef.current) setIsHeaderVisible(false);
-  }, []);
+    // Pasar página a mano es irse por tu cuenta: el audio deja de arrastrar el texto.
+    suspenderSeguimiento();
+  }, [suspenderSeguimiento]);
 
   const handleEngineClick = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement | null;
@@ -2667,6 +2924,8 @@ export default function Reader({
           onTimeMs={handleAudioTime}
           seekRef={audioSeekRef}
           followText={followsAudio}
+          followSuspended={seguimientoSuspendido}
+          onResumeFollow={volverALaNarracion}
           onFollowTextChange={(value) => {
             setFollowsAudio(value);
             lastFollowedRef.current = null;
@@ -2775,6 +3034,7 @@ export default function Reader({
                 outline: 'none',
               }}
               onKeyDown={(e) => {
+                if (componiendoConIME(e)) return;
                 if (e.key === 'Enter') handleConfirmJump();
                 else if (e.key === 'Escape') setIsJumpModalOpen(false);
               }}
@@ -3173,6 +3433,7 @@ export default function Reader({
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
           onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
+          onDeleteHighlight={handleDeleteHighlight}
           onExportHighlights={handleExportHighlights}
           readingSession={session}
           onToggleSession={handleToggleSession}
@@ -3204,7 +3465,7 @@ export default function Reader({
             zIndex: 99999,
             transform: popupPos.anchorBottom ? 'translateY(-100%)' : 'none',
             maxHeight: `${popupMaxHeight}px`,
-            width: window.innerWidth < 768 ? 'calc(100vw - 24px)' : 'min(380px, calc(100vw - 24px))',
+            width: window.innerWidth < 768 ? 'calc(100vw - 24px)' : `min(${popupMaxWidth}px, calc(100vw - 24px))`,
             boxSizing: 'border-box',
             background: colors.popoverBg,
             border: `1px solid ${colors.border}`,
@@ -3253,10 +3514,138 @@ export default function Reader({
             });
             let previousDictionary = '';
 
+            /*
+              La tarjeta de Jiten.
+
+              Leyendo en modo Jiten, la botonera es la suya y está arriba, con los mismos
+              nombres y el mismo orden que en su extensión: Never forget · Blacklist · Forget ·
+              Deck ＋, y debajo again/hard/good/easy siempre a la vista, no solo cuando la
+              palabra ya está en el mazo. Lo pidió zams (18 nov 2026) enseñando su tarjeta.
+
+              Los cuatro de arriba y los cuatro de abajo salen hacia Jiten: los repasos por
+              `srs/review` y las marcas por `srs/set-vocabulary-state`, con los estados que usa
+              su propia extensión (`neverForget-add`, `blacklist-add`, `forget-add`,
+              `mining-add`). En el modo del analizador de la app no cambia nada.
+            */
+            const popupJiten = modoAnalizador() === 'jiten';
+            /*
+              La misma tarjeta en los dos modos, pero que se note en cuál estás.
+
+              zams (18 nov 2026): «adáptale el diseño del pop up de Jiten a ese modo, pero que
+              sea más o menos parecido y que se distinga». Así que la forma es la misma —la
+              botonera arriba, los cuatro grados debajo, la X— y lo que cambia es el nombre de
+              los botones (los de Jiten en su idioma, los de Yoru en el tuyo), el estado
+              (new/young/… frente a nueva/aprendiendo/…) y el color de acento: ámbar es Yoru,
+              azul es Jiten.
+            */
+            const acento = popupJiten ? '#60a5fa' : '#f2c866';
+            const nombres = popupJiten
+              ? { saber: 'Never forget', ignorar: 'Blacklist', olvidar: 'Forget', mazo: 'Deck ＋' }
+              : es
+                ? { saber: 'Ya la sé', ignorar: 'Ignorar', olvidar: 'Olvidar', mazo: '＋ Mazo' }
+                : { saber: 'Known', ignorar: 'Ignore', olvidar: 'Forget', mazo: '＋ Deck' };
+            const estadoJiten = popupJiten
+              ? (isIgnored ? 'blacklisted' : isKnown ? 'mastered' : isLearning ? 'young' : 'new')
+              : es
+                ? (isIgnored ? 'ignorada' : isKnown ? 'sabida' : isLearning ? 'aprendiendo' : 'nueva')
+                : (isIgnored ? 'ignored' : isKnown ? 'known' : isLearning ? 'learning' : 'new');
+            const botonJiten = (activo: boolean, tinte: string): React.CSSProperties => ({
+              flex: 1, minWidth: 0, padding: '6px 4px', borderRadius: '8px', cursor: 'pointer',
+              fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              background: activo ? `${tinte}26` : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${activo ? `${tinte}99` : 'rgba(255,255,255,0.1)'}`,
+              color: activo ? tinte : colors.textMuted
+            });
+            const botonGrado = (tinte: string, fondo: string): React.CSSProperties => ({
+              flex: 1, padding: '5px 4px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.72rem',
+              fontWeight: 700, whiteSpace: 'nowrap', background: fondo, border: `1px solid ${tinte}40`, color: tinte
+            });
+            /** Jiten olvida la tarjeta y la palabra vuelve a estar sin ver, aquí y allí. */
+            const olvidarPalabra = () => {
+              db.saveSrsCard(selectedWord.basicForm, null);
+              setSrsCard(null);
+              syncJitenForget(selectedWord.basicForm, selectedWord.reading || selectedWord.surface || '');
+              if (wordStatus !== 'new') onSetWordStatus(selectedWord.basicForm, 'new');
+              showToast(
+                popupJiten
+                  ? (es ? 'Palabra olvidada en Jiten' : 'Word forgotten in Jiten')
+                  : (es ? 'Tarjeta olvidada' : 'Card forgotten'),
+                'success',
+              );
+            };
+            const marcarConocida = () => {
+              if (isKnown) {
+                onSetWordStatus(selectedWord.basicForm, 'new');
+                return;
+              }
+              onSetWordStatus(selectedWord.basicForm, 'known', {
+                reading: selectedWord.reading || selectedWord.surface,
+                meaning: dictEntry?.definitions?.slice(0, 3).map((d: any) => typeof d === 'string' ? d : (d.glossary || '')).join(' / ') || ''
+              });
+            };
+
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: phone ? '6px' : '8px' }}>
                 {phone && (
                   <div aria-hidden="true" style={{ width: '34px', height: '4px', borderRadius: '2px', background: colors.border || 'rgba(255,255,255,0.15)', alignSelf: 'center', marginTop: '-2px' }} />
+                )}
+
+                {/* La botonera, arriba del todo, y la X de cerrar */}
+                {(
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'stretch' }}>
+                      <button type="button" onClick={marcarConocida} style={botonJiten(isKnown, '#8fd19e')}>
+                        {nombres.saber}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSetWordStatus(selectedWord.basicForm, isIgnored ? 'new' : 'ignored')}
+                        style={botonJiten(isIgnored, '#e4e4e7')}
+                      >
+                        {nombres.ignorar}
+                      </button>
+                      <button type="button" onClick={olvidarPalabra} style={botonJiten(false, '')}>
+                        {nombres.olvidar}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm)}
+                        style={botonJiten(isLearning, acento)}
+                      >
+                        {nombres.mazo}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWord(null)}
+                        title={es ? 'Cerrar' : 'Close'}
+                        aria-label={es ? 'Cerrar' : 'Close'}
+                        style={{
+                          width: '26px', height: '26px', flexShrink: 0, borderRadius: '8px', cursor: 'pointer',
+                          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'center'
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {([
+                        [1, 'again', selectedSrsIntervals.again, '#f87171', 'rgba(239, 68, 68, 0.06)'],
+                        [2, 'hard', selectedSrsIntervals.hard, '#fb923c', 'rgba(249, 115, 22, 0.06)'],
+                        [3, 'good', selectedSrsIntervals.good, '#c084fc', 'rgba(168, 85, 247, 0.06)'],
+                        [4, 'easy', selectedSrsIntervals.easy, '#4ade80', 'rgba(34, 197, 94, 0.06)']
+                      ] as [number, string, string, string, string][]).map(([nota, nombre, cuando, tinte, fondo]) => (
+                        <button
+                          key={nombre}
+                          type="button"
+                          onClick={() => handleSrsReview(selectedWord.basicForm, nota, selectedSrsIntervals.repeats)}
+                          style={botonGrado(tinte, fondo)}
+                        >
+                          {nombre} <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({cuando})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {/* Word, reading and audio */}
@@ -3284,8 +3673,17 @@ export default function Reader({
                 </div>
 
                 {/* How common the word is */}
-                {badges.length > 0 && (
+                {(
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span
+                      style={{
+                        ...chip,
+                        color: isKnown ? '#8fd19e' : isIgnored ? '#9ca3af' : isLearning ? acento : colors.textMuted,
+                        borderColor: 'rgba(255,255,255,0.14)'
+                      }}
+                    >
+                      {estadoJiten}
+                    </span>
                     {(showAllFreqs ? badges : badges.slice(0, 1)).map((badge, index) => (
                       <button
                         key={badge.dictionary}
@@ -3315,10 +3713,19 @@ export default function Reader({
                   ) : visibleSenses.map((def: any, idx: number) => {
                     // The "nothing found" entry from lookupWord is shown in the app's language.
                     const glossary = dictEntry.isFallback
-                      ? t('noDefFound', lang)
+                      ? t(mensajeSinDefinicion(dictEntry.fuente || 'ambos', !!dictEntry.sinConexion), lang)
                       : typeof def === 'string' ? def : (def?.glossary || '');
                     const dictionary = typeof def === 'string' ? '' : (def?.dictionary || '');
-                    const showDictionary = dictionary !== previousDictionary && (idx > 0 || senses.some((other: any) => other?.dictionary && other.dictionary !== dictionary));
+                    /*
+                      El nombre del diccionario se enseña siempre en la primera acepción.
+
+                      Antes solo salía cuando había acepciones de varios diccionarios
+                      mezcladas. Desde que manda el primero que tiene la palabra eso ya no
+                      pasa nunca, así que la etiqueta no salía jamás: con un diccionario de
+                      respaldo debajo, una palabra podía aparecer de pronto en inglés sin
+                      que nada dijera por qué. Ahora siempre se ve de dónde sale.
+                    */
+                    const showDictionary = !!dictionary && (idx === 0 || dictionary !== previousDictionary);
                     previousDictionary = dictionary;
                     const pos = typeof def === 'string' ? [] : (def?.partsOfSpeech || []);
                     return (
@@ -3368,89 +3775,6 @@ export default function Reader({
                   </div>
                 )}
 
-                {isLearning && (() => {
-                  const intervals = selectedSrsIntervals;
-                  return (
-                    <div style={{ display: 'flex', gap: '5px', marginTop: '4px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 1, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(239, 68, 68, 0.06)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          color: '#f87171',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        again <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.again})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 2, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(249, 115, 22, 0.06)',
-                          border: '1px solid rgba(249, 115, 22, 0.25)',
-                          color: '#fb923c',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        hard <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.hard})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 3, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(168, 85, 247, 0.06)',
-                          border: '1px solid rgba(168, 85, 247, 0.25)',
-                          color: '#c084fc',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        good <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.good})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 4, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(34, 197, 94, 0.06)',
-                          border: '1px solid rgba(34, 197, 94, 0.25)',
-                          color: '#4ade80',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        easy <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.easy})</span>
-                      </button>
-                    </div>
-                  );
-                })()}
-
                 {srsCard && (
                   <div style={{
                     fontSize: '0.68rem',
@@ -3468,50 +3792,6 @@ export default function Reader({
                     <span>Reps: {srsCard.repetitions ?? srsCard.reps ?? 0}</span>
                   </div>
                 )}
-
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm)}
-                    style={isLearning ? action(true, '#60a5fa') : { ...action(false, ''), background: '#f2c866', color: '#1b1407', border: '1px solid transparent' }}
-                  >
-                    {isLearning ? (es ? 'En el mazo' : 'In deck') : (es ? '＋ Mazo' : '＋ Deck')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isKnown) {
-                        onSetWordStatus(selectedWord.basicForm, 'new');
-                      } else {
-                        const wordData = {
-                          reading: selectedWord.reading || selectedWord.surface,
-                          meaning: dictEntry?.definitions?.slice(0, 3).map((d: any) => typeof d === 'string' ? d : (d.glossary || '')).join(' / ') || ''
-                        };
-                        onSetWordStatus(selectedWord.basicForm, 'known', wordData);
-                      }
-                    }}
-                    style={action(isKnown, '#8fd19e')}
-                  >
-                    {isKnown ? (es ? '✓ La sé' : '✓ Known') : (es ? 'Ya la sé' : 'Known')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSetWordStatus(selectedWord.basicForm, isIgnored ? 'new' : 'ignored')}
-                    style={action(isIgnored, '#e4e4e7')}
-                  >
-                    {es ? 'Ignorar' : 'Ignore'}
-                  </button>
-                  {!isPhoneUI() && <button
-                    type="button"
-                    onClick={ankiCardExists ? handleOpenInAnki : handleMineToAnki}
-                    title={ankiCardExists ? (es ? 'Ver en Anki' : 'View in Anki') : (es ? 'Añadir a Anki' : 'Add to Anki')}
-                    style={{ ...action(ankiCardExists, '#a78bfa'), flex: '0 0 auto', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                  >
-                    {ankiCardExists ? <ExternalLink size={11} /> : <Plus size={11} />}
-                    Anki
-                  </button>}
-                </div>
 
                     {deckSelectorWord === selectedWord.basicForm && (() => {
                       const srsData = db.getSrsData();
@@ -3680,6 +3960,9 @@ export default function Reader({
                               value={newDeckInput}
                               onChange={(e) => setNewDeckInput(e.target.value)}
                               onKeyDown={(e) => {
+                                // Con un nombre de mazo en japonés, este Enter es el que confirma
+                                // el candidato del IME: crearía el mazo con el texto a medias.
+                                if (componiendoConIME(e)) return;
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
                                   handleCreateAndAssignDeck(newDeckInput);

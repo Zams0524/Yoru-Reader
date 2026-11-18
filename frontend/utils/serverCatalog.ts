@@ -2,6 +2,7 @@ import {
   getKavitaLibraries,
   getKavitaOnDeck,
   getKavitaSeries,
+  getKavitaSeriesMetadata,
   isKavitaConfigured,
   kavitaSeriesCoverUrl,
 } from './kavitaService';
@@ -10,8 +11,10 @@ import {
   getAudiobookLibraries,
   getAudiobookPersonalized,
   getAudiobooks,
+  getAudiobooksInProgress,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
+import { localContinueEntries, sharesServerProgress } from './serverProgress';
 
 /**
  * Novedades de los servidores de casa, para que al abrir la app ya haya algo que
@@ -48,6 +51,8 @@ export interface ServerItem {
   author?: string;
   /** Horas estimadas de lectura, cuando Kavita las da. */
   hours?: number;
+  /** Por dónde va el usuario, 0-100. Solo lo traen los que están a medias. */
+  percent?: number;
 }
 
 /** Una serie del servidor, con los tomos que conocemos de ella. */
@@ -75,22 +80,34 @@ export interface ServerCatalog {
   onDeck: ServerItem[];
   /** Estanterías que Audiobookshelf prepara para el usuario. */
   forYouAudio: ServerItem[];
+  /** Lo que el usuario tiene a medias en Audiobookshelf, con su avance. */
+  continueAudio: ServerItem[];
 }
 
-const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [] };
+const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [], continueAudio: [] };
 
 /** El último listado conocido. Nunca lanza: si no hay nada, devuelve vacío. */
 export function getCachedServerCatalog(): ServerCatalog {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return EMPTY;
+    // Sin caché todavía, lo escuchado por este perfil ya se puede enseñar: no depende
+    // de ningún servidor, está apuntado aquí.
+    if (!raw) return sharesServerProgress() ? EMPTY : { ...EMPTY, continueAudio: localAudioContinueItems() };
     const parsed = JSON.parse(raw) as ServerCatalog;
     return {
       at: Number(parsed?.at) || 0,
       kavita: Array.isArray(parsed?.kavita) ? parsed.kavita : [],
       audiobooks: Array.isArray(parsed?.audiobooks) ? parsed.audiobooks : [],
-      onDeck: Array.isArray(parsed?.onDeck) ? parsed.onDeck : [],
+      // Una caché de antes puede traer el «seguir leyendo» de la cuenta: sin compartir
+      // el progreso no se enseña, que sería lo que lee otra persona.
+      onDeck: Array.isArray(parsed?.onDeck) && sharesServerProgress() ? parsed.onDeck : [],
       forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
+      // Igual con «Seguir escuchando»: lo de la cuenta solo si este perfil comparte.
+      // Si no comparte, lo suyo sale de lo apuntado en el aparato, sin esperar a
+      // ningún refresco y sin mirar la caché, que es de la cuenta.
+      continueAudio: sharesServerProgress()
+        ? (Array.isArray(parsed?.continueAudio) ? parsed.continueAudio : [])
+        : localAudioContinueItems(),
     };
   } catch {
     return EMPTY;
@@ -107,11 +124,11 @@ function save(catalog: ServerCatalog): void {
 }
 
 /** Corta por lo sano: fuera de casa no se espera a un servidor que no va a contestar. */
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number = TIMEOUT_MS): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS);
+      window.setTimeout(() => reject(new Error('timeout')), ms);
     }),
   ]);
 }
@@ -149,13 +166,42 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
 
 async function fetchOnDeck(): Promise<ServerItem[]> {
   const series = await withTimeout(getKavitaOnDeck(MAX_ITEMS));
-  return series.map((item) => ({
-    id: 'ondeck-' + item.id,
-    serverId: String(item.id),
-    title: item.name,
-    cover: kavitaSeriesCoverUrl(item.id),
-    source: 'kavita' as const,
-  }));
+  /*
+    El autor, que el listado de series no trae: está en los metadatos, uno por serie.
+    Solo para las que se ven en la fila, y sin que un servidor lento tumbe el
+    carrusel: `getKavitaSeriesMetadata` nunca lanza, y lo que no llegue a tiempo
+    sencillamente sale sin autor, que es mejor que decir «Sin autor» por costumbre.
+  */
+  const visibles = series.slice(0, 12);
+  const autores = new Map<number, string>();
+  await withTimeout(
+    Promise.all(
+      visibles.map(async (item) => {
+        const meta = await getKavitaSeriesMetadata(item.id);
+        const escritor = (meta.writers || [])[0];
+        if (escritor) autores.set(item.id, escritor);
+      })
+    ),
+    TIMEOUT_MS * 4
+  ).catch(() => undefined);
+
+  return series.map((item) => {
+    // Kavita cuenta páginas; la tarjeta enseña por dónde vas, igual que las de audio.
+    const leidas = Number(item.pagesRead);
+    const total = Number(item.pages);
+    const percent = total > 0 && Number.isFinite(leidas)
+      ? Math.min(100, Math.max(0, Math.round((leidas / total) * 100)))
+      : undefined;
+    return {
+      id: 'ondeck-' + item.id,
+      serverId: String(item.id),
+      title: item.name,
+      cover: kavitaSeriesCoverUrl(item.id),
+      source: 'kavita' as const,
+      author: autores.get(item.id),
+      percent,
+    };
+  });
 }
 
 async function fetchForYouAudio(): Promise<ServerItem[]> {
@@ -173,7 +219,93 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
   }));
 }
 
+/**
+ * Lo que este perfil tiene a medias de oír, apuntado en el aparato.
+ *
+ * Es lo que llena «Seguir escuchando» cuando el perfil no comparte el progreso con la
+ * cuenta. Sale de aquí y no de la caché a propósito: la caché es de la cuenta y la
+ * comparten todos los perfiles, así que un perfil no puede fiarse de ella.
+ */
+export function localAudioContinueItems(): ServerItem[] {
+  return localContinueEntries()
+    .map((entry) => (entry.kind === 'audiobook'
+      ? {
+        id: 'enescucha-' + entry.itemId,
+        serverId: entry.itemId,
+        title: entry.title,
+        cover: absCoverUrl(entry.itemId),
+        source: 'audiobookshelf' as const,
+        author: entry.author || undefined,
+        percent: entry.percent,
+      }
+      : null))
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+/** «Continuar escuchando»: lo que Audiobookshelf tiene a medias, con su avance. */
+async function fetchContinueAudio(): Promise<ServerItem[]> {
+  /*
+    Sin compartir el progreso, lo «a medias» de la cuenta es lo que escucha otra
+    persona. En ese caso sale lo escuchado en este perfil, apuntado en el aparato.
+  */
+  if (!sharesServerProgress()) return localAudioContinueItems();
+
+  /*
+    Más tiempo que los demás, y por eso lleva su propio plazo.
+
+    Esto son dos peticiones encadenadas —la lista y el avance—, y a veces alguna
+    suelta más. Con los 2,5 s de todos se pasaba de largo, el intento se daba por
+    fallido y se quedaba lo de la caché: las tarjetas de siempre, con la barra a cero.
+  */
+  const enCurso = await withTimeout(getAudiobooksInProgress(12), TIMEOUT_MS * 4);
+  return enCurso.map(({ item, percent }) => ({
+    id: 'enescucha-' + item.id,
+    serverId: item.id,
+    title: item.title,
+    cover: absCoverUrl(item.id),
+    source: 'audiobookshelf' as const,
+    series: item.series || undefined,
+    author: item.author || undefined,
+    percent,
+  }));
+}
+
 let running = false;
+
+/** Una petición al servidor con el motivo a mano cuando falla, en vez de tragárselo. */
+interface Attempt {
+  items: ServerItem[] | null;
+  error: string | null;
+}
+
+async function attempt(run: () => Promise<ServerItem[]>): Promise<Attempt> {
+  try {
+    return { items: await run(), error: null };
+  } catch (error) {
+    return { items: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+const SKIPPED: Attempt = { items: null, error: null };
+
+/**
+ * Una línea por servidor en el registro, y **nada en pantalla**.
+ *
+ * El silencio de cara al usuario se queda tal cual: estar fuera de casa o sin red no
+ * es un problema que haya que anunciarle, y por eso esto no lanza avisos ni pinta
+ * errores. Lo que no podía seguir igual es que nosotros tampoco lo viéramos: un
+ * diagnóstico que no distingue «no había nada» de «la petición se cayó» no sirve, y
+ * era imposible saber por qué un carrusel salía vacío sin preguntárselo al usuario.
+ */
+function report(server: string, parts: { label: string; attempt: Attempt }[]): void {
+  const failed = parts.find((part) => part.attempt.error);
+  if (failed) {
+    console.warn(`[catálogo] ${server}: falló ${failed.label} — ${failed.attempt.error}`);
+    return;
+  }
+  const counts = parts.map((part) => `${part.attempt.items?.length ?? 0} ${part.label}`).join(', ');
+  console.log(`[catálogo] ${server}: ${counts}`);
+}
 
 /**
  * Pide las novedades y actualiza la caché. No propaga errores a propósito: quien la
@@ -187,22 +319,38 @@ export async function refreshServerCatalog(): Promise<void> {
 
   running = true;
   try {
-    const [kavita, audiobooks, onDeck, forYouAudio] = await Promise.all([
-      wantsKavita ? fetchKavita().catch(() => null) : Promise.resolve(null),
-      wantsAudiobooks ? fetchAudiobooks().catch(() => null) : Promise.resolve(null),
-      wantsKavita ? fetchOnDeck().catch(() => null) : Promise.resolve(null),
-      wantsAudiobooks ? fetchForYouAudio().catch(() => null) : Promise.resolve(null),
+    const [kavita, audiobooks, onDeck, forYouAudio, continueAudio] = await Promise.all([
+      wantsKavita ? attempt(fetchKavita) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchAudiobooks) : Promise.resolve(SKIPPED),
+      wantsKavita ? attempt(fetchOnDeck) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchForYouAudio) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchContinueAudio) : Promise.resolve(SKIPPED),
     ]);
 
+    if (wantsKavita) {
+      report('Kavita', [
+        { label: 'series', attempt: kavita },
+        { label: 'a medias', attempt: onDeck },
+      ]);
+    }
+    if (wantsAudiobooks) {
+      report('Audiobookshelf', [
+        { label: 'audiolibros', attempt: audiobooks },
+        { label: 'para ti', attempt: forYouAudio },
+        { label: 'a medias', attempt: continueAudio },
+      ]);
+    }
+
     // Un servidor caído no borra lo que ya sabíamos del otro.
-    if (kavita === null && audiobooks === null) return;
+    if (kavita.items === null && audiobooks.items === null) return;
     const previous = getCachedServerCatalog();
     save({
       at: Date.now(),
-      kavita: kavita ?? previous.kavita,
-      audiobooks: audiobooks ?? previous.audiobooks,
-      onDeck: onDeck ?? previous.onDeck,
-      forYouAudio: forYouAudio ?? previous.forYouAudio,
+      kavita: kavita.items ?? previous.kavita,
+      audiobooks: audiobooks.items ?? previous.audiobooks,
+      onDeck: onDeck.items ?? previous.onDeck,
+      forYouAudio: forYouAudio.items ?? previous.forYouAudio,
+      continueAudio: continueAudio.items ?? previous.continueAudio,
     });
   } finally {
     running = false;

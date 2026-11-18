@@ -40,10 +40,40 @@ try {
   console.warn("Could not initialize log file path:", e);
 }
 
+/*
+  Escribir en una salida cerrada no puede tumbar la aplicación.
+
+  Si quien lanzó Yoru deja de leer su salida —una consola que se cierra, o la salida
+  canalizada a un programa que termina antes—, la siguiente escritura lanza
+  `EPIPE: broken pipe`. Como venía de un `console.log` del proceso principal, nadie la
+  recogía y Electron plantaba su cartel de «A JavaScript error occurred in the main
+  process», con la aplicación muerta detrás. Se vio así, arrancándola con la salida
+  canalizada a un programa que la cerraba.
+
+  El registro en fichero ya estaba protegido; faltaba la escritura a la salida de
+  verdad. Se tapa en dos sitios porque el fallo llega de dos maneras: lanzado al
+  escribir, y emitido después por el propio flujo.
+*/
+function salidaRota(e) {
+  return !!e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED' || e.code === 'EBADF');
+}
+for (const flujo of [process.stdout, process.stderr]) {
+  // Sin un oyente de `error`, el flujo lo convierte en excepción no capturada.
+  try { flujo.on('error', (e) => { if (!salidaRota(e)) throw e; }); } catch (e) {}
+}
+
 const originalLog = console.log;
 const originalError = console.error;
+function aLaSalida(fn, args) {
+  try {
+    fn.apply(console, args);
+  } catch (e) {
+    // Nadie escucha al otro lado. El registro en fichero sigue, que es el que importa.
+    if (!salidaRota(e)) throw e;
+  }
+}
 console.log = function(...args) {
-  originalLog.apply(console, args);
+  aLaSalida(originalLog, args);
   if (logPath) {
     try {
       fs.appendFileSync(logPath, args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n');
@@ -51,7 +81,7 @@ console.log = function(...args) {
   }
 };
 console.error = function(...args) {
-  originalError.apply(console, args);
+  aLaSalida(originalError, args);
   if (logPath) {
     try {
       fs.appendFileSync(logPath, '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n');
@@ -248,6 +278,107 @@ ipcMain.handle('start-google-oauth', async (event, clientId) => {
 
     oauthServer.on('error', (err) => {
       reject(err);
+    });
+  });
+});
+
+/*
+  Lo mismo para Discord, con una diferencia que manda en todo el diseno: el loopback
+  escucha en un PUERTO FIJO.
+
+  Google acepta cualquier puerto de 127.0.0.1 para clientes de escritorio, y por eso
+  el handler de arriba puede pedir `listen(0)` y usar el que le toque. Discord exige
+  que la direccion de vuelta coincida letra por letra con una registrada en el portal,
+  y no admite comodines de puerto: con un puerto al azar, cada intento seria una
+  direccion distinta y Discord rechazaria todos menos uno.
+
+  Si el puerto esta ocupado no se busca otro, porque otro no valdria: se falla con un
+  motivo que la pantalla de bloqueo pueda contar.
+*/
+const PUERTO_DISCORD = 53682;
+let discordServer = null;
+
+ipcMain.handle('start-discord-oauth', async (event, clientId, state) => {
+  return new Promise((resolve, reject) => {
+    if (discordServer) {
+      try { discordServer.close(); } catch (e) {}
+      discordServer = null;
+    }
+
+    const codeVerifier = base64url(crypto.randomBytes(32));
+    const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest());
+    const redirectUri = `http://127.0.0.1:${PUERTO_DISCORD}/discord`;
+
+    const cerrar = () => {
+      try { discordServer && discordServer.close(); } catch (e) {}
+      discordServer = null;
+    };
+
+    const pagina = (titulo, cuerpo, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">`
+      + `<title>${titulo}</title></head><body style="font-family:sans-serif;text-align:center;padding:50px;background:#121214;color:#fff;">`
+      + `<h1 style="color:${color};">${titulo}</h1><p>${cuerpo}</p></body></html>`;
+
+    discordServer = http.createServer((req, res) => {
+      const reqUrl = url.parse(req.url, true);
+      if (reqUrl.pathname !== '/discord') {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('No');
+        return;
+      }
+
+      const { code, error, state: devuelto } = reqUrl.query;
+
+      if (error) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(pagina('No se pudo autorizar', `Discord respondio: ${error}. Puedes cerrar esta ventana.`, '#f87171'));
+        cerrar();
+        reject(new Error(String(error)));
+        return;
+      }
+
+      // El state se comprueba aqui, donde llega la respuesta, antes de darle el codigo
+      // a nadie: si no cuadra, la respuesta no es de la peticion que abrimos.
+      if (state && devuelto !== state) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(pagina('Respuesta inesperada', 'La respuesta no cuadra con la peticion y se ha descartado. Puedes cerrar esta ventana.', '#f87171'));
+        cerrar();
+        reject(new Error('state-no-coincide'));
+        return;
+      }
+
+      if (!code) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(pagina('Falta el codigo', 'Discord no devolvio ningun codigo. Puedes cerrar esta ventana.', '#f87171'));
+        cerrar();
+        reject(new Error('sin-codigo'));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(pagina('Listo', 'Ya puedes cerrar esta ventana y volver a Yoru Reader.', '#818cf8'));
+      req.socket.destroy();
+      cerrar();
+      resolve({ code: String(code), redirectUri, codeVerifier });
+    });
+
+    discordServer.on('error', (err) => {
+      discordServer = null;
+      // EADDRINUSE: hay algo escuchando en el 53682. No se cambia de puerto (ver arriba).
+      reject(new Error(err && err.code === 'EADDRINUSE' ? 'puerto-ocupado' : String((err && err.message) || err)));
+    });
+
+    discordServer.listen(PUERTO_DISCORD, '127.0.0.1', () => {
+      const params = new URLSearchParams({
+        client_id: String(clientId || ''),
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'identify guilds',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        prompt: 'consent',
+      });
+      if (state) params.set('state', String(state));
+      shell.openExternal(`https://discord.com/api/oauth2/authorize?${params.toString()}`);
     });
   });
 });

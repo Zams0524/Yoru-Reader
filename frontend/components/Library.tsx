@@ -1,21 +1,35 @@
-﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo, useTransition, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Info, Trash2, ListChecks, Check, BarChart3, HelpCircle, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Flame, Download, Upload, MoreVertical, Search, Eye, EyeOff, ChevronUp, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Globe, Type, Plug, Layers, AlertTriangle, Keyboard, Bug, Megaphone, Maximize, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
+import { Plus, Info, Trash2, Check, BarChart3, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Type, Layers, AlertTriangle, Keyboard, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
-import MediaServerSettings from './settings/MediaServerSettings';
+import ProfileSettings from './settings/ProfileSettings';
+import ReadingDaySettings from './settings/ReadingDaySettings';
+import VocabularySettings from './settings/VocabularySettings';
+import BackupSettings from './settings/BackupSettings';
+import StatisticsSettings from './settings/StatisticsSettings';
+import KeybindingSettings from './settings/KeybindingSettings';
+import NotificationSettings from './settings/NotificationSettings';
+import CloudSyncSettings from './settings/CloudSyncSettings';
+import DiscordSettings from './settings/DiscordSettings';
+import DangerZoneSettings from './settings/DangerZoneSettings';
+import UpdateSettings from './settings/UpdateSettings';
+import TextStyleSettings from './settings/TextStyleSettings';
+import AppearanceSettings from './settings/AppearanceSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
 import { db } from '../utils/db';
-import { getHomeLayout, resetHomeLayout, saveHomeLayout, RAILS, type RailId } from '../utils/homeRails';
 import { ankiConnectRequest } from '../utils/ankiConnect';
-import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB, getDB } from '../utils/yomitanDB';
+import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
-import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
+import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import YoruSyncSettings from './settings/YoruSyncSettings';
+import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, urlServidorSync, type ModoSync } from '../utils/yoruSyncService';
+import { describirEstado as describirEstadoSync, INTERVALO_SUBIDA_MS as YORU_SYNC_INTERVALO_MS } from '../utils/yoruSyncNucleo';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
@@ -25,15 +39,14 @@ import { isSrsCardInactive, srsWordOfKey } from '../utils/srsCardKeys';
 import { hasDesktopIntegrations, isPhoneUI } from '../utils/platform';
 import { useDeviceClass } from '../hooks/useDeviceClass';
 import AppAbout from './AppAbout';
-import { useAppUpdater, isNewerVersion } from '../hooks/useAppUpdater';
+import { useAppUpdater } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
-import { ensureNotificationPermission, getNotificationPermission, hasYoruNotifications, notificationSettings, YoruNotifications } from '../utils/yoruNotifications';
+import { getNotificationPermission, hasYoruNotifications } from '../utils/yoruNotifications';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
 const KavitaBrowser = React.lazy(() => import('./KavitaBrowser'));
-const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const SrsReviewModal = React.lazy(() => import('./SrsReviewModal'));
 const ProgressDashboard = React.lazy(() => import('./ProgressDashboard'));
@@ -60,6 +73,13 @@ interface LibraryProps {
   initialTab?: string;
   /** Cuando el shell nuevo la monta dentro de su lienzo: sin cabecera ni barra inferior propias. */
   embedded?: boolean;
+  /** Sale de Ajustes y vuelve a donde se estaba. Solo llega a pantalla completa. */
+  onExitSettings?: () => void;
+  /**
+   * La sección de libros del servidor, que pinta el shell y aquí solo se coloca,
+   * dentro de la Biblioteca. Sin servidor llega vacía y no ocupa nada.
+   */
+  serverSection?: React.ReactNode;
   /** Opens a tab (and settings section) on request, e.g. from a tapped notification; `nonce` makes each request new. */
   navigateTo?: { tab: string; section?: string; nonce: number } | null;
 }
@@ -122,116 +142,8 @@ const resizeImage = (file: File, maxDimension = 128): Promise<string> => {
  * aparecen y desaparecen según lo que haya en Kavita, y la lista tiene que ser
  * estable para poder ordenarla.
  */
-function HomeRailsEditor({ lang }: { lang: string }) {
-  const [layout, setLayout] = useState(() => getHomeLayout());
-  const hidden = new Set(layout.hidden);
 
-  const apply = (next: typeof layout) => {
-    setLayout(next);
-    saveHomeLayout(next);
-  };
 
-  const move = (index: number, delta: number) => {
-    const order = [...layout.order];
-    const target = index + delta;
-    if (target < 0 || target >= order.length) return;
-    [order[index], order[target]] = [order[target], order[index]];
-    apply({ ...layout, order });
-  };
-
-  const toggle = (id: RailId) => {
-    const next = hidden.has(id)
-      ? layout.hidden.filter((entry) => entry !== id)
-      : [...layout.hidden, id];
-    apply({ ...layout, hidden: next });
-  };
-
-  const byId = new Map(RAILS.map((rail) => [rail.id, rail]));
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      {layout.order.map((id, index) => {
-        const rail = byId.get(id);
-        if (!rail) return null;
-        const off = hidden.has(id);
-        return (
-          <div
-            key={id}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '7px 10px',
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--surface-raised)',
-              opacity: off ? 0.5 : 1,
-            }}
-          >
-            <span style={{ flex: 1, minWidth: 0, fontSize: '0.84rem', color: 'var(--text-main)' }}>
-              {lang === 'es' ? rail.es : rail.en}
-            </span>
-            <button
-              type="button"
-              onClick={() => move(index, -1)}
-              disabled={index === 0}
-              aria-label={lang === 'es' ? 'Subir' : 'Move up'}
-              style={railBtn(index === 0)}
-            >
-              <ChevronUp size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => move(index, 1)}
-              disabled={index === layout.order.length - 1}
-              aria-label={lang === 'es' ? 'Bajar' : 'Move down'}
-              style={railBtn(index === layout.order.length - 1)}
-            >
-              <ChevronDown size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => toggle(id)}
-              aria-pressed={off}
-              aria-label={off
-                ? (lang === 'es' ? 'Mostrar' : 'Show')
-                : (lang === 'es' ? 'Esconder' : 'Hide')}
-              style={railBtn(false)}
-            >
-              {off ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-        );
-      })}
-      <button
-        type="button"
-        onClick={() => { resetHomeLayout(); setLayout(getHomeLayout()); }}
-        style={{
-          alignSelf: 'flex-start', marginTop: '6px', padding: '6px 12px',
-          border: '1px solid var(--border-light)', borderRadius: 'var(--radius-pill)',
-          background: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer',
-        }}
-      >
-        {lang === 'es' ? 'Volver al orden de siempre' : 'Back to the usual order'}
-      </button>
-    </div>
-  );
-}
-
-function railBtn(disabled: boolean): React.CSSProperties {
-  return {
-    width: '26px', height: '26px', flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)',
-    background: 'none', color: 'var(--text-muted)',
-    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
-  };
-}
-
-const ACCENTS = [
-  { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#f2c866' },
-  { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#f0888f' },
-  { id: 'jade', es: 'Jade', en: 'Jade', swatch: '#6fd1a6' },
-  { id: 'indigo', es: 'Índigo', en: 'Indigo', swatch: '#8fa8f0' },
-  { id: 'violet', es: 'Violeta', en: 'Violet', swatch: '#c197ef' },
-];
 
 const Library = React.memo(function Library({ 
   books, 
@@ -253,6 +165,8 @@ const Library = React.memo(function Library({
   wordStatuses = {},
   initialTab,
   embedded = false,
+  onExitSettings,
+  serverSection,
   navigateTo
 }: LibraryProps) {
   const lang = settings.appLanguage || 'en';
@@ -261,6 +175,24 @@ const Library = React.memo(function Library({
   const backupInputRef = useRef(null);
   const profileWidgetRef = useRef(null);
   const customAvatarInputRef = useRef(null);
+
+  /*
+    Si la Biblioteca tiene libros del servidor delante: los que este perfil lee en
+    Kavita, no el servidor entero. Solo sirve para no soltar el cartel de «tu
+    biblioteca está vacía» encima de una rejilla con libros dentro. Sale de lo
+    apuntado en el aparato: ni una petición.
+  */
+  const [hayLibrosDeServidor, setHayLibrosDeServidor] = useState(false);
+  useEffect(() => {
+    const mirar = () => {
+      void import('../utils/serverProgress')
+        .then(({ localKavitaSeriesRead }) => setHayLibrosDeServidor(localKavitaSeriesRead().length > 0))
+        .catch(() => setHayLibrosDeServidor(false));
+    };
+    mirar();
+    window.addEventListener('yoru-local-progress-updated', mirar);
+    return () => window.removeEventListener('yoru-local-progress-updated', mirar);
+  }, []);
 
   const { showConfirm, confirmModal } = useConfirm();
   const [deleteAllState, setDeleteAllState] = useState(null); // null | 'confirm' | 'deleting' | 'success'
@@ -420,6 +352,20 @@ const Library = React.memo(function Library({
   const showDesktopIntegrations = hasDesktopIntegrations();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSettingsSectionOpen, setMobileSettingsSectionOpen] = useState(false);
+
+  /*
+    Si la ventana da para dos columnas de Ajustes. Novecientos píxeles es donde la
+    lateral de 250 deja de dejarle sitio decente al panel.
+  */
+  const [isNarrowSettings, setIsNarrowSettings] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = () => setIsNarrowSettings(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
@@ -560,6 +506,22 @@ const Library = React.memo(function Library({
   const [installedDicts, setInstalledDicts] = useState([]);
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [activeSettingsSection, setActiveSettingsSection] = useState('sec-general');
+
+  /*
+    Al cambiar de sección, el panel vuelve arriba del todo.
+
+    Cada sección se pinta sola en el panel, y el navegador conserva la posición del
+    desplazamiento al sustituir el contenido: viniendo de una larga desplazada hasta
+    abajo, la siguiente aparecía empezada por la mitad, con su título fuera de vista.
+
+    Va en un efecto y no en el manejador del clic porque ahí todavía no existe la
+    sección nueva: poner el desplazamiento a cero sobre el contenido viejo no sirve
+    de nada. Y se pone directo, sin animación, para que no se vea el salto.
+  */
+  useEffect(() => {
+    const pane = document.querySelector('.yomitan-settings-pane');
+    if (pane) pane.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [activeSettingsSection]);
   // Android: whether Yoru may post notifications, shown in Settings → Notifications.
   const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null);
   useEffect(() => {
@@ -650,8 +612,20 @@ const Library = React.memo(function Library({
       setActiveHeaderDropdown(null);
     };
     document.addEventListener('click', handleOutsideClick);
+    // El menú va anclado a la ventana, así que al rodar la página se quedaría flotando
+    // lejos de su libro: se cierra, como hace cualquier menú de este tipo.
+    // Rodar *dentro* del menú no cuenta: es la manera de llegar a sus últimas filas.
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.book-context-menu-dropdown')) return;
+      handleOutsideClick();
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleOutsideClick);
     return () => {
       document.removeEventListener('click', handleOutsideClick);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleOutsideClick);
     };
   }, []);
 
@@ -1169,6 +1143,62 @@ const Library = React.memo(function Library({
     };
   }, [gDriveClientId, gDriveClientSecret]);
 
+  /*
+    Sincronización con el servidor de Yoru (el PC de zams, por Tailscale).
+
+    Va aparte de la de Google Drive y no la sustituye: son dos sitios distintos donde
+    dejar lo mismo, y quien tenga Drive configurado lo sigue teniendo igual. La
+    diferencia es que esta no se configura — entras con Discord, que ya es la puerta
+    de la app, y tu biblioteca te sigue del PC al teléfono sola.
+
+    Al abrir se combina en los dos sentidos; mientras la app está abierta, y al irse
+    al fondo, solo se sube. No se toca la biblioteca de una app que el usuario puede
+    volver a traer al frente en dos segundos: cambiársela por debajo mientras no mira
+    parece un fallo aunque sea correcto.
+  */
+  const [yoruSyncEstado, setYoruSyncEstado] = useState<'apagado' | 'sincronizando' | 'al-dia' | 'fallo'>(
+    sincronizacionDisponible() ? 'sincronizando' : 'apagado'
+  );
+  const [yoruSyncDetalle, setYoruSyncDetalle] = useState('');
+  const [yoruSyncUltima, setYoruSyncUltima] = useState(() => ultimaSincronizacion());
+
+  const sincronizarConYoru = useCallback(async (modo: ModoSync, forzada = false) => {
+    if (!sincronizacionDisponible()) { setYoruSyncEstado('apagado'); return; }
+    setYoruSyncEstado('sincronizando');
+    const resultado = await sincronizarConServidorYoru(modo, { forzada });
+    setYoruSyncUltima(ultimaSincronizacion());
+    if (resultado.fallo || resultado.estado === 'sin-red' || resultado.estado === 'sin-discord') {
+      setYoruSyncEstado('fallo');
+      setYoruSyncDetalle(describirEstadoSync(resultado.fallo || resultado.estado));
+    } else {
+      setYoruSyncEstado('al-dia');
+      setYoruSyncDetalle('');
+    }
+    recargarSiHizoFalta(resultado);
+  }, []);
+
+  useEffect(() => {
+    if (!sincronizacionDisponible()) return;
+    // Igual que con Drive: la biblioteca se vuelve a montar al cerrar un libro, así
+    // que se le da un momento al lector para que guarde su última posición.
+    const espera = window.setTimeout(() => { void sincronizarConYoru('bidireccional', true); }, 2000);
+    return () => window.clearTimeout(espera);
+  }, [sincronizarConYoru]);
+
+  useEffect(() => {
+    if (!sincronizacionDisponible()) return;
+    const subir = () => { void sincronizarConYoru('solo-subir'); };
+    const alOcultarse = () => { if (document.visibilityState === 'hidden') subir(); };
+    const reloj = window.setInterval(() => {
+      if (document.visibilityState === 'visible') subir();
+    }, YORU_SYNC_INTERVALO_MS);
+    document.addEventListener('visibilitychange', alOcultarse);
+    return () => {
+      window.clearInterval(reloj);
+      document.removeEventListener('visibilitychange', alOcultarse);
+    };
+  }, [sincronizarConYoru]);
+
   // Close profile dropdown when clicking outside
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -1506,16 +1536,16 @@ const Library = React.memo(function Library({
   // Title shown in the phone top bar while a settings section is open.
   const settingsSectionTitle = (sectionId: string) => {
     const titles = {
+      'sec-profile': ['Perfil', 'Profile'],
+      'sec-notifications': ['Notificaciones', 'Notifications'],
       'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
-      'sec-dicts': ['Diccionarios', 'Dictionaries'],
+      'sec-dicts': ['Diccionarios y vocabulario', 'Dictionaries and vocabulary'],
       'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
       'sec-text-style': ['Estilo de texto', 'Text Style'],
-      'sec-stats': ['Estadísticas', 'Statistics'],
-      'sec-reading-day': ['Día de lectura', 'Reading Day'],
-      'sec-vocab-manage': ['Vocabulario y Anki', 'Vocabulary & Anki'],
+      'sec-stats': ['Historial de lectura', 'Reading history'],
       'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
+      'sec-yoru-sync': ['Sincronización de Yoru', 'Yoru Sync'],
       'sec-discord': ['Discord', 'Discord'],
-      'sec-media-servers': ['Servidores multimedia', 'Media servers'],
       'sec-backup': ['Copias de seguridad', 'Backups'],
       'sec-updates': ['Actualizaciones', 'Updates'],
       'sec-about': ['Acerca de', 'About'],
@@ -2065,15 +2095,19 @@ const Library = React.memo(function Library({
     
     const isMenuOpen = activeMenuBookId === book.id;
 
-    // On phones the menu is portalled and fixed so it never hides behind the bottom bar or the
-    // screen edge: it opens downward from the ⋮ or, in the lower half, upward.
+    // The menu is portalled and fixed so it never hides behind the bottom bar or runs past the
+    // screen edge: it opens downward from the ⋮ or, in the lower half, upward. It used to do
+    // this on phones only, and on the desktop a card low on the page opened a menu whose last
+    // rows — «Eliminar» among them — fell off the window. zams ran into it (18 Nov 2026).
     let floatingStyle: React.CSSProperties | null = null;
-    if (isMenuOpen && isMobile && menuAnchor) {
+    if (isMenuOpen && menuAnchor) {
       const width = Math.min(248, window.innerWidth - 24);
       const left = Math.min(Math.max(12, menuAnchor.right - width), window.innerWidth - 12 - width);
+      // En el móvil hay barras arriba y abajo que tapan; en el escritorio basta un margen.
+      const aire = isMobile ? { arriba: 64, abajo: 84 } : { arriba: 16, abajo: 16 };
       floatingStyle = menuAnchor.bottom > window.innerHeight * 0.55
-        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - 64px)` }
-        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - 84px - var(--yoru-safe-bottom, 0px))` };
+        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - ${aire.arriba}px)` }
+        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - ${aire.abajo}px - var(--yoru-safe-bottom, 0px))` };
     }
     const placeMenu = (node) => (floatingStyle ? createPortal(node, document.body) : node);
     
@@ -2834,108 +2868,48 @@ const Library = React.memo(function Library({
   };
 
   const renderSettingsTab = () => {
+    /*
+      Ajustes se parte en lista y detalle por ancho, no por si el aparato es táctil.
+
+      `isMobile` pregunta por el aparato —táctil y pantalla de teléfono—, que es lo
+      que decide el resto del shell. Para dos columnas de 250 y 600 píxeles eso no
+      sirve: en el ordenador, estrechando la ventana, las dos seguían una al lado de
+      la otra y se apretujaban. Quien manda aquí es el sitio que hay, y eso se mide.
+
+      Se hace con una variable propia y no tocando `isMobile`, que gobierna la barra
+      de abajo y el cajón de toda la aplicación. Y se hace aquí y no en CSS porque
+      los anchos son estilos en línea: desde la hoja habría que pisarlos con
+      `!important`, y eso es tapar el problema, no arreglarlo.
+    */
+    const settingsNarrow = isMobile || isNarrowSettings;
+
     // About / Diagnostics is a developer tool: only on Android and only for the "Zams" profile.
     const showDiagnostics = Capacitor.getPlatform() === 'android'
       && (settings.profileName || '').trim().toLowerCase() === 'zams';
     // Phones have no physical keyboard: hide the shortcuts section there.
     const showKeyboardShortcuts = showDesktopIntegrations;
-    const handleSliderChange = (val) => {
-      onSaveSettings({ ...settings, fontSize: val });
-    };
 
-    const renderSliderControl = (label, value, min, max, step, formatValue, onChange) => {
-      const numericVal = parseFloat(value);
-      const handleDecrement = () => {
-        const newVal = Math.max(min, numericVal - step);
-        onChange(newVal);
-      };
-      const handleIncrement = () => {
-        const newVal = Math.min(max, numericVal + step);
-        onChange(newVal);
-      };
-      const percentage = ((numericVal - min) / (max - min)) * 100;
-      
+    /*
+      Un grupo de la lista, con su cabecera solo cuando la cabecera dice algo.
+
+      Las entradas aparecen y desaparecen: unas según la plataforma —los atajos no
+      están en el teléfono, «Acerca de» solo en Android—, y todas según lo que haya
+      escrito en el buscador. Un grupo puede quedarse con una sola, y entonces su
+      cabecera en versalitas sobra: es un rótulo para encabezar una lista de uno.
+      Con ninguna, sobra el grupo entero.
+
+      Es una regla para todos los grupos, no un apaño para «Yoru»: hoy le toca a ese
+      en el escritorio, pero al buscar le toca a casi todos.
+    */
+    const renderNavGroup = (titulo: string, entradas: any[]) => {
+      const visibles = entradas.filter(Boolean);
+      if (visibles.length === 0) return null;
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '12px', boxSizing: 'border-box', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.86rem', fontWeight: 500, color: 'var(--text-main)' }}>{label}</span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>{formatValue(numericVal)}</span>
+        <div>
+          <div className="settings-nav-group-title">
+            <span>{titulo}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', marginTop: '4px' }}>
-            <button 
-              onClick={handleDecrement}
-              disabled={numericVal <= min}
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                border: '1px solid var(--border-light)',
-                background: 'transparent',
-                color: 'var(--text-main)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: numericVal <= min ? 'not-allowed' : 'pointer',
-                opacity: numericVal <= min ? 0.3 : 1,
-                fontSize: '1rem',
-                fontWeight: '300',
-                fontFamily: 'monospace',
-                outline: 'none',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={e => { if (numericVal > min) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              -
-            </button>
-            <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <input 
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={numericVal}
-                onChange={(e) => onChange(parseFloat(e.target.value))}
-                style={{
-                  WebkitAppearance: 'none',
-                  appearance: 'none',
-                  width: '100%',
-                  height: '4px',
-                  background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${percentage}%, var(--border-light) ${percentage}%, var(--border-light) 100%)`,
-                  accentColor: 'var(--primary)',
-                  borderRadius: '2px',
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              />
-            </div>
-            <button 
-              onClick={handleIncrement}
-              disabled={numericVal >= max}
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                border: '1px solid var(--border-light)',
-                background: 'transparent',
-                color: 'var(--text-main)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: numericVal >= max ? 'not-allowed' : 'pointer',
-                opacity: numericVal >= max ? 0.3 : 1,
-                fontSize: '1rem',
-                fontWeight: '300',
-                fontFamily: 'monospace',
-                outline: 'none',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={e => { if (numericVal < max) e.currentTarget.style.background = 'rgba(242, 200, 102, 0.15)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              +
-            </button>
-          </div>
+          <div className="settings-nav-group">{visibles}</div>
         </div>
       );
     };
@@ -2956,7 +2930,7 @@ const Library = React.memo(function Library({
     const renderSidebarBtn = (sectionId, label, IconComponent, searchKeywords, description = '', danger = false) => {
       if (!matchesSearch(searchKeywords)) return null;
       // On phones the list is a menu, not a sidebar: no "current section" highlight.
-      const isActive = !isMobile && activeSettingsSection === sectionId;
+      const isActive = !settingsNarrow && activeSettingsSection === sectionId;
       return (
         <button
           type="button"
@@ -2964,7 +2938,7 @@ const Library = React.memo(function Library({
           onClick={() => {
             setActiveSettingsSection(sectionId);
             setSettingsSearchQuery('');
-            if (isMobile) {
+            if (settingsNarrow) {
               setMobileSettingsSectionOpen(true);
             } else {
               scrollToSection(sectionId);
@@ -2973,37 +2947,50 @@ const Library = React.memo(function Library({
         >
           {IconComponent && (
             <span className="settings-nav-icon" aria-hidden="true">
-              <IconComponent size={isMobile ? 18 : 15} />
+              <IconComponent size={settingsNarrow ? 18 : 15} />
             </span>
           )}
           <span className="settings-nav-text">
             <span className="settings-nav-label">{label}</span>
-            {isMobile && description && <span className="settings-nav-desc">{description}</span>}
+            {settingsNarrow && description && <span className="settings-nav-desc">{description}</span>}
           </span>
-          {isMobile && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
+          {settingsNarrow && <ChevronRight size={16} className="settings-nav-chevron" aria-hidden="true" />}
         </button>
       );
     };
 
-    const mediaServerNames = [isKavitaConfigured() && 'Kavita', isAudiobookshelfConfigured() && 'Audiobookshelf'].filter(Boolean);
-    const mediaServersSummary = mediaServerNames.length > 0
-      ? (lang === 'es' ? `Conectado: ${mediaServerNames.join(' y ')}` : `Connected: ${mediaServerNames.join(' & ')}`)
-      : 'Kavita, Audiobookshelf';
-
-    const showSidebar = !isMobile || !mobileSettingsSectionOpen;
-    const showContent = !isMobile || mobileSettingsSectionOpen;
+    const showSidebar = !settingsNarrow || !mobileSettingsSectionOpen;
+    const showContent = !settingsNarrow || mobileSettingsSectionOpen;
 
     return (
-      <div className="tab-view-container settings-view-panel yomitan-settings-layout" style={{ display: 'flex', gap: isMobile ? '0' : '24px', alignItems: 'stretch', height: '100%', width: '100%', margin: '0' }}>
+      <div className="tab-view-container settings-view-panel yomitan-settings-layout" style={{ display: 'flex', gap: settingsNarrow ? '0' : '24px', alignItems: 'stretch', height: '100%', width: '100%', margin: '0' }}>
         {/* Left Sidebar */}
         {showSidebar && (
-          <div className="yomitan-settings-sidebar" style={{ width: isMobile ? '100%' : '250px', borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)', paddingRight: isMobile ? '0' : '20px', display: 'flex', flexDirection: 'column', gap: '20px', flexShrink: 0, overflowY: 'auto', height: '100%' }}>
-            <h2 className="settings-page-heading" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: '10px 0 0 0' }}>{lang === 'es' ? 'Configuración' : 'Settings'}</h2>
+          <div className="yomitan-settings-sidebar" style={{ width: settingsNarrow ? '100%' : '250px', borderRight: settingsNarrow ? 'none' : '1px solid rgba(255,255,255,0.08)', paddingRight: settingsNarrow ? '0' : '20px', display: 'flex', flexDirection: 'column', gap: '20px', flexShrink: 0, overflowY: 'auto', height: '100%' }}>
+            {/*
+              La flecha de vuelta, pegada al título. En Ajustes el shell se aparta
+              entero —no hay lateral de la app ni barra de abajo—, así que esta es la
+              única salida y tiene que estar donde se busca: arriba del todo, a la
+              izquierda. Escape hace lo mismo.
+            */}
+            <div className="settings-page-head">
+              {onExitSettings && (
+                <button
+                  type="button"
+                  className="settings-back-btn"
+                  onClick={onExitSettings}
+                  aria-label={lang === 'es' ? 'Volver' : 'Back'}
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <h2 className="settings-page-heading">{lang === 'es' ? 'Ajustes' : 'Settings'}</h2>
+            </div>
             
             <div className="yomitan-search-wrapper" style={{ position: 'relative', width: '100%' }}>
               <input 
                 type="text" 
-                placeholder={lang === 'es' ? 'Buscar...' : 'Search...'} 
+                placeholder={lang === 'es' ? 'Buscar ajustes' : 'Search settings'} 
                 value={settingsSearchQuery}
                 onChange={(e) => setSettingsSearchQuery(e.target.value)}
                 style={{ width: '100%', background: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '8px 12px 8px 32px', fontSize: '0.85rem', color: 'var(--text-main)', outline: 'none' }}
@@ -3015,91 +3002,100 @@ const Library = React.memo(function Library({
             </div>
   
             <div className="settings-nav-groups">
-              {/* General Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Settings size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'General' : 'General'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide')}
-                  {renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios' : 'Dictionaries', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'instalado' : 'instalados'}` : `${installedDicts.length} installed`)}
-                  {hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions')}
-                  {showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys')}
-                </div>
-              </div>
-  
-              {/* Reading Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <BookOpen size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Lectura' : 'Reading'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice')}
-                  {renderSidebarBtn('sec-stats', lang === 'es' ? 'Estadísticas' : 'Statistics', BarChart3, 'stats config estadisticas tracking delete books annotations enabled', lang === 'es' ? 'Qué cuenta como tiempo leído' : 'What counts as reading time')}
-                  {renderSidebarBtn('sec-reading-day', lang === 'es' ? 'Día de lectura' : 'Reading Day', Calendar, 'reading day dia lectura start hours limites horas nocturno', lang === 'es' ? 'A qué hora empieza tu día' : 'When your day starts')}
-                </div>
-              </div>
+              {/*
+                Cuatro grupos, como en la pantalla de la que sale este reparto: primero
+                lo que es tuyo (quién eres y dónde viven tus datos), después cómo
+                quieres ver la aplicación, después la biblioteca y al final Yoru.
+              */}
+              {renderNavGroup(lang === 'es' ? 'Cuenta' : 'Account', [
+                renderSidebarBtn('sec-profile', lang === 'es' ? 'Perfil' : 'Profile', User, 'perfil profile nombre name foto photo avatar imagen picture usuario', activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')),
+                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
+                renderSidebarBtn('sec-yoru-sync', lang === 'es' ? 'Sincronización de Yoru' : 'Yoru Sync', Server, 'yoru sync sincronizacion sincronización servidor discord tailscale progreso', yoruSyncEstado === 'al-dia' ? (lang === 'es' ? 'Al día' : 'Up to date') : yoruSyncEstado === 'fallo' ? (yoruSyncDetalle || (lang === 'es' ? 'No se pudo sincronizar' : 'Could not sync')) : yoruSyncEstado === 'apagado' ? (lang === 'es' ? 'Desactivada' : 'Off') : (lang === 'es' ? 'Sincronizando…' : 'Syncing…')),
+                renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
+              ])}
 
-              {/* Integration Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Plug size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Integración' : 'Integration'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-vocab-manage', lang === 'es' ? 'Vocabulario y Anki' : 'Vocabulary & Anki', Database, 'vocabulario vocabulary import export jpdb anki file frequency', isPhoneUI() ? (lang === 'es' ? 'Importar mazos de Anki y exportar' : 'Import Anki decks and export') : (lang === 'es' ? 'Importar, exportar y AnkiConnect' : 'Import, export and AnkiConnect'))}
-                  {renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected'))}
-                  {renderSidebarBtn('sec-media-servers', lang === 'es' ? 'Servidores multimedia' : 'Media servers', Server, MEDIA_SERVER_SEARCH_TERMS, mediaServersSummary)}
-                  {showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence')}
-                </div>
-              </div>
-  
-              {/* Data Section */}
-              <div>
-                <div className="settings-nav-group-title">
-                  <Database size={13} aria-hidden="true" /> <span>{lang === 'es' ? 'Datos' : 'Data'}</span>
-                </div>
-                <div className="settings-nav-group">
-                  {renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library')}
-                  {renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions')}
-                  {showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics')}
-                  {renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true)}
-                </div>
-              </div>
+              {renderNavGroup(lang === 'es' ? 'Preferencias' : 'Preferences', [
+                renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide'),
+                renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice'),
+                showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys'),
+                hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions'),
+                showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence'),
+              ])}
+
+              {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', [
+                renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`),
+                renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts'),
+              ])}
+
+              {renderNavGroup('Yoru', [
+                renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions'),
+                showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics'),
+              ])}
+
+
+              {/*
+                La zona de peligro va sola y separada, sin cabecera de grupo que la
+                emparente con nada. Estaba pegada a «Copias de seguridad», que es el
+                peor vecino posible: se viene de guardar una copia, se baja un renglón
+                de más y se da en borrarlo todo.
+              */}
+              {/*
+                Si la búsqueda no la encuentra, no se pinta ni el hueco: este grupo
+                lleva una línea de separación encima, y sin entrada debajo quedaba
+                una raya suelta al final de la lista.
+              */}
+              {(() => {
+                const entrada = renderSidebarBtn('sec-danger', lang === 'es' ? 'Zona de peligro' : 'Danger Zone', AlertTriangle, 'danger zone eliminar borrar todos datos irreversible reset clear storage', lang === 'es' ? 'Borrar todo; no se puede deshacer' : 'Erase everything; cannot be undone', true);
+                if (!entrada) return null;
+                return <div className="settings-nav-group settings-nav-danger">{entrada}</div>;
+              })()}
             </div>
             
-            {/* Dashboard de Estado */}
-            <div style={{ marginTop: '20px', padding: '14px', background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box' }}>
-              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {lang === 'es' ? 'Estado del Lector' : 'Reader Status'}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Perfil:' : 'Profile:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{settings.profileName || 'Zams'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Diccionarios:' : 'Dictionaries:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{installedDicts.length}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Libros:' : 'Books:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{books.length}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Google Drive:' : 'Google Drive:'}</span>
-                  <span style={{ color: gDriveTokens ? '#34d399' : 'var(--text-muted)', fontWeight: 600 }}>
-                    {gDriveTokens ? (lang === 'es' ? 'Conectado' : 'Connected') : (lang === 'es' ? 'Desconectado' : 'Disconnected')}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
         )}
   
         {/* Right Content Pane */}
         {showContent && (
-          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: '100px' }}>
+          /*
+            Los cien píxeles de relleno abajo eran para que el último control no
+            quedara pegado al borde cuando Ajustes vivía dentro de una página que se
+            desplazaba. A pantalla completa sobran y estorban: inflan el contenido
+            lo justo para que una sección que cabía deje de caber y aparezca una
+            barra de scroll por ocho píxeles. El aire lo pone ahora la hoja.
+          */
+          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
+
+          {/*
+            El nombre de la sección, grande y arriba, con una línea debajo. En el
+            teléfono no hace falta: ya lo dice la barra de arriba. Buscando tampoco,
+            porque entonces se ven trozos de varias secciones a la vez.
+          */}
+          {!settingsNarrow && !settingsSearchQuery && (
+            <h2 className="settings-pane-title">{settingsSectionTitle(activeSettingsSection)}</h2>
+          )}
           
+          {/*
+            Perfil. Lo mismo que hace el modal del menú del avatar, pero donde se
+            busca; los dos escriben por `onUpdateProfile`, así que no hay dos
+            verdades sobre quién eres.
+          */}
+          {matchesSearch('perfil profile nombre name foto photo avatar imagen picture usuario')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-profile') && (
+            <div id="sec-profile" className="settings-section-card" style={{ minWidth: 0 }}>
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <User size={18} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Perfil' : 'Profile'}</span>
+              </h3>
+              <ProfileSettings
+                es={lang === 'es'}
+                profile={activeProfile}
+                profileCount={profiles.length}
+                onSave={(changes) => onUpdateProfile(activeProfileId, changes)}
+                onPickImage={(file) => resizeImage(file, 128)}
+              />
+            </div>
+          )}
+
           {showDiagnostics && matchesSearch(ABOUT_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-about') && (
             <div id="sec-about" className="settings-section-card" style={{ minWidth: 0 }}>
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3113,299 +3109,7 @@ const Library = React.memo(function Library({
           {/* Card: General (Apariencia, Idioma y Guía) */}
           {matchesSearch('tema theme active dark light sepia idioma lang language interface interfaceLanguage tutorial guia atajos general') && (settingsSearchQuery || activeSettingsSection === 'sec-general' || activeSettingsSection === 'sec-theme' || activeSettingsSection === 'sec-language-interface') && (
             <div id="sec-general" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
-              {/* Banner: Actualizaciones del Sistema */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(124, 58, 237, 0.03) 100%)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                borderRadius: '12px',
-                padding: '16px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: 'rgba(168, 85, 247, 0.15)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#c084fc',
-                    flexShrink: 0
-                  }}>
-                    <span style={{ fontSize: '1.3rem' }}>⚡</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.96rem', color: '#fff' }}>
-                      {lang === 'es' ? 'Actualizaciones del Sistema' : 'System Updates'}
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: '#a0a0b0', marginTop: '2px' }}>
-                      {lang === 'es' 
-                        ? 'Comprueba e instala las últimas actualizaciones en vivo con un solo clic.' 
-                        : 'Check and install the latest live updates with one click.'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('yoru-check-updates-manual'))}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <RefreshCw size={15} />
-                  <span>{lang === 'es' ? 'Buscar Actualizaciones' : 'Check for Updates'}</span>
-                </button>
-              </div>
-              {/* Banner: Guía y Tutorial */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(242, 200, 102, 0.08) 0%, rgba(255, 180, 0, 0.03) 100%)',
-                border: '1px solid rgba(242, 200, 102, 0.25)',
-                borderRadius: '12px',
-                padding: '16px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: 'rgba(242, 200, 102, 0.15)',
-                    border: '1px solid rgba(242, 200, 102, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#f2c866',
-                    flexShrink: 0
-                  }}>
-                    <Sparkles size={22} />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.96rem', color: '#fff' }}>
-                      {lang === 'es' ? 'Guía Rápida y Tutorial de Yoru Reader' : 'Yoru Reader Quick Guide & Tutorial'}
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: '#a0a0b0', marginTop: '2px' }}>
-                      {lang === 'es' 
-                        ? 'Vuelve a ver la guía: diccionario, lectura en voz alta, Yoru SRS y opciones de lectura.'
-                        : 'See the guide again: dictionary, read aloud, Yoru SRS and reading options.'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowTutorialModal(true)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#f2c866',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 14px rgba(242, 200, 102, 0.3)',
-                    transition: 'all 0.15s',
-                    flexShrink: 0
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                >
-                  <Sparkles size={16} />
-                  <span>{lang === 'es' ? 'Ver Tutorial' : 'View Tutorial'}</span>
-                </button>
-              </div>
-
-              {/* Apariencia e Idioma Card */}
-              <div className="settings-section-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                  <Palette size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language'}</span>
-                </h3>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
-                    {/*
-                      Un solo control de esquema. Antes había dos llamados «tema», aquí
-                      y en «Estilo de texto», con vocabularios distintos — y no eran
-                      dos ajustes: los dos escribían `settings.theme`. El de allí decía
-                      además «se aplica únicamente a la página de lectura», que era
-                      falso. Aquí queda el único, con un vocabulario.
-                    */}
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
-                      {lang === 'es' ? 'Esquema' : 'Color scheme'}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
-                      {lang === 'es'
-                        ? 'Los colores de toda la app: catálogo, lector y ajustes.'
-                        : 'The colours of the whole app: catalog, reader and settings.'}
-                    </div>
-                    <select
-                      value={settings.theme || 'dark'}
-                      onChange={(e) => onSaveSettings({ ...settings, theme: e.target.value })}
-                      className="migaku-select"
-                      style={{ width: '100%' }}
-                    >
-                      <option value="system">{lang === 'es' ? 'Sistema' : 'System'}</option>
-                      <option value="light">{lang === 'es' ? 'Claro' : 'Light'}</option>
-                      <option value="dark">{lang === 'es' ? 'Oscuro' : 'Dark'}</option>
-                      <option value="sepia">{lang === 'es' ? 'Sepia' : 'Sepia'}</option>
-                    </select>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-dark)', marginTop: '8px' }}>
-                      {settings.theme === 'system'
-                        ? (lang === 'es' ? 'Sigue al escritorio y cambia con él.' : 'Follows your desktop and changes with it.')
-                        : settings.theme === 'sepia'
-                          ? (lang === 'es' ? 'Papel cálido; el más descansado para leer de noche.' : 'Warm paper; the easiest on the eyes at night.')
-                          : ''}
-                    </div>
-
-                    {/*
-                      Acento. El dorado va primero y es el que viene puesto: es la
-                      identidad de Yoru, no una opción más de la lista.
-                    */}
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
-                      {lang === 'es' ? 'Acento' : 'Accent'}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
-                      {lang === 'es' ? 'El color de los botones y lo marcado.' : 'The colour of buttons and selected things.'}
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {ACCENTS.map((accent) => {
-                        const active = (settings.accent || 'gold') === accent.id;
-                        return (
-                          <button
-                            key={accent.id}
-                            type="button"
-                            onClick={() => onSaveSettings({ ...settings, accent: accent.id })}
-                            title={lang === 'es' ? accent.es : accent.en}
-                            aria-label={lang === 'es' ? accent.es : accent.en}
-                            aria-pressed={active}
-                            style={{
-                              width: '34px',
-                              height: '34px',
-                              borderRadius: 'var(--radius-pill)',
-                              background: accent.swatch,
-                              border: active ? '2px solid var(--text-main)' : '1px solid var(--border-light)',
-                              cursor: 'pointer',
-                              padding: 0,
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-
-                    {/*
-                      Radio de las esquinas. Mueve `--radius-base`, del que cuelgan los
-                      cuatro peldaños; antes cada pieza traía el suyo, 27 en total.
-                    */}
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
-                      {lang === 'es' ? 'Esquinas' : 'Corners'}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
-                      {lang === 'es' ? 'De esquina viva a muy redondeada.' : 'From sharp to very rounded.'}
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={20}
-                      step={1}
-                      value={typeof settings.cornerRadius === 'number' ? settings.cornerRadius : 10}
-                      onChange={(e) => onSaveSettings({ ...settings, cornerRadius: parseInt(e.target.value, 10) })}
-                      style={{ width: '100%' }}
-                      aria-label={lang === 'es' ? 'Radio de las esquinas' : 'Corner radius'}
-                    />
-
-                    {/*
-                      El título bajo la portada, para toda la app. No tiene nada que
-                      ver con «difuminar portada», que es por libro y esconde la
-                      imagen; este dice si debajo va el nombre o no va nada.
-                    */}
-                    <label
-                      style={{
-                        display: 'flex', alignItems: 'flex-start', gap: '10px',
-                        margin: '18px 0 0', cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={settings.showPosterTitles !== false}
-                        onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
-                        style={{ marginTop: '3px' }}
-                      />
-                      <span>
-                        <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)' }}>
-                          {lang === 'es' ? 'Títulos bajo la portada' : 'Titles under covers'}
-                        </span>
-                        <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-dark)' }}>
-                          {lang === 'es'
-                            ? 'Quítalos y las cuadrículas se quedan solo en portadas.'
-                            : 'Turn them off and the grids are covers only.'}
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* Organizar inicio: el orden de los carruseles y los que se esconden. */}
-                  <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
-                      {lang === 'es' ? 'Organizar inicio' : 'Arrange home'}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
-                      {lang === 'es'
-                        ? 'Inicio puede llegar a once carruseles. Ponlos en tu orden y esconde los que no uses.'
-                        : 'Home can reach eleven rails. Put them in your order and hide the ones you never use.'}
-                    </div>
-                    <HomeRailsEditor lang={lang} />
-                  </div>
-
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff', marginBottom: '4px' }}>
-                      {lang === 'es' ? 'Idioma de la Interfaz' : 'Interface Language'}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: '#888899', marginBottom: '10px' }}>
-                      {lang === 'es' ? 'Idioma general de menús y opciones.' : 'Language for menus and app settings.'}
-                    </div>
-                    <select 
-                      value={settings.appLanguage || 'en'}
-                      onChange={(e) => {
-                        const selectedLang = e.target.value;
-                        localStorage.setItem('app_language', selectedLang);
-                        onSaveSettings({ ...settings, appLanguage: selectedLang });
-                      }}
-                      className="migaku-select"
-                      style={{ width: '100%' }}
-                    >
-                      <option value="es">Español 🇪🇸</option>
-                      <option value="en">English 🇺🇸</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <AppearanceSettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} onOpenTutorial={() => setShowTutorialModal(true)} isMobile={isMobile} />
             </div>
           )}
 
@@ -3416,104 +3120,14 @@ const Library = React.memo(function Library({
                 <Keyboard size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {lang === 'es' 
-                  ? 'Personaliza los atajos de teclado del lector. Haz clic en el botón de un atajo y presiona una tecla para cambiarlo.' 
-                  : 'Customize reader keyboard shortcuts. Click a shortcut button and press a key to change it.'}
-              </p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                {(() => {
-                  const bindings = settings.keybindings || {
-                    toggleFullscreen: 'f',
-                    nextPage: 'ArrowRight',
-                    prevPage: 'ArrowLeft',
-                    toggleMenu: 'Escape',
-                    readAloud: 't'
-                  };
-
-                  const list = [
-                    { id: 'toggleFullscreen', label: lang === 'es' ? 'Pantalla completa' : 'Full screen' },
-                    { id: 'nextPage', label: lang === 'es' ? 'Página siguiente' : 'Next page' },
-                    { id: 'prevPage', label: lang === 'es' ? 'Página anterior' : 'Previous page' },
-                    { id: 'toggleMenu', label: lang === 'es' ? 'Mostrar/Ocultar Menú' : 'Toggle Menu' },
-                    { id: 'readAloud', label: lang === 'es' ? 'Leer en voz alta (TTS)' : 'Read aloud (TTS)' }
-                  ];
-
-                  return list.map(item => {
-                    const isRecording = bindingKeyAction === item.id;
-                    const val = bindings[item.id];
-                    let displayVal = val;
-                    if (val === ' ') displayVal = 'Space';
-                    if (val === 'ArrowRight') displayVal = '→';
-                    if (val === 'ArrowLeft') displayVal = '←';
-                    if (val === 'ArrowUp') displayVal = '↑';
-                    if (val === 'ArrowDown') displayVal = '↓';
-
-                    return (
-                      <div key={item.id} className="settings-row-control" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '8px' }}>
-                        <span className="settings-label-text" style={{ fontSize: '0.88rem' }}>{item.label}</span>
-                        <button
-                          type="button"
-                          onClick={() => setBindingKeyAction(isRecording ? null : item.id)}
-                          style={{
-                            background: isRecording ? 'rgba(226, 192, 98, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-                            border: isRecording ? '1px solid #e2c062' : '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '6px',
-                            color: isRecording ? '#e2c062' : 'rgba(255, 255, 255, 0.9)',
-                            padding: '6px 14px',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            minWidth: '100px',
-                            textAlign: 'center',
-                            fontFamily: 'monospace',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          {isRecording ? (lang === 'es' ? 'Presiona...' : 'Press key...') : displayVal}
-                        </button>
-                      </div>
-                    );
-                  });
-                })()}
-
-                {/* Reset button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSaveSettings({
-                      ...settings,
-                      keybindings: {
-                        toggleFullscreen: 'f',
-                        nextPage: 'ArrowRight',
-                        prevPage: 'ArrowLeft',
-                        toggleMenu: 'Escape',
-                        readAloud: 't'
-                      }
-                    });
-                    // Fallback to alert if showToast is not directly accessible here
-                    alert(lang === 'es' ? 'Atajos restablecidos por defecto.' : 'Shortcuts reset to defaults.');
-                  }}
-                  style={{
-                    marginTop: '8px',
-                    alignSelf: 'flex-start',
-                    background: 'transparent',
-                    border: '1px solid var(--border-light)',
-                    color: 'var(--text-muted)',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text-main)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-light)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                >
-                  {lang === 'es' ? 'Restablecer valores predeterminados' : 'Reset to default values'}
-                </button>
-              </div>
+              <KeybindingSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                recording={bindingKeyAction}
+                onRecord={setBindingKeyAction}
+                onDone={(message) => showToast(message, 'success')}
+              />
             </div>
           )}
 
@@ -3524,454 +3138,61 @@ const Library = React.memo(function Library({
                 <Type size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Estilo de texto' : 'Text Style'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Modifica el tamaño de la tipografía, dirección de lectura, velocidad de audio y comportamiento del lector.' : 'Modify typography size, reading direction, audio speed and reader behavior.'}</p>
-              
-
-              {/* Zoom de texto */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Zoom de texto del lector' : 'Reader text zoom'}</span>
-                <select
-                  value={settings.fontSize || 36}
-                  onChange={(e) => handleSliderChange(parseInt(e.target.value))}
-                  className="migaku-select"
-                >
-                  <option value="18">75%</option>
-                  <option value="22">85%</option>
-                  <option value="26">90%</option>
-                  <option value="30">95%</option>
-                  <option value="36">100% ({lang === 'es' ? 'Por defecto' : 'Default'})</option>
-                  <option value="40">110%</option>
-                  <option value="44">120%</option>
-                  <option value="48">130%</option>
-                </select>
-              </div>
-
-              {/* Modo de visualización (View Mode) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Modo de visualización' : 'View Mode'}</span>
-                <select
-                  value={settings.viewMode || 'paginated'}
-                  onChange={(e) => onSaveSettings({ ...settings, viewMode: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="paginated">{lang === 'es' ? 'Paginado' : 'Paginated'}</option>
-                  <option value="continuous">{lang === 'es' ? 'Continuo' : 'Continuous'}</option>
-                </select>
-              </div>
-
-              {/* Dirección de escritura (Writing Mode) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Dirección de escritura' : 'Writing Mode'}</span>
-                <select
-                  value={settings.writingMode || 'vertical-rl'}
-                  onChange={(e) => onSaveSettings({ ...settings, writingMode: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="vertical-rl">{lang === 'es' ? 'Vertical (japonés)' : 'Vertical (Japanese)'}</option>
-                  <option value="horizontal-tb">Horizontal</option>
-                </select>
-              </div>
-
-              {/* Interlineado (Line Height) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Interlineado' : 'Line Height'}</span>
-                <select
-                  value={settings.lineHeight || '1.65'}
-                  onChange={(e) => onSaveSettings({ ...settings, lineHeight: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="1.3">1.3x</option>
-                  <option value="1.5">1.5x</option>
-                  <option value="1.65">1.65x ({lang === 'es' ? 'Por defecto' : 'Default'})</option>
-                  <option value="1.8">1.8x</option>
-                  <option value="2.0">2.0x</option>
-                </select>
-              </div>
-
-              {/* Sangría de párrafo (Paragraph Indentation) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Sangría de párrafo' : 'Paragraph Indentation'}</span>
-                <select
-                  value={settings.textIndentation || '0'}
-                  onChange={(e) => onSaveSettings({ ...settings, textIndentation: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="0">{lang === 'es' ? 'Sin sangría' : 'No indent'}</option>
-                  <option value="1">1em</option>
-                  <option value="2">2em</option>
-                </select>
-              </div>
-
-              {/* Margen lateral (Margins) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Margen del lector (px)' : 'Reader margin (px)'}</span>
-                <select
-                  value={settings.firstDimensionMargin || '0'}
-                  onChange={(e) => onSaveSettings({ ...settings, firstDimensionMargin: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="0">{lang === 'es' ? 'Por defecto' : 'Default'}</option>
-                  <option value="10">10px</option>
-                  <option value="20">20px</option>
-                  <option value="30">30px</option>
-                  <option value="40">40px</option>
-                  <option value="50">50px</option>
-                </select>
-              </div>
-
-              {/* Formato del editor (Publisher formatting) */}
-              <div className="settings-row-control" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Formato del editor' : 'Publisher formatting'}</span>
-                  <label className="migaku-switch">
-                    <input 
-                      type="checkbox" 
-                      checked={settings.prioritizeReaderStyles === false}
-                      onChange={(e) => onSaveSettings({ ...settings, prioritizeReaderStyles: !e.target.checked })}
-                    />
-                    <span className="migaku-switch-slider"></span>
-                  </label>
-                </div>
-                <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.4)', marginTop: '-2px' }}>
-                  {lang === 'es' ? 'Conservar el diseño y la tipografía del libro original siempre que sea posible.' : 'Keep book layout and typography where possible.'}
-                </span>
-              </div>
-
-              {/* Progreso del pie de página (Footer progress) */}
-              <div className="settings-row-control" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Progreso en pie de página' : 'Footer progress'}</span>
-                  <label className="migaku-switch">
-                    <input 
-                      type="checkbox" 
-                      checked={settings.showFooterProgress === true}
-                      onChange={(e) => onSaveSettings({ ...settings, showFooterProgress: e.target.checked })}
-                    />
-                    <span className="migaku-switch-slider"></span>
-                  </label>
-                </div>
-                <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.4)', marginTop: '-2px' }}>
-                  {lang === 'es' ? 'Mostrar la delgada línea de progreso del capítulo al final de la pantalla.' : 'Show the thin chapter progress line.'}
-                </span>
-              </div>
-
-              {/* Justificación de texto (enableTextJustification) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Justificar texto' : 'Justify text'}</span>
-                <label className="migaku-switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.enableTextJustification === true}
-                    onChange={(e) => onSaveSettings({ ...settings, enableTextJustification: e.target.checked })}
-                  />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-
-              {/* Habilitar VPAL (enableFontVPAL) */}
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Habilitar VPAL (Métrica de fuente proporcional)' : 'Enable Font VPAL (Proportional metrics)'}</span>
-                <label className="migaku-switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.enableFontVPAL === true}
-                    onChange={(e) => onSaveSettings({ ...settings, enableFontVPAL: e.target.checked })}
-                  />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-
-              
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {lang === 'es' ? 'Sesión de Lectura' : 'Reading Session'}
-              </h4>
-
-              {/* Pause when hidden checkbox card */}
-              {(() => {
-                const renderCheckboxCard = (title, desc, isChecked, onToggle) => (
-                  <div 
-                    onClick={onToggle}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
-                      borderRadius: '12px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      cursor: 'pointer',
-                      boxSizing: 'border-box',
-                      marginBottom: '10px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                      <span style={{ fontSize: '0.86rem', fontWeight: 500, color: '#ffffff' }}>{title}</span>
-                      {desc && <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.45)', marginTop: '2px' }}>{desc}</span>}
-                    </div>
-                    <div style={{
-                      width: '18px',
-                      height: '18px',
-                      border: isChecked ? 'none' : '1.5px solid rgba(255, 255, 255, 0.45)',
-                      borderRadius: '4px',
-                      background: isChecked ? '#5b6abf' : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.15s',
-                      flexShrink: 0
-                    }}>
-                      {isChecked && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                );
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {/* Pause when hidden */}
-                    {renderCheckboxCard(
-                      lang === 'es' ? 'Pausar al ocultar' : 'Pause when hidden',
-                      lang === 'es' ? 'Pausar las sesiones de lectura activas cuando la pestaña o aplicación pasa a segundo plano.' : 'Pause active sessions when the tab or app goes to the background.',
-                      settings.trackerAutoPause !== 'off',
-                      () => onSaveSettings({ ...settings, trackerAutoPause: settings.trackerAutoPause !== 'off' ? 'off' : 'moderate' })
-                    )}
-
-                    {/* Pause after inactivity */}
-                    <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '0.86rem', fontWeight: 500, color: '#ffffff' }}>
-                        {lang === 'es' ? 'Pausar tras inactividad' : 'Pause after inactivity'}
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.45)', marginTop: '-4px' }}>
-                        {lang === 'es' ? 'La falta de cambios en el contador de caracteres durante el intervalo pausará la sesión.' : 'No position changes for the selected duration pauses the session.'}
-                      </span>
-                      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '3px', width: '100%', border: '1px solid rgba(255,255,255,0.08)', marginTop: '4px' }}>
-                        {[
-                          { label: lang === 'es' ? 'Desactivado' : 'Off', value: 0 },
-                          { label: '30s', value: 0.5 },
-                          { label: '60s', value: 1 },
-                          { label: '120s', value: 2 }
-                        ].map((opt) => {
-                          const isActive = settings.trackerIdleTime === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              onClick={() => onSaveSettings({ ...settings, trackerIdleTime: opt.value })}
-                              style={{
-                                flex: 1,
-                                background: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
-                                color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
-                                border: 'none',
-                                borderRadius: '8px',
-                                padding: '8px 0',
-                                fontSize: '0.82rem',
-                                fontWeight: isActive ? '600' : '400',
-                                cursor: 'pointer',
-                                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-                                transition: 'all 0.15s',
-                              }}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Recover on launch */}
-                    {renderCheckboxCard(
-                      lang === 'es' ? 'Recuperar al iniciar' : 'Recover on launch',
-                      lang === 'es' ? 'Restaurar la sesión inacabada más reciente en estado pausado al siguiente inicio.' : 'Restore the most recent unfinished session in a paused state on next launch.',
-                      settings.recoverOnLaunch === true,
-                      () => onSaveSettings({ ...settings, recoverOnLaunch: !settings.recoverOnLaunch })
-                    )}
-                  </div>
-                );
-              })()}
+              <TextStyleSettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
             </div>
           )}
 
 
 
           {/* Card: Estadísticas */}
-          {matchesSearch('stats config estadisticas tracking delete books annotations enabled') && (settingsSearchQuery || activeSettingsSection === 'sec-stats') && (
+          {/*
+            Historial de lectura: cuándo empieza tu día y qué se guarda de lo leído.
+
+            Eran dos secciones de un control cada una —«Día de lectura» con su
+            deslizador y «Estadísticas» con su interruptor— y cada una ocupaba un
+            panel entero para enseñar una línea. Hablan de lo mismo: lo que Yoru
+            apunta de tus lecturas. A qué hora empieza el día solo importa porque
+            decide en qué día cae lo leído de madrugada, así que va aquí.
+          */}
+          {matchesSearch('stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-stats' || activeSettingsSection === 'sec-reading-day') && (
             <div id="sec-stats" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <BarChart3 size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Estadísticas' : 'Statistics'}</span>
+                <span>{lang === 'es' ? 'Historial de lectura' : 'Reading history'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Configura el almacenamiento del historial de lectura y las acciones de limpieza.' : 'Configure the storage of reading history and cleanup actions.'}</p>
-              
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Conservar estadísticas al eliminar libro' : 'Keep stats on book deletion'}</span>
-                <label className="migaku-switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.keepStatsOnDelete !== false}
-                    onChange={(e) => onSaveSettings({ ...settings, keepStatsOnDelete: e.target.checked })}
-                  />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-
-              <div style={{ marginTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const ok = await showConfirm({
-                      title: lang === 'es' ? '¿Limpiar estadísticas?' : 'Clear statistics?',
-                      message: lang === 'es' ? '¿Limpiar estadísticas de libros ya eliminados?' : 'Clear stats for already deleted books?',
-                      type: 'warning',
-                      confirmText: lang === 'es' ? 'Limpiar' : 'Clear',
-                    });
-                    if (ok) {
-                      await onClearDeletedBooks();
-                      showToast(lang === 'es' ? 'Limpieza completada.' : 'Cleanup done.', 'success');
-                    }
-                  }}
-                  style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                >
-                  <Trash2 size={14} /> <span>{lang === 'es' ? 'Estadísticas de libros eliminados' : 'Deleted-book statistics'}</span>
-                </button>
+              <StatisticsSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                onClearDeletedBooks={onClearDeletedBooks}
+                showConfirm={showConfirm}
+                showToast={showToast}
+              />
+              <div id="sec-reading-day" style={{ borderTop: '1px solid var(--border-light)', marginTop: '18px', paddingTop: '18px' }}>
+                <ReadingDaySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
               </div>
             </div>
           )}
 
           {/* Card: Notificaciones (Android) */}
-          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (() => {
-            const es = lang === 'es';
-            const options = notificationSettings(settings);
-            const setOption = (key: string, value: boolean | number) => {
-              onSaveSettings({ ...settings, [key]: value });
-              if (value === true) {
-                void ensureNotificationPermission(true).then(() => getNotificationPermission()).then(setNotificationPermission);
-              }
-            };
-            const renderToggle = (key: string, checked: boolean, label: string, hint: string) => (
-              <div className="settings-row-control" key={key}>
-                <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span>{label}</span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>{hint}</span>
-                </span>
-                <label className="migaku-switch">
-                  <input type="checkbox" checked={checked} onChange={(e) => setOption(key, e.target.checked)} />
-                  <span className="migaku-switch-slider"></span>
-                </label>
-              </div>
-            );
-            const groupTitle = (text: string) => (
-              <div style={{ fontSize: '0.72rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-dark)', margin: '16px 0 4px' }}>{text}</div>
-            );
-            return (
-              <div id="sec-notifications" className="settings-section-card">
-                <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bell size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{es ? 'Notificaciones' : 'Notifications'}</span>
-                </h3>
-                <p className="settings-card-desc">{es
-                  ? 'Cada grupo también se puede silenciar desde los ajustes de notificaciones de Android.'
-                  : 'Each group can also be silenced from Android\'s notification settings.'}</p>
-
-                {notificationPermission && notificationPermission !== 'granted' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', margin: '12px 0 4px', borderRadius: '10px', background: 'var(--yoru-gold-soft, rgba(242,200,102,0.13))' }}>
-                    <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-main)' }}>{es
-                      ? 'Android tiene apagadas las notificaciones de Yoru. El reproductor de lectura sigue funcionando, pero los avisos no.'
-                      : 'Android has Yoru\'s notifications off. The read-aloud player still works, the notices don\'t.'}</span>
-                    <button
-                      type="button"
-                      className="yoru-btn yoru-btn-primary"
-                      style={{ flexShrink: 0, padding: '6px 12px', fontSize: '0.8rem' }}
-                      onClick={async () => {
-                        if (notificationPermission === 'prompt' && await ensureNotificationPermission(true)) {
-                          setNotificationPermission('granted');
-                        } else {
-                          void YoruNotifications.openNotificationSettings().catch(() => {});
-                        }
-                      }}
-                    >{es ? 'Activar' : 'Turn on'}</button>
-                  </div>
-                )}
-
-                {groupTitle(es ? 'Lectura en voz alta' : 'Read aloud')}
-                {renderToggle('notifyReadAloudBackground', options.readAloudBackground,
-                  es ? 'Seguir leyendo fuera de la app' : 'Keep reading outside the app',
-                  es ? 'Con el reproductor en la notificación y la pantalla de bloqueo' : 'With the player in the notification and on the lock screen')}
-                {renderToggle('notifyReadAloudSentence', options.readAloudSentence,
-                  es ? 'Mostrar la oración actual' : 'Show the current sentence',
-                  es ? 'Si lo apagas, se ve el título del libro' : 'When off, the book title is shown')}
-
-                {groupTitle(es ? 'Repaso' : 'Reviews')}
-                {renderToggle('notifySrsDaily', options.srsDaily,
-                  es ? 'Avisar del nuevo día de repaso' : 'Notify when a new review day starts',
-                  es ? 'Solo si hay tarjetas pendientes; sin sonido' : 'Only when cards are due; silent')}
-                {options.srsDaily && (
-                  <div style={{ marginTop: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span className="settings-label-text">{es ? 'Hora del aviso' : 'Reminder time'}</span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                        {String(options.srsHour).padStart(2, '0')}:00
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="23"
-                      step="1"
-                      value={options.srsHour}
-                      onChange={(e) => setOption('notifySrsHour', parseInt(e.target.value, 10))}
-                      aria-label={es ? 'Hora del aviso de repaso' : 'Review reminder time'}
-                      style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                    />
-                  </div>
-                )}
-
-                {groupTitle(es ? 'Actualizaciones' : 'Updates')}
-                {renderToggle('notifyAppUpdates', options.appUpdates,
-                  es ? 'Avisar de versiones nuevas' : 'Notify about new versions',
-                  es ? 'Se buscan una vez al día' : 'Checked once a day')}
-                {renderToggle('notifyOtaUpdates', options.otaUpdates,
-                  es ? 'Avisar de mejoras automáticas' : 'Notify about automatic improvements',
-                  es ? 'Se instalan solas igualmente' : 'They install themselves anyway')}
-              </div>
-            );
-          })()}
-
-          {/* Card: Día de lectura */}
-          {matchesSearch('reading day dia lectura start hours limites horas nocturno') && (settingsSearchQuery || activeSettingsSection === 'sec-reading-day') && (
-            <div id="sec-reading-day" className="settings-section-card">
+          {hasYoruNotifications() && matchesSearch('notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates') && (settingsSearchQuery || activeSettingsSection === 'sec-notifications') && (
+            <div id="sec-notifications" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Día de lectura' : 'Reading Day'}</span>
+                <Bell size={18} style={{ color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Notificaciones' : 'Notifications'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Establece los límites horarios para el cálculo del historial de lectura diario.' : 'Sets calendar hour boundaries for daily reading history calculations.'}</p>
-              
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span className="settings-label-text">{lang === 'es' ? 'Hora de inicio del día' : 'Start Day Hour'}</span>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700 }}>
-                    {String(settings.startDayHour || 0).padStart(2, '0')}:00
-                  </span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="23" 
-                  step="1"
-                  value={settings.startDayHour || 0} 
-                  onChange={(e) => onSaveSettings({ ...settings, startDayHour: parseInt(e.target.value) })}
-                  style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                />
-                <p style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px', lineHeight: 1.3 }}>
-                  {lang === 'es' 
-                    ? 'Ajusta a qué hora comienza un nuevo día. Útil si lees después de medianoche y deseas que se contabilice en el día anterior.' 
-                    : 'Configure at what hour a new reading day starts. Useful for night readers.'}
-                </p>
-              </div>
+              <NotificationSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                permission={notificationPermission}
+                onPermissionChange={setNotificationPermission}
+              />
             </div>
           )}
+
+          {/* Card: Día de lectura */}
 
           {/* Card: Sincronización Cloud */}
           {matchesSearch('sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync') && (settingsSearchQuery || activeSettingsSection === 'sec-cloud-sync') && (
@@ -3980,260 +3201,60 @@ const Library = React.memo(function Library({
                 <Cloud size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Configura la sincronización con almacenamiento en la nube y cómo se resuelven los conflictos.' : 'Configure cloud storage synchronization and how metadata conflicts are resolved.'}</p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de almacenamiento' : 'Storage Sync Target'}</span>
-                  <span style={{ color: gDriveTokens ? '#34d399' : 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
-                    {gDriveTokens ? 'Google Drive' : (lang === 'es' ? 'Ninguno' : 'None')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de ajustes' : 'Settings Sync Target'}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Perfil local' : 'Local Profile'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Combinación de estadísticas' : 'Statistics Merge'}</span>
-                <select 
-                  value={settings.statsMergeOption || 'merge'}
-                  onChange={(e) => onSaveSettings({ ...settings, statsMergeOption: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-                  <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-                </select>
-              </div>
-
-              <div className="settings-row-control">
-                <span className="settings-label-text">{lang === 'es' ? 'Combinación de objetivos de lectura' : 'Reading Goals Merge'}</span>
-                <select 
-                  value={settings.goalsMergeOption || 'merge'}
-                  onChange={(e) => onSaveSettings({ ...settings, goalsMergeOption: e.target.value })}
-                  className="migaku-select"
-                >
-                  <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-                  <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-                </select>
-              </div>
-
-              {/* Botón e inputs de Google Drive */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '14px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                
-
-                <button 
-                  type="button"
-                  onClick={handleConnectGDrive}
-                  disabled={gDriveSyncStatus === 'syncing'}
-                  className="reset-filter-btn"
-                  style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
-                </button>
-
-                {gDriveTokens && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button 
-                        type="button"
-                        onClick={handleUploadGDrive}
-                        disabled={gDriveSyncStatus === 'syncing'}
-                        className="reset-filter-btn"
-                        style={{ flex: 1, justifyContent: 'center', background: 'rgba(52, 211, 153, 0.05)', borderColor: '#34d399', color: '#34d399', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Upload size={14} /> <span>{lang === 'es' ? 'Subir copia completa' : 'Upload backup'}</span>
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleDownloadGDrive}
-                        disabled={gDriveSyncStatus === 'syncing'}
-                        className="reset-filter-btn"
-                        style={{ flex: 1, justifyContent: 'center', background: 'rgba(251, 191, 36, 0.05)', borderColor: '#fbbf24', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Download size={14} /> <span>{lang === 'es' ? 'Descargar' : 'Download'}</span>
-                      </button>
-                    </div>
-                    {lastSyncTime && (
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                        {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+              <CloudSyncSettings
+                lang={lang}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                gDriveTokens={gDriveTokens}
+                syncStatus={gDriveSyncStatus}
+                lastSyncTime={lastSyncTime}
+                formatSyncTime={formatSyncTime}
+                onConnect={handleConnectGDrive}
+                onUpload={handleUploadGDrive}
+                onDownload={handleDownloadGDrive}
+              />
             </div>
           )}
 
-          {/* Card: Discord Rich Presence */}
-          {matchesSearch(MEDIA_SERVER_SEARCH_TERMS) && (settingsSearchQuery || activeSettingsSection === 'sec-media-servers') && (
-            <div id="sec-media-servers" className="settings-section-card">
+          {/* Card: Sincronización con el servidor de Yoru (Discord + Tailscale) */}
+          {matchesSearch('yoru sync sincronizacion sincronización servidor discord tailscale progreso') && (settingsSearchQuery || activeSettingsSection === 'sec-yoru-sync') && (
+            <div id="sec-yoru-sync" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Server size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Servidores multimedia' : 'Media servers'}</span>
+                <span>{lang === 'es' ? 'Sincronización de Yoru' : 'Yoru Sync'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {lang === 'es'
-                  ? 'Conecta tus servidores de casa: Kavita para importar novelas ligeras y Audiobookshelf para escuchar el audiolibro mientras lees.'
-                  : 'Connect your home servers: Kavita to import light novels and Audiobookshelf to listen to the audiobook while you read.'}
-              </p>
-              <MediaServerSettings lang={lang} />
+              <YoruSyncSettings
+                lang={lang}
+                estado={yoruSyncEstado}
+                detalle={yoruSyncDetalle}
+                ultima={yoruSyncUltima}
+                servidor={urlServidorSync()}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
+                onSincronizar={() => { void sincronizarConYoru('bidireccional', true); }}
+              />
             </div>
           )}
 
+          {/*
+            Aquí estaba «Progreso del servidor» (compartir el progreso con la cuenta de
+            Kavita/Audiobookshelf). zams pidió quitarla de Ajustes el 18 nov 2026. El
+            ajuste `shareServerProgress` sigue existiendo y conserva el valor que tuviera
+            cada perfil; lo que desaparece es el interruptor.
+          */}
+
+          {/* Card: Discord Rich Presence */}
           {showDesktopIntegrations && matchesSearch('discord rpc presence enabled timer icon stats blacklist') && (settingsSearchQuery || activeSettingsSection === 'sec-discord') && (
             <div id="sec-discord" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MessageSquare size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Discord Rich Presence' : 'Discord Rich Presence'}</span>
               </h3>
-              <p className="settings-card-desc">
-                {lang === 'es' 
-                  ? 'Configura la integración de presencia en Discord.' 
-                  : 'Configure the Discord presence integration.'}
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-                {/* Enabled */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                  <span>{lang === 'es' ? 'Habilitar Discord Rich Presence:' : 'Enable Discord Rich Presence:'}</span>
-                  <input 
-                    type="checkbox" 
-                    checked={settings.discordEnabled || false}
-                    onChange={(e) => onSaveSettings({ ...settings, discordEnabled: e.target.checked })}
-                    style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                </div>
-
-                {/* Inactivity Timer */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Temporizador de inactividad (segundos):' : 'Inactivity Timer (seconds):'}
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.discordInactivityTimer !== undefined ? settings.discordInactivityTimer : 300}
-                    onChange={(e) => onSaveSettings({ ...settings, discordInactivityTimer: parseInt(e.target.value) || 0 })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%'
-                    }}
-                  />
-                </div>
-
-                {/* Icon */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Icono:' : 'Icon:'}
-                  </label>
-                  <select
-                    value={settings.discordIcon || 'Yoru'}
-                    onChange={(e) => onSaveSettings({ ...settings, discordIcon: e.target.value })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="Yoru">Yoru</option>
-                    <option value="Cute">Cute</option>
-                    <option value="Jacked">Jacked</option>
-                    <option value="Cursed">Cursed</option>
-                  </select>
-                </div>
-
-                {/* Show Stats */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Mostrar Estadísticas:' : 'Show Stats:'}
-                  </label>
-                  <select
-                    value={settings.discordShowStats || 'None'}
-                    onChange={(e) => onSaveSettings({ ...settings, discordShowStats: e.target.value })}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="None">{lang === 'es' ? 'Ninguna' : 'None'}</option>
-                    <option value="Characters per Hour">{lang === 'es' ? 'Caracteres por hora' : 'Characters per Hour'}</option>
-                    <option value="Total Characters">{lang === 'es' ? 'Caracteres totales' : 'Total Characters'}</option>
-                    <option value="Cards Mined">{lang === 'es' ? 'Tarjetas creadas' : 'Cards Mined'}</option>
-                    <option value="Active Reading Time">{lang === 'es' ? 'Tiempo activo de lectura' : 'Active Reading Time'}</option>
-                  </select>
-                </div>
-
-                {/* Blacklisted Scenes */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {lang === 'es' ? 'Novelas/Escenas en lista negra:' : 'Blacklisted Novels/Scenes:'}
-                  </label>
-                  <textarea
-                    value={settings.discordBlacklist || ''}
-                    onChange={(e) => onSaveSettings({ ...settings, discordBlacklist: e.target.value })}
-                    placeholder={lang === 'es' ? 'Escribe nombres de libros a ignorar, uno por línea...' : 'Enter book names to ignore, one per line...'}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      width: '100%',
-                      height: '120px',
-                      resize: 'vertical'
-                    }}
-                  />
-                </div>
-              </div>
+              <DiscordSettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
             </div>
           )}
 
           {/* Card: Vocabulary Management */}
-          {matchesSearch('vocabulario vocabulary import export jpdb anki file frequency') && (settingsSearchQuery || activeSettingsSection === 'sec-vocab-manage') && (
-            <div id="sec-vocab-manage" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Gestión de Vocabulario' : 'Vocabulary Management'}</span>
-              </h3>
-              <p className="settings-card-desc">
-                {isPhoneUI()
-                  ? (lang === 'es'
-                    ? 'Importa, exporta y gestiona tus palabras. Importa mazos de Anki (.apkg), JPDB, listas de palabras o listas de frecuencia.'
-                    : 'Import, export and manage your words. Import Anki decks (.apkg), JPDB, word lists or frequency lists.')
-                  : (lang === 'es'
-                    ? 'Importa, exporta y gestiona tu base de datos de palabras conocidas y en estudio. Sincroniza desde AnkiConnect, JPDB, archivos de texto o listas de frecuencia.'
-                    : 'Import, export, and manage your known and learning word database. Sync from AnkiConnect, JPDB, text files, or frequency lists.')}
-              </p>
-              <button 
-                type="button" 
-                className="reset-filter-btn"
-                onClick={() => setIsVocabModalOpen(true)}
-                style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}
-              >
-                <Database size={15} /> {lang === 'es' ? 'Abrir Panel de Vocabulario' : 'Open Vocabulary Panel'}
-              </button>
-            </div>
-          )}
 
           {/* Card: Backup */}
           {matchesSearch('backup import export catalogo perfil copia seguridad') && (settingsSearchQuery || activeSettingsSection === 'sec-backup') && (
@@ -4242,38 +3263,26 @@ const Library = React.memo(function Library({
                 <FolderOpen size={18} style={{ color: 'var(--primary)' }} />
                 <span>{lang === 'es' ? 'Copias de seguridad' : 'Backups'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Guarda todo tu catálogo, historial de lectura, perfiles y configuraciones de Anki en un archivo local (se excluyen los diccionarios para mantener el archivo ligero).' : 'Export all your library books, reading statistics, profiles, and configurations to a local backup file.'}</p>
-              
-              <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-                <button 
-                  type="button" 
-                  className="reset-filter-btn"
-                  onClick={handleExportLibrary}
-                  style={{ background: 'rgba(242, 200, 102, 0.06)', borderColor: 'var(--primary)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <Download size={16} /> {lang === 'es' ? 'Exportar Biblioteca' : 'Export Library'}
-                </button>
-                
-                <label className="reset-filter-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <Upload size={16} /> {lang === 'es' ? 'Importar Respaldo' : 'Import Backup'}
-                  <input 
-                    type="file" 
-                    accept=".json,.zip"
-                    onChange={handleImportLibrary}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-              </div>
+              <BackupSettings lang={lang} onExport={handleExportLibrary} onImport={handleImportLibrary} />
             </div>
           )}
 
           {/* Card: Dictionaries */}
-          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip') && (settingsSearchQuery || activeSettingsSection === 'sec-dicts') && (
+          {/*
+            Palabras: lo que consultas y lo que estás aprendiendo.
+
+            «Vocabulario y Anki» era una sección entera para un botón que abre otro
+            panel. Aquí tiene su sitio: lo que miras al tocar una palabra y lo que
+            haces con las que te quedas son la misma búsqueda, y nadie va a pensar
+            en una entrada aparte para guardar palabras cuando ya está leyendo esta.
+          */}
+          {matchesSearch('diccionario dictionary offline jmdict frecuencia frequency pitch acento meta meta_bank zip vocabulario vocabulary import export jpdb anki file')
+            && (settingsSearchQuery || activeSettingsSection === 'sec-dicts' || activeSettingsSection === 'sec-vocab-manage') && (
             <div id="sec-dicts" style={{ display: 'flex', flexDirection: 'column', gap: '28px', width: '100%' }}>
               <div className="settings-section-card">
                 <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BookOpen size={18} style={{ color: 'var(--primary)' }} />
-                  <span>{lang === 'es' ? 'Diccionarios' : 'Dictionaries'}</span>
+                  <span>{lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary'}</span>
                 </h3>
                 <p className="settings-card-desc">
                   {lang === 'es'
@@ -4281,215 +3290,31 @@ const Library = React.memo(function Library({
                     : 'What you see when you tap a word: meanings, how common it is and its pitch accent. Everything works offline.'}
                 </p>
                 <DictionarySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} confirm={showConfirm} />
+                <div id="sec-vocab-manage" style={{ borderTop: '1px solid var(--border-light)', marginTop: '20px', paddingTop: '20px' }}>
+                  <VocabularySettings lang={lang} isPhone={isPhoneUI()} onOpenPanel={() => setIsVocabModalOpen(true)} />
+                </div>
               </div>
             </div>
           )}
 
           {/* Card: Actualizaciones */}
-          {matchesSearch('updates update actualizaciones actualizar version check beta') && (settingsSearchQuery || activeSettingsSection === 'sec-updates') && (() => {
-            const isAndroidUpdater = updaterMode === 'android';
-            const latest = updaterState.latest;
-            const appOutdated = Boolean(latest) && isNewerVersion(latest.appVersion, updaterState.current.appVersion);
-            // When the installer is outdated, the new interface comes inside it.
-            const uiNeedsApk = Boolean(latest?.needsApk);
-            const uiOutdated = !uiNeedsApk && Boolean(latest?.hotVersion) && isNewerVersion(latest.hotVersion, updaterState.current.hotVersion);
-            const ready = updaterState.status === 'ready';
-            const canUpdate = updateAvailable && !updating;
-            const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false, needsApk = false) => (
-              <div style={{
-                background: 'var(--bg-card)',
-                border: `1px solid ${outdated ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-light)'}`,
-                borderRadius: '10px',
-                padding: '14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>{title}</span>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {lang === 'es' ? 'Actual: ' : 'Current: '}{current || '—'}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {lang === 'es' ? 'Última: ' : 'Latest: '}{latestVersion || '—'}
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: needsApk ? '#f59e0b' : outdated ? '#10b981' : '#3b82f6', textAlign: 'right' }}>
-                  {needsApk
-                    ? (lang === 'es' ? 'Llega con la próxima app' : 'Comes with the next app')
-                    : outdated
-                    ? (lang === 'es' ? 'Disponible' : 'Available')
-                    : latest ? (lang === 'es' ? 'Actualizado' : 'Up to date') : '—'}
-                </span>
-              </div>
-            );
-            const progressLabel = updaterState.status === 'installing'
-              ? (isAndroidUpdater && updaterState.kind === 'apk'
-                  ? (lang === 'es' ? 'Confirma la instalación en el aviso de Android.' : 'Confirm the install in the Android prompt.')
-                  : (lang === 'es' ? 'Instalando y reiniciando Yoru Reader...' : 'Installing and restarting Yoru Reader...'))
-              : ready
-                ? (lang === 'es' ? 'Descarga completada.' : 'Download complete.')
-                : updateProgress >= 0
-                  ? (lang === 'es' ? 'Descargando actualización...' : 'Downloading update...')
-                  : (lang === 'es' ? 'Descargando actualización (tamaño desconocido)...' : 'Downloading update (unknown size)...');
-            const updateButtonLabel = updaterState.status === 'downloading'
-              ? (lang === 'es' ? `Descargando (${Math.max(0, updateProgress)}%)...` : `Downloading (${Math.max(0, updateProgress)}%)...`)
-              : updaterState.status === 'installing'
-                ? (lang === 'es' ? 'Instalando...' : 'Installing...')
-                : ready && updaterState.kind === 'ota'
-                  ? (isAndroidUpdater ? (lang === 'es' ? 'Reiniciar para actualizar' : 'Restart to update') : (lang === 'es' ? 'Aplicar ahora' : 'Apply now'))
-                  : ready
-                    ? (isAndroidUpdater ? (lang === 'es' ? 'Instalar' : 'Install') : (lang === 'es' ? 'Reiniciar e instalar' : 'Restart and install'))
-                    : (lang === 'es' ? 'Actualizar ahora' : 'Update now');
-            return (
-            <div id="sec-updates" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <RefreshCw size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Actualizaciones' : 'Updates'}</span>
-              </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-                {/* Auto Update Checkbox */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                  <span>{lang === 'es' ? 'Actualización automática:' : 'Automatic updates:'}</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.autoUpdate || false}
-                    onChange={(e) => onSaveSettings({ ...settings, autoUpdate: e.target.checked })}
-                    style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                </div>
-
-                {/* Beta Updates Checkbox */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                  <span>{lang === 'es' ? 'Actualizaciones beta:' : 'Beta updates:'}</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.betaUpdates || false}
-                    onChange={(e) => onSaveSettings({ ...settings, betaUpdates: e.target.checked })}
-                    style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                </div>
-
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 4px 0', lineHeight: 1.4 }}>
-                  {isAndroidUpdater
-                    ? (lang === 'es'
-                        ? 'Las mejoras de la interfaz se descargan solas y se aplican al volver a abrir la app. Si cambia la parte nativa, se descarga una nueva versión de la app y Android te pedirá confirmar la instalación.'
-                        : 'Interface updates download on their own and apply the next time you open the app. When the native part changes, a new app version downloads and Android asks you to confirm the install.')
-                    : (lang === 'es'
-                        ? 'Las actualizaciones se descargan e instalan dentro de la app. Con la actualización automática se descargan en segundo plano y se instalan al cerrar Yoru Reader.'
-                        : 'Updates download and install inside the app. With automatic updates on, they download in the background and install when you close Yoru Reader.')}
-                </p>
-
-                {versionCard(
-                  isAndroidUpdater ? (lang === 'es' ? 'Aplicación Android' : 'Android app') : (lang === 'es' ? 'Aplicación de escritorio' : 'Desktop app'),
-                  updaterState.current.appVersion,
-                  latest?.appVersion,
-                  appOutdated
-                )}
-
-                {versionCard(
-                  lang === 'es' ? 'Interfaz (actualización rápida)' : 'Interface (quick update)',
-                  updaterState.current.hotVersion,
-                  latest?.hotVersion,
-                  uiOutdated,
-                  uiNeedsApk
-                )}
-
-                {/* Progress Bar */}
-                {(updating || ready) && (
-                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      <span>{progressLabel}</span>
-                      <span>{updateProgress >= 0 ? `${updateProgress}%` : ''}</span>
-                    </div>
-                    <div style={{
-                      width: '100%',
-                      height: '6px',
-                      background: 'var(--border-light)',
-                      borderRadius: '3px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        width: `${updateProgress >= 0 ? updateProgress : 0}%`,
-                        height: '100%',
-                        background: ready || updaterState.status === 'installing' ? '#10b981' : 'var(--primary)',
-                        transition: 'width 0.2s ease-out'
-                      }} />
-                    </div>
-                  </div>
-                )}
-
-                {updateErrorMessage && (
-                  <div style={{ fontSize: '0.82rem', color: '#f87171', lineHeight: 1.4 }}>
-                    {updateErrorMessage}
-                    {updaterState.status === 'error' && (
-                      <>
-                        {' '}
-                        <button
-                          type="button"
-                          onClick={() => openUpdateFallback()}
-                          style={{ background: 'none', border: 'none', padding: 0, color: '#3b82f6', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit' }}
-                        >
-                          {lang === 'es' ? 'Descargar manualmente' : 'Download manually'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Buttons */}
-                <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                  <button
-                    type="button"
-                    onClick={handleCheckUpdates}
-                    disabled={checkingUpdates || updating}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '8px',
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      cursor: (checkingUpdates || updating) ? 'not-allowed' : 'pointer',
-                      background: 'rgba(37, 99, 235, 0.1)',
-                      border: '1px solid #2563eb',
-                      color: '#3b82f6',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {checkingUpdates ? (lang === 'es' ? 'Buscando...' : 'Checking...') : (lang === 'es' ? 'Buscar actualizaciones' : 'Check for updates')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleUpdateNow}
-                    disabled={!canUpdate}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '8px',
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      background: canUpdate ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)',
-                      border: canUpdate ? '1px solid #10b981' : '1px solid var(--border-light)',
-                      color: canUpdate ? '#10b981' : 'var(--text-muted)',
-                      cursor: canUpdate ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {updateButtonLabel}
-                  </button>
-                </div>
-              </div>
-            </div>
-            );
-          })()}
+          {matchesSearch('updates update actualizaciones actualizar version check beta') && (settingsSearchQuery || activeSettingsSection === 'sec-updates') && (
+            <UpdateSettings
+              lang={lang}
+              settings={settings}
+              onSaveSettings={onSaveSettings}
+              updaterMode={updaterMode}
+              updaterState={updaterState}
+              updateAvailable={updateAvailable}
+              updateProgress={updateProgress}
+              updateErrorMessage={updateErrorMessage}
+              updating={updating}
+              checkingUpdates={checkingUpdates}
+              onCheck={handleCheckUpdates}
+              onUpdateNow={handleUpdateNow}
+              openUpdateFallback={openUpdateFallback}
+            />
+          )}
 
           {/* Card: Danger Zone */}
           {matchesSearch('danger zone eliminar borrar todos datos irreversible reset clear storage') && (settingsSearchQuery || activeSettingsSection === 'sec-danger') && (
@@ -4498,18 +3323,7 @@ const Library = React.memo(function Library({
                 <AlertTriangle size={18} style={{ color: '#ef4444' }} />
                 <span>{lang === 'es' ? 'Zona de peligro' : 'Danger Zone'}</span>
               </h3>
-              <p className="settings-card-desc">{lang === 'es' ? 'Acciones destructivas e irreversibles sobre los datos almacenados en la aplicación.' : 'Irreversible destructive actions on stored application data.'}</p>
-              
-              <div style={{ marginTop: '16px' }}>
-                <button 
-                  type="button" 
-                  className="reset-filter-btn"
-                  onClick={handleDeleteAllData}
-                  style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: '#ef4444', color: '#f87171', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <AlertTriangle size={14} /> <span>{lang === 'es' ? 'Eliminar todos los datos' : 'Delete all data'}</span>
-                </button>
-              </div>
+              <DangerZoneSettings lang={lang} onDeleteAllData={handleDeleteAllData} />
             </div>
           )}
         </div>
@@ -4566,8 +3380,9 @@ const Library = React.memo(function Library({
         });
         // Update all cards belonging to the old deck
         const srsData = db.getSrsData();
+        // Igual que al borrar: las tarjetas sin origen son las del mazo por defecto.
         Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-          if (card && card.source === oldName) {
+          if (card && (card.source || DEFAULT_DECK_NAME).trim() === oldName) {
             card.source = newName;
             db.saveSrsCard(word, card);
           }
@@ -4601,8 +3416,17 @@ const Library = React.memo(function Library({
         db.saveSrsCard(`_deck_${deckName}`, null);
         const srsData = db.getSrsData();
         delete srsData[`_deck_${deckName}`];
+        /*
+          Las tarjetas sin origen son del mazo por defecto, y también se borran.
+
+          La lista de mazos las cuenta ahí —`(card.source || 'Yoru Reader')`—, pero el borrado
+          solo miraba `card.source === deckName`, así que borrando «Yoru Reader» no se iba
+          ninguna: el mazo desaparecía un instante y volvía con sus tarjetas intactas. Una
+          tarjeta se queda sin origen, por ejemplo, cuando la creas puntuándola desde la
+          tarjeta del lector.
+        */
         Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-          if (card && card.source === deckName) {
+          if (card && (card.source || DEFAULT_DECK_NAME).trim() === deckName) {
             delete srsData[word];
           }
         });
@@ -6984,7 +5808,25 @@ const Library = React.memo(function Library({
                 </div>
               );
             })()}
-            {books.length === 0 ? (
+            {/*
+              Los libros del servidor, antes de lo importado: quien lee de Kavita
+              tiene aquí su biblioteca aunque no haya descargado nada. Lo pinta el
+              shell y aquí solo se coloca; sin servidor no hay nada que colocar.
+            */}
+            {serverSection}
+            {books.length === 0 && hayLibrosDeServidor ? (
+              /*
+                Con libros del servidor delante, el cartelón de «biblioteca vacía» era
+                mentira y además tapaba lo que sí hay. Queda la de importar, que es lo
+                único que aquí no se puede hacer de otra forma; el servidor entero
+                está a un clic en «Explorar Kavita», en la cabecera de la sección.
+              */
+              /* Un enlace discreto, no un botón a todo el ancho: la acción principal
+                 de añadir ya es el «+» de arriba, y aquí mandan los libros. */
+              <button type="button" className="yoru-add-file-link" onClick={triggerFileInput}>
+                + {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
+              </button>
+            ) : books.length === 0 ? (
               <div className="library-empty-hero">
                 {/* Left: decorative book cover stack */}
                 <div className="empty-hero-covers">
@@ -7854,12 +6696,6 @@ const Library = React.memo(function Library({
             libraryTitles={libraryTitles}
             onImport={async (parsedBooks) => { await onAddBooks(parsedBooks); }}
             onClose={() => setIsKavitaBrowserOpen(false)}
-            onOpenSettings={() => {
-              setIsKavitaBrowserOpen(false);
-              setActiveTab('settings');
-              setActiveSettingsSection('sec-media-servers');
-              if (isMobile) setMobileSettingsSectionOpen(true);
-            }}
             showToast={showToast}
           />
         )}

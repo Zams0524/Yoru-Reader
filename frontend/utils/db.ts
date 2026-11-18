@@ -1,4 +1,5 @@
 import type { BookHighlight } from './highlights';
+import { recordHourActivity } from './statsHabits';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
 /** Un parte de lectura: un libro, un dia. `listeningTime` puede faltar en los viejos. */
@@ -78,12 +79,25 @@ export interface Settings {
   betaUpdates?: boolean;
   disabledDictionaries?: string[];
   dictionaryOrder?: string[];
+  /** De dónde salen las definiciones. Sin valor, se comporta como `ambos`. */
+  definitionSource?: 'locales' | 'jiten' | 'ambos';
+  /**
+   * Subir y leer el progreso de la cuenta de Kavita/Audiobookshelf. Por defecto no:
+   * la cuenta suele ser compartida, y el progreso de cada perfil se queda en local
+   * (ver `utils/serverProgress.ts`).
+   */
+  shareServerProgress?: boolean;
 }
 
 export interface Profile {
   id: string;
   name: string;
+  /** Una foto (data URL) o un degradado CSS, cuando no hay foto. */
   avatar?: string;
+  /** El emoji que acompaña al degradado, si el avatar no es una foto. */
+  avatarEmoji?: string;
+  /** La franja de arriba de la página de perfil. */
+  banner?: string;
 }
 
 const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';
@@ -115,6 +129,7 @@ const DEFAULT_SETTINGS: Settings = {
   betaUpdates: false,
   disabledDictionaries: [],
   dictionaryOrder: [],
+  definitionSource: 'ambos',
   discordEnabled: true,
   discordInactivityTimer: 300,
   discordIcon: 'Yoru',
@@ -522,6 +537,9 @@ export const db = {
   },
 
   async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0, listeningToAdd = 0): Promise<void> {
+    // La hora del día va aparte del parte diario (ver `statsHabits.ts`): mismo tiempo,
+    // mismo momento, pero sin tocar el registro que se sincroniza.
+    recordHourActivity(secondsToAdd, listeningToAdd);
     return new Promise((resolve) => {
       const request = indexedDB.open('books', 4);
       request.onupgradeneeded = (e: any) => {

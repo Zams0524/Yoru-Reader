@@ -272,18 +272,49 @@ export default function ServerBookDetail({
               {es ? 'Abrir el tuyo' : 'Open yours'}
             </button>
           )}
-          {local?.audiobook && onOpenAudiobook && (
-            <button
-              type="button"
-              className="yoru-btn"
-              onClick={() => onOpenAudiobook(local)}
-              title={local.audiobook.title}
-            >
-              <Headphones size={15} />
-              {(local.audiobook.chapters || 0) > 1
-                ? (es ? 'Leer escuchando · por capítulos' : 'Read along · by chapter')
-                : (es ? 'Leer escuchando' : 'Read along')}
-            </button>
+          {/*
+            «Leer escuchando» se enseña aunque no haya audiolibro, apagado y
+            diciendo por qué. Antes, sin audio, el botón no estaba: quien tiene una
+            serie sin audiolibro —Re:Zero, por ejemplo— no veía nada y no podía
+            saber si la función no existe, si la app no se ha enterado o si ha hecho
+            algo mal. Un botón apagado con su motivo responde a eso en un vistazo.
+
+            Solo cuando el libro es tuyo: ofrecer leer escuchando algo que aún no
+            tienes descargado sería prometer de más.
+          */}
+          {local && onOpenAudiobook && (
+            local.audiobook ? (
+              <button
+                type="button"
+                className="yoru-btn"
+                onClick={() => onOpenAudiobook(local)}
+                title={local.audiobook.title}
+              >
+                <Headphones size={15} />
+                {(local.audiobook.chapters || 0) > 1
+                  ? (es ? 'Leer escuchando · por capítulos' : 'Read along · by chapter')
+                  : (es ? 'Leer escuchando' : 'Read along')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="yoru-btn"
+                disabled
+                /*
+                  Lo que se dice aquí es lo que se sabe, ni una palabra más. Esta
+                  pantalla no ha buscado audiolibro para este tomo: solo mira si hay
+                  uno ya vinculado. Poner «ningún audiolibro se parece a este tomo»
+                  sería afirmar algo que no se ha comprobado, y en la mitad de los
+                  casos sería falso.
+                */
+                title={es
+                  ? 'Todavía no hay ningún audiolibro vinculado a este tomo. Yoru lo busca al abrir el libro, y también puedes vincularlo a mano desde Audiolibros.'
+                  : 'No audiobook is linked to this volume yet. Yoru looks for one when you open the book, and you can also link it by hand from Audiobooks.'}
+              >
+                <Headphones size={15} />
+                {es ? 'Sin audiolibro aún' : 'No audiobook yet'}
+              </button>
+            )
           )}
           <button
             type="button"

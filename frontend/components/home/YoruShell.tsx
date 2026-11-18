@@ -15,6 +15,7 @@ import {
   Search,
   Server as ServerIcon,
   Settings,
+  SlidersHorizontal,
   Tag,
   User,
   Users,
@@ -30,8 +31,22 @@ import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
+import ProfileView from './ProfileView';
+import MembersView from './MembersView';
+import NotificationsView from './NotificationsView';
+import { NOTICES_EVENT, pushNotice, unseenNoticeCount } from '../../utils/appNotices';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
-import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
+import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
+import { ServerLibrarySection } from './HomeServerSections';
+import {
+  audiobookLinkState,
+  audiobookMatchScore,
+  getAudiobookLink,
+  unambiguousAudiobook,
+} from '../../utils/audiobookshelfService';
+import { getDynamicCollections, type DynamicCollection } from '../../utils/collections';
+import { descartar } from '../../utils/recomendaciones';
+import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
 import {
@@ -58,6 +73,9 @@ type View =
   | 'home'
   | 'catalog'
   | 'statistics'
+  | 'profile'
+  | 'members'
+  | 'notifications'
   | 'srs'
   | 'settings'
   | 'series'
@@ -139,7 +157,33 @@ export default function YoruShell({
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  /** Avisos sin ver, para el punto de la campana. */
+  const [unseenNotices, setUnseenNotices] = useState(() => unseenNoticeCount());
+
+  useEffect(() => {
+    const refresh = () => setUnseenNotices(unseenNoticeCount());
+    /*
+      Por ahora la única tarea larga que avisa al terminar es la instalación de
+      diccionarios, que ya lanza su evento. Se apunta aquí, en el shell, porque es lo
+      único que está montado siempre: la pantalla de avisos puede no haberse abierto.
+    */
+    const onDictionaries = () => pushNotice(
+      es ? 'Diccionarios actualizados' : 'Dictionaries updated',
+      es ? 'Los cambios ya se usan al buscar palabras.' : 'The changes are already used when looking up words.'
+    );
+    window.addEventListener(NOTICES_EVENT, refresh);
+    window.addEventListener('yoru-dictionaries-changed', onDictionaries);
+    return () => {
+      window.removeEventListener(NOTICES_EVENT, refresh);
+      window.removeEventListener('yoru-dictionaries-changed', onDictionaries);
+    };
+  }, [es]);
+
+  /** El menú del avatar de la cabecera: Perfil y Ajustes. */
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  /** La colección dinámica cuyas reglas se están cambiando, si hay alguna. */
+  const [editingCollection, setEditingCollection] = useState<DynamicCollection | null>(null);
   /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
   const [collectionsVersion, setCollectionsVersion] = useState(0);
 
@@ -186,11 +230,39 @@ export default function YoruShell({
   /** La serie de audiolibros que se está mirando, por su nombre, que es su clave. */
   const [audioSeries, setAudioSeries] = useState<string | null>(null);
 
+  /*
+    De dónde se venía al entrar en Ajustes.
+
+    Ajustes se queda con la ventana entera y se lleva la barra lateral por delante,
+    así que la flecha de vuelta es la única salida y tiene que devolver al sitio
+    exacto, no a Inicio por defecto: quien entra desde «Audiolibros» a cambiar algo
+    quiere volver a los audiolibros.
+  */
+  const [beforeSettings, setBeforeSettings] = useState<View>('home');
+
   const go = useCallback((next: View, target: typeof serverTarget = null) => {
-    setView(next);
+    setView((current) => {
+      if (next === 'settings' && current !== 'settings') setBeforeSettings(current);
+      return next;
+    });
     setServerTarget(target);
     setIsDrawerOpen(false);
   }, []);
+
+  const exitSettings = useCallback(() => {
+    setView(beforeSettings);
+    setServerTarget(null);
+  }, [beforeSettings]);
+
+  // Escape también sale: es lo que se pulsa sin pensar cuando algo ocupa la ventana.
+  useEffect(() => {
+    if (view !== 'settings') return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') exitSettings();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, exitSettings]);
 
   /** Una portada de servidor abre su ficha: la serie en Kavita, el tomo en Audiobookshelf. */
   const openServerItem = useCallback(
@@ -226,6 +298,7 @@ export default function YoruShell({
 
   // Botón atrás de Android: cierra lo último que se abrió, igual que en la biblioteca.
   const backSteps: [boolean, () => void][] = [
+    [isProfileMenuOpen, () => setIsProfileMenuOpen(false)],
     [isSearchOpen, () => setIsSearchOpen(false)],
     [isDrawerOpen, () => setIsDrawerOpen(false)],
     [view === 'detail', () => go(group ? 'group' : 'home')],
@@ -256,6 +329,12 @@ export default function YoruShell({
         onUpdateBookDetails(book.id, { tags });
       },
       onHideFromContinue: (book: ShelfBook) => onUpdateBookDetails(book.id, { hiddenFromContinue: true }),
+      /*
+        «No me interesa» no toca el libro: solo apunta su identificador en una lista del
+        perfil. Apartar una recomendación no es borrar nada ni marcar nada, y el libro
+        sigue en el catálogo, en su estante y en su serie.
+      */
+      onNotInterested: (book: ShelfBook) => descartar(book.id),
       onCreateCollection: () => setIsCreatingCollection(true),
     }),
     [es, openDetail, onSelectBook, groups.collections, onUpdateBookDetails]
@@ -270,12 +349,31 @@ export default function YoruShell({
     return source.find((entry) => entry.key === group.name)?.books ?? [];
   }, [group, groups]);
 
-  // Los libros que tienen un audiolibro vinculado desde el lector. El vínculo lo guarda
-  // `setAudiobookLink` (frontend/utils/audiobookshelfService.ts) por id de libro.
-  const listenable = useMemo(
-    () => library.filter((book) => Boolean(getAudiobookLink(book.id))),
-    [library]
-  );
+  /*
+    Los libros que se pueden leer y escuchar a la vez: los que tienen su audiolibro.
+
+    Cuentan dos cosas, y hacen falta las dos. Una es el vínculo ya guardado, que
+    escribe `setAudiobookLink` cuando el lector encuentra el audio o cuando lo
+    vinculas a mano. La otra es el par que todavía no se ha guardado pero existe:
+    el vínculo se creaba solo al abrir el libro en el lector, así que un catálogo
+    recién emparejado enseñaba esta sección vacía hasta que abrías los veinticinco
+    tomos uno por uno. Nadie va a hacer eso.
+
+    El par sin guardar se calcula contra la caché que ya alimenta Inicio —ni una
+    petición más— y con la misma regla que usa el lector, para que lo que se promete
+    aquí sea exactamente lo que allí va a pasar.
+  */
+  const listenable = useMemo(() => {
+    const audiolibros = getCachedServerCatalog().audiobooks;
+    return library.filter((book) => {
+      if (getAudiobookLink(book.id)) return true;
+      if (audiolibros.length === 0) return false;
+      const ordenados = audiolibros
+        .map((item) => ({ item, score: audiobookMatchScore(book, item as never) }))
+        .sort((a, b) => b.score - a.score);
+      return Boolean(unambiguousAudiobook(ordenados));
+    });
+  }, [library]);
 
   // El aviso se va solo: es informativo (p. ej. «Importado»), no un dialogo.
   useEffect(() => {
@@ -287,7 +385,7 @@ export default function YoruShell({
   const renderCanvas = () => {
     if (embeddedTab) {
       return (
-        <div className="yoru-shell-embed">
+        <div className={`yoru-shell-embed${view === 'settings' ? ' is-settings' : ''}`}>
           <React.Suspense
             fallback={
               <div className="app-section-loading" role="status" aria-live="polite">
@@ -305,7 +403,26 @@ export default function YoruShell({
               onOpenInfo={onOpenInfo}
               initialTab={embeddedTab}
               embedded
+              /*
+                Los libros del servidor, dentro de la Biblioteca y no solo en Inicio:
+                para quien lee de Kavita son sus libros igual que los descargados.
+              */
+              serverSection={view === 'catalog'
+                ? (
+                  <ServerLibrarySection
+                    es={es}
+                    onOpenItem={openServerItem}
+                    onExplore={() => go('kavita')}
+                  />
+                )
+                : undefined}
               navigateTo={libraryProps.navigateTo}
+              /*
+                La salida de Ajustes. Se la damos a `Library` porque la flecha va
+                dentro de su propia lateral, encima del buscador, y es ella quien la
+                pinta; el shell es quien sabe de dónde veníamos.
+              */
+              onExitSettings={view === 'settings' ? exitSettings : undefined}
             />
           </React.Suspense>
         </div>
@@ -336,6 +453,14 @@ export default function YoruShell({
     }
 
     if (view === 'group' && group) {
+      /*
+        Una colección dinámica se mira y, desde la misma pantalla, se afina: es donde se
+        ve que la regla cogió lo que no era. Las manuales no llevan botón porque no
+        tienen reglas que editar; se cambian metiendo y sacando libros.
+      */
+      const dinamica = group.kind === 'collection'
+        ? getDynamicCollections().find((entry) => entry.name === group.name)
+        : undefined;
       return (
         <BookGridView
           title={group.name}
@@ -343,13 +468,19 @@ export default function YoruShell({
           es={es}
           onOpenDetail={openDetail}
           onBack={() => go(groupBackView(group))}
+          action={dinamica && (
+            <button type="button" className="yoru-btn" onClick={() => setEditingCollection(dinamica)}>
+              <SlidersHorizontal size={15} />
+              {es ? 'Editar reglas' : 'Edit rules'}
+            </button>
+          )}
         />
       );
     }
 
     if (view === 'kavita') {
       if (!isKavitaConfigured()) {
-        return <ServerEmptyState kind="kavita" es={es} onOpenSettings={() => go('settings')} />;
+        return <ServerEmptyState kind="kavita" es={es} />;
       }
       return (
         <React.Suspense
@@ -365,7 +496,7 @@ export default function YoruShell({
             libraryTitles={new Set(library.map((book) => book.title))}
             onImport={async (parsed: any[]) => { await libraryProps.onAddBooks?.(parsed); }}
             onClose={() => go('home')}
-            onOpenSettings={() => go('settings')}
+           
             showToast={(message: string) => setServerToast(message)}
             onReadTemporary={libraryProps.onReadTemporary}
             initialSeriesId={serverTarget?.kind === 'kavita' ? serverTarget.id : undefined}
@@ -395,7 +526,7 @@ export default function YoruShell({
       return (
         <AudiobookshelfView
           es={es}
-          onOpenSettings={() => go('settings')}
+         
           initialItemId={serverTarget?.kind === 'audiobook' ? serverTarget.id : undefined}
           libraryBooks={library}
           onOpenLocalBook={(bookId, listen) => {
@@ -410,52 +541,128 @@ export default function YoruShell({
       return <StatsView books={books} es={es} />;
     }
 
+    if (view === 'members') {
+      return (
+        <MembersView es={es} libros={books} onVerPerfil={() => go('profile')} />
+      );
+    }
+
+    if (view === 'notifications') {
+      return <NotificationsView es={es} />;
+    }
+
+    if (view === 'profile') {
+      const profiles: any[] = libraryProps.profiles || [];
+      return (
+        <ProfileView
+          books={books}
+          es={es}
+          profile={profiles.find((entry) => entry.id === libraryProps.activeProfileId) || profiles[0]}
+          onOpenDetail={openDetail}
+          onOpenServerItem={openServerItem}
+          onOpenSettings={() => go('settings')}
+          onUpdateProfile={(profileId, changes) => libraryProps.onUpdateProfile?.(profileId, changes)}
+        />
+      );
+    }
+
     if (view === 'listen') {
-      if (!listenable.length) {
+      /*
+        Siempre la biblioteca, nunca una pantalla de bienvenida.
+
+        Antes, sin ningún libro vinculado, esta sección era un texto largo explicando
+        qué hacer y dos botones para irse a otro sitio: una pantalla entera para decir
+        que no había nada. Ahora se ve la biblioteca, con los que ya tienen audiolibro
+        delante, y lo que falta por hacer cabe en una línea encima.
+      */
+      /*
+        Con la biblioteca entera vacía no vale enseñar la rejilla: salía «Nada por
+        aquí» y un buscador que no puede buscar en nada, que es un callejón sin
+        salida. Aquí hace falta una línea corta y un camino, no un diagnóstico.
+      */
+      if (library.length === 0) {
         return (
           <div>
             <div className="yoru-view-head">
               <div>
                 <h1 className="yoru-view-title">{es ? 'Leer y escuchar' : 'Read and listen'}</h1>
                 <div className="yoru-view-sub">
-                  {es ? 'Ningún libro tiene audiolibro todavía' : 'No book has an audiobook yet'}
+                  {es
+                    ? 'Primero trae un libro; después le vinculas su audiolibro.'
+                    : 'Bring in a book first; then link its audiobook.'}
                 </div>
               </div>
             </div>
-            <p className="yoru-empty-note">
-              {es
-                ? 'Aquí viven los libros que tienes en texto y en audio a la vez: los que puedes leer mientras los escuchas. Para que uno aparezca, vincula su audiolibro — desde la ficha del audiolibro, en Audiolibros, o abriendo el libro y eligiéndolo en el reproductor.'
-                : 'This is where the books you have as both text and audio live: the ones you can read while listening. To make one show up, link its audiobook — from the audiobook page under Audiobooks, or by opening the book and picking it in the player.'}
-            </p>
-            <div className="yoru-detail-actions" style={{ marginTop: 18 }}>
-              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('audiobooks')}>
+            <div className="yoru-detail-actions">
+              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('catalog')}>
+                <Plus size={16} />
+                {es ? 'Importar un libro' : 'Import a book'}
+              </button>
+              <button type="button" className="yoru-btn" onClick={() => go('kavita')}>
+                <ServerIcon size={16} />
+                {es ? 'Traerlo de Kavita' : 'Get one from Kavita'}
+              </button>
+              <button type="button" className="yoru-btn" onClick={() => go('audiobooks')}>
                 <Headphones size={16} />
                 {es ? 'Ver mis audiolibros' : 'See my audiobooks'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => go('catalog')}>
-                <LibraryIcon size={16} />
-                {es ? 'Ver mi biblioteca' : 'See my library'}
               </button>
             </div>
           </div>
         );
       }
+
+      const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
+      const total = listenable.length;
+      const subtitle = total === 0
+        ? (es
+            ? 'Ningún libro tiene audiolibro todavía. Abre uno y elige su audiolibro en el reproductor, o vincúlalo desde Audiolibros.'
+            : 'No book has an audiobook yet. Open one and pick its audiobook in the player, or link it from Audiobooks.')
+        : (() => {
+            const base = es
+              ? `${total} ${total === 1 ? 'libro listo para leer y escuchar' : 'libros listos para leer y escuchar'}`
+              : `${total} ${total === 1 ? 'book ready to read along' : 'books ready to read along'}`;
+            if (!withChapters) return base;
+            return es ? `${base} · ${withChapters} con capítulos` : `${base} · ${withChapters} with chapters`;
+          })();
       return (
         <BookGridView
           title={es ? 'Leer y escuchar' : 'Read and listen'}
-          subtitle={(() => {
-            const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
-            const total = listenable.length;
-            if (es) {
-              const base = `${total} ${total === 1 ? 'libro con audiolibro' : 'libros con audiolibro'}`;
-              return withChapters ? `${base} · ${withChapters} con capítulos` : base;
-            }
-            const base = `${total} ${total === 1 ? 'book with an audiobook' : 'books with an audiobook'}`;
-            return withChapters ? `${base} · ${withChapters} with chapters` : base;
-          })()}
+          subtitle={subtitle}
+          /*
+            Solo los libros que tienen las dos mitades: la novela y su audiolibro.
+
+            Antes esta vista pintaba `[...listenable, ...sinVincular]`, o sea los que
+            se pueden leer escuchando y, detrás, toda la biblioteca. Una sección que
+            se llama «Leer y escuchar» y enseña libros con los que no puedes hacer ni
+            una cosa ni la otra a la vez no es una sección: es el catálogo otra vez,
+            con otro nombre.
+          */
           books={listenable}
           es={es}
           onOpenDetail={openDetail}
+          /*
+            «Listos» son los que tienen los capítulos del audio casados con los del
+            libro: los únicos en los que el texto sigue a la voz capítulo a capítulo.
+            Solo se ofrece el filtro si hay de los dos tipos; con uno solo no filtra nada.
+          */
+          filter={withChapters > 0 && withChapters < total
+            ? {
+                label: es ? 'Alineación' : 'Alignment',
+                options: [
+                  { id: 'all', label: es ? 'Todos' : 'All', test: () => true },
+                  {
+                    id: 'ready',
+                    label: es ? 'Listos (con capítulos)' : 'Ready (with chapters)',
+                    test: (book) => audiobookLinkState(book.id) === 'chapters',
+                  },
+                  {
+                    id: 'pending',
+                    label: es ? 'Sin capítulos' : 'Without chapters',
+                    test: (book) => audiobookLinkState(book.id) !== 'chapters',
+                  },
+                ],
+              }
+            : undefined}
         />
       );
     }
@@ -674,11 +881,23 @@ export default function YoruShell({
       onClick: () => go('catalog'),
       active: view === 'catalog',
     },
-    { key: 'me', label: es ? 'Yo' : 'Me', icon: User, onClick: () => go('settings'), active: view === 'settings' },
+    // «Yo» abre el perfil, que es donde están tus listas; Ajustes queda a un toque, en su botón.
+    { key: 'me', label: es ? 'Yo' : 'Me', icon: User, onClick: () => go('profile'), active: view === 'profile' || view === 'settings' },
   ];
 
   return (
-    <div className="yoru-shell">
+    /*
+      El reproductor envuelve el shell entero, no una pantalla. Dentro de la ficha
+      moría al salir de ella: el audio se cortaba en cuanto mirabas otra cosa.
+    */
+    <AudiobookPlayerProvider es={es}>
+    {/*
+      En Ajustes el shell se aparta: ni cabecera, ni lateral, ni barra de abajo.
+      Ajustes ocupa la ventana entera y su propia lateral es la única navegación,
+      que es lo que pidió zams. La clase se encarga de esconderlas por CSS en vez
+      de no montarlas, para que volver no vuelva a construir media aplicación.
+    */}
+    <div className={`yoru-shell${view === 'settings' ? ' is-settings-fullscreen' : ''}`}>
       <header className="yoru-shell-header">
         {isMobile && (
           <button
@@ -733,21 +952,70 @@ export default function YoruShell({
           <button
             type="button"
             className="yoru-shell-icon-btn"
-            onClick={() => go('statistics')}
-            title={es ? 'Tu progreso' : 'Your progress'}
-            aria-label={es ? 'Tu progreso' : 'Your progress'}
+            onClick={() => go('members')}
+            title={es ? 'Miembros' : 'Members'}
+            aria-label={es ? 'Miembros' : 'Members'}
+          >
+            <Users size={20} />
+          </button>
+          {/* La campana abre los avisos; antes llevaba a Estadísticas, que ya está en el lateral. */}
+          <button
+            type="button"
+            className="yoru-shell-icon-btn yoru-shell-bell"
+            onClick={() => go('notifications')}
+            title={es ? 'Notificaciones' : 'Notifications'}
+            aria-label={unseenNotices > 0
+              ? (es ? `Notificaciones, ${unseenNotices} sin ver` : `Notifications, ${unseenNotices} unseen`)
+              : (es ? 'Notificaciones' : 'Notifications')}
           >
             <Bell size={20} />
+            {unseenNotices > 0 && <i className="yoru-shell-bell-dot" aria-hidden="true" />}
           </button>
           <button
             type="button"
             className="yoru-shell-avatar"
-            onClick={() => go('settings')}
+            onClick={() => setIsProfileMenuOpen((open) => !open)}
             title={es ? 'Tu perfil' : 'Your profile'}
             aria-label={es ? 'Tu perfil' : 'Your profile'}
+            aria-haspopup="menu"
+            aria-expanded={isProfileMenuOpen}
           >
             {avatarFor(libraryProps)}
           </button>
+          {/*
+            El avatar abre un menú corto en vez de saltar a Ajustes: el perfil y los
+            ajustes son dos sitios distintos, y antes solo se llegaba a uno.
+          */}
+          {isProfileMenuOpen && (
+            <>
+              <button
+                type="button"
+                className="yoru-menu-scrim"
+                aria-label={es ? 'Cerrar menú' : 'Close menu'}
+                onClick={() => setIsProfileMenuOpen(false)}
+              />
+              <div className="yoru-menu yoru-profile-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="yoru-menu-item"
+                  onClick={() => { setIsProfileMenuOpen(false); go('profile'); }}
+                >
+                  <User size={16} />
+                  {es ? 'Perfil' : 'Profile'}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="yoru-menu-item"
+                  onClick={() => { setIsProfileMenuOpen(false); go('settings'); }}
+                >
+                  <Settings size={16} />
+                  {es ? 'Ajustes' : 'Settings'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
@@ -793,16 +1061,18 @@ export default function YoruShell({
         <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} />
       )}
 
-      {isCreatingCollection && (
+      {(isCreatingCollection || editingCollection) && (
         <CollectionModal
           books={library}
           es={es}
-          onClose={() => setIsCreatingCollection(false)}
+          editing={editingCollection || undefined}
+          onClose={() => { setIsCreatingCollection(false); setEditingCollection(null); }}
           // Recién creada se abre: así se ve que existe, aunque esté vacía.
           onCreated={(name) => openGroup('collection', name)}
         />
       )}
     </div>
+    </AudiobookPlayerProvider>
   );
 }
 

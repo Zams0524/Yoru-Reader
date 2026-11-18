@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, BookOpen, FolderPlus, Info, Play, Tag, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, FolderPlus, Info, Play, Tag, ThumbsDown, X } from 'lucide-react';
 import type { ShelfBook } from './libraryIndex';
 
 /**
@@ -24,6 +24,8 @@ export interface BookMenuActions {
   onCreateCollection: () => void;
   /** Aparta el libro de «Continuar» sin tocar su progreso. */
   onHideFromContinue: (book: ShelfBook) => void;
+  /** Aparta el libro de «Libros para ti». */
+  onNotInterested: (book: ShelfBook) => void;
   es: boolean;
 }
 
@@ -33,15 +35,31 @@ interface MenuState {
   y: number;
   /** Verdadero cuando se abrió desde el carrusel «Continuar». */
   fromContinue: boolean;
+  /** Verdadero cuando se abrió desde «Libros para ti». */
+  fromSuggestions: boolean;
 }
 
-type OpenMenu = (book: ShelfBook, event: React.MouseEvent, options?: { fromContinue?: boolean }) => void;
+type OpenMenu = (
+  book: ShelfBook,
+  event: React.MouseEvent,
+  options?: { fromContinue?: boolean; fromSuggestions?: boolean }
+) => void;
 
 const BookMenuContext = React.createContext<OpenMenu | null>(null);
+/*
+  Las mismas acciones, sueltas, para quien quiera ofrecer una sin pasar por el menú:
+  «Continuar» tiene su propio botón de quitar, porque el clic derecho no se ve.
+*/
+const BookActionsContext = React.createContext<BookMenuActions | null>(null);
 
 /** Para que una portada pueda abrir el menú sin saber quién lo pinta. */
 export function useBookMenu(): OpenMenu | null {
   return React.useContext(BookMenuContext);
+}
+
+/** Las acciones del menú, para un botón propio fuera de él. */
+export function useBookActions(): BookMenuActions | null {
+  return React.useContext(BookActionsContext);
 }
 
 export function BookMenuProvider({
@@ -55,13 +73,21 @@ export function BookMenuProvider({
 
   const open = React.useCallback<OpenMenu>((book, event, options) => {
     event.preventDefault();
-    setMenu({ book, x: event.clientX, y: event.clientY, fromContinue: Boolean(options?.fromContinue) });
+    setMenu({
+      book,
+      x: event.clientX,
+      y: event.clientY,
+      fromContinue: Boolean(options?.fromContinue),
+      fromSuggestions: Boolean(options?.fromSuggestions),
+    });
   }, []);
 
   return (
     <BookMenuContext.Provider value={open}>
-      {children}
-      {menu && <Menu state={menu} actions={actions} onClose={() => setMenu(null)} />}
+      <BookActionsContext.Provider value={actions}>
+        {children}
+        {menu && <Menu state={menu} actions={actions} onClose={() => setMenu(null)} />}
+      </BookActionsContext.Provider>
     </BookMenuContext.Provider>
   );
 }
@@ -75,7 +101,7 @@ function Menu({
   actions: BookMenuActions;
   onClose: () => void;
 }) {
-  const { book, fromContinue } = state;
+  const { book, fromContinue, fromSuggestions } = state;
   const { es } = actions;
   const [page, setPage] = React.useState<'main' | 'collections'>('main');
   const ref = React.useRef<HTMLDivElement>(null);
@@ -166,6 +192,26 @@ function Menu({
                 >
                   <X size={15} />
                   {es ? 'Quitar de Continuar' : 'Remove from Continue'}
+                </button>
+              </>
+            )}
+
+            {/*
+              Solo en «Libros para ti»: en el catálogo o en un estante no querría decir
+              nada —ahí los libros no se recomiendan, están—, y sería una entrada que
+              parece borrar algo.
+            */}
+            {fromSuggestions && (
+              <>
+                <div className="yoru-menu-sep" />
+                <button
+                  type="button"
+                  className="yoru-menu-item"
+                  role="menuitem"
+                  onClick={run(() => actions.onNotInterested(book))}
+                >
+                  <ThumbsDown size={15} />
+                  {es ? 'No me interesa' : 'Not interested'}
                 </button>
               </>
             )}

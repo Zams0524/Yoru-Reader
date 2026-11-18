@@ -193,6 +193,49 @@
   padding: 10px 8px 40px;
 }
 
+/*
+  Barras de desplazamiento discretas en toda la concha.
+
+  Windows las pinta anchas y claras, y en una pantalla casi negra eso es una franja
+  gris que se lleva la vista antes que las portadas. Lo pidió zams (18 nov 2026):
+  finas, del color del borde, y que se vean de verdad solo al pasar por encima.
+*/
+.yoru-shell,
+.yoru-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.yoru-shell ::-webkit-scrollbar,
+.yoru-shell::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.yoru-shell ::-webkit-scrollbar-track,
+.yoru-shell::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.yoru-shell ::-webkit-scrollbar-thumb,
+.yoru-shell::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  /* El borde transparente deja el pulgar más estrecho que el canal, sin bordes duros. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.yoru-shell ::-webkit-scrollbar-thumb:hover,
+.yoru-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
+
+.yoru-shell ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .yoru-shell-nav-section { margin-bottom: 18px; }
 
 .yoru-shell-nav-label {
@@ -325,6 +368,9 @@
   gap: 16px;
   margin-bottom: 18px;
 }
+/* Los botones de la cabecera de una vista: «Editar reglas», «Sorpréndeme». */
+.yoru-view-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.yoru-view-head-actions .yoru-btn { display: inline-flex; align-items: center; gap: 6px; }
 .yoru-view-title {
   font-family: var(--font-heading);
   font-size: 26px;
@@ -345,11 +391,19 @@
   gap: 8px;
   margin-bottom: 24px;
 }
+/*
+  Pestañas más calladas.
+
+  Eran tres cajas con borde y la elegida en blanco sólido, que en una portada de
+  portadas es lo más llamativo de la pantalla sin ser lo importante. Ahora la que no
+  está elegida no tiene ni caja ni borde, y la elegida es una pastilla suave. Se
+  sigue viendo cuál es, pero deja mirar los libros. (zams, 18 nov 2026: «más limpio».)
+*/
 .yoru-chip {
-  background: var(--surface-raised);
+  background: transparent;
   color: var(--text-muted);
-  border: 1px solid var(--border-light);
-  padding: 9px 20px;
+  border: 1px solid transparent;
+  padding: 8px 16px;
   border-radius: var(--radius-md);
   font: inherit;
   font-size: 14px;
@@ -357,11 +411,34 @@
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.yoru-chip:hover { background: var(--bg-card-hover); color: var(--text-main); }
+.yoru-chip:hover { background: var(--surface-soft); color: var(--text-main); }
 .yoru-chip.active {
-  background: var(--text-main);
-  border-color: var(--text-main);
-  color: var(--bg-app);
+  background: var(--surface-raised);
+  border-color: var(--border-light);
+  color: var(--text-main);
+}
+
+/* «Ver todo», al final de las pestañas: lleva a la sección entera. */
+.yoru-chip-link {
+  margin-left: auto;
+  align-self: center;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.yoru-chip-link:hover { background: var(--surface-soft); }
+
+/* La nota de «importa una novela» cuando lo que se está viendo es de los servidores. */
+.yoru-home-hint {
+  margin: -8px 0 24px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .yoru-rail { margin-bottom: 32px; }
@@ -408,6 +485,27 @@
   /* Se queda, pero apagada: que la fila no cambie de ancho al llegar al extremo. */
   opacity: 0.35;
   cursor: default;
+}
+/*
+  Las flechas solo cuando el ratón está en ese carrusel.
+
+  Con ratón, seis u ocho pares de flechas encendidas a la vez son más ruido que ayuda:
+  el carrusel ya se arrastra y la rueda también lo mueve. Aparecen al acercarse y
+  siguen ahí para el teclado, porque `focus-within` las saca igual.
+
+  Va después de la regla de `:disabled` a propósito: con la misma fuerza, manda la
+  última, y si fuera antes la flecha apagada se vería siempre.
+*/
+@media (pointer: fine) {
+  .yoru-rail-arrow,
+  .yoru-rail-arrow:disabled {
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .yoru-rail:hover .yoru-rail-arrow,
+  .yoru-rail:focus-within .yoru-rail-arrow { opacity: 1; }
+  .yoru-rail:hover .yoru-rail-arrow:disabled,
+  .yoru-rail:focus-within .yoru-rail-arrow:disabled { opacity: 0.35; }
 }
 @media (pointer: coarse) {
   /* En táctil se arrastra con el dedo; las flechas solo quitarían sitio. */
@@ -554,7 +652,169 @@
 }
 .yoru-grid .yoru-poster { width: 100%; }
 
+/*
+  «Lo que lees en el servidor», dentro de la Biblioteca.
+
+  Tiene su propia rejilla y no la del catálogo a propósito: aquella reparte el ancho
+  entre cuatro columnas, y con un libro solo la portada salía del tamaño de un póster
+  de cine y la sección parecía un error. Aquí las tarjetas tienen un tamaño fijo y se
+  colocan de izquierda a derecha, así que una sola se ve igual de cuidada que doce.
+*/
+.yoru-serverlib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 144px);
+  justify-content: start;
+  gap: 20px 18px;
+}
+.yoru-serverlib-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 144px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-serverlib-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1.45;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-soft);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+.yoru-serverlib-card:hover .yoru-serverlib-cover,
+.yoru-serverlib-card:focus-visible .yoru-serverlib-cover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+.yoru-serverlib-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.yoru-serverlib-blank { display: block; width: 100%; height: 100%; }
+/* El avance, pegado al borde de abajo de la portada, como en «Continuar». */
+.yoru-serverlib-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.yoru-serverlib-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+.yoru-serverlib-name {
+  font-family: var(--font-japanese);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yoru-serverlib-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+/*
+  El botón de tres puntos, donde lo tienen los libros de la Biblioteca: arriba a la
+  derecha de la portada. Reusa `.card-menu-wrapper`, que ya se coloca sola en la
+  esquina, así que solo hace falta que la tarjeta sea su referencia.
+*/
+.yoru-serverlib-slot {
+  position: relative;
+  width: 144px;
+}
+.yoru-serverlib-menu { z-index: 5; }
+/* «Añadir desde archivo» bajo los libros del servidor: texto apagado, sin caja. */
+.yoru-add-file-link {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.yoru-add-file-link:hover,
+.yoru-add-file-link:focus-visible { color: var(--primary); }
+
+/*
+  Los apartados de la Biblioteca («Sin iniciar», «Leyendo actualmente»…) dentro del
+  shell: un filete del color de la app delante del título y una línea debajo de la
+  cabecera. Solo aquí dentro, que es donde caen uno detrás de otro y se confundían.
+*/
+.yoru-shell-embed .library-section { margin-bottom: 30px; }
+.yoru-shell-embed .library-section .section-header {
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-shell-embed .library-section .section-title {
+  position: relative;
+  padding-left: 13px;
+}
+.yoru-shell-embed .library-section .section-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
 /* Tarjeta «Continuar» horizontal */
+/*
+  El hueco que envuelve la tarjeta: solo está para colgar de él la ✕ de quitar, que
+  no puede ir dentro de la tarjeta porque la tarjeta ya es un botón.
+*/
+.yoru-continue-slot {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+.yoru-continue-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.yoru-continue-slot:hover .yoru-continue-remove,
+.yoru-continue-remove:focus-visible {
+  opacity: 1;
+}
+.yoru-continue-remove:hover { background: rgba(0, 0, 0, 0.78); }
+/* Sin ratón no hay «pasar por encima», así que ahí se ve siempre. */
+@media (pointer: coarse) {
+  .yoru-continue-remove { opacity: 1; }
+}
 .yoru-continue-card {
   width: 340px;
   min-width: 300px;
@@ -1118,6 +1378,7 @@
   margin-bottom: 34px;
 }
 .yoru-stats-dial { position: relative; text-align: center; }
+.yoru-stats-dial-arc { position: relative; }
 .yoru-stats-dial svg { width: 100%; max-width: 300px; display: block; margin: 0 auto; }
 .yoru-stats-dial-text {
   position: absolute;
@@ -1243,6 +1504,99 @@
 .yoru-stats-weekday-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
 .yoru-stats-weekday-track span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--primary); }
 .yoru-stats-weekday .yoru-stats-bar-label { position: static; }
+
+/*
+  Historial de lectura de un libro, en su ficha.
+
+  Reaprovecha las barras y las cifras de Estadísticas tal cual: es el mismo gráfico con
+  los datos de un solo título, y pintarlo distinto haría pensar que mide otra cosa. Solo
+  cambian dos detalles: una fecha no es una cifra y no quiere 26 píxeles de titular, y la
+  tarjeta del ritmo se separa con el color de acento porque lo que dice es una
+  estimación, no un dato medido.
+*/
+.yoru-stats-figure.is-date { font-size: 18px; letter-spacing: 0.1px; }
+.yoru-book-pace { border-left: 3px solid var(--primary); }
+.yoru-book-pace .yoru-stats-figures { padding-top: 0; border-top: none; }
+/* Varias tarjetas seguidas dentro de una misma sección (Hábitos). */
+.yoru-stats-section > .yoru-stats-card + .yoru-stats-card { margin-top: 16px; }
+
+/* Meta diaria, debajo del arco de hoy */
+.yoru-stats-goal-link {
+  margin-top: 14px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.yoru-stats-goal-link:hover,
+.yoru-stats-goal-link:focus-visible { color: var(--text-main); background: var(--surface-hover, rgba(127, 127, 127, 0.12)); }
+.yoru-stats-goal-editor { margin-top: 14px; }
+.yoru-stats-goal-actions { display: flex; justify-content: center; gap: 6px; }
+.yoru-stats-goal-actions .yoru-stats-goal-link { margin-top: 8px; }
+
+/* Media diaria y navegación entre periodos, encima de las barras */
+.yoru-stats-period {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.yoru-stats-period > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+.yoru-stats-period-nav { display: flex; align-items: center; gap: 6px; }
+.yoru-stats-period-range { font-size: 14px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
+.yoru-stats-period-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.yoru-stats-period-btn:hover:not(:disabled),
+.yoru-stats-period-btn:focus-visible { color: var(--text-main); background: var(--surface-hover, rgba(127, 127, 127, 0.12)); }
+.yoru-stats-period-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Horas del día */
+.yoru-stats-hours { display: flex; gap: 4px; height: 130px; }
+.yoru-stats-hour { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
+.yoru-stats-hour-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.yoru-stats-hour-track span { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--primary); }
+.yoru-stats-hour-track span[data-empty] { background: var(--border-light); border-radius: 2px; }
+.yoru-stats-hour-label { height: 14px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Semana, hora a hora: una fila por día y un punto por hora */
+.yoru-stats-weekgrid { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
+.yoru-stats-weekgrid-row {
+  display: grid;
+  grid-template-columns: 38px repeat(24, minmax(10px, 1fr));
+  align-items: center;
+  justify-items: center;
+  min-width: 320px;
+}
+.yoru-stats-weekgrid-day { justify-self: start; font-size: 12px; color: var(--text-muted); text-transform: capitalize; }
+.yoru-stats-weekgrid-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-light);
+}
+.yoru-stats-weekgrid-dot[data-on] { width: 16px; height: 16px; background: var(--primary); }
+.yoru-stats-weekgrid-row { height: 18px; }
+.yoru-stats-weekgrid-row.is-axis { height: 16px; }
+.yoru-stats-weekgrid-hour { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+@media (max-width: 600px) {
+  .yoru-stats-weekgrid-dot[data-on] { width: 11px; height: 11px; }
+  .yoru-stats-hours { gap: 2px; }
+}
 
 /* Mapa de calor */
 .yoru-heatmap { overflow-x: auto; }
@@ -1775,11 +2129,79 @@
 .yoru-field input:focus,
 .yoru-field select:focus { outline: none; border-color: var(--border-focus); }
 .yoru-field-note { margin: 0; font-size: 12.5px; color: var(--text-muted); }
-.yoru-rule-row { display: flex; gap: 10px; }
+.yoru-rule-row { display: flex; gap: 10px; align-items: flex-end; }
 .yoru-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 
+/*
+  Reglas de una colección dinámica: el «se cumplen todas / basta una», la papelera de
+  cada fila, el botón de añadir y la vista previa.
+
+  La papelera se alinea con los desplegables y no con la fila entera (de ahí el
+  `align-items: flex-end`): arriba quedaría a la altura de los rótulos, que es donde no
+  está el control que borra.
+*/
+.yoru-rule-match { display: flex; gap: 6px; }
+.yoru-rule-match button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-rule-match button.is-active {
+  border-color: var(--primary);
+  color: var(--text-main);
+}
+.yoru-rule-remove {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.yoru-rule-remove:hover { color: var(--text-main); border-color: var(--border-focus); }
+.yoru-rule-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yoru-rule-add:hover { color: var(--text-main); border-color: var(--border-focus); }
+.yoru-rule-preview {
+  margin: -6px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  font-size: 13px;
+  color: var(--text-main);
+}
+.yoru-rule-preview li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-rule-preview li + li { margin-top: 4px; }
+.yoru-rule-preview .is-more { color: var(--text-muted); }
+
 @media (max-width: 460px) {
-  .yoru-rule-row { flex-direction: column; }
+  .yoru-rule-row { flex-direction: column; align-items: stretch; }
+  .yoru-rule-remove { width: 100%; }
 }
 
 /* =========================================================
@@ -1840,6 +2262,12 @@
   color: var(--text-muted);
 }
 .yoru-menu-more { margin-left: auto; color: var(--text-dark); }
+/* Lo que borra algo se ve que borra antes de pulsarlo. */
+.yoru-menu-item.is-danger { color: var(--yoru-danger, #e05b55); }
+.yoru-menu-item.is-danger:hover,
+.yoru-menu-item.is-danger:focus-visible {
+  background: var(--yoru-danger-soft, rgba(224, 91, 85, 0.12));
+}
 .yoru-menu-sep {
   height: 1px;
   margin: 4px 6px;
@@ -1945,3 +2373,1018 @@
 
 /* Los capitulos son botones: el que suena ahora se marca. */
 .yoru-chapter-row.current .yoru-chapter-title { color: var(--primary); }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   La barra del reproductor, anclada abajo.
+
+   Vive fuera de las pantallas, así que sigue puesta al navegar. Todo el color
+   sale de los tokens: en claro, oscuro y sepia se repinta sola.
+
+   El alto se publica en `--yoru-player-h` para que el contenido del shell
+   reserve ese hueco y la barra no tape la ultima fila de ninguna cuadricula.
+   ─────────────────────────────────────────────────────────────────────────── */
+.yoru-player-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel);
+  padding: 0 16px 10px;
+}
+.yoru-shell { --yoru-player-h: 0px; }
+.yoru-shell:has(.yoru-player-bar) { --yoru-player-h: 86px; }
+/*
+  El hueco lo reservan los dos que llegan hasta abajo. Sin esto, la barra tapaba el
+  final de la lateral —«Crea tu primera coleccion» quedaba debajo— y la ultima fila
+  de cualquier cuadricula.
+*/
+.yoru-shell-canvas { padding-bottom: calc(24px + var(--yoru-player-h)); }
+.yoru-shell-sidebar { padding-bottom: var(--yoru-player-h); }
+
+/* El progreso, pegado al borde de arriba y a todo lo ancho. */
+.yoru-player-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin: 0 0 10px;
+  /* Lo recorrido en color, lo que queda en gris; el corte es duro a proposito. */
+  background: linear-gradient(
+    to right,
+    var(--primary) 0,
+    var(--primary) var(--yoru-played, 0%),
+    var(--border-light) var(--yoru-played, 0%),
+    var(--border-light) 100%
+  );
+  cursor: pointer;
+}
+.yoru-player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  margin-top: -4px;
+}
+.yoru-player-seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: none; }
+
+.yoru-player-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Lo que suena: portada y titulo, a la izquierda. */
+.yoru-player-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+.yoru-player-cover {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-card-hover);
+}
+.yoru-player-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-player-text { display: flex; flex-direction: column; min-width: 0; }
+.yoru-player-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yoru-player-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Los mandos, al centro. */
+.yoru-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.yoru-player-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  justify-content: flex-end;
+}
+
+.yoru-player-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.yoru-player-btn:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--text-main); }
+.yoru-player-btn:disabled { opacity: 0.38; cursor: default; }
+.yoru-player-jump { font-variant-numeric: tabular-nums; }
+
+.yoru-player-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: var(--bg-app);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.yoru-player-play:hover { filter: brightness(1.08); }
+
+.yoru-player-clock {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.yoru-player-clock span { opacity: 0.5; }
+
+.yoru-player-volume { display: flex; align-items: center; gap: 4px; }
+.yoru-player-volume input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 84px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  cursor: pointer;
+}
+.yoru-player-volume input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  border: none;
+}
+
+/*
+  El fallo se dice en el tono apagado que el resto de la app usa para contar algo
+  que no salio bien (`.yoru-stats-empty`). No hay token de error en el sistema, y
+  meter un rojo a pelo aqui seria el primer color de esta hoja fuera de los tokens.
+*/
+.yoru-player-error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* El boton de desplegar solo tiene sentido cuando no cabe todo. */
+.yoru-player-only-narrow { display: none; }
+
+/*
+  Estrecho: el reloj y el volumen son lo primero que sobra, porque el tiempo ya
+  lo cuenta la barra de progreso y el volumen esta en el propio telefono.
+*/
+@media (max-width: 860px) {
+  .yoru-player-clock,
+  .yoru-player-volume { display: none; }
+  .yoru-player-side { flex: none; }
+}
+/*
+  En movil hay una navegacion fija abajo. La barra se pone justo encima de ella,
+  no debajo, o la taparia; y el hueco que reserva el contenido tiene que contar
+  las dos, o la ultima fila de la cuadricula queda inalcanzable.
+*/
+@media (max-width: 900px) {
+  .yoru-player-bar { bottom: var(--yoru-bottom-nav-h, 58px); }
+  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: calc(86px + var(--yoru-bottom-nav-h, 58px)); }
+}
+
+@media (max-width: 600px) {
+  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: calc(76px + var(--yoru-bottom-nav-h, 58px)); }
+  .yoru-player-bar { padding: 0 10px 8px; }
+  .yoru-player-row { gap: 8px; }
+  .yoru-player-controls .yoru-player-btn:first-child,
+  .yoru-player-controls .yoru-player-btn:nth-last-child(2) { display: none; }
+}
+
+/* ── La ficha del audiolibro: formatos, pestañas y el menú de «…» ───────────── */
+
+/*
+  Que es y en que formatos lo tienes, en una linea. El ultimo, «Libro electronico»,
+  se marca porque es el que hace que esta app tenga sentido: tener los dos.
+*/
+.yoru-detail-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.yoru-detail-kinds span + span::before {
+  content: '·';
+  margin-right: 8px;
+  opacity: 0.55;
+}
+.yoru-detail-kinds .is-linked { color: var(--primary); }
+
+.yoru-btn-icon { padding-left: 10px; padding-right: 10px; }
+.yoru-btn.is-on {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* El desplegable de «…», justo debajo de la fila de botones. */
+.yoru-detail-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 6px;
+  width: max-content;
+  max-width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+.yoru-detail-menu button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.yoru-detail-menu button:hover { background: var(--bg-card-hover); }
+
+.yoru-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 26px 0 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.yoru-detail-tab:hover { color: var(--text-main); }
+.yoru-detail-tab.active {
+  color: var(--text-main);
+  border-bottom-color: var(--primary);
+}
+
+/* ── El reproductor ampliado ────────────────────────────────────────────────
+   Ocupa la ventana entera, por encima de la barra. El fondo toma el color de
+   la portada cuando se puede leer (`--yoru-tint`), y si no se queda el del
+   tema: el degradado se apoya en el token, no en un color escrito a mano.
+   ───────────────────────────────────────────────────────────────────────── */
+.yoru-player-full {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 26px;
+  overflow-y: auto;
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--yoru-tint, var(--surface-raised)) 55%, var(--bg-app)) 0%, var(--bg-app) 62%);
+  color: var(--text-main);
+}
+
+.yoru-player-full-top {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/*
+  La portada entera, sin recortar. Las de los audiolibros no tienen una proporcion
+  fija —las hay cuadradas y las hay de libro—, asi que imponerle una recortaba el
+  titulo por arriba. Se le pone un maximo y se deja que ella elija su forma.
+*/
+.yoru-player-full-art {
+  display: flex;
+  margin: 10px 0 18px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+}
+/*
+  Crece hasta el ancho disponible (una portada cuadrada y pequena se veia como un
+  sello), pero conserva su forma: `contain` y alto automatico, no un recorte.
+*/
+.yoru-player-full-art img {
+  width: min(62vw, 300px);
+  height: auto;
+  max-height: 42vh;
+  object-fit: contain;
+  display: block;
+}
+
+.yoru-player-full-title {
+  margin: 0;
+  max-width: 520px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+.yoru-player-full-author {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* El capitulo es una fila pulsable, no una etiqueta: lleva a la lista. */
+.yoru-player-full-chapter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-player-full-chapter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-player-full-chapter:hover { background: var(--bg-card-hover); }
+
+.yoru-player-full-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  max-width: 520px;
+  height: 6px;
+  margin-top: 20px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--primary) 0,
+    var(--primary) var(--yoru-played, 0%),
+    var(--border-light) var(--yoru-played, 0%),
+    var(--border-light) 100%
+  );
+  cursor: pointer;
+}
+.yoru-player-full-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+}
+.yoru-player-full-seek::-webkit-slider-runnable-track { height: 6px; background: none; }
+
+.yoru-player-full-times {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Se dice que el tiempo que queda es del capitulo, no del libro. */
+/*
+  Lo que queda, a la derecha del reloj. Es un botón porque cambia entre el capítulo y
+  el libro, pero no se pinta como tal: ahí lo que importa es el número, y un botón con
+  su marco en medio de los tiempos parecía otro mando del reproductor.
+*/
+.yoru-player-full-left {
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.yoru-player-full-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 22px;
+}
+.yoru-player-full-controls .yoru-player-btn { flex-direction: column; gap: 1px; font-size: 11px; }
+
+.yoru-player-full-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--bg-app);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.yoru-player-full-play:hover { filter: brightness(1.08); }
+
+.yoru-player-full-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 26px;
+}
+.yoru-player-full-spacer { flex: 1; }
+.yoru-player-full-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  cursor: pointer;
+}
+.yoru-player-full-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  border: none;
+}
+.yoru-player-btn.is-on { color: var(--primary); }
+
+/* Capitulos y temporizador comparten panel: la misma lista, el mismo trato. */
+.yoru-player-full-panel {
+  width: 100%;
+  max-width: 520px;
+  margin-top: 16px;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+.yoru-player-full-panel ul { list-style: none; margin: 0; padding: 6px; }
+.yoru-player-full-panel p { margin: 0; padding: 16px; color: var(--text-muted); font-size: 13px; }
+.yoru-player-full-panel button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.yoru-player-full-panel button:hover:not(:disabled) { background: var(--bg-card-hover); }
+.yoru-player-full-panel button:disabled { opacity: 0.4; cursor: default; }
+.yoru-player-full-panel button.current { color: var(--primary); }
+.yoru-player-full-panel button span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/*
+  Un marcador: el nombre y su hora a la izquierda, el lápiz y la papelera a la derecha.
+
+  Las herramientas solo aparecen al pasar por encima o al enfocarlas con el teclado;
+  dos iconos fijos en cada fila convierten una lista de sitios a los que volver en una
+  lista de cosas que se pueden romper. En un teléfono no hay «pasar por encima», así
+  que ahí se quedan siempre a la vista: es eso o no poder borrar.
+*/
+.yoru-player-bookmark { display: flex; align-items: center; gap: 4px; }
+.yoru-player-bookmark > button { flex: 1; min-width: 0; }
+.yoru-player-bookmark-tools { display: flex; gap: 2px; opacity: 0; transition: opacity 120ms ease; }
+.yoru-player-bookmark:hover .yoru-player-bookmark-tools,
+.yoru-player-bookmark:focus-within .yoru-player-bookmark-tools { opacity: 1; }
+.yoru-player-bookmark-tools button {
+  width: 30px;
+  padding: 7px 0;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.yoru-player-bookmark-tools button:hover { color: var(--text-main); }
+.yoru-player-bookmark-form { display: flex; gap: 6px; width: 100%; padding: 6px 8px; }
+.yoru-player-bookmark-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+}
+.yoru-player-bookmark-form input:focus { outline: none; border-color: var(--border-focus); }
+.yoru-player-bookmark-form button { width: auto; flex: 0 0 auto; color: var(--primary); font-weight: 600; }
+
+@media (hover: none) {
+  .yoru-player-bookmark-tools { opacity: 1; }
+}
+
+/* ── La cascada: el centinela y el final de la lista ────────────────────────
+   El centinela no se ve salvo cuando hay algo que decir —que viene mas, o
+   que fallo—; su trabajo es asomar por abajo, no ocupar sitio.
+   ───────────────────────────────────────────────────────────────────────── */
+.yoru-more-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 16px 0;
+}
+.yoru-more-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.yoru-more-end {
+  margin: 10px 0 28px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* ── Ajustes a pantalla completa ────────────────────────────────────────────
+   Al entrar en Ajustes el shell se aparta: su cabecera, su lateral y su barra
+   de abajo se esconden, y Ajustes ocupa la ventana. Su propia lateral pasa a
+   ser la unica navegacion, y la flecha de arriba la unica salida.
+   ───────────────────────────────────────────────────────────────────────── */
+/*
+  Sin `>`: la lateral no siempre cuelga directamente del shell, y con el selector
+  de hijo directo se quedaba puesta. Dentro del embebido no hay ninguna de estas
+  clases —la lateral de Ajustes es `.yomitan-settings-sidebar`—, asi que esto no
+  se lleva nada por delante.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-header,
+.yoru-shell.is-settings-fullscreen .yoru-shell-sidebar,
+.yoru-shell.is-settings-fullscreen .yoru-shell-bottom-nav,
+.yoru-shell.is-settings-fullscreen .yoru-shell-scrim {
+  display: none;
+}
+.yoru-shell.is-settings-fullscreen {
+  --shell-sidebar-w: 0px;
+  --shell-header-h: 0px;
+}
+/*
+  Sin `>`: el lienzo cuelga de `.yoru-shell-workspace`, no del shell, asi que la
+  regla con hijo directo no llegaba a aplicarse nunca y la pagina entera seguia
+  teniendo barra de scroll.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-canvas {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  overflow: hidden;
+}
+
+/*
+  La cadena de alturas, de arriba abajo.
+
+  `height: 100%` solo funciona si todos los de arriba tienen una altura que
+  medir, y aqui se rompia en `.library-container`, que crecia con su contenido
+  hasta 1207 pixeles dentro de una ventana de 720. De ahi salia la barra de la
+  pagina: el lienzo tenia que desplazar un hijo mas alto que el.
+
+  `min-height: 0` hace falta en los contenedores flexibles: por defecto un hijo
+  flexible no se encoge por debajo de su contenido, y eso basta para reventar la
+  cadena aunque el alto este puesto.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-embed,
+.yoru-shell.is-settings-fullscreen .library-container {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+  El contenedor de Ajustes se ancla a su hueco en vez de pedir el 100% del padre.
+
+  Con el porcentaje no había manera: la hoja de Library le pone `height: 100%
+  !important` y aun así salía midiendo 1166 píxeles dentro de un padre de 720, así
+  que el porcentaje no estaba resolviendo contra quien yo creía. Anclarlo con
+  `inset: 0` no depende de esa cadena: ocupa el hueco que hay y punto, y lo que
+  sobre se desplaza dentro de cada columna, no en la página.
+*/
+.yoru-shell.is-settings-fullscreen .library-container { position: relative; }
+.yoru-shell.is-settings-fullscreen .tab-view-container {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+}
+.yoru-shell-embed.is-settings {
+  height: 100%;
+  padding: 0;
+}
+
+/*
+  Cada columna con su propio scroll, y solo si lo necesita.
+
+  La lateral lo necesita casi siempre —catorce entradas y el recuadro de estado—;
+  el panel casi nunca, porque la mayoria de secciones son cuatro controles.
+*/
+.yoru-shell.is-settings-fullscreen .yomitan-settings-sidebar,
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+  El contenido, centrado y con un ancho de lectura.
+
+  `safe center` y no `center` a secas: centrar en una caja que desborda recorta
+  por arriba, y lo que se pierde ahi es inalcanzable porque el scroll no llega a
+  numeros negativos. Con `safe`, en cuanto no cabe se comporta como `flex-start`
+  y se ve entero. Asi, «Actualizaciones» con sus cuatro controles queda en medio,
+  y «Apariencia e idioma» con cuarenta y siete empieza arriba y se desplaza.
+*/
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane {
+  justify-content: safe center;
+  align-items: center;
+  padding: 24px 28px;
+}
+.yoru-shell.is-settings-fullscreen .yomitan-settings-pane > * {
+  width: 100%;
+  max-width: 800px;
+  flex-shrink: 0;
+}
+
+/* La flecha y el titulo, arriba de la lateral de Ajustes. */
+.settings-page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+.settings-page-heading {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.settings-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.settings-back-btn:hover { background: var(--bg-card-hover); color: var(--text-main); }
+
+/* ==========================================================================
+   Perfil
+   ========================================================================== */
+/* El velo del menú del avatar es un botón: se le quita lo que trae de botón. */
+button.yoru-menu-scrim { border: none; padding: 0; background: none; cursor: default; }
+.yoru-profile-menu { top: 58px; right: 14px; z-index: 61; min-width: 190px; }
+
+.yoru-profile-banner {
+  position: relative;
+  height: 200px;
+  border-radius: 18px;
+  border: 1px solid var(--border-light);
+  background:
+    radial-gradient(120% 140% at 85% 0%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 60%),
+    var(--surface-raised);
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+.yoru-profile-banner.has-image { background-size: cover; background-position: center; }
+.yoru-profile-banner-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+.yoru-profile-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.yoru-profile-banner-btn:hover,
+.yoru-profile-banner-btn:focus-visible { background: var(--bg-panel); }
+
+.yoru-profile-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: -52px 0 22px;
+  padding: 0 20px;
+  position: relative;
+}
+.yoru-profile-avatar {
+  width: 124px;
+  height: 124px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 4px solid var(--bg-main, var(--bg-app, #111));
+  background: var(--surface-raised);
+  overflow: hidden;
+  display: block;
+}
+.yoru-profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yoru-profile-avatar > span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46px;
+  font-weight: 800;
+  color: #fff;
+}
+.yoru-profile-id { flex: 1; min-width: 160px; padding-bottom: 8px; }
+.yoru-profile-name {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}
+.yoru-profile-sub { margin-top: 4px; font-size: 14px; color: var(--text-muted); }
+.yoru-profile-actions { display: flex; gap: 8px; padding-bottom: 10px; }
+.yoru-profile-error { margin: -8px 20px 16px; font-size: 13px; color: var(--yoru-danger, #e05b55); }
+.yoru-profile-count { margin-bottom: 12px; font-size: 14px; color: var(--text-muted); }
+
+.yoru-profile-overview { display: grid; gap: 18px; }
+.yoru-profile-panel {
+  padding: 20px 22px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+.yoru-profile-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--text-main);
+  font-size: 15px;
+}
+.yoru-profile-panel-head .yoru-chip-link { margin-left: auto; }
+.yoru-profile-panel-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-soft, rgba(127, 127, 127, 0.14));
+  color: var(--text-muted);
+}
+.yoru-profile-empty { margin: 0; padding: 18px 0 10px; text-align: center; font-size: 14px; color: var(--text-muted); }
+
+@media (max-width: 700px) {
+  .yoru-profile-banner { height: 130px; border-radius: 14px; }
+  .yoru-profile-head { margin-top: -42px; padding: 0 12px; gap: 14px; }
+  .yoru-profile-avatar { width: 92px; height: 92px; }
+  .yoru-profile-avatar > span { font-size: 34px; }
+  .yoru-profile-name { font-size: 23px; }
+  .yoru-profile-actions { width: 100%; padding-bottom: 0; }
+}
+
+/* ==========================================================================
+   Ajustes, repartidos como una pantalla de cuenta: lista a la izquierda con
+   grupos en versalitas, y a la derecha la sección con su título grande, una
+   línea debajo y las filas a pelo, sin cajas.
+
+   Va aquí y con el prefijo del shell porque estos estilos pisan los de la hoja
+   general, que valen también para el teléfono: allí Ajustes es una lista que
+   abre cada sección a pantalla completa, y eso se queda como estaba.
+   ========================================================================== */
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-groups { gap: 22px; }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-group-title {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-group {
+  padding-left: 0;
+  border-left: none;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item {
+  padding: 9px 10px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item .settings-nav-icon { color: var(--text-muted); }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-active {
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-active .settings-nav-icon { color: var(--primary); }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-danger { color: var(--yoru-danger, #e05b55); }
+
+.settings-pane-title {
+  margin: 0;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--border-light);
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--text-main);
+}
+/* Las secciones, sin caja: el título de la tarjeta pasa a ser un subtítulo de la página. */
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane { max-width: 860px; }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card + .settings-section-card {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-light);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-card-title { font-size: 1.12rem; }
+
+/* ==========================================================================
+   Miembros (servidor de Discord) y Notificaciones
+   ========================================================================== */
+.yoru-shell-bell { position: relative; }
+.yoru-shell-bell-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg-app);
+  box-sizing: content-box;
+}
+
+.yoru-members-connect {
+  max-width: 640px;
+  margin-bottom: 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+.yoru-members-connect-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+.yoru-members-connect-row .yoru-control-field { flex: 1; min-width: 200px; }
+.yoru-members-steps { margin: 14px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.6; color: var(--text-muted); }
+.yoru-members-group-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-members-list { list-style: none; margin: 0; padding: 0; max-width: 760px; }
+.yoru-member {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 8px;
+  border-radius: 12px;
+}
+.yoru-member:hover { background: var(--surface-raised); }
+.yoru-member-avatar { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.yoru-member-avatar img,
+.yoru-member-avatar > span {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.yoru-member-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 3px solid var(--bg-app);
+  box-sizing: content-box;
+  background: #23a55a;
+}
+.yoru-member-dot.is-idle { background: #f0b232; }
+.yoru-member-dot.is-dnd { background: #f23f43; }
+.yoru-member-text { display: flex; flex-direction: column; min-width: 0; }
+.yoru-member-name { font-size: 15px; font-weight: 700; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-member-activity { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.yoru-notices-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.yoru-notices-empty strong { margin-top: 6px; font-size: 16px; color: var(--text-main); }
+.yoru-notices-list { list-style: none; margin: 0; padding: 0; max-width: 760px; }
+.yoru-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-notice-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.yoru-notice-text strong { font-size: 14.5px; color: var(--text-main); }
+.yoru-notice-text span { font-size: 13px; color: var(--text-muted); }
+.yoru-notice time { flex-shrink: 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; }

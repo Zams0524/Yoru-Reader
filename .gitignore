@@ -146,3 +146,15 @@ yoru-reader-svelte/node_modules/
 yoru-reader-svelte/*.mjs
 # Auditoría QA en el teléfono (mobile/qa/auditoria.mjs)
 qa-runs/
+
+# Material de trabajo entre Nix y los hilos: capturas, notas y parches sueltos.
+# Se queda en disco, pero no viaja en las ramas. Las capturas son de la biblioteca
+# de zams —sus libros, sus audiolibros, sus servidores— y este repositorio es
+# público: una vez publicadas no se pueden despublicar. Si alguna vez quiere que se
+# vean, se añaden a mano con `git add -f`, que es la decisión que sí se puede deshacer.
+.nix-transfer/
+.nix-patches/
+# Dos excepciones, y a propósito: COHERENCIA.md y PR-37-RESUMEN.md ya están publicados
+# en main desde el PR 37. Siguen seguidos por git porque quitarlos es una decisión de
+# zams y merece un cambio que diga eso y nada más, no el arrastre de otro. Están
+# seguidos, así que esta carpeta ignorada no les afecta.

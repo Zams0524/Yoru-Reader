@@ -25,7 +25,6 @@ interface Props {
   libraryTitles: Set<string>;
   onImport: (parsedBooks: any[]) => Promise<void>;
   onClose: () => void;
-  onOpenSettings: () => void;
   showToast: (message: string, type?: string) => void;
   /** Abrir el volumen sin guardarlo en la biblioteca. */
   onReadTemporary?: (book: KavitaBook) => Promise<void>;
@@ -50,7 +49,7 @@ type ImportState = 'loading' | 'done' | 'error';
  * "Explore Kavita": the user's Kavita libraries as a cover grid; a series opens its volumes, and
  * each volume can be imported into Yoru's library (downloaded and stored, so it reads offline).
  */
-export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, onOpenSettings, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook, initialSeriesId }: Props) {
+export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, showToast, onReadTemporary, embedded = false, libraryBooks, onOpenLocalBook, initialSeriesId }: Props) {
   const es = lang === 'es';
   const configured = isKavitaConfigured();
   const [libraries, setLibraries] = useState<KavitaLibrary[]>([]);
@@ -58,6 +57,8 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
   const [series, setSeries] = useState<KavitaSeries[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  /** El servidor dejó de dar aunque su cuenta dijera otra cosa. Corta la cascada. */
+  const [agotado, setAgotado] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -105,6 +106,11 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
     setError('');
     try {
       const result = await getKavitaSeries(id, nextPage, PAGE_SIZE);
+      /*
+        Una tanda vacía corta la cascada. Si el servidor dice que hay más páginas y
+        deja de dar, el centinela pediría una detrás de otra sin fin.
+      */
+      if (nextPage > 1 && result.items.length === 0) { setAgotado(true); return; }
       setSeries((prev) => (nextPage === 1 ? result.items : [...prev, ...result.items]));
       setPage(result.page);
       setTotalPages(result.totalPages);
@@ -118,8 +124,51 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
   useEffect(() => {
     if (libraryId === null) return;
     setSeries([]);
+    setAgotado(false);
     void loadPage(libraryId, 1);
   }, [libraryId, loadPage]);
+
+  /*
+    La cascada.
+
+    Un observador mira el trozo que hay debajo de la cuadrícula; en cuanto asoma por
+    abajo —con doscientos píxeles de margen, para que la página siguiente llegue
+    antes de que el usuario toque fondo— se pide la que viene.
+
+    Lo que el efecto necesita se lee de una referencia y no de las dependencias: la
+    página y el estado de carga cambian con cada tanda, y si estuvieran ahí el
+    observador se desmontaría y volvería a montar en mitad de cada carga. Con eso se
+    pierden entradas y la cascada se queda a medias.
+
+    Y no se pide nada mientras ya se está pidiendo, ni después de un fallo: la
+    bandera de carga y el error cortan el paso. Si no, una cuadrícula corta que deja
+    el centinela siempre a la vista dispararía una página detrás de otra.
+  */
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const quedan = page < totalPages && !agotado;
+  const estado = useRef({ libraryId, page, totalPages, loading, error, loadPage, agotado });
+  estado.current = { libraryId, page, totalPages, loading, error, loadPage, agotado };
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        const ahora = estado.current;
+        if (ahora.libraryId === null || ahora.loading || ahora.error || ahora.agotado) return;
+        if (ahora.page >= ahora.totalPages) return;
+        void ahora.loadPage(ahora.libraryId, ahora.page + 1);
+      },
+      // Seiscientos píxeles por delante: la página siguiente llega antes de que se
+      // toque fondo, así que no hay parón al final de la cuadrícula.
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // El centinela se monta y se desmonta con la condición de «quedan páginas»,
+    // así que hay que volver a observarlo cuando eso cambia o cambia de biblioteca.
+  }, [libraryId, searchResults, quedan]);
 
   // Search across every library, a moment after the user stops typing.
   useEffect(() => {
@@ -207,7 +256,7 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
       {shown.length === 0 && !loading && !error && (
         <p className="media-browser-empty">{searchResults ? (es ? 'Sin resultados.' : 'No results.') : (es ? 'Esta biblioteca está vacía.' : 'This library is empty.')}</p>
       )}
-      <div className="media-browser-grid">
+      <div className="media-browser-grid" aria-busy={loading}>
         {shown.map((item) => (
           <button key={`${item.libraryId}-${item.id}`} type="button" className="media-browser-card" onClick={() => setOpenSeries(item)}>
             <span className="media-browser-cover">
@@ -217,10 +266,38 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
           </button>
         ))}
       </div>
-      {!searchResults && page < totalPages && libraryId !== null && (
-        <button type="button" className="media-server-btn media-browser-more" onClick={() => loadPage(libraryId, page + 1)} disabled={loading}>
-          {loading ? <Loader2 size={15} className="guide-spin" /> : null} {es ? 'Cargar más' : 'Load more'}
-        </button>
+      {/*
+        La cascada sigue sola: al asomar este trozo por abajo se pide la página
+        siguiente. Pulsar «Cargar más» cada veinte series para recorrer un catálogo
+        de cientos era trabajo del usuario que puede hacer la pantalla.
+
+        El botón se queda, pero solo para lo que un centinela no arregla: cuando la
+        carga falla. Ahí hay que decir «otra vez» a mano, porque reintentar solo
+        contra un servidor que no responde es machacarlo.
+      */}
+      {!searchResults && quedan && libraryId !== null && (
+        <div ref={sentinelRef} className="media-browser-more-zone" aria-hidden={!loading && !error}>
+          {loading && (
+            <span className="media-browser-more-loading" role="status" aria-live="polite">
+              <Loader2 size={18} className="guide-spin" />
+              {es ? 'Trayendo más…' : 'Fetching more…'}
+            </span>
+          )}
+          {!loading && error && (
+            <button
+              type="button"
+              className="media-server-btn media-browser-more"
+              onClick={() => loadPage(libraryId, page + 1)}
+            >
+              {es ? 'Reintentar' : 'Try again'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Que se ha llegado al final se dice; cortar en seco deja dudando. */}
+      {!searchResults && !quedan && shown.length > 0 && (
+        <p className="media-browser-more-end">{es ? 'No hay más series.' : 'No more series.'}</p>
       )}
     </>
   );
@@ -291,11 +368,17 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
 
       <div className="media-browser-body">
         {!configured ? (
+          /*
+            Sin botón de configurar: la configuración de servidores ya no se edita
+            desde la app. Yoru los trae puestos, y llevar a una pantalla que ya no
+            existe sería peor que no ofrecer nada. Lo que queda es decir qué pasa.
+          */
           <div className="media-browser-empty">
-            <p>{es ? 'Conecta tu servidor Kavita para explorar tus novelas.' : 'Connect your Kavita server to browse your novels.'}</p>
-            <button type="button" className="media-server-btn is-primary" onClick={onOpenSettings}>
-              <Settings size={15} /> {es ? 'Configurar servidor' : 'Set up server'}
-            </button>
+            <p>
+              {es
+                ? 'No se puede hablar con el servidor de Kavita ahora mismo. Comprueba que está encendido y vuelve a entrar.'
+                : 'Cannot reach the Kavita server right now. Check that it is running and come back.'}
+            </p>
           </div>
         ) : (
           <>
