@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Bookmark as BookmarkIcon, StickyNote, Copy } from 'lucide-react';
+import { X, Bookmark as BookmarkIcon, StickyNote, Copy, Trash2 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
 import { isPhoneUI } from '../../utils/platform';
 
@@ -44,6 +44,7 @@ interface ReaderSidebarProps {
   highlights?: BookHighlight[];
   onGoToHighlight?: (highlight: BookHighlight) => void;
   onEditHighlight?: (highlight: BookHighlight) => void;
+  onDeleteHighlight?: (highlight: BookHighlight) => void;
   onExportHighlights?: () => void;
   onClose: () => void;
   sections: SectionItem[];
@@ -69,6 +70,7 @@ export default function ReaderSidebar({
   highlights = [],
   onGoToHighlight,
   onEditHighlight,
+  onDeleteHighlight,
   onExportHighlights,
   onClose,
   sections,
@@ -198,6 +200,7 @@ export default function ReaderSidebar({
               highlights={highlights}
               onGo={(item) => { onGoToHighlight?.(item); onClose(); }}
               onEdit={onEditHighlight}
+              onDelete={onDeleteHighlight}
               onExport={onExportHighlights}
               colors={colors}
               lang={lang}
@@ -347,13 +350,26 @@ interface NotesContentProps {
   highlights: BookHighlight[];
   onGo: (item: BookHighlight) => void;
   onEdit?: (item: BookHighlight) => void;
+  onDelete?: (item: BookHighlight) => void;
   onExport?: () => void;
   colors: ReaderColors;
   lang: string;
 }
 
-function NotesContent({ highlights, onGo, onEdit, onExport, colors, lang }: NotesContentProps) {
+function NotesContent({ highlights, onGo, onEdit, onDelete, onExport, colors, lang }: NotesContentProps) {
   const isEs = lang === 'es';
+  /*
+    Qué subrayado está preguntando si lo borras.
+
+    El panel no tenía manera de borrar: un subrayado solo se quitaba abriendo su nota y
+    vaciándola, que no se le ocurre a nadie. Ahora cada uno lleva su papelera.
+
+    Pregunta antes, en la propia fila y sin diálogo del sistema, porque borrar un subrayado no
+    se deshace y la papelera queda a un dedo del texto que lleva a la página. Un segundo toque
+    en el mismo sitio sería demasiado fácil de dar sin querer.
+  */
+  const [confirmando, setConfirmando] = useState<string | null>(null);
+  useEffect(() => { setConfirmando(null); }, [highlights.length]);
   if (highlights.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '40px 16px', color: colors.textMuted, fontSize: '0.85rem' }}>
@@ -382,11 +398,43 @@ function NotesContent({ highlights, onGo, onEdit, onExport, colors, lang }: Note
             {item.text}
           </button>
           {item.note?.trim() && <div className="reader-note-note" style={{ color: colors.textMuted }}>{item.note}</div>}
-          {onEdit && (
-            <button type="button" className="reader-note-edit" onClick={() => onEdit(item)} style={{ color: colors.accent }}>
-              {item.note?.trim() ? (isEs ? 'Editar nota' : 'Edit note') : (isEs ? 'Añadir nota' : 'Add note')}
-            </button>
-          )}
+          <div className="reader-note-actions">
+            {onEdit && (
+              <button type="button" className="reader-note-edit" onClick={() => onEdit(item)} style={{ color: colors.accent }}>
+                {item.note?.trim() ? (isEs ? 'Editar nota' : 'Edit note') : (isEs ? 'Añadir nota' : 'Add note')}
+              </button>
+            )}
+            {onDelete && (confirmando === item.id ? (
+              <span className="reader-note-confirm">
+                <button
+                  type="button"
+                  className="reader-note-confirm-yes"
+                  onClick={() => { setConfirmando(null); onDelete(item); }}
+                >
+                  {isEs ? 'Borrar' : 'Delete'}
+                </button>
+                <button
+                  type="button"
+                  className="reader-note-confirm-no"
+                  onClick={() => setConfirmando(null)}
+                  style={{ color: colors.textMuted }}
+                >
+                  {isEs ? 'Cancelar' : 'Cancel'}
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="reader-note-delete"
+                onClick={() => setConfirmando(item.id)}
+                aria-label={isEs ? 'Borrar subrayado' : 'Delete highlight'}
+                title={isEs ? 'Borrar subrayado' : 'Delete highlight'}
+                style={{ color: colors.textMuted }}
+              >
+                <Trash2 size={15} />
+              </button>
+            ))}
+          </div>
         </div>
       ))}
     </div>
