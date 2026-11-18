@@ -611,8 +611,14 @@ const Library = React.memo(function Library({
       setActiveHeaderDropdown(null);
     };
     document.addEventListener('click', handleOutsideClick);
+    // El menú va anclado a la ventana, así que al rodar la página se quedaría flotando
+    // lejos de su libro: se cierra, como hace cualquier menú de este tipo.
+    window.addEventListener('scroll', handleOutsideClick, true);
+    window.addEventListener('resize', handleOutsideClick);
     return () => {
       document.removeEventListener('click', handleOutsideClick);
+      window.removeEventListener('scroll', handleOutsideClick, true);
+      window.removeEventListener('resize', handleOutsideClick);
     };
   }, []);
 
@@ -2023,15 +2029,19 @@ const Library = React.memo(function Library({
     
     const isMenuOpen = activeMenuBookId === book.id;
 
-    // On phones the menu is portalled and fixed so it never hides behind the bottom bar or the
-    // screen edge: it opens downward from the ⋮ or, in the lower half, upward.
+    // The menu is portalled and fixed so it never hides behind the bottom bar or runs past the
+    // screen edge: it opens downward from the ⋮ or, in the lower half, upward. It used to do
+    // this on phones only, and on the desktop a card low on the page opened a menu whose last
+    // rows — «Eliminar» among them — fell off the window. zams ran into it (18 Nov 2026).
     let floatingStyle: React.CSSProperties | null = null;
-    if (isMenuOpen && isMobile && menuAnchor) {
+    if (isMenuOpen && menuAnchor) {
       const width = Math.min(248, window.innerWidth - 24);
       const left = Math.min(Math.max(12, menuAnchor.right - width), window.innerWidth - 12 - width);
+      // En el móvil hay barras arriba y abajo que tapan; en el escritorio basta un margen.
+      const aire = isMobile ? { arriba: 64, abajo: 84 } : { arriba: 16, abajo: 16 };
       floatingStyle = menuAnchor.bottom > window.innerHeight * 0.55
-        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - 64px)` }
-        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - 84px - var(--yoru-safe-bottom, 0px))` };
+        ? { left, bottom: window.innerHeight - menuAnchor.top + 6, maxHeight: `calc(${menuAnchor.top - 6}px - var(--yoru-safe-top, 0px) - ${aire.arriba}px)` }
+        : { left, top: menuAnchor.bottom + 6, maxHeight: `calc(100dvh - ${menuAnchor.bottom + 6}px - ${aire.abajo}px - var(--yoru-safe-bottom, 0px))` };
     }
     const placeMenu = (node) => (floatingStyle ? createPortal(node, document.body) : node);
     
