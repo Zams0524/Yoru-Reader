@@ -10,9 +10,8 @@
  *  - El progreso de lo leído y escuchado en el servidor se apunta **siempre** aquí,
  *    apartado por perfil. Es lo que pinta «Continuar» en Inicio.
  *  - Solo un perfil que comparte (`shareServerProgress`) lo sube a la cuenta y lee
- *    de ella. Sin decir nada, comparte el perfil original (el primero, el de quien
- *    montó la cuenta) y los perfiles nuevos no: su progreso se queda en el
- *    dispositivo y no ven el de la cuenta.
+ *    de ella, y eso hay que encenderlo a mano por perfil. Sin encenderlo, el progreso
+ *    se queda en el dispositivo y el perfil no ve el de la cuenta.
  *
  * Los libros importados ya guardaban su progreso en local (en el propio libro); lo
  * nuevo es lo que solo vivía en el servidor: los tomos leídos sin importar y los
@@ -27,15 +26,16 @@ export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
 
 /**
  * Si el perfil activo comparte el progreso con la cuenta del servidor.
- * Lo que diga el ajuste manda; sin ajuste, solo el perfil original.
+ *
+ * Nadie comparte sin decirlo: hace falta encender el ajuste en Ajustes → Perfil →
+ * «Progreso del servidor», y se enciende por perfil. Antes se daba por hecho que el
+ * primer perfil de la lista era el dueño de la cuenta, y eso fallaba justo donde más
+ * molesta: al borrar los perfiles y crear uno nuevo, el nuevo pasaba a ser el primero
+ * y heredaba el progreso de la cuenta sin haber leído nada.
  */
 export function sharesServerProgress(): boolean {
   try {
-    const setting = db.getSettings()?.shareServerProgress;
-    if (typeof setting === 'boolean') return setting;
-    const profiles = db.getProfiles();
-    const active = db.getActiveProfileId();
-    return profiles.length === 0 || profiles[0]?.id === active;
+    return db.getSettings()?.shareServerProgress === true;
   } catch {
     return false;
   }

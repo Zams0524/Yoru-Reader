@@ -940,7 +940,10 @@ export default function App() {
     setProfiles(updatedProfiles);
     
     db.setActiveProfileId(newProfile.id);
-    db.saveSettings(currentSettings);
+    // El perfil nuevo arranca con los ajustes del anterior, menos el permiso para
+    // leer y escribir el progreso de la cuenta del servidor: eso no se hereda, o el
+    // perfil nuevo vería lo que leyó otra persona sin haber abierto nada.
+    db.saveSettings({ ...currentSettings, shareServerProgress: false });
     setActiveProfileId(newProfile.id);
   };
 

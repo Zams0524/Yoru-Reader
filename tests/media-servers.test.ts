@@ -719,13 +719,18 @@ async function localProgressTests() {
     && localContinueEntries().length === 0,
     'Local: otro perfil empieza de cero');
 
-  // Sin ajuste: comparte el perfil original y no los nuevos.
+  // Sin ajuste no comparte nadie, ni el primero de la lista ni el único que haya:
+  // esto es lo que falló al borrar los perfiles y crear uno nuevo, que pasaba a ser
+  // el primero y heredaba el progreso de la cuenta.
   store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p1', name: 'zams' }, { id: 'p3', name: 'otro' }]));
   store.delete('migaku_reader_settings_p1');
   store.set('migaku_reader_active_profile_id', 'p1');
-  const originalShares = sharesServerProgress();
-  store.set('migaku_reader_active_profile_id', 'p3');
-  check(originalShares && !sharesServerProgress(), 'Sin ajuste, comparte el perfil original y no los nuevos');
+  const primeroComparte = sharesServerProgress();
+  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p9', name: 'nuevo' }]));
+  store.delete('migaku_reader_settings_p9');
+  store.set('migaku_reader_active_profile_id', 'p9');
+  check(!primeroComparte && !sharesServerProgress(),
+    'Sin ajuste no comparte nadie, ni el primer perfil ni un perfil recién creado');
 
   // Compartiendo, el progreso sube a la cuenta y también queda en el perfil.
   shareProgress('p1', true);
