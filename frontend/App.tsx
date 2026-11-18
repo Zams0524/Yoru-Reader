@@ -8,7 +8,7 @@ const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 const DiscordGate = React.lazy(() => import('./components/DiscordGate'));
 import { db } from './utils/db';
-import { decidirAcceso, tocaRecomprobar, type EstadoAcceso } from './utils/discordAccess';
+import { decidirAcceso, pantallaQueToca, tocaRecomprobar, type EstadoAcceso } from './utils/discordAccess';
 import { clientIdDiscord, leerSesion, revisarYGuardar } from './utils/discordAuth';
 import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
@@ -1050,11 +1050,24 @@ export default function App() {
     return () => { vivo = false; window.removeEventListener('online', alConectar); };
   }, [acceso, revisarAcceso]);
 
-  if (acceso !== 'permitido') {
+  /*
+    Qué se enseña, en una sola decisión (`pantallaQueToca`). La puerta va delante de
+    todo lo demás, el tutorial incluido: sin ser miembro no se llega ni a la guía, ni a
+    crear un perfil, ni a restaurar una copia, ni a entrar con Google, porque todo eso
+    vive dentro de `WelcomeScreen`, que ya solo se monta después.
+  */
+  const pantalla = pantallaQueToca({ acceso, hayPerfil: profiles.length > 0 });
+
+  if (pantalla === 'entrada') {
     return (
       <div className="app-container" data-theme={resolvedTheme}>
         <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" /></div>}>
-          <DiscordGate estado={acceso} es={lang === 'es'} onEntrar={revisarAcceso} />
+          <DiscordGate
+            estado={acceso}
+            es={lang === 'es'}
+            onEntrar={revisarAcceso}
+            onCambiarIdioma={(idioma) => handleSaveSettings({ ...settings, appLanguage: idioma })}
+          />
         </React.Suspense>
       </div>
     );

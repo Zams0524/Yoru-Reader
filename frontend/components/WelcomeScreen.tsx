@@ -7,6 +7,7 @@ import { googleDriveService, signInWithGoogle, LAST_SYNC_STORAGE_KEY } from '../
 import { useConfirm } from './ConfirmModal';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DictionaryStep, GuideDots, SlideView, featureSlides, useArrowKeys, useDictionaryInstall, useSwipe } from './onboarding/GuideSlides';
+import { leerSesion } from '../utils/discordAuth';
 
 declare global {
   interface Window {
@@ -33,7 +34,12 @@ interface WelcomeScreenProps {
 
 export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSettings }: WelcomeScreenProps) {
   const lang = settings.appLanguage || 'en';
-  const [name, setName] = useState('');
+  /*
+    El nombre viene puesto con el de Discord, porque a esta pantalla solo se llega
+    después de entrar con Discord: pedirlo otra vez seria pedir dos veces lo mismo.
+    Se puede cambiar, que para eso es un campo y no una etiqueta.
+  */
+  const [name, setName] = useState(() => leerSesion()?.usuarioNombre || '');
   const [selectedPresetIdx, setSelectedPresetIdx] = useState(0);
   const [customAvatarUrl, setCustomAvatarUrl] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -361,6 +367,16 @@ export default function WelcomeScreen({ onCreateProfile, settings = {}, onSaveSe
             <h1 className="guide-brand">Yoru Reader</h1>
             <p className="guide-tagline">
               {es ? 'Aprende japonés leyendo las novelas que te gustan.' : 'Learn Japanese by reading the novels you love.'}
+            </p>
+            {/*
+              A la guía solo se llega ya dentro: entrar con Discord y la comprobación
+              de que eres del servidor pasan antes, en la pantalla de acceso. Se dice
+              aquí para que el recibimiento no suene a que queda algo por demostrar.
+            */}
+            <p className="guide-tagline guide-tagline-sub">
+              {es
+                ? 'Ya has entrado con Discord como miembro del servidor. Queda ver lo que trae y crear tu perfil.'
+                : 'You are signed in with Discord as a member of the server. All that is left is a look around and your profile.'}
             </p>
             <ul className="guide-points">
               <li>{es ? 'Diccionario al tocar cualquier palabra' : 'A dictionary on every word you tap'}</li>

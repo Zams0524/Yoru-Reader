@@ -3206,6 +3206,14 @@ html:where(.yoru-compact) .reader-gallery-image {
   color: rgba(236, 236, 242, 0.75);
 }
 
+/* La segunda linea del recibimiento, la que cuenta que ya entraste con Discord: mas
+   pequena y mas apagada, para que no compita con el reclamo de arriba. */
+.guide-tagline-sub {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: rgba(236, 236, 242, 0.55);
+}
+
 .guide-points {
   list-style: none;
   margin: 22px 0 0;
@@ -7380,7 +7388,7 @@ html.yoru-compact #root {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  background: var(--bg-base, #0d0d0f);
+  background: var(--bg-app);
 }
 .yoru-gate-caja {
   width: 100%;
@@ -7392,8 +7400,9 @@ html.yoru-compact #root {
   text-align: center;
   padding: 28px 22px;
   border-radius: var(--radius-base, 14px);
-  background: var(--bg-elevated, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel, none);
 }
 .yoru-gate-icono {
   display: inline-flex;
@@ -7402,30 +7411,109 @@ html.yoru-compact #root {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  color: var(--primary, #e4b663);
-  background: color-mix(in srgb, var(--primary, #e4b663) 14%, transparent);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 .yoru-gate-titulo {
   margin: 0;
   font-size: 1.35rem;
   font-weight: 700;
-  color: var(--text-strong, #f4f4f5);
+  color: var(--text-main);
 }
 .yoru-gate-text {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.55;
-  color: var(--text-base, #d4d4d8);
+  color: var(--text-main);
 }
 .yoru-gate-nota {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.5;
-  color: var(--text-muted, #a1a1aa);
+  color: var(--text-muted);
 }
 .yoru-gate-acciones {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
+}
+
+/* La pantalla de acceso, la primera de todas: no es un aviso centrado, es una
+   pantalla de entrada. Titulo grande a la izquierda, subtitulo gris y boton ancho,
+   como la referencia que paso zams. Todo con los tokens de Yoru, asi que el tema
+   claro, el sepia y el oscuro salen solos. */
+.yoru-gate-caja.is-acceso {
+  position: relative;
+  align-items: flex-start;
+  text-align: left;
+  gap: 10px;
+  padding: 32px 26px 26px;
+}
+.yoru-gate-idioma {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+.yoru-gate-idioma button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.yoru-gate-idioma button.activo {
+  color: var(--bg-panel);
+  background: var(--primary);
+}
+.yoru-gate-marca {
+  font-size: 1.9rem;
+  line-height: 1;
+  color: var(--primary);
+}
+.yoru-gate-titulo.is-grande {
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+}
+.yoru-gate-sub {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+/* El boton de Discord: ancho completo y con su logotipo, pero con el acento de Yoru
+   y no con el morado de Discord, porque esta pantalla sigue siendo Yoru. */
+.yoru-gate-discord {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  padding: 13px 18px;
+  border: none;
+  border-radius: var(--radius-base, 12px);
+  cursor: pointer;
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--bg-panel);
+  background: var(--primary);
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.yoru-gate-discord:hover:not(:disabled) { filter: brightness(1.07); }
+.yoru-gate-discord:disabled { opacity: 0.6; cursor: default; }
+.yoru-gate-caja.is-acceso .yoru-gate-nota { text-align: left; }
+
+@media (max-width: 520px) {
+  .yoru-gate-caja.is-acceso { padding: 26px 18px 20px; }
+  .yoru-gate-titulo.is-grande { font-size: 1.5rem; }
 }

@@ -5,6 +5,7 @@ import {
   aplicarRespuesta,
   decidirAcceso,
   MARGEN_SIN_COMPROBAR_MS,
+  pantallaQueToca,
   RECOMPROBAR_CADA_MS,
   tocaRecomprobar,
   tokenCaducado,
@@ -189,9 +190,46 @@ function respuestaTests() {
   );
 }
 
+function pantallaTests() {
+  console.log('\nQué pantalla toca');
+
+  check(
+    pantallaQueToca({ acceso: 'sin-sesion', hayPerfil: false }) === 'entrada',
+    'Sin sesión: pantalla de entrada',
+  );
+
+  // El caso que de verdad importa: con perfil ya creado, la puerta sigue delante.
+  check(
+    pantallaQueToca({ acceso: 'sin-sesion', hayPerfil: true }) === 'entrada',
+    'Sin sesión y con perfil hecho: igualmente la entrada, no la app',
+  );
+
+  check(
+    pantallaQueToca({ acceso: 'permitido', hayPerfil: false }) === 'crear-perfil',
+    'Miembro sin perfil: crear perfil',
+  );
+
+  check(
+    pantallaQueToca({ acceso: 'permitido', hayPerfil: true }) === 'app',
+    'Miembro con perfil: la app',
+  );
+
+  // Ni la guía ni restaurar una copia ni entrar con Google viven fuera de la puerta:
+  // todos salen de 'crear-perfil', así que ningún estado que no sea 'permitido' puede
+  // llegar ahí. Se comprueban todos, para que añadir uno nuevo no abra un portillo.
+  for (const estado of ['falta-config', 'no-es-miembro', 'sin-conexion', 'sin-sesion'] as const) {
+    check(
+      pantallaQueToca({ acceso: estado, hayPerfil: false }) === 'entrada'
+      && pantallaQueToca({ acceso: estado, hayPerfil: true }) === 'entrada',
+      `El estado «${estado}» no deja pasar de la entrada, con perfil o sin él`,
+    );
+  }
+}
+
 decisionTests();
 recomprobarTests();
 tokenTests();
 respuestaTests();
+pantallaTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

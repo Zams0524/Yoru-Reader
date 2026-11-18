@@ -96,6 +96,23 @@ export function tocaRecomprobar({ sesion, hayRed, ahora }: { sesion: SesionDisco
   return ahora - sesion.ultimaComprobacionOk >= RECOMPROBAR_CADA_MS;
 }
 
+/** Las tres cosas que puede estar enseñando la app al arrancar. */
+export type Pantalla = 'entrada' | 'crear-perfil' | 'app';
+
+/**
+ * Qué pantalla toca, en una sola función y sin ambigüedad.
+ *
+ * El orden no es negociable: **primero Discord, después todo lo demás**. Si no eres
+ * miembro no hay nada que ver, ni siquiera el tutorial: ni la guía, ni crear un
+ * perfil, ni restaurar una copia, ni entrar con Google. Tener esto en una función en
+ * vez de repartido entre condiciones del render es lo que impide que mañana alguien
+ * cuele una pantalla por delante de la puerta sin enterarse.
+ */
+export function pantallaQueToca({ acceso, hayPerfil }: { acceso: EstadoAcceso; hayPerfil: boolean }): Pantalla {
+  if (acceso !== 'permitido') return 'entrada';
+  return hayPerfil ? 'app' : 'crear-perfil';
+}
+
 /** Si el token de acceso ya no sirve (o le queda tan poco que no merece usarse). */
 export function tokenCaducado(sesion: SesionDiscord, ahora: number, margenMs = 60_000): boolean {
   return sesion.expiraEn - margenMs <= ahora;

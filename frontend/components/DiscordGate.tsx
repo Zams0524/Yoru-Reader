@@ -21,15 +21,27 @@ import type { EstadoAcceso } from '../utils/discordAccess';
  * se queda a medias.
  */
 
+/** El logotipo de Discord, en el botón. Inline para que siga los colores del tema. */
+function LogoDiscord() {
+  return (
+    <svg viewBox="0 0 127.14 96.36" width="20" height="20" fill="currentColor" aria-hidden="true">
+      <path d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0a105.89 105.89 0 0 0-26.25 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53s5-12.74 11.43-12.74S54 46 53.89 53s-5.05 12.69-11.44 12.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53s5-12.74 11.44-12.74S96.23 46 96.12 53s-5.04 12.69-11.43 12.69Z" />
+    </svg>
+  );
+}
+
 export default function DiscordGate({
   estado,
   es,
   onEntrar,
+  onCambiarIdioma,
 }: {
   estado: EstadoAcceso;
   es: boolean;
   /** Se llama cuando ya hay sesión buena: App vuelve a decidir el acceso. */
   onEntrar: () => void;
+  /** Cambiar el idioma desde aquí: esta puede ser la primera pantalla de todas. */
+  onCambiarIdioma?: (idioma: 'es' | 'en') => void;
 }) {
   const [cargando, setCargando] = useState(false);
   const [fallo, setFallo] = useState('');
@@ -162,34 +174,67 @@ export default function DiscordGate({
     );
   }
 
-  /* Nadie ha entrado todavía. */
+  /*
+    Nadie ha entrado todavía: esta es la primera pantalla de Yoru, antes incluso de la
+    guía, así que lleva la marca y el idioma a mano. La disposición es la de una
+    pantalla de acceso de verdad —título grande alineado a la izquierda, subtítulo
+    gris, botón ancho— y no la caja centrada de un aviso, porque aquí no se avisa de
+    nada: se entra.
+  */
   return (
-    <Marco icono={<LogIn size={26} />} titulo={es ? 'Yoru es para los miembros' : 'Yoru is for members'}>
-      <p className="yoru-gate-text">
-        {es
-          ? `Para leer con Yoru hay que estar en ${nombre}. Entra con Discord y se comprueba una vez; después no vuelve a molestarte.`
-          : `To read with Yoru you need to be in ${nombre}. Sign in with Discord and it checks once; after that it stays out of your way.`}
-      </p>
-      <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => void entrar()} disabled={cargando}>
-        <LogIn size={16} />
-        {cargando
-          ? (es ? 'Esperando a Discord…' : 'Waiting for Discord…')
-          : (es ? 'Entrar con Discord' : 'Sign in with Discord')}
-      </button>
-      {cargando && (
+    <div className="yoru-gate" role="main">
+      <div className="yoru-gate-caja is-acceso">
+        {onCambiarIdioma && (
+          <div className="yoru-gate-idioma" role="radiogroup" aria-label="Idioma / Language">
+            {([{ id: 'es', label: 'ES' }, { id: 'en', label: 'EN' }] as const).map((opcion) => (
+              <button
+                key={opcion.id}
+                type="button"
+                role="radio"
+                aria-checked={es === (opcion.id === 'es')}
+                className={es === (opcion.id === 'es') ? 'activo' : ''}
+                onClick={() => onCambiarIdioma(opcion.id)}
+              >
+                {opcion.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <span className="yoru-gate-marca" aria-hidden="true">夜</span>
+
+        <h1 className="yoru-gate-titulo is-grande">
+          {es ? 'Bienvenido a Yoru' : 'Welcome to Yoru'}
+        </h1>
+        <p className="yoru-gate-sub">
+          {es
+            ? `Yoru es para los miembros de ${nombre}. Entra con Discord y se comprueba una vez; después no vuelve a molestarte.`
+            : `Yoru is for members of ${nombre}. Sign in with Discord and it checks once; after that it stays out of your way.`}
+        </p>
+
+        <button type="button" className="yoru-gate-discord" onClick={() => void entrar()} disabled={cargando}>
+          <LogoDiscord />
+          {cargando
+            ? (es ? 'Esperando a Discord…' : 'Waiting for Discord…')
+            : (es ? 'Iniciar sesión con Discord' : 'Sign in with Discord')}
+        </button>
+
+        {cargando && (
+          <p className="yoru-gate-nota">
+            {es
+              ? 'Discord se ha abierto fuera de la app. Autoriza allí y vuelve aquí.'
+              : 'Discord opened outside the app. Authorize there and come back here.'}
+          </p>
+        )}
+        {fallo && <p className="yoru-profile-error" role="alert">{textoFallo(fallo)}</p>}
+
         <p className="yoru-gate-nota">
           {es
-            ? 'Discord se ha abierto fuera de la app. Autoriza allí y vuelve aquí.'
-            : 'Discord opened outside the app. Authorize there and come back here.'}
+            ? 'Yoru solo pide saber quién eres y en qué servidores estás, para ver si estás en este. No lee tus mensajes, y no guarda la lista de tus servidores.'
+            : 'Yoru only asks who you are and which servers you are in, to see whether this one is among them. It does not read your messages, and it does not store the list of your servers.'}
         </p>
-      )}
-      {fallo && <p className="yoru-profile-error" role="alert">{textoFallo(fallo)}</p>}
-      <p className="yoru-gate-nota">
-        {es
-          ? 'Yoru solo pide saber quién eres y en qué servidores estás, para ver si estás en este. No lee tus mensajes, y no guarda la lista de tus servidores.'
-          : 'Yoru only asks who you are and which servers you are in, to see whether this one is among them. It does not read your messages, and it does not store the list of your servers.'}
-      </p>
-    </Marco>
+      </div>
+    </div>
   );
 }
 
