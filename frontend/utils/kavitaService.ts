@@ -1,4 +1,5 @@
 import { KAVITA_DEFAULTS } from '../config/serverDefaults';
+import { leerCredencialesMedios } from './credencialesMedios';
 import type {
   ConnectionTestResult,
   KavitaBook,
@@ -48,11 +49,26 @@ export const KAVITA_DEFAULT_URL = 'http://localhost:5000';
  */
 export function getKavitaConfig(): KavitaConfig {
   /*
-    El respaldo es lo que viene de fábrica (`config/serverDefaults.ts`). Solo se usa
-    cuando el usuario no ha guardado nada: en cuanto configura su servidor manda el
-    suyo, y puede cambiarlo o borrarlo desde Ajustes como siempre.
+    El respaldo, cuando el usuario no ha guardado nada, viene de dos sitios y en este
+    orden:
+
+    1. `.env.local`, por `config/serverDefaults.ts`. Es para el equipo de zams, para
+       probar contra una instalación local sin tocar código.
+    2. Lo que el servidor de sincronización le haya dado a este aparato por ser
+       miembro del Discord (`utils/credencialesMedios.ts`). Es el caso normal.
+
+    La clave ya no está escrita en el código, que es lo que cambió el 18 de noviembre
+    de 2026: el repositorio es público y escribirla ahí era publicarla.
+
+    La dirección viaja junto a la clave que la acompaña, no mezclada con la otra: una
+    clave de la instalación local apuntando a la dirección pública, o al revés, es un
+    401 que nadie sabría explicar.
   */
-  const fallback = { serverUrl: KAVITA_DEFAULTS.serverUrl, apiKey: KAVITA_DEFAULTS.apiKey } as KavitaConfig;
+  const deFabrica = leerCredencialesMedios().kavita;
+  const fallback = (KAVITA_DEFAULTS.apiKey
+    ? { serverUrl: KAVITA_DEFAULTS.serverUrl, apiKey: KAVITA_DEFAULTS.apiKey }
+    : { serverUrl: deFabrica?.serverUrl || KAVITA_DEFAULTS.serverUrl, apiKey: deFabrica?.apiKey || '' }
+  ) as KavitaConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;

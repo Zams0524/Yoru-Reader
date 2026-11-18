@@ -7,19 +7,24 @@
  * puede cambiarlo o borrarlo como siempre.
  *
  * ──────────────────────────────────────────────────────────────────────────────
- * AVISO, y va en serio:
+ * AQUÍ NO SE ESCRIBE NINGUNA CLAVE. Nunca más.
  *
- * Esto se publica con la app y el repositorio es público. **Una clave escrita aquí
- * es una clave pública** desde el momento en que se sube, y seguirá estándolo en el
- * historial de git aunque se borre después. Hay robots que rastrean GitHub buscando
- * credenciales y las encuentran en minutos.
+ * Esto se publica con la app y el repositorio es público, así que una clave escrita
+ * aquí es una clave pública desde el momento en que se sube, y sigue estándolo en el
+ * historial de git aunque se borre después. Hasta el 18 de noviembre de 2026 la clave
+ * de Kavita y el testigo de Audiobookshelf estuvieron justo aquí abajo. Mientras los
+ * dos servidores solo escuchaban en `localhost` el daño era limitado, porque no había
+ * dirección a la que ir; al publicarlos con Tailscale Funnel pasaron a ser dirección y
+ * clave, las dos publicadas, o sea la puerta abierta.
  *
- * Si alguna vez hay que retirar una de estas claves, **no basta con quitarla de este
- * fichero**: hay que revocarla en el propio Kavita y en el propio Audiobookshelf y
- * generar una nueva. Borrarla de aquí no cierra nada.
+ * Las claves viven ahora en el servidor de sincronización, en `servidor-sync/.env`,
+ * que git ignora, y se reparten solo a quien tenga sesión, es decir a los miembros del
+ * Discord de Yoru. Lo hace `utils/credencialesMedios.ts`, y ahí está contado entero.
+ * Las dos claves de antes quedaron revocadas; las de este fichero, si alguien vuelve a
+ * escribir una, no se pueden revocar borrándolas de aquí.
  *
- * La alternativa, si no se quiere publicar: `.env.local`, que git ignora. Ahí la
- * clave se queda en el equipo y la app arranca igual de configurada.
+ * Para el equipo de zams, `.env.local` sigue sirviendo: git lo ignora, y lo que ponga
+ * ahí manda sobre todo lo demás, que es cómo se prueba contra una instalación local.
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
@@ -62,23 +67,23 @@ export interface AudiobookshelfDefaults {
  * El puerto va en la dirección porque Funnel solo sirve 443, 8443 y 10000, y el 443 ya
  * lo ocupa el servidor de sincronización (ver `YORU_SYNC_DEFAULTS` más abajo).
  *
- * Con `apiKey` vacío no se usa: la app pedirá configurarlo como hasta ahora, y para
- * probar contra una instalación local `VITE_KAVITA_URL` sigue mandando.
+ * `apiKey` sale vacío a propósito y solo se llena desde `.env.local`. La clave de los
+ * miembros no está aquí: la da el servidor, y la recoge `utils/credencialesMedios.ts`.
  */
 export const KAVITA_DEFAULTS: KavitaDefaults = {
   serverUrl: env('VITE_KAVITA_URL') || 'https://desktop-go1ujdd.tail6db786.ts.net:8443',
-  apiKey: env('VITE_KAVITA_API_KEY') || 'TpThYNJN3ehxG6Ftfc2mWsprqLUc0kYm',
+  apiKey: env('VITE_KAVITA_API_KEY'),
 };
 
 /**
  * Audiobookshelf, igual que Kavita: en el PC de zams, por Funnel, puerto 10000.
  *
- * Con `token` vacío no se usa. `VITE_ABS_URL` manda sobre esto.
+ * Y como en Kavita, `token` sale vacío y solo lo llena `.env.local`. El de los
+ * miembros lo reparte el servidor de sincronización.
  */
 export const AUDIOBOOKSHELF_DEFAULTS: AudiobookshelfDefaults = {
   serverUrl: env('VITE_ABS_URL') || 'https://desktop-go1ujdd.tail6db786.ts.net:10000',
-  token: env('VITE_ABS_TOKEN')
-    || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlJZCI6ImE4OGI0NTM0LTc2NmQtNGI1YS1iMjdhLTFkZDkwNDNlNWRhMyIsIm5hbWUiOiJ1c3VhcmlvcyIsInR5cGUiOiJhcGkiLCJpYXQiOjE3OTM5MjI0NzJ9.OtBu6XhqdvnvpqIEl30e8iaGYpGW2_vxKidVT59jByE',
+  token: env('VITE_ABS_TOKEN'),
 };
 
 /**
