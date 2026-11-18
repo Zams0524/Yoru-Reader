@@ -735,6 +735,18 @@
   width: 144px;
 }
 .yoru-serverlib-menu { z-index: 5; }
+/* «Añadir desde archivo» bajo los libros del servidor: texto apagado, sin caja. */
+.yoru-add-file-link {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.yoru-add-file-link:hover,
+.yoru-add-file-link:focus-visible { color: var(--primary); }
 
 /*
   Los apartados de la Biblioteca («Sin iniciar», «Leyendo actualmente»…) dentro del

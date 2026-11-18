@@ -5796,12 +5796,11 @@ const Library = React.memo(function Library({
                 único que aquí no se puede hacer de otra forma; el servidor entero
                 está a un clic en «Explorar Kavita», en la cabecera de la sección.
               */
-              <div className="empty-hero-actions" style={{ marginTop: '8px' }}>
-                <button className="empty-add-btn" onClick={triggerFileInput}>
-                  <span style={{ marginRight: '8px' }}>📄</span>
-                  {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
-                </button>
-              </div>
+              /* Un enlace discreto, no un botón a todo el ancho: la acción principal
+                 de añadir ya es el «+» de arriba, y aquí mandan los libros. */
+              <button type="button" className="yoru-add-file-link" onClick={triggerFileInput}>
+                + {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
+              </button>
             ) : books.length === 0 ? (
               <div className="library-empty-hero">
                 {/* Left: decorative book cover stack */}
