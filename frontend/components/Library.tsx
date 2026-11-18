@@ -1479,6 +1479,8 @@ const Library = React.memo(function Library({
   // Title shown in the phone top bar while a settings section is open.
   const settingsSectionTitle = (sectionId: string) => {
     const titles = {
+      'sec-profile': ['Perfil', 'Profile'],
+      'sec-notifications': ['Notificaciones', 'Notifications'],
       'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
       'sec-dicts': ['Diccionarios y vocabulario', 'Dictionaries and vocabulary'],
       'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
@@ -2841,16 +2843,14 @@ const Library = React.memo(function Library({
       Es una regla para todos los grupos, no un apaño para «Yoru»: hoy le toca a ese
       en el escritorio, pero al buscar le toca a casi todos.
     */
-    const renderNavGroup = (titulo: string, Icono: any, entradas: any[]) => {
+    const renderNavGroup = (titulo: string, entradas: any[]) => {
       const visibles = entradas.filter(Boolean);
       if (visibles.length === 0) return null;
       return (
         <div>
-          {visibles.length > 1 && (
-            <div className="settings-nav-group-title">
-              <Icono size={13} aria-hidden="true" /> <span>{titulo}</span>
-            </div>
-          )}
+          <div className="settings-nav-group-title">
+            <span>{titulo}</span>
+          </div>
           <div className="settings-nav-group">{visibles}</div>
         </div>
       );
@@ -2932,7 +2932,7 @@ const Library = React.memo(function Library({
             <div className="yomitan-search-wrapper" style={{ position: 'relative', width: '100%' }}>
               <input 
                 type="text" 
-                placeholder={lang === 'es' ? 'Buscar...' : 'Search...'} 
+                placeholder={lang === 'es' ? 'Buscar ajustes' : 'Search settings'} 
                 value={settingsSearchQuery}
                 onChange={(e) => setSettingsSearchQuery(e.target.value)}
                 style={{ width: '100%', background: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '8px 12px 8px 32px', fontSize: '0.85rem', color: 'var(--text-main)', outline: 'none' }}
@@ -2944,11 +2944,18 @@ const Library = React.memo(function Library({
             </div>
   
             <div className="settings-nav-groups">
-              {renderNavGroup(lang === 'es' ? 'Perfil' : 'Profile', User, [
+              {/*
+                Cuatro grupos, como en la pantalla de la que sale este reparto: primero
+                lo que es tuyo (quién eres y dónde viven tus datos), después cómo
+                quieres ver la aplicación, después la biblioteca y al final Yoru.
+              */}
+              {renderNavGroup(lang === 'es' ? 'Cuenta' : 'Account', [
                 renderSidebarBtn('sec-profile', lang === 'es' ? 'Perfil' : 'Profile', User, 'perfil profile nombre name foto photo avatar imagen picture usuario', activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')),
+                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
+                renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
               ])}
 
-              {renderNavGroup(lang === 'es' ? 'Preferencias' : 'Preferences', Settings, [
+              {renderNavGroup(lang === 'es' ? 'Preferencias' : 'Preferences', [
                 renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide'),
                 renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice'),
                 showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys'),
@@ -2956,17 +2963,12 @@ const Library = React.memo(function Library({
                 showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence'),
               ])}
 
-              {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', BookOpen, [
+              {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', [
                 renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`),
                 renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts'),
               ])}
 
-              {renderNavGroup(lang === 'es' ? 'Datos' : 'Data', Database, [
-                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
-                renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
-              ])}
-
-              {renderNavGroup('Yoru', Info, [
+              {renderNavGroup('Yoru', [
                 renderSidebarBtn('sec-updates', lang === 'es' ? 'Actualizaciones' : 'Updates', RefreshCw, 'updates update actualizaciones actualizar version check beta', lang === 'es' ? 'Buscar versiones nuevas' : 'Check for new versions'),
                 showDiagnostics && renderSidebarBtn('sec-about', lang === 'es' ? 'Acerca de / Diagnóstico' : 'About / Diagnostics', Info, ABOUT_SEARCH_TERMS, lang === 'es' ? 'Versión y diagnóstico' : 'Version and diagnostics'),
               ])}
@@ -2990,32 +2992,6 @@ const Library = React.memo(function Library({
               })()}
             </div>
             
-            {/* Dashboard de Estado */}
-            <div style={{ marginTop: '20px', padding: '14px', background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box' }}>
-              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {lang === 'es' ? 'Estado del Lector' : 'Reader Status'}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Perfil:' : 'Profile:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{settings.profileName || 'Zams'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Diccionarios:' : 'Dictionaries:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{installedDicts.length}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Libros:' : 'Books:'}</span>
-                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{books.length}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{lang === 'es' ? 'Google Drive:' : 'Google Drive:'}</span>
-                  <span style={{ color: gDriveTokens ? '#34d399' : 'var(--text-muted)', fontWeight: 600 }}>
-                    {gDriveTokens ? (lang === 'es' ? 'Conectado' : 'Connected') : (lang === 'es' ? 'Desconectado' : 'Disconnected')}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
         )}
   
@@ -3029,6 +3005,15 @@ const Library = React.memo(function Library({
             barra de scroll por ocho píxeles. El aire lo pone ahora la hoja.
           */
           <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
+
+          {/*
+            El nombre de la sección, grande y arriba, con una línea debajo. En el
+            teléfono no hace falta: ya lo dice la barra de arriba. Buscando tampoco,
+            porque entonces se ven trozos de varias secciones a la vez.
+          */}
+          {!settingsNarrow && !settingsSearchQuery && (
+            <h2 className="settings-pane-title">{settingsSectionTitle(activeSettingsSection)}</h2>
+          )}
           
           {/*
             Perfil. Lo mismo que hace el modal del menú del avatar, pero donde se

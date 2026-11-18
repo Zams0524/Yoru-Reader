@@ -3095,3 +3095,62 @@ button.yoru-menu-scrim { border: none; padding: 0; background: none; cursor: def
   .yoru-profile-name { font-size: 23px; }
   .yoru-profile-actions { width: 100%; padding-bottom: 0; }
 }
+
+/* ==========================================================================
+   Ajustes, repartidos como una pantalla de cuenta: lista a la izquierda con
+   grupos en versalitas, y a la derecha la sección con su título grande, una
+   línea debajo y las filas a pelo, sin cajas.
+
+   Va aquí y con el prefijo del shell porque estos estilos pisan los de la hoja
+   general, que valen también para el teléfono: allí Ajustes es una lista que
+   abre cada sección a pantalla completa, y eso se queda como estaba.
+   ========================================================================== */
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-groups { gap: 22px; }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-group-title {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-group {
+  padding-left: 0;
+  border-left: none;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item {
+  padding: 9px 10px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item .settings-nav-icon { color: var(--text-muted); }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-active {
+  background: var(--surface-raised);
+  color: var(--text-main);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-active .settings-nav-icon { color: var(--primary); }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav-item.is-danger { color: var(--yoru-danger, #e05b55); }
+
+.settings-pane-title {
+  margin: 0;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--border-light);
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--text-main);
+}
+/* Las secciones, sin caja: el título de la tarjeta pasa a ser un subtítulo de la página. */
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane { max-width: 860px; }
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card + .settings-section-card {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-light);
+}
+html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-card-title { font-size: 1.12rem; }
