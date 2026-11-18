@@ -31,6 +31,9 @@ import { BookGridView, EntityListView } from './ListViews';
 import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
 import ProfileView from './ProfileView';
+import MembersView from './MembersView';
+import NotificationsView from './NotificationsView';
+import { NOTICES_EVENT, pushNotice, unseenNoticeCount } from '../../utils/appNotices';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { ServerLibrarySection } from './HomeServerSections';
@@ -68,6 +71,8 @@ type View =
   | 'catalog'
   | 'statistics'
   | 'profile'
+  | 'members'
+  | 'notifications'
   | 'srs'
   | 'settings'
   | 'series'
@@ -149,6 +154,28 @@ export default function YoruShell({
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  /** Avisos sin ver, para el punto de la campana. */
+  const [unseenNotices, setUnseenNotices] = useState(() => unseenNoticeCount());
+
+  useEffect(() => {
+    const refresh = () => setUnseenNotices(unseenNoticeCount());
+    /*
+      Por ahora la única tarea larga que avisa al terminar es la instalación de
+      diccionarios, que ya lanza su evento. Se apunta aquí, en el shell, porque es lo
+      único que está montado siempre: la pantalla de avisos puede no haberse abierto.
+    */
+    const onDictionaries = () => pushNotice(
+      es ? 'Diccionarios actualizados' : 'Dictionaries updated',
+      es ? 'Los cambios ya se usan al buscar palabras.' : 'The changes are already used when looking up words.'
+    );
+    window.addEventListener(NOTICES_EVENT, refresh);
+    window.addEventListener('yoru-dictionaries-changed', onDictionaries);
+    return () => {
+      window.removeEventListener(NOTICES_EVENT, refresh);
+      window.removeEventListener('yoru-dictionaries-changed', onDictionaries);
+    };
+  }, [es]);
+
   /** El menú del avatar de la cabecera: Perfil y Ajustes. */
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
@@ -487,6 +514,20 @@ export default function YoruShell({
 
     if (view === 'statistics') {
       return <StatsView books={books} es={es} />;
+    }
+
+    if (view === 'members') {
+      return (
+        <MembersView
+          es={es}
+          guildId={String(settings?.discordGuildId || '')}
+          onSaveGuildId={(guildId) => libraryProps.onSaveSettings?.({ ...settings, discordGuildId: guildId })}
+        />
+      );
+    }
+
+    if (view === 'notifications') {
+      return <NotificationsView es={es} />;
     }
 
     if (view === 'profile') {
@@ -890,11 +931,24 @@ export default function YoruShell({
           <button
             type="button"
             className="yoru-shell-icon-btn"
-            onClick={() => go('statistics')}
-            title={es ? 'Tu progreso' : 'Your progress'}
-            aria-label={es ? 'Tu progreso' : 'Your progress'}
+            onClick={() => go('members')}
+            title={es ? 'Miembros' : 'Members'}
+            aria-label={es ? 'Miembros' : 'Members'}
+          >
+            <Users size={20} />
+          </button>
+          {/* La campana abre los avisos; antes llevaba a Estadísticas, que ya está en el lateral. */}
+          <button
+            type="button"
+            className="yoru-shell-icon-btn yoru-shell-bell"
+            onClick={() => go('notifications')}
+            title={es ? 'Notificaciones' : 'Notifications'}
+            aria-label={unseenNotices > 0
+              ? (es ? `Notificaciones, ${unseenNotices} sin ver` : `Notifications, ${unseenNotices} unseen`)
+              : (es ? 'Notificaciones' : 'Notifications')}
           >
             <Bell size={20} />
+            {unseenNotices > 0 && <i className="yoru-shell-bell-dot" aria-hidden="true" />}
           </button>
           <button
             type="button"

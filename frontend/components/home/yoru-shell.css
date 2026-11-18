@@ -3154,3 +3154,103 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-sett
   border-top: 1px solid var(--border-light);
 }
 html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-card-title { font-size: 1.12rem; }
+
+/* ==========================================================================
+   Miembros (servidor de Discord) y Notificaciones
+   ========================================================================== */
+.yoru-shell-bell { position: relative; }
+.yoru-shell-bell-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg-app);
+  box-sizing: content-box;
+}
+
+.yoru-members-connect {
+  max-width: 640px;
+  margin-bottom: 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+.yoru-members-connect-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+.yoru-members-connect-row .yoru-control-field { flex: 1; min-width: 200px; }
+.yoru-members-steps { margin: 14px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.6; color: var(--text-muted); }
+.yoru-members-group-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-members-list { list-style: none; margin: 0; padding: 0; max-width: 760px; }
+.yoru-member {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 8px;
+  border-radius: 12px;
+}
+.yoru-member:hover { background: var(--surface-raised); }
+.yoru-member-avatar { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.yoru-member-avatar img,
+.yoru-member-avatar > span {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.yoru-member-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 3px solid var(--bg-app);
+  box-sizing: content-box;
+  background: #23a55a;
+}
+.yoru-member-dot.is-idle { background: #f0b232; }
+.yoru-member-dot.is-dnd { background: #f23f43; }
+.yoru-member-text { display: flex; flex-direction: column; min-width: 0; }
+.yoru-member-name { font-size: 15px; font-weight: 700; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-member-activity { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yoru-members-note { max-width: 760px; margin: 18px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--text-muted); }
+
+.yoru-notices-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.yoru-notices-empty strong { margin-top: 6px; font-size: 16px; color: var(--text-main); }
+.yoru-notices-list { list-style: none; margin: 0; padding: 0; max-width: 760px; }
+.yoru-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+.yoru-notice-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.yoru-notice-text strong { font-size: 14.5px; color: var(--text-main); }
+.yoru-notice-text span { font-size: 13px; color: var(--text-muted); }
+.yoru-notice time { flex-shrink: 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
