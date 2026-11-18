@@ -1,0 +1,5 @@
+# La base de datos con el progreso de la gente. No sube a ningun sitio.
+datos/
+*.db
+*.db-wal
+*.db-shm

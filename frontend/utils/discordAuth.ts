@@ -393,6 +393,36 @@ export async function revisarYGuardar(sesion: SesionDiscord): Promise<RespuestaM
   return respuesta;
 }
 
+/**
+ * Un token de acceso de Discord que valga ahora mismo, renovándolo si hacía falta.
+ *
+ * El servidor de sincronización necesita un token vivo para preguntarle a Discord
+ * quién es quien llama, y el que hay guardado puede llevar horas caducado si la app
+ * estuvo cerrada. Renovar aquí y guardar la sesión al vuelo evita que cada sitio que
+ * necesite un token se invente su propia forma de refrescarlo.
+ *
+ * Devuelve vacío cuando no hay sesión o cuando el refresco ya no vale: quien llame
+ * decide qué hacer, que aquí no se echa a nadie de la app.
+ */
+export async function tokenAccesoFresco(): Promise<string> {
+  const sesion = leerSesion();
+  if (!sesion?.refreshToken) return '';
+  if (!tokenCaducado(sesion, Date.now())) return sesion.accessToken;
+  try {
+    const nuevos = await renovar(sesion.refreshToken);
+    const actualizada: SesionDiscord = {
+      ...sesion,
+      accessToken: nuevos.access_token,
+      refreshToken: nuevos.refresh_token,
+      expiraEn: Date.now() + nuevos.expires_in * 1000,
+    };
+    guardarSesion(actualizada);
+    return actualizada.accessToken;
+  } catch {
+    return '';
+  }
+}
+
 /* ------------------------------------------------------------------------- entrar */
 
 /** Espera a que Android vuelva de Discord por `yoru://discord-auth`. */
