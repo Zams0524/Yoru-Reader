@@ -122,7 +122,14 @@ export async function fetchDiscordWidget(guildId: string, signal?: AbortSignal):
 
   if (response.status === 403) throw new Error('widget-off' satisfies DiscordWidgetError);
   if (response.status === 404 || response.status === 400) throw new Error('not-found' satisfies DiscordWidgetError);
-  if (response.status === 429) throw new Error('rate-limit' satisfies DiscordWidgetError);
+  if (response.status === 429) {
+    // Discord dice cuánto hay que esperar. Se le pasa a quien sondea, que hará más
+    // caso a ese número que a uno inventado por nosotros.
+    const fallo = new Error('rate-limit' satisfies DiscordWidgetError) as Error & { retryAfterSegundos?: number };
+    const cabecera = Number(response.headers.get('retry-after'));
+    if (Number.isFinite(cabecera) && cabecera > 0) fallo.retryAfterSegundos = cabecera;
+    throw fallo;
+  }
   if (!response.ok) throw new Error('network' satisfies DiscordWidgetError);
 
   const data = await response.json().catch(() => null);

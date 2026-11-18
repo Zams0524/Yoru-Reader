@@ -14,6 +14,14 @@ import {
 import { esBot, sinBots, type DiscordMember } from '../frontend/utils/discordWidget';
 import { esLaMismaPersona, lecturaActual } from '../frontend/components/home/MembersView';
 import type { ShelfBook } from '../frontend/components/home/libraryIndex';
+import {
+  conmigoDentro,
+  INTERVALO_BASE_MS,
+  INTERVALO_MAXIMO_MS,
+  mismaLista,
+  RITMO_INICIAL,
+  siguienteRitmo,
+} from '../frontend/utils/miembrosVivos';
 
 let failures = 0;
 function check(condicion: boolean, nombre: string) {
@@ -313,7 +321,87 @@ recomprobarTests();
 tokenTests();
 respuestaTests();
 pantallaTests();
+function sondeoTests() {
+  console.log('\nSondeo: ritmo y lista viva');
+
+  const persona = (name: string, extra: Partial<DiscordMember> = {}): DiscordMember => ({
+    id: '0', name, status: 'online', avatar: '', activity: '', ...extra,
+  });
+
+  // --- el ritmo ---
+  check(
+    siguienteRitmo({ esperaMs: 80_000, rechazos: 3 }, { ok: true }).esperaMs === INTERVALO_BASE_MS,
+    'Una respuesta buena devuelve al ritmo de siempre, sin arrastrar el castigo',
+  );
+  check(
+    siguienteRitmo({ esperaMs: 80_000, rechazos: 3 }, { ok: true }).rechazos === 0,
+    'Y se olvidan los rechazos anteriores',
+  );
+  check(
+    siguienteRitmo(RITMO_INICIAL, { ok: false, limitado: true }).esperaMs === INTERVALO_BASE_MS * 2,
+    'Un 429 sin Retry-After dobla la espera',
+  );
+  check(
+    siguienteRitmo(RITMO_INICIAL, { ok: false, limitado: true, retryAfterSegundos: 45 }).esperaMs === 45_000,
+    'Con Retry-After manda Discord, no nuestro cálculo',
+  );
+  check(
+    siguienteRitmo(RITMO_INICIAL, { ok: false, limitado: true, retryAfterSegundos: 9999 }).esperaMs === INTERVALO_MAXIMO_MS,
+    'Un Retry-After desmedido se recorta al techo de dos minutos',
+  );
+  check(
+    siguienteRitmo({ esperaMs: 90_000, rechazos: 2 }, { ok: false, limitado: true }).esperaMs === INTERVALO_MAXIMO_MS,
+    'La espera nunca pasa de dos minutos',
+  );
+  check(
+    siguienteRitmo(RITMO_INICIAL, { ok: false }).rechazos === 0,
+    'Un fallo de red no cuenta como rechazo de Discord',
+  );
+
+  // --- quién sale ---
+  const yo = { nombre: 'Zams', avatar: 'data:foto', actividad: 'Leyendo よつばと！' };
+
+  const soloBots = conmigoDentro([], yo);
+  check(soloBots.length === 1 && soloBots[0].name === 'Zams', 'Con la lista vacía, al menos sales tú');
+  check(soloBots[0].status === 'online', 'Y sales en línea, porque estás aquí');
+  check(soloBots[0].activity === 'Leyendo よつばと！', 'Con lo que estás leyendo como actividad');
+
+  const conOtro = conmigoDentro([persona('Jeff', { status: 'idle' })], yo);
+  check(conOtro.length === 2, 'Te añades sin quitar a nadie');
+
+  // Lo que evita verse dos veces.
+  const yaEstaba = conmigoDentro([persona('zams', { status: 'dnd', activity: 'Yoru Reader' })], yo);
+  check(yaEstaba.length === 1, 'Si el widget ya te trae, no sales dos veces');
+  check(yaEstaba[0].status === 'dnd', 'Y manda el estado de Discord, no el nuestro');
+  check(yaEstaba[0].activity === 'Yoru Reader', 'La actividad también la pone Discord');
+  check(yaEstaba[0].avatar === 'data:foto', 'Pero la foto ya descargada se aprovecha');
+
+  check(conmigoDentro([persona('Jeff')], null).length === 1, 'Sin sesión no se añade a nadie');
+  check(
+    conmigoDentro([persona('Jeff')], { nombre: '   ' }).length === 1,
+    'Un nombre en blanco tampoco añade a nadie',
+  );
+
+  // --- repintar o no ---
+  check(mismaLista([], []), 'Dos listas vacías son iguales');
+  check(mismaLista([persona('Jeff')], [persona('Jeff')]), 'La misma gente igual es la misma lista');
+  check(
+    mismaLista([persona('Jeff')], [{ ...persona('Jeff'), id: '7' }]),
+    'El id no cuenta: es un número de orden que cambia solo',
+  );
+  check(
+    !mismaLista([persona('Jeff')], [persona('Jeff', { status: 'idle' })]),
+    'Un cambio de estado sí es un cambio',
+  );
+  check(
+    !mismaLista([persona('Jeff')], [persona('Jeff', { activity: 'Yoru Reader' })]),
+    'Y ponerse a leer también',
+  );
+  check(!mismaLista([persona('Jeff')], []), 'Si alguien se va, cambia');
+}
+
 botsTests();
 tarjetaTests();
+sondeoTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);
