@@ -1,0 +1,17 @@
+{
+  "name": "yoru-sync",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Servidor de sincronizacion de progreso de Yoru Reader, para los miembros del Discord de Yoru.",
+  "type": "module",
+  "main": "servidor.mjs",
+  "scripts": {
+    "start": "node servidor.mjs",
+    "test": "node prueba.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {},
+  "license": "GPL-2.0-or-later"
+}

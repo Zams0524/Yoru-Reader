@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo, useTransition } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo, useTransition, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Info, Trash2, Check, BarChart3, Pencil, X, ArrowUpDown, Settings, SlidersHorizontal, Calendar, BookOpen, Clock, Download, Upload, MoreVertical, Search, EyeOff, User, Tag, RotateCcw, CircleSlash, Play, Pause, ChevronDown, ChevronRight, CloudOff, Database, Palette, Cloud, FolderOpen, Type, Layers, AlertTriangle, Keyboard, Menu, Zap, RefreshCw, MessageSquare, Sparkles, ArrowLeft, Repeat, CheckCheck, Bell, Library as LibraryIcon, Server } from 'lucide-react';
 import TutorialGuide from './onboarding/TutorialGuide';
@@ -27,6 +27,9 @@ import { tokenizeText } from '../utils/japanese';
 import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import YoruSyncSettings from './settings/YoruSyncSettings';
+import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, urlServidorSync, type ModoSync } from '../utils/yoruSyncService';
+import { describirEstado as describirEstadoSync, INTERVALO_SUBIDA_MS as YORU_SYNC_INTERVALO_MS } from '../utils/yoruSyncNucleo';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
@@ -1140,6 +1143,62 @@ const Library = React.memo(function Library({
     };
   }, [gDriveClientId, gDriveClientSecret]);
 
+  /*
+    Sincronización con el servidor de Yoru (el PC de zams, por Tailscale).
+
+    Va aparte de la de Google Drive y no la sustituye: son dos sitios distintos donde
+    dejar lo mismo, y quien tenga Drive configurado lo sigue teniendo igual. La
+    diferencia es que esta no se configura — entras con Discord, que ya es la puerta
+    de la app, y tu biblioteca te sigue del PC al teléfono sola.
+
+    Al abrir se combina en los dos sentidos; mientras la app está abierta, y al irse
+    al fondo, solo se sube. No se toca la biblioteca de una app que el usuario puede
+    volver a traer al frente en dos segundos: cambiársela por debajo mientras no mira
+    parece un fallo aunque sea correcto.
+  */
+  const [yoruSyncEstado, setYoruSyncEstado] = useState<'apagado' | 'sincronizando' | 'al-dia' | 'fallo'>(
+    sincronizacionDisponible() ? 'sincronizando' : 'apagado'
+  );
+  const [yoruSyncDetalle, setYoruSyncDetalle] = useState('');
+  const [yoruSyncUltima, setYoruSyncUltima] = useState(() => ultimaSincronizacion());
+
+  const sincronizarConYoru = useCallback(async (modo: ModoSync, forzada = false) => {
+    if (!sincronizacionDisponible()) { setYoruSyncEstado('apagado'); return; }
+    setYoruSyncEstado('sincronizando');
+    const resultado = await sincronizarConServidorYoru(modo, { forzada });
+    setYoruSyncUltima(ultimaSincronizacion());
+    if (resultado.fallo || resultado.estado === 'sin-red' || resultado.estado === 'sin-discord') {
+      setYoruSyncEstado('fallo');
+      setYoruSyncDetalle(describirEstadoSync(resultado.fallo || resultado.estado));
+    } else {
+      setYoruSyncEstado('al-dia');
+      setYoruSyncDetalle('');
+    }
+    recargarSiHizoFalta(resultado);
+  }, []);
+
+  useEffect(() => {
+    if (!sincronizacionDisponible()) return;
+    // Igual que con Drive: la biblioteca se vuelve a montar al cerrar un libro, así
+    // que se le da un momento al lector para que guarde su última posición.
+    const espera = window.setTimeout(() => { void sincronizarConYoru('bidireccional', true); }, 2000);
+    return () => window.clearTimeout(espera);
+  }, [sincronizarConYoru]);
+
+  useEffect(() => {
+    if (!sincronizacionDisponible()) return;
+    const subir = () => { void sincronizarConYoru('solo-subir'); };
+    const alOcultarse = () => { if (document.visibilityState === 'hidden') subir(); };
+    const reloj = window.setInterval(() => {
+      if (document.visibilityState === 'visible') subir();
+    }, YORU_SYNC_INTERVALO_MS);
+    document.addEventListener('visibilitychange', alOcultarse);
+    return () => {
+      window.clearInterval(reloj);
+      document.removeEventListener('visibilitychange', alOcultarse);
+    };
+  }, [sincronizarConYoru]);
+
   // Close profile dropdown when clicking outside
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -1485,6 +1544,7 @@ const Library = React.memo(function Library({
       'sec-text-style': ['Estilo de texto', 'Text Style'],
       'sec-stats': ['Historial de lectura', 'Reading history'],
       'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
+      'sec-yoru-sync': ['Sincronización de Yoru', 'Yoru Sync'],
       'sec-discord': ['Discord', 'Discord'],
       'sec-backup': ['Copias de seguridad', 'Backups'],
       'sec-updates': ['Actualizaciones', 'Updates'],
@@ -2950,6 +3010,7 @@ const Library = React.memo(function Library({
               {renderNavGroup(lang === 'es' ? 'Cuenta' : 'Account', [
                 renderSidebarBtn('sec-profile', lang === 'es' ? 'Perfil' : 'Profile', User, 'perfil profile nombre name foto photo avatar imagen picture usuario', activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')),
                 renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
+                renderSidebarBtn('sec-yoru-sync', lang === 'es' ? 'Sincronización de Yoru' : 'Yoru Sync', Server, 'yoru sync sincronizacion sincronización servidor discord tailscale progreso', yoruSyncEstado === 'al-dia' ? (lang === 'es' ? 'Al día' : 'Up to date') : yoruSyncEstado === 'fallo' ? (yoruSyncDetalle || (lang === 'es' ? 'No se pudo sincronizar' : 'Could not sync')) : yoruSyncEstado === 'apagado' ? (lang === 'es' ? 'Desactivada' : 'Off') : (lang === 'es' ? 'Sincronizando…' : 'Syncing…')),
                 renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
               ])}
 
@@ -3151,6 +3212,24 @@ const Library = React.memo(function Library({
                 onConnect={handleConnectGDrive}
                 onUpload={handleUploadGDrive}
                 onDownload={handleDownloadGDrive}
+              />
+            </div>
+          )}
+
+          {/* Card: Sincronización con el servidor de Yoru (Discord + Tailscale) */}
+          {matchesSearch('yoru sync sincronizacion sincronización servidor discord tailscale progreso') && (settingsSearchQuery || activeSettingsSection === 'sec-yoru-sync') && (
+            <div id="sec-yoru-sync" className="settings-section-card">
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Server size={18} style={{ color: 'var(--primary)' }} />
+                <span>{lang === 'es' ? 'Sincronización de Yoru' : 'Yoru Sync'}</span>
+              </h3>
+              <YoruSyncSettings
+                lang={lang}
+                estado={yoruSyncEstado}
+                detalle={yoruSyncDetalle}
+                ultima={yoruSyncUltima}
+                servidor={urlServidorSync()}
+                onSincronizar={() => { void sincronizarConYoru('bidireccional', true); }}
               />
             </div>
           )}

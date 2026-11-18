@@ -67,3 +67,25 @@ export const AUDIOBOOKSHELF_DEFAULTS: AudiobookshelfDefaults = {
   token: env('VITE_ABS_TOKEN')
     || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlJZCI6ImE4OGI0NTM0LTc2NmQtNGI1YS1iMjdhLTFkZDkwNDNlNWRhMyIsIm5hbWUiOiJ1c3VhcmlvcyIsInR5cGUiOiJhcGkiLCJpYXQiOjE3OTM5MjI0NzJ9.OtBu6XhqdvnvpqIEl30e8iaGYpGW2_vxKidVT59jByE',
 };
+
+/**
+ * El servidor de sincronización de Yoru, en el PC de zams, por Tailscale.
+ *
+ * Aquí no hay ninguna clave, y por eso esta dirección sí puede ir en el código: lo
+ * único que abre la puerta es el token de Discord de cada uno, que lo pone el usuario
+ * al entrar y no viaja con la app. La dirección sola no sirve de nada a quien no esté
+ * en el tailnet, porque un nombre `.ts.net` no resuelve fuera de él.
+ *
+ * Se usa el nombre de Tailscale y no la IP (100.121.94.3) porque el nombre sobrevive a
+ * que la IP cambie; la IP queda escrita en la configuración de red de Android, que es
+ * donde Android exige direcciones concretas.
+ *
+ * Con `serverUrl` vacío la sincronización queda apagada y la app funciona como antes.
+ */
+export interface YoruSyncDefaults {
+  serverUrl: string;
+}
+
+export const YORU_SYNC_DEFAULTS: YoruSyncDefaults = {
+  serverUrl: env('VITE_YORU_SYNC_URL') || 'http://desktop-go1ujdd.tail6db786.ts.net:3747',
+};
