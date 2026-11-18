@@ -21,9 +21,19 @@ tailnet, así que quien no esté dentro no llega ni a la puerta.
 | `tests/yoru-sync.test.ts` | Pruebas de las decisiones |
 | `servidor-sync/prueba.mjs` | Pruebas del servidor, con un Discord de mentira |
 
-- Dirección: `http://desktop-go1ujdd.tail6db786.ts.net:3747`
+- Dirección: `https://desktop-go1ujdd.tail6db786.ts.net` (Tailscale Funnel; sin puerto,
+  porque Funnel solo sirve el 443, el 8443 y el 10000)
+- Dentro del tailnet el mismo servidor sigue en
+  `http://desktop-go1ujdd.tail6db786.ts.net:3747`
 - Se puede apuntar a otro sitio con `VITE_YORU_SYNC_URL` en `.env.local`. Vacía,
   la sincronización queda apagada y la app funciona como antes.
+
+Funnel es lo que hace que **nadie tenga que instalar Tailscale**: la primera versión
+apuntaba al nombre del tailnet, y ese nombre no resuelve para quien no esté dentro, así
+que cada miembro habría tenido que instalarlo y aceptar una invitación antes de poder
+usar la app (decisión de zams, 18 nov 2026). El precio es que el PC queda al alcance de
+internet, y de ahí el freno de `POST /api/sesion`: diez fallos por dirección cada diez
+minutos y luego 429. Los aciertos no cuentan.
 
 ## Cómo se identifica cada uno
 
@@ -106,9 +116,13 @@ Dos formas de no salir, y las dos ya existían en espíritu:
 
 ## Android
 
-`android/app/src/main/res/xml/network_security_config.xml` permite HTTP en claro al
-nombre de Tailscale y a `100.121.94.3`, como ya lo permitía al PC de casa. Es un
-**cambio nativo**: hace falta APK nuevo, no basta con una OTA.
+Con la dirección de Funnel (`https`) Android no necesita ningún permiso especial: el
+certificado es de verdad. Las entradas de `network_security_config.xml` para el nombre
+de Tailscale y `100.121.94.3` se quedan solo para poder probar contra el PC desde
+dentro del tailnet con `VITE_YORU_SYNC_URL`.
+
+Aun así, el APK publicado lleva la dirección dentro, así que **cambiarla es cambio
+nativo de hecho**: hace falta APK nuevo, no basta con una OTA.
 
 ## Probar
 
@@ -117,8 +131,8 @@ node servidor-sync/prueba.mjs      # el servidor, con un Discord de mentira
 node tests/run-yoru-sync-test.mjs  # las decisiones del cliente
 ```
 
-Y que el servidor está vivo, desde cualquier equipo del tailnet:
+Y que el servidor está vivo, desde cualquier sitio:
 
 ```
-curl http://desktop-go1ujdd.tail6db786.ts.net:3747/api/salud
+curl https://desktop-go1ujdd.tail6db786.ts.net/api/salud
 ```
