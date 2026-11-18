@@ -1,18 +1,27 @@
-import { getLocalParserSetting, modoAnalizador, usesLocalParserSettings } from './parserSettingsStore';
+import { getLocalParserSetting, modoAnalizador } from './parserSettingsStore';
 import { furiganaPairsFromAnnotated } from './yoruParserNative';
 
 /**
- * jiten.moe integration for the native reader (Android, or any shell without the reader extension):
- * - parses paragraphs with Jiten's parser and colours words with the user's Jiten card states;
- * - sends every Yoru review and word mark to the user's Jiten account (queued while offline).
+ * jiten.moe integration:
+ * - parses paragraphs with Jiten's parser and colours words with the user's Jiten card states,
+ *   en todas las plataformas, escritorio incluido (ver `isJitenParserEnabled`);
+ * - sends every Yoru review and word mark to the user's Jiten account (queued while offline),
+ *   solo leyendo en modo Jiten: en el modo Yoru las marcas son del SRS de la app y no salen.
  * The user's Jiten API key (jiten.moe → Settings → API) is kept with the parser settings.
- * On desktop the reader extension owns the Jiten connection, so this module stays off there.
  */
 
 const API_BASE = 'https://api.jiten.moe/api';
 const REQUEST_TIMEOUT_MS = 15000;
 const PARSE_BATCH_PARAGRAPHS = 40;
 const PARSE_BATCH_CHARS = 8000;
+/**
+ * Cuántos lotes se le piden a Jiten a la vez.
+ *
+ * Cuatro, no «todos»: un capítulo largo son bastantes lotes y soltarlos de golpe es lo que se
+ * gana un 429 de la cuenta. Con cuatro, las primeras líneas (que son las que el lector está
+ * mirando) llegan en una sola ida y vuelta y el resto va detrás sin atragantar al servidor.
+ */
+const PARSE_CONCURRENCIA = 4;
 const PARSE_CACHE_LIMIT = 4000;
 const WORD_KEY_STORAGE = 'yoru_jiten_word_keys_v1';
 const WORD_KEY_LIMIT = 20000;
@@ -71,8 +80,26 @@ export function getJitenApiKey(): string {
   return typeof key === 'string' ? key.trim() : '';
 }
 
+/** Hay clave guardada y Jiten no la ha rechazado. */
+function claveUsable(): boolean {
+  const key = getJitenApiKey();
+  return key.length > 0 && rejectedKey !== key;
+}
+
+/**
+ * Mandar a Jiten los repasos y las marcas: solo leyendo en modo Jiten, en cualquier aparato.
+ *
+ * Lo manda el modo, no la clave, por decisión de zams (18 nov 2026): «aunque esté la clave de
+ * Jiten, estoy en el modo Yoru: esos botones funcionan con mi SRS nativo y no se mandan a
+ * Jiten». Tiene sentido: el modo es lo que se ve mientras lees, y tener cuenta de Jiten no
+ * quiere decir que todo lo que marques leyendo con el analizador de Yoru sea suyo.
+ *
+ * Antes dependía del aparato: en Android mandaba siempre que hubiera clave, y en escritorio no
+ * mandaba nunca —se daba por hecho que eso lo hacía la extensión de lectura, que en realidad ni
+ * se entera de que pulsas los botones de la tarjeta, porque son de la app—.
+ */
 export function isJitenSyncEnabled(): boolean {
-  return usesLocalParserSettings() && getJitenApiKey().length > 0 && rejectedKey !== getJitenApiKey();
+  return claveUsable() && modoAnalizador() === 'jiten';
 }
 
 /**
@@ -81,9 +108,20 @@ export function isJitenSyncEnabled(): boolean {
  * Antes salía del interruptor `jitenUseParser`, que solo aparecía si había clave; ahora el modo
  * se elige por su nombre en los ajustes del analizador, y el interruptor de antes solo sirve
  * para decidir en qué modo arranca quien ya lo tenía puesto (`modoAnalizadorPorDefecto`).
+ *
+ * Esto vale también en escritorio desde el 18 nov 2026, y ese es el arreglo. Antes pedía además
+ * `usesLocalParserSettings()`, que en Electron es falso, así que en el ordenador el parser de
+ * Jiten **nunca** se encendía, con clave o sin ella: el lector tokenizaba cada párrafo con
+ * Kuromoji y se quedaba así. La idea era que en escritorio parte las palabras la extensión, pero
+ * la extensión ya no llega a hacerlo: encuentra el texto metido en spans por la app, y su
+ * endpoint apunta al servidor local de Yoru (127.0.0.1:23280), que devuelve ese mismo Kuromoji.
+ * Resultado: poner la clave de Jiten en el ordenador no cambiaba absolutamente nada.
+ *
+ * Ahora el parseo lo pide la app, igual que en Android. La ventana se crea con `webSecurity:
+ * false`, así que la llamada a api.jiten.moe sale sin tropezar con CORS.
  */
 export function isJitenParserEnabled(): boolean {
-  return isJitenSyncEnabled() && modoAnalizador() === 'jiten';
+  return claveUsable() && modoAnalizador() === 'jiten';
 }
 
 let rejectedKey = '';
@@ -201,59 +239,111 @@ function rememberParse(text: string, tokens: JitenToken[]) {
   }
 }
 
-/** Parses paragraphs with Jiten (skipping cached ones). Resolves with the texts that were parsed. */
-export async function parseWithJiten(texts: string[]): Promise<string[]> {
+/**
+ * Un lote de párrafos, repitiéndolo si Jiten frena por exceso de peticiones.
+ *
+ * Los lotes salen ahora de varios en varios, así que el 429 es más fácil de encontrar que
+ * cuando iban en fila de uno. Antes un 429 tiraba el lote y esos párrafos se quedaban con el
+ * analizador de la app hasta volver a entrar en el capítulo.
+ */
+async function pedirParseo(textos: string[]): Promise<{ tokens?: any[][]; vocabulary?: any[] }> {
+  for (let intento = 0; ; intento++) {
+    try {
+      return await jitenRequest<{ tokens?: any[][]; vocabulary?: any[] }>('reader/parse', { text: textos });
+    } catch (error) {
+      if (error instanceof JitenHttpError && error.status === 429 && intento < MAX_THROTTLE_RETRIES) {
+        await wait(error.retryAfterMs ?? THROTTLE_WAIT_MS * (intento + 1));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Parses paragraphs with Jiten (skipping cached ones). Resolves with the texts that were parsed.
+ *
+ * `alLlegarLote` se llama con los textos de cada lote en cuanto ese lote contesta, para poder
+ * pintarlos sin esperar a los demás.
+ *
+ * Los lotes van en paralelo, hasta `PARSE_CONCURRENCIA` a la vez. Antes se pedían en fila: cada
+ * uno esperaba a que contestara el anterior, y como además no se pintaba nada hasta que estaban
+ * todos, un capítulo largo tardaba la suma de todas las idas y venidas en empezar a colorearse.
+ * Ahora tarda la más lenta de las primeras, y el texto se va tiñendo por partes.
+ */
+export async function parseWithJiten(texts: string[], alLlegarLote?: (textos: string[]) => void): Promise<string[]> {
   if (!isJitenParserEnabled()) return [];
   const todo = Array.from(new Set(texts)).filter((text) => text.trim() && !parseCache.has(text) && !inFlight.has(text));
   if (todo.length === 0) return [];
   todo.forEach((text) => inFlight.add(text));
 
-  const parsed: string[] = [];
-  try {
-    let batch: string[] = [];
-    let batchChars = 0;
-    const flush = async () => {
-      if (batch.length === 0) return;
-      const current = batch;
+  // Se agrupa todo primero y se pide después: es lo que permite que los lotes salgan a la vez.
+  const lotes: string[][] = [];
+  let batch: string[] = [];
+  let batchChars = 0;
+  for (const text of todo) {
+    if (batch.length > 0 && (batch.length >= PARSE_BATCH_PARAGRAPHS || batchChars + text.length > PARSE_BATCH_CHARS)) {
+      lotes.push(batch);
       batch = [];
       batchChars = 0;
-      const result = await jitenRequest<{ tokens?: any[][]; vocabulary?: any[] }>('reader/parse', { text: current });
-      for (const vocab of result?.vocabulary || []) {
-        const key = `${vocab.wordId}:${vocab.readingIndex}`;
-        const states = (Array.isArray(vocab.knownState) ? vocab.knownState : [])
-          .map((state: number) => CARD_STATES[state])
-          .filter(Boolean);
-        const info: JitenWordInfo = {
-          key,
-          spelling: vocab.spelling || '',
-          reading: kanaFromAnnotated(vocab.reading || ''),
-          states: states.length ? states : ['new'],
-          furigana: furiganaPairsFromAnnotated(vocab.reading || ''),
-        };
-        words.set(key, info);
-        rememberWordKey(info.spelling, info.reading, key);
-      }
-      current.forEach((text, index) => {
-        const group = result?.tokens?.[index] || [];
-        rememberParse(text, group
-          .filter((token: any) => Number.isFinite(token?.start) && Number.isFinite(token?.end) && token.end > token.start)
-          .map((token: any) => ({ start: token.start, end: token.end, key: `${token.wordId}:${token.readingIndex}` }))
-          .sort((a: JitenToken, b: JitenToken) => a.start - b.start));
-        parsed.push(text);
-      });
-    };
-
-    for (const text of todo) {
-      if (batch.length >= PARSE_BATCH_PARAGRAPHS || batchChars + text.length > PARSE_BATCH_CHARS) await flush();
-      batch.push(text);
-      batchChars += text.length;
     }
-    await flush();
-  } catch (error) {
-    console.warn('[Jiten] Parse failed, keeping the local parser:', error);
-  } finally {
-    todo.forEach((text) => inFlight.delete(text));
+    batch.push(text);
+    batchChars += text.length;
   }
+  if (batch.length > 0) lotes.push(batch);
+
+  const parsed: string[] = [];
+
+  const resolverLote = async (current: string[]) => {
+    const result = await pedirParseo(current);
+    for (const vocab of result?.vocabulary || []) {
+      const key = `${vocab.wordId}:${vocab.readingIndex}`;
+      const states = (Array.isArray(vocab.knownState) ? vocab.knownState : [])
+        .map((state: number) => CARD_STATES[state])
+        .filter(Boolean);
+      const info: JitenWordInfo = {
+        key,
+        spelling: vocab.spelling || '',
+        reading: kanaFromAnnotated(vocab.reading || ''),
+        states: states.length ? states : ['new'],
+        furigana: furiganaPairsFromAnnotated(vocab.reading || ''),
+      };
+      words.set(key, info);
+      rememberWordKey(info.spelling, info.reading, key);
+    }
+    const delLote: string[] = [];
+    current.forEach((text, index) => {
+      const group = result?.tokens?.[index] || [];
+      rememberParse(text, group
+        .filter((token: any) => Number.isFinite(token?.start) && Number.isFinite(token?.end) && token.end > token.start)
+        .map((token: any) => ({ start: token.start, end: token.end, key: `${token.wordId}:${token.readingIndex}` }))
+        .sort((a: JitenToken, b: JitenToken) => a.start - b.start));
+      parsed.push(text);
+      delLote.push(text);
+    });
+    // Pintado inmediato: lo que ya está no espera a lo que falta.
+    if (delLote.length) alLlegarLote?.(delLote);
+  };
+
+  /*
+    El fallo se recoge por lote y no por tanda entera: antes un solo lote que fallara abortaba
+    el resto del capítulo, y ahora los demás siguen y solo se queda sin Jiten el que falló.
+  */
+  let siguiente = 0;
+  const trabajador = async () => {
+    for (;;) {
+      const indice = siguiente++;
+      if (indice >= lotes.length) return;
+      try {
+        await resolverLote(lotes[indice]);
+      } catch (error) {
+        console.warn('[Jiten] Parse failed, keeping the local parser:', error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARSE_CONCURRENCIA, lotes.length) }, trabajador));
+
+  todo.forEach((text) => inFlight.delete(text));
   if (parsed.length) {
     // Once every mark has reached Jiten, the server states are the source of truth again.
     if (loadQueue().length === 0) stateOverrides.clear();
@@ -334,6 +424,37 @@ function enqueue(op: JitenOp) {
   void flushJitenQueue();
 }
 
+/*
+  Acuse del último envío.
+
+  Desde que los botones de la tarjeta salen hacia Jiten (18 nov 2026), hacía falta poder
+  contestar a «¿le llegó?» sin abrir la web de Jiten ni mirar la consola. Se guarda solo el
+  último, que es el que se pregunta.
+*/
+const LAST_SYNC_STORAGE = 'yoru_jiten_last_sync_v1';
+
+export type JitenSyncReport = { at: number; term: string; que: string; ok: boolean; detalle?: string };
+
+function describirOp(op: JitenOp): string {
+  if (op.kind === 'review') return ['again', 'hard', 'good', 'easy'][op.rating - 1] || `nota ${op.rating}`;
+  return op.state;
+}
+
+function apuntarEnvio(report: JitenSyncReport) {
+  try { localStorage.setItem(LAST_SYNC_STORAGE, JSON.stringify(report)); } catch { /* ignore */ }
+  emitChange();
+}
+
+/** El último apunte que salió hacia Jiten y qué contestó. */
+export function getLastJitenSync(): JitenSyncReport | null {
+  try {
+    const guardado = JSON.parse(localStorage.getItem(LAST_SYNC_STORAGE) || 'null');
+    return guardado && typeof guardado.at === 'number' ? guardado : null;
+  } catch {
+    return null;
+  }
+}
+
 let flushing: Promise<void> | null = null;
 
 /** Sends queued reviews and marks to Jiten. Safe to call often. */
@@ -356,6 +477,9 @@ export function flushJitenQueue(): Promise<void> {
             } else {
               await jitenRequest('srs/set-vocabulary-state', { wordId, readingIndex, state: op.state });
             }
+            apuntarEnvio({ at: Date.now(), term: op.term, que: describirOp(op), ok: true });
+          } else {
+            apuntarEnvio({ at: Date.now(), term: op.term, que: describirOp(op), ok: false, detalle: 'Jiten no conoce esa palabra' });
           }
         } catch (error) {
           if (error instanceof JitenAuthError) break;
@@ -369,6 +493,13 @@ export function flushJitenQueue(): Promise<void> {
           if (!(error instanceof JitenHttpError) || error.status >= 500 || error.status === 429) break;
           // Any other 4xx would never pass (409 means Jiten already has it), so drop it.
           console.warn('[Jiten] Dropping a sync item Jiten refused:', op, error.message);
+          apuntarEnvio({
+            at: Date.now(),
+            term: op.term,
+            que: describirOp(op),
+            ok: false,
+            detalle: error instanceof JitenHttpError ? `Jiten contestó HTTP ${error.status}` : 'Jiten lo rechazó'
+          });
         }
         throttled = 0;
         const current = loadQueue();
@@ -389,7 +520,7 @@ export function getPendingJitenSyncCount(): number {
 // Queued even while the key is rejected or Jiten is unreachable, so nothing is lost: the queue is
 // sent once the key checks out again (Settings → "Save and check") or the app restarts.
 function canQueueJitenSync(): boolean {
-  return usesLocalParserSettings() && getJitenApiKey().length > 0;
+  return getJitenApiKey().length > 0 && modoAnalizador() === 'jiten';
 }
 
 /** Yoru rating 1-4 (Again, Hard, Good, Easy) → Jiten review. */
@@ -403,8 +534,7 @@ export function syncJitenReview(term: string, reading: string, rating: number) {
 
 /**
  * Yoru word marks → Jiten vocabulary states.
- * known → never forget, ignored → blacklist; "new" undoes the previous mark.
- * Jiten has no "learning" state (it rejects mining-add): its card is created by the first review.
+ * known → never forget, ignored → blacklist, learning → mazo de minado; "new" deshace la marca.
  */
 export function syncJitenWordStatus(term: string, reading: string, status: string, previousStatus?: string) {
   if (!canQueueJitenSync() || !term) return;
@@ -414,12 +544,33 @@ export function syncJitenWordStatus(term: string, reading: string, status: strin
   if (previousStatus === 'ignored' && status !== 'ignored') states.push('blacklist-remove');
   if (status === 'known' && previousStatus !== 'known') states.push('neverForget-add');
   if (status === 'ignored' && previousStatus !== 'ignored') states.push('blacklist-add');
-  // "learning" sends nothing, but still shows as young until a review reaches Jiten.
+  /*
+    Mazo. En Jiten el mazo de minado se llama `mining`, igual que en su extensión
+    (`${deck}-add`), y es lo que hay detrás de su botón «Deck +».
+
+    Si Jiten lo rechaza —puede pedir que la tarjeta exista ya—, la cola tira ese apunte sola
+    con un aviso en la consola y no se entera nadie: el mazo de Yoru es local y no depende de
+    esto.
+  */
+  if (previousStatus === 'learning' && status !== 'learning') states.push('mining-remove');
+  if (status === 'learning' && previousStatus !== 'learning') states.push('mining-add');
   if (states.length === 0 && status !== 'learning') return;
 
   const at = Date.now();
   states.forEach((state, index) => enqueue({ kind: 'state', term: spelling, reading: reading || '', state, at: at + index }));
   const shown = status === 'known' ? 'mastered' : status === 'ignored' ? 'blacklisted' : status === 'learning' ? 'young' : 'new';
   stateOverrides.set(spelling, shown);
+  emitChange();
+}
+
+/**
+ * «Forget»: Jiten olvida la tarjeta y la palabra vuelve a estar sin ver.
+ * Es el mismo `forget-add` que manda su extensión desde el botón del mismo nombre.
+ */
+export function syncJitenForget(term: string, reading: string) {
+  if (!canQueueJitenSync() || !term) return;
+  const spelling = term.split(':')[0];
+  enqueue({ kind: 'state', term: spelling, reading: reading || '', state: 'forget-add', at: Date.now() });
+  stateOverrides.set(spelling, 'new');
   emitChange();
 }

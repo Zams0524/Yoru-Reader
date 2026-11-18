@@ -235,6 +235,74 @@ export async function getAudiobookPersonalized(libraryId: string, limit = 12): P
   return [];
 }
 
+/**
+ * Lo que el usuario tiene a medias, en el orden en que lo escuchó por última vez.
+ *
+ * Es el `items-in-progress` del propio Audiobookshelf, o sea lo mismo que enseña su
+ * app en «Continue listening»: así los dos sitios dicen lo mismo. El avance de cada
+ * uno se pide aparte (ver dentro) y sale en tanto por ciento, para la barra.
+ *
+ * Si el servidor no contesta, devuelve una lista vacía: no poder saber por dónde vas
+ * no es motivo para dejar Inicio sin audiolibros.
+ */
+export async function getAudiobooksInProgress(limit = 12): Promise<{ item: AudiobookItem; percent: number }[]> {
+  try {
+    const { data } = await absRequest<any>(`/api/me/items-in-progress?limit=${limit}`);
+    const list = Array.isArray(data?.libraryItems) ? data.libraryItems : [];
+    if (list.length === 0) return [];
+
+    /*
+      El avance se pide aparte, y no se saca de esta misma respuesta.
+
+      `items-in-progress` dice *qué* tienes a medias, pero los que vienen en esa lista
+      no traen el progreso en ningún sitio fijo: según la versión del servidor está en
+      `progress`, en `mediaProgress`, o en ninguno. Fiarse de eso dejaba la barra a
+      cero y la tarjeta enseñando el autor en vez del porcentaje.
+
+      `/api/me` sí lo tiene siempre, en `mediaProgress`, y es **una** petición para
+      toda la lista. Si tampoco estuviera ahí, se pregunta uno a uno por
+      `/api/me/progress/{id}`, que es el camino que ya usa la ficha.
+    */
+    const porItem = new Map<string, number>();
+    try {
+      const { data: me } = await absRequest<any>('/api/me');
+      const progresos = Array.isArray(me?.mediaProgress) ? me.mediaProgress : [];
+      for (const entrada of progresos) {
+        const id = String(entrada?.libraryItemId || entrada?.id || '');
+        if (!id) continue;
+        const avance = Number(entrada?.progress);
+        const pasado = Number(entrada?.currentTime);
+        const total = Number(entrada?.duration);
+        const fraccion = Number.isFinite(avance) && avance > 0
+          ? avance
+          : total > 0 && Number.isFinite(pasado) ? pasado / total : 0;
+        if (fraccion > 0) porItem.set(id, fraccion);
+      }
+    } catch {
+      /* se intenta uno a uno más abajo */
+    }
+
+    const items: AudiobookItem[] = list.filter((raw: any) => raw?.media).slice(0, limit).map(toAudiobookItem);
+    // Como mucho ocho sueltos: esto es una barra de progreso, no vale una tanda de peticiones.
+    const sueltos = items.filter((item) => !porItem.has(item.id)).slice(0, 8);
+    if (sueltos.length > 0) {
+      const encontrados = await Promise.all(sueltos.map(async (item) => {
+        const progreso = await getAudiobookProgress(item.id);
+        if (!progreso || !(progreso.duration > 0)) return null;
+        return [item.id, progreso.currentTime / progreso.duration] as const;
+      }));
+      for (const par of encontrados) if (par) porItem.set(par[0], par[1]);
+    }
+
+    return items.map((item) => ({
+      item,
+      percent: Math.min(100, Math.max(0, Math.round((porItem.get(item.id) ?? 0) * 100))),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** One page (0-based) of a library's audiobooks, sorted by title. */
 export async function getAudiobooks(libraryId: string, page = 0, limit = 50): Promise<{ items: AudiobookItem[]; total: number }> {
   const { data } = await absRequest<any>(`/api/libraries/${encodeURIComponent(libraryId)}/items?limit=${limit}&page=${page}&sort=media.metadata.title&minified=1`);

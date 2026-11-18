@@ -24,7 +24,7 @@ import { db } from '../utils/db';
 import { ankiConnectRequest } from '../utils/ankiConnect';
 import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionaryData, closeDB } from '../utils/yomitanDB';
 import { tokenizeText } from '../utils/japanese';
-import { getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
+import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
@@ -3268,8 +3268,9 @@ const Library = React.memo(function Library({
         });
         // Update all cards belonging to the old deck
         const srsData = db.getSrsData();
+        // Igual que al borrar: las tarjetas sin origen son las del mazo por defecto.
         Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-          if (card && card.source === oldName) {
+          if (card && (card.source || DEFAULT_DECK_NAME).trim() === oldName) {
             card.source = newName;
             db.saveSrsCard(word, card);
           }
@@ -3303,8 +3304,17 @@ const Library = React.memo(function Library({
         db.saveSrsCard(`_deck_${deckName}`, null);
         const srsData = db.getSrsData();
         delete srsData[`_deck_${deckName}`];
+        /*
+          Las tarjetas sin origen son del mazo por defecto, y también se borran.
+
+          La lista de mazos las cuenta ahí —`(card.source || 'Yoru Reader')`—, pero el borrado
+          solo miraba `card.source === deckName`, así que borrando «Yoru Reader» no se iba
+          ninguna: el mazo desaparecía un instante y volvía con sus tarjetas intactas. Una
+          tarjeta se queda sin origen, por ejemplo, cuando la creas puntuándola desde la
+          tarjeta del lector.
+        */
         Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-          if (card && card.source === deckName) {
+          if (card && (card.source || DEFAULT_DECK_NAME).trim() === deckName) {
             delete srsData[word];
           }
         });

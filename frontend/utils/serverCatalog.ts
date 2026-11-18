@@ -2,6 +2,7 @@ import {
   getKavitaLibraries,
   getKavitaOnDeck,
   getKavitaSeries,
+  getKavitaSeriesMetadata,
   isKavitaConfigured,
   kavitaSeriesCoverUrl,
 } from './kavitaService';
@@ -10,6 +11,7 @@ import {
   getAudiobookLibraries,
   getAudiobookPersonalized,
   getAudiobooks,
+  getAudiobooksInProgress,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
 
@@ -48,6 +50,8 @@ export interface ServerItem {
   author?: string;
   /** Horas estimadas de lectura, cuando Kavita las da. */
   hours?: number;
+  /** Por dónde va el usuario, 0-100. Solo lo traen los que están a medias. */
+  percent?: number;
 }
 
 /** Una serie del servidor, con los tomos que conocemos de ella. */
@@ -75,9 +79,11 @@ export interface ServerCatalog {
   onDeck: ServerItem[];
   /** Estanterías que Audiobookshelf prepara para el usuario. */
   forYouAudio: ServerItem[];
+  /** Lo que el usuario tiene a medias en Audiobookshelf, con su avance. */
+  continueAudio: ServerItem[];
 }
 
-const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [] };
+const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [], continueAudio: [] };
 
 /** El último listado conocido. Nunca lanza: si no hay nada, devuelve vacío. */
 export function getCachedServerCatalog(): ServerCatalog {
@@ -91,6 +97,7 @@ export function getCachedServerCatalog(): ServerCatalog {
       audiobooks: Array.isArray(parsed?.audiobooks) ? parsed.audiobooks : [],
       onDeck: Array.isArray(parsed?.onDeck) ? parsed.onDeck : [],
       forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
+      continueAudio: Array.isArray(parsed?.continueAudio) ? parsed.continueAudio : [],
     };
   } catch {
     return EMPTY;
@@ -107,11 +114,11 @@ function save(catalog: ServerCatalog): void {
 }
 
 /** Corta por lo sano: fuera de casa no se espera a un servidor que no va a contestar. */
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number = TIMEOUT_MS): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS);
+      window.setTimeout(() => reject(new Error('timeout')), ms);
     }),
   ]);
 }
@@ -149,13 +156,42 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
 
 async function fetchOnDeck(): Promise<ServerItem[]> {
   const series = await withTimeout(getKavitaOnDeck(MAX_ITEMS));
-  return series.map((item) => ({
-    id: 'ondeck-' + item.id,
-    serverId: String(item.id),
-    title: item.name,
-    cover: kavitaSeriesCoverUrl(item.id),
-    source: 'kavita' as const,
-  }));
+  /*
+    El autor, que el listado de series no trae: está en los metadatos, uno por serie.
+    Solo para las que se ven en la fila, y sin que un servidor lento tumbe el
+    carrusel: `getKavitaSeriesMetadata` nunca lanza, y lo que no llegue a tiempo
+    sencillamente sale sin autor, que es mejor que decir «Sin autor» por costumbre.
+  */
+  const visibles = series.slice(0, 12);
+  const autores = new Map<number, string>();
+  await withTimeout(
+    Promise.all(
+      visibles.map(async (item) => {
+        const meta = await getKavitaSeriesMetadata(item.id);
+        const escritor = (meta.writers || [])[0];
+        if (escritor) autores.set(item.id, escritor);
+      })
+    ),
+    TIMEOUT_MS * 4
+  ).catch(() => undefined);
+
+  return series.map((item) => {
+    // Kavita cuenta páginas; la tarjeta enseña por dónde vas, igual que las de audio.
+    const leidas = Number(item.pagesRead);
+    const total = Number(item.pages);
+    const percent = total > 0 && Number.isFinite(leidas)
+      ? Math.min(100, Math.max(0, Math.round((leidas / total) * 100)))
+      : undefined;
+    return {
+      id: 'ondeck-' + item.id,
+      serverId: String(item.id),
+      title: item.name,
+      cover: kavitaSeriesCoverUrl(item.id),
+      source: 'kavita' as const,
+      author: autores.get(item.id),
+      percent,
+    };
+  });
 }
 
 async function fetchForYouAudio(): Promise<ServerItem[]> {
@@ -170,6 +206,29 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
     cover: absCoverUrl(item.id),
     source: 'audiobookshelf' as const,
     author: item.author || undefined,
+  }));
+}
+
+/** «Continuar escuchando»: lo que Audiobookshelf tiene a medias, con su avance. */
+async function fetchContinueAudio(): Promise<ServerItem[]> {
+  /*
+    Más tiempo que los demás, y por eso lleva su propio plazo.
+
+    Este son dos peticiones encadenadas —la lista y el avance—, y a veces alguna
+    suelta más. Con los 2,5 s de todos se pasaba de largo, el intento se daba por
+    fallido y se quedaba lo de la caché: las tarjetas de siempre, con la barra a cero.
+    Eso es justo lo que se veía después del primer arreglo.
+  */
+  const enCurso = await withTimeout(getAudiobooksInProgress(12), TIMEOUT_MS * 4);
+  return enCurso.map(({ item, percent }) => ({
+    id: 'enescucha-' + item.id,
+    serverId: item.id,
+    title: item.title,
+    cover: absCoverUrl(item.id),
+    source: 'audiobookshelf' as const,
+    series: item.series || undefined,
+    author: item.author || undefined,
+    percent,
   }));
 }
 
@@ -222,11 +281,12 @@ export async function refreshServerCatalog(): Promise<void> {
 
   running = true;
   try {
-    const [kavita, audiobooks, onDeck, forYouAudio] = await Promise.all([
+    const [kavita, audiobooks, onDeck, forYouAudio, continueAudio] = await Promise.all([
       wantsKavita ? attempt(fetchKavita) : Promise.resolve(SKIPPED),
       wantsAudiobooks ? attempt(fetchAudiobooks) : Promise.resolve(SKIPPED),
       wantsKavita ? attempt(fetchOnDeck) : Promise.resolve(SKIPPED),
       wantsAudiobooks ? attempt(fetchForYouAudio) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchContinueAudio) : Promise.resolve(SKIPPED),
     ]);
 
     if (wantsKavita) {
@@ -239,6 +299,7 @@ export async function refreshServerCatalog(): Promise<void> {
       report('Audiobookshelf', [
         { label: 'audiolibros', attempt: audiobooks },
         { label: 'para ti', attempt: forYouAudio },
+        { label: 'a medias', attempt: continueAudio },
       ]);
     }
 
@@ -251,6 +312,7 @@ export async function refreshServerCatalog(): Promise<void> {
       audiobooks: audiobooks.items ?? previous.audiobooks,
       onDeck: onDeck.items ?? previous.onDeck,
       forYouAudio: forYouAudio.items ?? previous.forYouAudio,
+      continueAudio: continueAudio.items ?? previous.continueAudio,
     });
   } finally {
     running = false;

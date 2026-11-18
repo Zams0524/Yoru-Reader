@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Loader2, MoreVertical, Plus, Trash2, Upload, X } from 'lucide-react';
 import { deleteDictionary, getInstalledDictionaries, importYomitanZip, installBundledDictionary } from '../../utils/yomitanDB';
+import { modoAnalizador } from '../../utils/parserSettingsStore';
 import {
   getPackProgress, installRecommendedPack, isFrequencyDictionary, isPitchDictionary,
   packItems, packStatus, subscribePackProgress, type PackProgress
@@ -288,6 +289,20 @@ export default function DictionarySettings({ lang: appLang, settings, onSaveSett
         <div className="dict-settings-group-head">
           <span>{tr(lang, 'De dónde salen las definiciones', 'Where definitions come from')}</span>
         </div>
+        {/*
+          Leyendo en modo Jiten esta elección no manda, así que hay que decirlo. Un ajuste que
+          se ve encendido y no hace nada es peor que no tenerlo: se toca, no cambia nada, y uno
+          acaba pensando que el diccionario está roto.
+        */}
+        {modoAnalizador() === 'jiten' && (
+          <div className="dict-settings-item-desc" style={{ padding: '0 0 8px' }}>
+            {tr(
+              lang,
+              'Ahora lees en modo Jiten, así que las definiciones salen de Jiten y esto no se usa. Tus diccionarios siguen poniendo el tono y la frecuencia. Jiten solo tiene inglés: con la app en español, si tienes instalado «JMdict · Español» se usa ese para los significados. Para que mande esta elección, cambia a «Yoru» en los ajustes del analizador.',
+              'You are reading in Jiten mode, so definitions come from Jiten and this is not used. Your dictionaries still provide pitch and frequency. Jiten is English-only: with the app in Spanish, an installed "JMdict · Español" supplies the meanings instead. To make this choice apply, switch to "Yoru" in the parser settings.',
+            )}
+          </div>
+        )}
         {([
           ['ambos', tr(lang, 'Los míos, y Jiten si falta', 'Mine, and Jiten when missing'), tr(lang, 'Lo más rápido. Es lo que viene puesto.', 'Fastest. This is the default.')],
           ['locales', tr(lang, 'Solo mis diccionarios', 'Only my dictionaries'), tr(lang, 'Ninguna palabra sale a internet.', 'No word leaves your computer.')],

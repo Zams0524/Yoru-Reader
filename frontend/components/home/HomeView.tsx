@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
 import { useServerRails } from './HomeServerSections';
-import { useBookMenu } from './BookContextMenu';
+import { useBookActions, useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
 import {
@@ -48,6 +49,7 @@ export default function HomeView({
   onOpenServerSeries: (series: ServerSeries) => void;
 }) {
   const openMenu = useBookMenu();
+  const menuActions = useBookActions();
 
   /*
     El orden de los carruseles lo decide el usuario en Ajustes → Organizar inicio.
@@ -81,18 +83,31 @@ export default function HomeView({
   );
 
   /*
-    Inicio / Libros / Audiolibros.
+    Inicio / Libros / Audiolibros: filtran esta misma pantalla, sin salir de ella.
 
-    Antes eran un filtro de esta misma pantalla, y filtraban a medias: con
-    «Audiolibros» elegido seguían saliendo «Añadidos recientemente», «Libros para ti»
-    y «Series», que son libros locales. Ahora llevan a su sección de verdad, que es lo
-    que una pestaña promete. Inicio no navega: ya estás en Inicio.
+    Fueron un filtro, luego pasaron a navegar —porque filtraban a medias: con
+    «Audiolibros» puesto seguían saliendo «Añadidos recientemente», «Libros para ti» y
+    «Series», que son libros— y ahora vuelven a filtrar, pero de verdad: cada carrusel
+    sabe si es de libros o de audio y solo sale el que toca. Lo pidió zams (18 nov
+    2026): «el botón de Libros me lleva a catálogo en vez de mostrarme la sección de
+    libros ahí mismo». Para ir a la sección entera están el menú de la izquierda y el
+    «Ver todo» de debajo de las pestañas.
   */
-  const scopes: { key: 'all' | 'books' | 'audio'; label: string; go?: () => void }[] = [
+  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
+  const scopes: { key: 'all' | 'books' | 'audio'; label: string }[] = [
     { key: 'all', label: es ? 'Inicio' : 'Home' },
-    { key: 'books', label: es ? 'Libros' : 'Books', go: onGoCatalog },
-    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks', go: onGoAudiobooks },
+    { key: 'books', label: es ? 'Libros' : 'Books' },
+    { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks' },
   ];
+
+  /** Los carruseles que son de audio; el resto son de libros. */
+  const RAILES_DE_AUDIO = new Set<RailId>([
+    'server-audio-continue',
+    'server-list',
+    'server-foryou-audio',
+    'server-audio-series',
+    'server-random-audio',
+  ]);
 
   /*
     Vacío de verdad: ni un libro propio ni nada en ninguno de los dos servidores.
@@ -135,8 +150,8 @@ export default function HomeView({
           const cover = coverImage(book);
           const tint = coverTint(book);
           return (
+            <span key={book.id} className="yoru-continue-slot">
             <button
-              key={book.id}
               type="button"
               className="yoru-continue-card"
               onClick={() => onContinue(book)}
@@ -159,6 +174,26 @@ export default function HomeView({
                 </span>
               </span>
             </button>
+            {/*
+              La misma acción que «Quitar de Continuar» del menú, pero a un clic.
+              El menú del clic derecho no se ve, y zams fue a quitar un libro de aquí
+              pulsando encima (18 nov 2026): lo único que pasaba era que se abría.
+            */}
+            {menuActions && (
+              <button
+                type="button"
+                className="yoru-continue-remove"
+                title={es ? 'Quitar de Continuar' : 'Remove from Continue'}
+                aria-label={es ? 'Quitar de Continuar' : 'Remove from Continue'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  menuActions.onHideFromContinue(book);
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+            </span>
           );
         })}
       </Rail>
@@ -226,13 +261,22 @@ export default function HomeView({
           <button
             key={item.key}
             type="button"
-            className={`yoru-chip${item.go ? '' : ' active'}`}
-            aria-current={item.go ? undefined : 'page'}
-            onClick={() => item.go?.()}
+            className={`yoru-chip${scope === item.key ? ' active' : ''}`}
+            aria-current={scope === item.key ? 'page' : undefined}
+            onClick={() => setScope(item.key)}
           >
             {item.label}
           </button>
         ))}
+        {scope !== 'all' && (
+          <button
+            type="button"
+            className="yoru-chip-link"
+            onClick={() => (scope === 'books' ? onGoCatalog() : onGoAudiobooks())}
+          >
+            {es ? 'Ver todo' : 'See all'}
+          </button>
+        )}
       </div>
 
       {/*
@@ -247,9 +291,28 @@ export default function HomeView({
         </p>
       )}
 
-      {layout.order
-        .filter((id) => !hidden.has(id) && all[id])
-        .map((id) => <React.Fragment key={id}>{all[id]}</React.Fragment>)}
+      {(() => {
+        const visibles = layout.order.filter((id) => {
+          if (hidden.has(id) || !all[id]) return false;
+          if (scope === 'books') return !RAILES_DE_AUDIO.has(id);
+          if (scope === 'audio') return RAILES_DE_AUDIO.has(id);
+          return true;
+        });
+        // Filtrar y no enseñar nada deja la pantalla en blanco sin decir por qué.
+        if (visibles.length === 0) {
+          return (
+            <EmptyState
+              title={scope === 'audio'
+                ? (es ? 'Aún no hay audiolibros aquí' : 'No audiobooks here yet')
+                : (es ? 'Aún no hay libros aquí' : 'No books here yet')}
+              sub={scope === 'audio'
+                ? (es ? 'Conecta Audiobookshelf para verlos en Inicio.' : 'Connect Audiobookshelf to see them on Home.')
+                : (es ? 'Importa una novela o conecta Kavita.' : 'Import a novel or connect Kavita.')}
+            />
+          );
+        }
+        return visibles.map((id) => <React.Fragment key={id}>{all[id]}</React.Fragment>);
+      })()}
     </div>
   );
 }

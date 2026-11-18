@@ -1,4 +1,5 @@
 import { searchYomitanDB } from './yomitanDB';
+import { modoAnalizador } from './parserSettingsStore';
 
 // Japanese-English Dictionary Utility
 
@@ -91,6 +92,29 @@ export function mereceBuscarseFuera(pos: string): boolean {
   return categoria !== '助詞' && categoria !== '助動詞';
 }
 
+/** La app está puesta en español. `db.ts` deja esta copia escrita en cada cambio de idioma. */
+function appEnEspanol(): boolean {
+  try {
+    return (localStorage.getItem('app_language') || 'en').toLowerCase().startsWith('es');
+  } catch {
+    return false;
+  }
+}
+
+/** Acentos y palabras que en inglés no salen; sirven para una glosa suelta, sin nombre de diccionario. */
+const PISTAS_ESPANOL = /[áéíóúñ¡¿]|\b(el|la|los|las|un|una|de|que|con|por|para|ser|estar|hacer)\b/i;
+
+/** De una lista de acepciones, las que vienen de un diccionario en español. */
+function glosasEnEspanol(definitions: any[]): any[] {
+  return (definitions || []).filter((def) => {
+    if (typeof def === 'string') return PISTAS_ESPANOL.test(def);
+    const nombre = String(def?.dictionary || '');
+    if (/espa(ñ|n)ol|spanish/i.test(nombre)) return true;
+    // Diccionario sin nombre reconocible: se mira la glosa.
+    return !nombre && PISTAS_ESPANOL.test(String(def?.glossary || ''));
+  });
+}
+
 // Look up a word (first in local database, then on Jiten.moe API via CORS proxy)
 export async function lookupWord(word: string, reading: string = '', pos: string = ''): Promise<DictionaryEntry | null> {
   // 1. Clean the word: remove trailing particles or spaces
@@ -111,11 +135,41 @@ export async function lookupWord(word: string, reading: string = '', pos: string
   /** Jiten no llegó a contestar. Distinto de que contestara y no tuviera la palabra. */
   let noSePudoPreguntar = false;
 
-  const fuente = leerFuente();
+  /*
+    Quién parte las palabras manda sobre de dónde salen las definiciones.
+
+    Decisión de zams (18 nov 2026): leyendo en modo Jiten, el diccionario es el de Jiten y solo
+    el de Jiten. Tenía sentido pedirlo: las palabras ya vienen partidas por Jiten, con sus
+    identificadores y sus estados, y que la tarjeta contestara luego con JMdict dejaba la mitad
+    de la pantalla hablando de una fuente y la otra mitad de otra. En el modo del analizador de
+    la app no se toca nada: ahí manda la elección de Ajustes, como hasta ahora.
+
+    El tono y la frecuencia se siguen sacando de los diccionarios locales, porque no son
+    definiciones y Jiten no los da: quitarlos sería perder el gráfico de tono y las insignias
+    sin que nadie lo haya pedido.
+  */
+  const modoJiten = modoAnalizador() === 'jiten';
+  const fuente: FuenteDefiniciones = modoJiten ? 'jiten' : leerFuente();
+  const soloTonoYFrecuencia = modoJiten;
+
+  /*
+    Leyendo en español, las definiciones en español mandan sobre las de Jiten.
+
+    Jiten solo tiene inglés. No es que no se le esté pidiendo español: su API no lo ofrece
+    (comprobado el 18 nov 2026 en su propio swagger, https://api.jiten.moe/swagger/v1/swagger.json:
+    ni `/vocabulary/search` ni `/reader/parse` aceptan idioma, y las acepciones son las glosas
+    inglesas de JMdict). Así que pedírselo en español no es posible.
+
+    Lo que sí hay es el JMdict en español que la app instala desde Ajustes → Diccionarios. En
+    modo Jiten, con la app en español, esas acepciones se quedan y Jiten no llega a preguntarse.
+    Si no hay diccionario español instalado, no se inventa nada: sigue saliendo el inglés de
+    Jiten, igual que hasta ahora.
+  */
+  const quiereEspanol = modoJiten && appEnEspanol();
 
   // 2. Prioritize Yomitan DB (IndexedDB) first, so user's installed dictionaries (Spanish, etc.) take precedence!
   // We use a 1.5-second timeout to prevent any IndexedDB locks/upgrades from hanging the UI
-  if (fuente !== 'jiten') try {
+  if (fuente !== 'jiten' || soloTonoYFrecuencia) try {
     const yomitanPromise = searchYomitanDB(searchWord, searchReading, pos);
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
     
@@ -125,6 +179,11 @@ export async function lookupWord(word: string, reading: string = '', pos: string
         ...yomitanMatch,
         definitions: yomitanMatch.fullDefinitions || yomitanMatch.definitions
       };
+      // En modo Jiten nos quedamos con el tono y la frecuencia, nunca con el significado…
+      // …salvo que el significado esté en español y la app también. Ver `quiereEspanol`.
+      if (soloTonoYFrecuencia && entry) {
+        entry.definitions = quiereEspanol ? glosasEnEspanol(entry.definitions) : [];
+      }
     }
   } catch (err) {
     console.error('Yomitan DB search error:', err);
@@ -232,11 +291,20 @@ export async function lookupWord(word: string, reading: string = '', pos: string
     palabra no exista en ninguna parte, o que no se haya podido preguntar. Lo segundo
     se arregla solo más tarde.
   */
-  if (!entry) {
+  /*
+    Se mira también la entrada sin significados, no solo que no haya entrada.
+
+    En modo Jiten la búsqueda local se usa solo para el tono y la frecuencia, así que una
+    palabra que Jiten no tenga deja una entrada con la lista de definiciones vacía. Sin esto,
+    la tarjeta salía con el título y el gráfico de tono y un hueco donde va el significado, sin
+    decir siquiera que no se había encontrado.
+  */
+  if (!entry || !entry.definitions || entry.definitions.length === 0) {
     entry = {
-      word: searchWord,
-      reading: searchReading || '',
-      partsOfSpeech: ['Unknown'],
+      ...(entry || {}),
+      word: entry?.word || searchWord,
+      reading: entry?.reading || searchReading || '',
+      partsOfSpeech: entry?.partsOfSpeech?.length ? entry.partsOfSpeech : ['Unknown'],
       definitions: ['—'],
       isFallback: true,
       sinConexion: noSePudoPreguntar,

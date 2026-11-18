@@ -17,6 +17,7 @@ import {
   flushJitenQueue,
   getJitenConnectionState,
   getPendingJitenSyncCount,
+  getLastJitenSync,
   onJitenChange,
   testJitenApiKey,
 } from '../../utils/jitenSync';
@@ -1731,13 +1732,23 @@ const YoruParserSettings: React.FC<YoruParserSettingsProps> = ({
 interface JitenAccountCardProps {
   apiKey: string;
   modo: ModoAnalizador;
-  onSaveKey: (key: string) => void;
+  /** Se espera antes de encender el modo Jiten, para que la clave ya esté guardada. */
+  onSaveKey: (key: string) => void | Promise<void>;
   onChangeModo: (value: ModoAnalizador) => void;
   t: (es: string, en: string) => string;
   colors: YoruParserSettingsProps['colors'];
   cardStyle: React.CSSProperties;
   labelStyle: React.CSSProperties;
   descStyle: React.CSSProperties;
+}
+
+/** «hace 2 min», para el acuse del último envío a Jiten. */
+function haceCuanto(at: number): string {
+  const minutos = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (minutos < 1) return 'hace un momento';
+  if (minutos < 60) return `hace ${minutos} min`;
+  const horas = Math.round(minutos / 60);
+  return horas < 24 ? `hace ${horas} h` : `hace ${Math.round(horas / 24)} d`;
 }
 
 const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
@@ -1764,7 +1775,7 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
 
   const saveAndTest = async () => {
     const key = draft.trim();
-    if (key !== apiKey) onSaveKey(key);
+    if (key !== apiKey) await onSaveKey(key);
     if (!key) {
       setTestResult(null);
       return;
@@ -1774,19 +1785,33 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
     setTesting(false);
     setTestResult(result);
     if (result === 'ok' && !desktop) void flushJitenQueue();
+    /*
+      Guardar la clave enciende el modo Jiten.
+
+      Sin esto, pegar la clave no cambiaba nada: el botón «Jiten» de abajo estaba apagado por
+      falta de clave, así que el modo guardado era «el analizador de la app», y al aparecer la
+      clave seguía siéndolo. Había que acordarse de bajar y pulsar «Jiten» a mano, y quien no lo
+      hacía daba por hecho que su clave no servía. Quien pega su clave quiere leer con Jiten.
+
+      Solo cuando Jiten no la ha rechazado: con una clave mal copiada, cambiar de analizador
+      dejaría el libro sin partir ninguna palabra. Y es reversible con un clic ahí abajo, que
+      es lo que hay que usar para leer con el analizador de la app teniendo cuenta de Jiten.
+    */
+    if (result !== 'rejected' && modo !== 'jiten') onChangeModo('jiten');
   };
 
   const state = getJitenConnectionState();
   const pending = getPendingJitenSyncCount();
-  const shownResult = testResult ?? (apiKey && !desktop ? (state === 'rejected' ? 'rejected' : state === 'offline' ? 'offline' : null) : null);
+  const ultimoEnvio = getLastJitenSync();
+  // También en escritorio: desde que el lector pide allí el parseo a Jiten, si Jiten rechaza la
+  // clave o no contesta eso se nota leyendo, así que la tarjeta tiene que decirlo igual.
+  const shownResult = testResult ?? (apiKey ? (state === 'rejected' ? 'rejected' : state === 'offline' ? 'offline' : null) : null);
   const statusText = shownResult === 'ok'
     ? t('Conectado a tu cuenta de Jiten.', 'Connected to your Jiten account.')
     : shownResult === 'rejected'
       ? t('Jiten rechazó la clave. Revísala.', 'Jiten rejected the key. Check it.')
       : shownResult === 'offline'
-        ? (desktop
-          ? t('Clave guardada en la extensión. No se pudo comprobar con Jiten desde aquí.', 'Key saved in the extension. It could not be checked with Jiten from here.')
-          : t('No se pudo contactar con Jiten. Se reintentará.', 'Could not reach Jiten. It will retry.'))
+        ? t('No se pudo contactar con Jiten. Se reintentará.', 'Could not reach Jiten. It will retry.')
         : '';
   const statusColor = shownResult === 'ok' ? '#4ade80' : shownResult === 'rejected' ? '#f87171' : colors.textMuted;
 
@@ -1821,12 +1846,12 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
         <div style={descStyle}>
           {desktop
             ? t(
-              'Cópiala en jiten.moe → Ajustes → API. La extensión de lectura la usa para separar las palabras con Jiten, colorearlas con tus estados y enviar tus repasos.',
-              'Copy it from jiten.moe → Settings → API. The reader extension uses it to split words with Jiten, colour them with your states and send your reviews.',
+              'Cópiala en jiten.moe → Ajustes → API. Con ella, el lector separa las palabras con Jiten, las colorea con tus estados de Jiten y, leyendo en modo Jiten, le manda tus repasos y tus marcas.',
+              'Copy it from jiten.moe → Settings → API. With it, the reader splits words with Jiten, colours them with your Jiten states and, while reading in Jiten mode, sends it your reviews and marks.',
             )
             : t(
-              'Cópiala en jiten.moe → Ajustes → API. Con ella, Yoru usa el parser de Jiten, colorea las palabras con tus estados de Jiten y envía a Jiten tus repasos y palabras marcadas.',
-              "Copy it from jiten.moe → Settings → API. With it, Yoru uses Jiten's parser, colours words with your Jiten states and sends your reviews and marked words to Jiten.",
+              'Cópiala en jiten.moe → Ajustes → API. Con ella, Yoru usa el parser de Jiten, colorea las palabras con tus estados de Jiten y, leyendo en modo Jiten, le manda tus repasos y tus marcas. En el modo Yoru todo se queda en la app.',
+              "Copy it from jiten.moe → Settings → API. With it, Yoru uses Jiten's parser, colours words with your Jiten states and, while reading in Jiten mode, sends it your reviews and marks. In Yoru mode everything stays in the app.",
             )}
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
@@ -1862,9 +1887,26 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
           )}
         </div>
         {statusText && <div style={{ ...descStyle, color: statusColor, marginTop: '8px' }}>{statusText}</div>}
-        {!desktop && apiKey && pending > 0 && (
+        {/*
+          También en escritorio desde el 18 nov 2026: allí los botones de la tarjeta ya mandan
+          a Jiten, así que la cola y el acuse del último envío tienen que verse igual.
+        */}
+        {apiKey && pending > 0 && (
           <div style={{ ...descStyle, marginTop: '4px' }}>
             {t(`${pending} cambios esperando para enviarse a Jiten.`, `${pending} changes waiting to be sent to Jiten.`)}
+          </div>
+        )}
+        {apiKey && ultimoEnvio && (
+          <div style={{ ...descStyle, marginTop: '4px', color: ultimoEnvio.ok ? '#4ade80' : '#f87171' }}>
+            {ultimoEnvio.ok
+              ? t(
+                  `Último envío a Jiten: ${ultimoEnvio.term} · ${ultimoEnvio.que}, aceptado ${haceCuanto(ultimoEnvio.at)}.`,
+                  `Last sent to Jiten: ${ultimoEnvio.term} · ${ultimoEnvio.que}, accepted ${haceCuanto(ultimoEnvio.at)}.`,
+                )
+              : t(
+                  `Último envío a Jiten: ${ultimoEnvio.term} · ${ultimoEnvio.que}, no entró (${ultimoEnvio.detalle || 'sin detalle'}).`,
+                  `Last sent to Jiten: ${ultimoEnvio.term} · ${ultimoEnvio.que}, not accepted (${ultimoEnvio.detalle || 'no detail'}).`,
+                )}
           </div>
         )}
       </div>
@@ -1888,7 +1930,9 @@ const JitenAccountCard: React.FC<JitenAccountCardProps> = ({
             },
             {
               valor: 'nativo' as ModoAnalizador,
-              titulo: t('El analizador de la app', "The app's own analyser"),
+              // «Yoru» a secas, por decisión de zams (18 nov 2026): los dos modos se nombran igual,
+              // por quién parte las palabras, y debajo ya se explica qué hace cada uno.
+              titulo: t('Yoru', 'Yoru'),
               motivo: motivoModoNoDisponible('nativo'),
             },
           ]).map(({ valor, titulo, motivo }) => {

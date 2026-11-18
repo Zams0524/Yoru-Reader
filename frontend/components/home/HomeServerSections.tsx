@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Play } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Play, Tag, X } from 'lucide-react';
 import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
@@ -10,7 +10,7 @@ import {
   type ServerSeries,
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
-import { audiobookList } from '../../utils/audiobookList';
+import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -20,7 +20,38 @@ import { audiobookList } from '../../utils/audiobookList';
  *
  * En lugar de «Popular» (que ningún servidor expone como ranking) va «Continuar en el
  * servidor», que es el `on-deck` de Kavita: lo que ese servidor tiene a medias.
+ *
+ * Lo que se aparta a mano de las dos filas de «continuar» del servidor se guarda
+ * aquí, en la app: el servidor sigue sabiendo que ese libro está a medias, que es la
+ * verdad, y no se lo quitamos a los demás aparatos que lo usan. Lo pidió zams (18 nov
+ * 2026) al encontrarse con que en esas tarjetas el clic derecho no hacía nada.
  */
+const APARTADOS = 'yoru_server_continue_hidden_v1';
+const APARTADOS_EVENTO = 'yoru-server-continue-hidden';
+
+function leerApartados(): string[] {
+  try {
+    const crudo = localStorage.getItem(APARTADOS);
+    const lista = crudo ? JSON.parse(crudo) : [];
+    return Array.isArray(lista) ? lista.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function apartar(id: string): void {
+  const lista = leerApartados();
+  if (!lista.includes(id)) {
+    lista.push(id);
+    try {
+      localStorage.setItem(APARTADOS, JSON.stringify(lista));
+    } catch {
+      /* Sin sitio en el almacén: se queda sin apartar, que es mejor que romper la vista. */
+    }
+  }
+  window.dispatchEvent(new Event(APARTADOS_EVENTO));
+}
+
 export function useServerRails({
   es,
   localTitles,
@@ -52,6 +83,14 @@ export function useServerRails({
     que alimenta el resto de carruseles. Un id que ya no esté en el servidor
     sencillamente no aparece, en vez de dejar una tarjeta rota.
   */
+  const [apartados, setApartados] = useState(() => new Set(leerApartados()));
+  useEffect(() => {
+    const onUpdate = () => setApartados(new Set(leerApartados()));
+    window.addEventListener(APARTADOS_EVENTO, onUpdate);
+    return () => window.removeEventListener(APARTADOS_EVENTO, onUpdate);
+  }, []);
+  const quitar = (item: ServerItem) => apartar(item.id);
+
   const [listIds, setListIds] = useState(() => audiobookList());
   useEffect(() => {
     const onUpdate = () => setListIds(audiobookList());
@@ -66,8 +105,14 @@ export function useServerRails({
 
   // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
   const onDeck = useMemo(
-    () => catalog.onDeck.filter((item) => !localTitles || !localTitles.has(item.title)),
-    [catalog.onDeck, localTitles]
+    () => catalog.onDeck.filter(
+      (item) => (!localTitles || !localTitles.has(item.title)) && !apartados.has(item.id)
+    ),
+    [catalog.onDeck, localTitles, apartados]
+  );
+  const continueAudio = useMemo(
+    () => catalog.continueAudio.filter((item) => !apartados.has(item.id)),
+    [catalog.continueAudio, apartados]
   );
   const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
@@ -94,11 +139,29 @@ export function useServerRails({
     );
   }
 
+  /*
+    «Seguir escuchando»: los audiolibros a medias, con su barra de avance.
+
+    Faltaba, y se notaba: los libros tenían su «Continuar» con el porcentaje desde el
+    principio y los audiolibros no tenían nada, aunque el servidor sepa perfectamente
+    por dónde vas. Lo pidió zams (18 nov 2026). Sale del `items-in-progress` del
+    propio Audiobookshelf, así que dice lo mismo que su app.
+  */
+  if (continueAudio.length > 0) {
+    rails['server-audio-continue'] = (
+      <Rail title={es ? 'Seguir escuchando' : 'Keep listening'} es={es}>
+        {continueAudio.map((item) => (
+          <ServerContinueCard key={`c-${item.id}`} item={item} es={es} onOpen={onOpenItem} onHide={quitar} />
+        ))}
+      </Rail>
+    );
+  }
+
   if (onDeck.length > 0) {
     rails['server-ondeck'] = (
       <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
         {onDeck.map((item) => (
-          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
+          <ServerContinueCard key={item.id} item={item} es={es} onOpen={onOpenItem} onHide={quitar} />
         ))}
       </Rail>
     );
@@ -168,6 +231,178 @@ export function useServerRails({
 }
 
 /**
+ * Una fila de «seguir donde lo dejaste», para lo que está a medias en el servidor.
+ *
+ * Es la misma tarjeta ancha que el «Continuar» local (`.yoru-continue-card`), y a
+ * propósito: zams lo pidió así (18 nov 2026) porque las tres filas de «continuar»
+ * caen juntas arriba de Inicio y mezclar póster grande con fila ancha las hacía
+ * parecer secciones distintas. Lo único que cambia es la línea de estado, que dice
+ * si es novela o audiolibro.
+ */
+function ServerContinueCard({
+  item,
+  es,
+  onOpen,
+  onHide,
+}: {
+  item: ServerItem;
+  es: boolean;
+  onOpen: (item: ServerItem) => void;
+  /** Aparta la tarjeta de la fila, solo en esta app. */
+  onHide: (item: ServerItem) => void;
+}) {
+  const isAudio = item.source === 'audiobookshelf';
+  const percent = typeof item.percent === 'number' ? Math.min(100, Math.max(0, item.percent)) : 0;
+  const tipo = isAudio ? (es ? 'Audiolibro' : 'Audiobook') : (es ? 'Novela' : 'Novel');
+  // Sin autor no se escribe «Sin autor»: eso es afirmar algo que no sabemos. Kavita
+  // solo da el escritor en los metadatos de la serie, y de ahí sale cuando los trae.
+  const subtitulo = item.author || item.series || '';
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <span
+      className="yoru-continue-slot"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}
+    >
+      <button type="button" className="yoru-continue-card" title={item.title} onClick={() => onOpen(item)}>
+        <span className="yoru-continue-cover">
+          <img src={item.cover} alt="" loading="lazy" />
+        </span>
+        <span className="yoru-continue-body">
+          <span className="yoru-continue-title">{item.title}</span>
+          {subtitulo && <span className="yoru-continue-author">{subtitulo}</span>}
+          <span className="yoru-continue-state">
+            {tipo} · {percent} %
+          </span>
+          <span className="yoru-continue-bar">
+            <span style={{ width: `${percent}%` }} />
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        className="yoru-continue-remove"
+        title={es ? 'Quitar de esta fila' : 'Remove from this row'}
+        aria-label={es ? 'Quitar de esta fila' : 'Remove from this row'}
+        onClick={(event) => {
+          event.stopPropagation();
+          onHide(item);
+        }}
+      >
+        <X size={14} />
+      </button>
+      {menu && (
+        <ServerItemMenu
+          item={item}
+          es={es}
+          x={menu.x}
+          y={menu.y}
+          onOpen={onOpen}
+          onHide={onHide}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </span>
+  );
+}
+
+/**
+ * El menú del clic derecho de una tarjeta del servidor.
+ *
+ * No es el de los libros de tu biblioteca: lo que hay aquí no es un libro tuyo, así
+ * que no puede ir a una colección ni tiene ficha local. Lo que sí puede hacer está
+ * todo aquí, con la misma pinta que el otro. Lo pidió zams (18 nov 2026).
+ */
+function ServerItemMenu({
+  item,
+  es,
+  x,
+  y,
+  onOpen,
+  onHide,
+  onClose,
+}: {
+  item: ServerItem;
+  es: boolean;
+  x: number;
+  y: number;
+  onOpen: (item: ServerItem) => void;
+  onHide: (item: ServerItem) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState({ left: x, top: y, ready: false });
+
+  // Que no se salga de la ventana: se mide ya pintado y se recoloca si hace falta.
+  useEffect(() => {
+    const caja = ref.current?.getBoundingClientRect();
+    if (!caja) return;
+    setPlace({
+      left: Math.max(8, Math.min(x, window.innerWidth - caja.width - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - caja.height - 8)),
+      ready: true,
+    });
+  }, [x, y]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const isAudio = item.source === 'audiobookshelf';
+  const id = serverItemId(item);
+  const enLista = isAudio && isAudiobookInList(id);
+  const run = (action: () => void) => () => { action(); onClose(); };
+
+  return (
+    <div
+      className="yoru-menu-scrim"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onContextMenu={(event) => { event.preventDefault(); onClose(); }}
+    >
+      <div
+        ref={ref}
+        className="yoru-menu"
+        role="menu"
+        aria-label={item.title}
+        style={{ left: place.left, top: place.top, visibility: place.ready ? 'visible' : 'hidden' }}
+      >
+        <div className="yoru-menu-head" title={item.title}>{item.title}</div>
+
+        <button type="button" className="yoru-menu-item" role="menuitem" onClick={run(() => onOpen(item))}>
+          <Play size={15} />
+          {isAudio ? (es ? 'Seguir escuchando' : 'Keep listening') : es ? 'Continuar' : 'Continue'}
+        </button>
+
+        {isAudio && (
+          <button
+            type="button"
+            className="yoru-menu-item"
+            role="menuitem"
+            onClick={run(() => toggleAudiobookInList(id))}
+          >
+            <Tag size={15} />
+            {enLista
+              ? (es ? 'Quitar de tu lista' : 'Remove from your list')
+              : (es ? 'Añadir a tu lista' : 'Add to your list')}
+          </button>
+        )}
+
+        <div className="yoru-menu-sep" />
+
+        <button type="button" className="yoru-menu-item" role="menuitem" onClick={run(() => onHide(item))}>
+          <X size={15} />
+          {es ? 'Quitar de esta fila' : 'Remove from this row'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Una portada del servidor.
  *
  * Es un `<button>` y no un `<div>` con `onClick` a propósito: así llega el foco con
@@ -190,10 +425,18 @@ function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpe
             <Play size={18} />
           </span>
         )}
+        {/* Lo que llevas escuchado, sobre la portada, como en «Continuar». */}
+        {typeof item.percent === 'number' && item.percent > 0 && (
+          <span className="yoru-poster-progress" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, item.percent)}%` }} />
+          </span>
+        )}
       </span>
       <span className="yoru-poster-title">{item.title}</span>
       <span className="yoru-poster-meta">
-        {item.author
+        {typeof item.percent === 'number' && item.percent > 0
+          ? `${item.percent} % ${isAudio ? (es ? 'escuchado' : 'listened') : (es ? 'leído' : 'read')}`
+          : item.author
           || (item.hours
             ? `~${Math.round(item.hours)} h ${es ? 'de lectura' : 'to read'}`
             : isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}

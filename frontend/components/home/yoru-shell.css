@@ -193,6 +193,49 @@
   padding: 10px 8px 40px;
 }
 
+/*
+  Barras de desplazamiento discretas en toda la concha.
+
+  Windows las pinta anchas y claras, y en una pantalla casi negra eso es una franja
+  gris que se lleva la vista antes que las portadas. Lo pidió zams (18 nov 2026):
+  finas, del color del borde, y que se vean de verdad solo al pasar por encima.
+*/
+.yoru-shell,
+.yoru-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.yoru-shell ::-webkit-scrollbar,
+.yoru-shell::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.yoru-shell ::-webkit-scrollbar-track,
+.yoru-shell::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.yoru-shell ::-webkit-scrollbar-thumb,
+.yoru-shell::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  /* El borde transparente deja el pulgar más estrecho que el canal, sin bordes duros. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.yoru-shell ::-webkit-scrollbar-thumb:hover,
+.yoru-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
+
+.yoru-shell ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .yoru-shell-nav-section { margin-bottom: 18px; }
 
 .yoru-shell-nav-label {
@@ -345,11 +388,19 @@
   gap: 8px;
   margin-bottom: 24px;
 }
+/*
+  Pestañas más calladas.
+
+  Eran tres cajas con borde y la elegida en blanco sólido, que en una portada de
+  portadas es lo más llamativo de la pantalla sin ser lo importante. Ahora la que no
+  está elegida no tiene ni caja ni borde, y la elegida es una pastilla suave. Se
+  sigue viendo cuál es, pero deja mirar los libros. (zams, 18 nov 2026: «más limpio».)
+*/
 .yoru-chip {
-  background: var(--surface-raised);
+  background: transparent;
   color: var(--text-muted);
-  border: 1px solid var(--border-light);
-  padding: 9px 20px;
+  border: 1px solid transparent;
+  padding: 8px 16px;
   border-radius: var(--radius-md);
   font: inherit;
   font-size: 14px;
@@ -357,12 +408,28 @@
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.yoru-chip:hover { background: var(--bg-card-hover); color: var(--text-main); }
+.yoru-chip:hover { background: var(--surface-soft); color: var(--text-main); }
 .yoru-chip.active {
-  background: var(--text-main);
-  border-color: var(--text-main);
-  color: var(--bg-app);
+  background: var(--surface-raised);
+  border-color: var(--border-light);
+  color: var(--text-main);
 }
+
+/* «Ver todo», al final de las pestañas: lleva a la sección entera. */
+.yoru-chip-link {
+  margin-left: auto;
+  align-self: center;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.yoru-chip-link:hover { background: var(--surface-soft); }
 
 /* La nota de «importa una novela» cuando lo que se está viendo es de los servidores. */
 .yoru-home-hint {
@@ -415,6 +482,27 @@
   /* Se queda, pero apagada: que la fila no cambie de ancho al llegar al extremo. */
   opacity: 0.35;
   cursor: default;
+}
+/*
+  Las flechas solo cuando el ratón está en ese carrusel.
+
+  Con ratón, seis u ocho pares de flechas encendidas a la vez son más ruido que ayuda:
+  el carrusel ya se arrastra y la rueda también lo mueve. Aparecen al acercarse y
+  siguen ahí para el teclado, porque `focus-within` las saca igual.
+
+  Va después de la regla de `:disabled` a propósito: con la misma fuerza, manda la
+  última, y si fuera antes la flecha apagada se vería siempre.
+*/
+@media (pointer: fine) {
+  .yoru-rail-arrow,
+  .yoru-rail-arrow:disabled {
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .yoru-rail:hover .yoru-rail-arrow,
+  .yoru-rail:focus-within .yoru-rail-arrow { opacity: 1; }
+  .yoru-rail:hover .yoru-rail-arrow:disabled,
+  .yoru-rail:focus-within .yoru-rail-arrow:disabled { opacity: 0.35; }
 }
 @media (pointer: coarse) {
   /* En táctil se arrastra con el dedo; las flechas solo quitarían sitio. */
@@ -562,6 +650,40 @@
 .yoru-grid .yoru-poster { width: 100%; }
 
 /* Tarjeta «Continuar» horizontal */
+/*
+  El hueco que envuelve la tarjeta: solo está para colgar de él la ✕ de quitar, que
+  no puede ir dentro de la tarjeta porque la tarjeta ya es un botón.
+*/
+.yoru-continue-slot {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+.yoru-continue-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.yoru-continue-slot:hover .yoru-continue-remove,
+.yoru-continue-remove:focus-visible {
+  opacity: 1;
+}
+.yoru-continue-remove:hover { background: rgba(0, 0, 0, 0.78); }
+/* Sin ratón no hay «pasar por encima», así que ahí se ve siempre. */
+@media (pointer: coarse) {
+  .yoru-continue-remove { opacity: 1; }
+}
 .yoru-continue-card {
   width: 340px;
   min-width: 300px;

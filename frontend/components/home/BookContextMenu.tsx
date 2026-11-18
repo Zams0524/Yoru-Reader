@@ -38,10 +38,20 @@ interface MenuState {
 type OpenMenu = (book: ShelfBook, event: React.MouseEvent, options?: { fromContinue?: boolean }) => void;
 
 const BookMenuContext = React.createContext<OpenMenu | null>(null);
+/*
+  Las mismas acciones, sueltas, para quien quiera ofrecer una sin pasar por el menú:
+  «Continuar» tiene su propio botón de quitar, porque el clic derecho no se ve.
+*/
+const BookActionsContext = React.createContext<BookMenuActions | null>(null);
 
 /** Para que una portada pueda abrir el menú sin saber quién lo pinta. */
 export function useBookMenu(): OpenMenu | null {
   return React.useContext(BookMenuContext);
+}
+
+/** Las acciones del menú, para un botón propio fuera de él. */
+export function useBookActions(): BookMenuActions | null {
+  return React.useContext(BookActionsContext);
 }
 
 export function BookMenuProvider({
@@ -60,8 +70,10 @@ export function BookMenuProvider({
 
   return (
     <BookMenuContext.Provider value={open}>
-      {children}
-      {menu && <Menu state={menu} actions={actions} onClose={() => setMenu(null)} />}
+      <BookActionsContext.Provider value={actions}>
+        {children}
+        {menu && <Menu state={menu} actions={actions} onClose={() => setMenu(null)} />}
+      </BookActionsContext.Provider>
     </BookMenuContext.Provider>
   );
 }

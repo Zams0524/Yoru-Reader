@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Volume2, X } from 'lucide-react';
 import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
@@ -16,7 +16,8 @@ import { synthesizeSpeechAzure } from '../utils/azureTtsService';
 import { updateDiscordReading, clearDiscordPresence } from '../utils/discordRpc';
 import { getPitchAccent, getPitchMorae } from '../utils/pitchAccent';
 import { playWordAudio, type WordAudioPlayback } from '../utils/wordAudio';
-import { syncJitenReview } from '../utils/jitenSync';
+import { syncJitenReview, syncJitenForget } from '../utils/jitenSync';
+import { modoAnalizador } from '../utils/parserSettingsStore';
 
 // Direct reader engine imports
 import ReaderEngine, { chapterDisplayTitle, type ReaderEngineApi } from './reader/ReaderEngine';
@@ -51,6 +52,7 @@ import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from '../utils/platform';
+import { componiendoConIME, esCampoDeTexto, escribiendoEnAlgo } from '../utils/escrituraIME';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
 import SelectionToolbar from './reader/SelectionToolbar';
@@ -970,6 +972,13 @@ export default function Reader({
 
     // Global KeyDown to support pressing Shift while hovering
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      /*
+        Shift no es solo «mira esta palabra»: escribiendo japonés con un IME es la tecla de
+        pasar a katakana y la de las mayúsculas del romaji, así que se pulsa a cada rato. Sin
+        esto, teclear en el buscador del libro iba abriendo el diccionario encima del panel una
+        y otra vez. Con el foco en un recuadro, o con el IME componiendo, Shift es suyo.
+      */
+      if (componiendoConIME(e) || escribiendoEnAlgo()) return;
       if (e.key === 'Shift') {
         if (hoveredElementRef.current) {
           const wordSpan = hoveredElementRef.current.closest('[data-word], [wordId], .jiten-word') as HTMLElement;
@@ -1092,6 +1101,17 @@ export default function Reader({
     setHighlights(next);
     void db.saveBookHighlights(book.id, next);
   }, [book.id]);
+
+  /*
+    Borra un subrayado desde el panel «Subrayados y notas».
+
+    Hasta ahora solo se podía quitar abriendo su nota y vaciándola, que es el camino largo y no
+    se le ocurre a nadie. El panel pide confirmación en la propia fila antes de llamar aquí.
+  */
+  const handleDeleteHighlight = useCallback((item: BookHighlight) => {
+    saveHighlights(highlights.filter((h) => h.id !== item.id));
+    showToast(lang === 'es' ? 'Subrayado borrado' : 'Highlight deleted', 'success');
+  }, [highlights, saveHighlights, showToast, lang]);
 
   /** Adds a highlight, replacing any that overlap it in the same paragraph. */
   const withHighlight = useCallback((list: BookHighlight[], item: BookHighlight) => [
@@ -2313,10 +2333,9 @@ export default function Reader({
   const handleReaderKeydown = useCallback((e: KeyboardEvent) => {
     if (!e.isTrusted) return;
     if (isExtSettingsOpen || isJumpModalOpen || isGalleryOpen) return;
-    const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      return;
-    }
+    // Mientras el IME compone, las flechas y el espacio recorren sus candidatos: no son del lector.
+    if (componiendoConIME(e)) return;
+    if (esCampoDeTexto(e.target) || escribiendoEnAlgo()) return;
 
     const keybindings = {
       toggleFullscreen: 'f',
@@ -3015,6 +3034,7 @@ export default function Reader({
                 outline: 'none',
               }}
               onKeyDown={(e) => {
+                if (componiendoConIME(e)) return;
                 if (e.key === 'Enter') handleConfirmJump();
                 else if (e.key === 'Escape') setIsJumpModalOpen(false);
               }}
@@ -3413,6 +3433,7 @@ export default function Reader({
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
           onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
+          onDeleteHighlight={handleDeleteHighlight}
           onExportHighlights={handleExportHighlights}
           readingSession={session}
           onToggleSession={handleToggleSession}
@@ -3493,10 +3514,138 @@ export default function Reader({
             });
             let previousDictionary = '';
 
+            /*
+              La tarjeta de Jiten.
+
+              Leyendo en modo Jiten, la botonera es la suya y está arriba, con los mismos
+              nombres y el mismo orden que en su extensión: Never forget · Blacklist · Forget ·
+              Deck ＋, y debajo again/hard/good/easy siempre a la vista, no solo cuando la
+              palabra ya está en el mazo. Lo pidió zams (18 nov 2026) enseñando su tarjeta.
+
+              Los cuatro de arriba y los cuatro de abajo salen hacia Jiten: los repasos por
+              `srs/review` y las marcas por `srs/set-vocabulary-state`, con los estados que usa
+              su propia extensión (`neverForget-add`, `blacklist-add`, `forget-add`,
+              `mining-add`). En el modo del analizador de la app no cambia nada.
+            */
+            const popupJiten = modoAnalizador() === 'jiten';
+            /*
+              La misma tarjeta en los dos modos, pero que se note en cuál estás.
+
+              zams (18 nov 2026): «adáptale el diseño del pop up de Jiten a ese modo, pero que
+              sea más o menos parecido y que se distinga». Así que la forma es la misma —la
+              botonera arriba, los cuatro grados debajo, la X— y lo que cambia es el nombre de
+              los botones (los de Jiten en su idioma, los de Yoru en el tuyo), el estado
+              (new/young/… frente a nueva/aprendiendo/…) y el color de acento: ámbar es Yoru,
+              azul es Jiten.
+            */
+            const acento = popupJiten ? '#60a5fa' : '#f2c866';
+            const nombres = popupJiten
+              ? { saber: 'Never forget', ignorar: 'Blacklist', olvidar: 'Forget', mazo: 'Deck ＋' }
+              : es
+                ? { saber: 'Ya la sé', ignorar: 'Ignorar', olvidar: 'Olvidar', mazo: '＋ Mazo' }
+                : { saber: 'Known', ignorar: 'Ignore', olvidar: 'Forget', mazo: '＋ Deck' };
+            const estadoJiten = popupJiten
+              ? (isIgnored ? 'blacklisted' : isKnown ? 'mastered' : isLearning ? 'young' : 'new')
+              : es
+                ? (isIgnored ? 'ignorada' : isKnown ? 'sabida' : isLearning ? 'aprendiendo' : 'nueva')
+                : (isIgnored ? 'ignored' : isKnown ? 'known' : isLearning ? 'learning' : 'new');
+            const botonJiten = (activo: boolean, tinte: string): React.CSSProperties => ({
+              flex: 1, minWidth: 0, padding: '6px 4px', borderRadius: '8px', cursor: 'pointer',
+              fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              background: activo ? `${tinte}26` : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${activo ? `${tinte}99` : 'rgba(255,255,255,0.1)'}`,
+              color: activo ? tinte : colors.textMuted
+            });
+            const botonGrado = (tinte: string, fondo: string): React.CSSProperties => ({
+              flex: 1, padding: '5px 4px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.72rem',
+              fontWeight: 700, whiteSpace: 'nowrap', background: fondo, border: `1px solid ${tinte}40`, color: tinte
+            });
+            /** Jiten olvida la tarjeta y la palabra vuelve a estar sin ver, aquí y allí. */
+            const olvidarPalabra = () => {
+              db.saveSrsCard(selectedWord.basicForm, null);
+              setSrsCard(null);
+              syncJitenForget(selectedWord.basicForm, selectedWord.reading || selectedWord.surface || '');
+              if (wordStatus !== 'new') onSetWordStatus(selectedWord.basicForm, 'new');
+              showToast(
+                popupJiten
+                  ? (es ? 'Palabra olvidada en Jiten' : 'Word forgotten in Jiten')
+                  : (es ? 'Tarjeta olvidada' : 'Card forgotten'),
+                'success',
+              );
+            };
+            const marcarConocida = () => {
+              if (isKnown) {
+                onSetWordStatus(selectedWord.basicForm, 'new');
+                return;
+              }
+              onSetWordStatus(selectedWord.basicForm, 'known', {
+                reading: selectedWord.reading || selectedWord.surface,
+                meaning: dictEntry?.definitions?.slice(0, 3).map((d: any) => typeof d === 'string' ? d : (d.glossary || '')).join(' / ') || ''
+              });
+            };
+
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: phone ? '6px' : '8px' }}>
                 {phone && (
                   <div aria-hidden="true" style={{ width: '34px', height: '4px', borderRadius: '2px', background: colors.border || 'rgba(255,255,255,0.15)', alignSelf: 'center', marginTop: '-2px' }} />
+                )}
+
+                {/* La botonera, arriba del todo, y la X de cerrar */}
+                {(
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <div style={{ display: 'flex', gap: '5px', alignItems: 'stretch' }}>
+                      <button type="button" onClick={marcarConocida} style={botonJiten(isKnown, '#8fd19e')}>
+                        {nombres.saber}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSetWordStatus(selectedWord.basicForm, isIgnored ? 'new' : 'ignored')}
+                        style={botonJiten(isIgnored, '#e4e4e7')}
+                      >
+                        {nombres.ignorar}
+                      </button>
+                      <button type="button" onClick={olvidarPalabra} style={botonJiten(false, '')}>
+                        {nombres.olvidar}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm)}
+                        style={botonJiten(isLearning, acento)}
+                      >
+                        {nombres.mazo}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWord(null)}
+                        title={es ? 'Cerrar' : 'Close'}
+                        aria-label={es ? 'Cerrar' : 'Close'}
+                        style={{
+                          width: '26px', height: '26px', flexShrink: 0, borderRadius: '8px', cursor: 'pointer',
+                          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'center'
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {([
+                        [1, 'again', selectedSrsIntervals.again, '#f87171', 'rgba(239, 68, 68, 0.06)'],
+                        [2, 'hard', selectedSrsIntervals.hard, '#fb923c', 'rgba(249, 115, 22, 0.06)'],
+                        [3, 'good', selectedSrsIntervals.good, '#c084fc', 'rgba(168, 85, 247, 0.06)'],
+                        [4, 'easy', selectedSrsIntervals.easy, '#4ade80', 'rgba(34, 197, 94, 0.06)']
+                      ] as [number, string, string, string, string][]).map(([nota, nombre, cuando, tinte, fondo]) => (
+                        <button
+                          key={nombre}
+                          type="button"
+                          onClick={() => handleSrsReview(selectedWord.basicForm, nota, selectedSrsIntervals.repeats)}
+                          style={botonGrado(tinte, fondo)}
+                        >
+                          {nombre} <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({cuando})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {/* Word, reading and audio */}
@@ -3524,8 +3673,17 @@ export default function Reader({
                 </div>
 
                 {/* How common the word is */}
-                {badges.length > 0 && (
+                {(
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span
+                      style={{
+                        ...chip,
+                        color: isKnown ? '#8fd19e' : isIgnored ? '#9ca3af' : isLearning ? acento : colors.textMuted,
+                        borderColor: 'rgba(255,255,255,0.14)'
+                      }}
+                    >
+                      {estadoJiten}
+                    </span>
                     {(showAllFreqs ? badges : badges.slice(0, 1)).map((badge, index) => (
                       <button
                         key={badge.dictionary}
@@ -3617,89 +3775,6 @@ export default function Reader({
                   </div>
                 )}
 
-                {isLearning && (() => {
-                  const intervals = selectedSrsIntervals;
-                  return (
-                    <div style={{ display: 'flex', gap: '5px', marginTop: '4px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 1, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(239, 68, 68, 0.06)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          color: '#f87171',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        again <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.again})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 2, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(249, 115, 22, 0.06)',
-                          border: '1px solid rgba(249, 115, 22, 0.25)',
-                          color: '#fb923c',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        hard <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.hard})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 3, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(168, 85, 247, 0.06)',
-                          border: '1px solid rgba(168, 85, 247, 0.25)',
-                          color: '#c084fc',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        good <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.good})</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSrsReview(selectedWord.basicForm, 4, intervals.repeats)}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          background: 'rgba(34, 197, 94, 0.06)',
-                          border: '1px solid rgba(34, 197, 94, 0.25)',
-                          color: '#4ade80',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        easy <span style={{ opacity: 0.55, fontSize: '0.6rem' }}>({intervals.easy})</span>
-                      </button>
-                    </div>
-                  );
-                })()}
-
                 {srsCard && (
                   <div style={{
                     fontSize: '0.68rem',
@@ -3717,46 +3792,6 @@ export default function Reader({
                     <span>Reps: {srsCard.repetitions ?? srsCard.reps ?? 0}</span>
                   </div>
                 )}
-
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setDeckSelectorWord(prev => prev ? null : selectedWord.basicForm)}
-                    style={isLearning ? action(true, '#60a5fa') : { ...action(false, ''), background: '#f2c866', color: '#1b1407', border: '1px solid transparent' }}
-                  >
-                    {isLearning ? (es ? 'En el mazo' : 'In deck') : (es ? '＋ Mazo' : '＋ Deck')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isKnown) {
-                        onSetWordStatus(selectedWord.basicForm, 'new');
-                      } else {
-                        const wordData = {
-                          reading: selectedWord.reading || selectedWord.surface,
-                          meaning: dictEntry?.definitions?.slice(0, 3).map((d: any) => typeof d === 'string' ? d : (d.glossary || '')).join(' / ') || ''
-                        };
-                        onSetWordStatus(selectedWord.basicForm, 'known', wordData);
-                      }
-                    }}
-                    style={action(isKnown, '#8fd19e')}
-                  >
-                    {isKnown ? (es ? '✓ La sé' : '✓ Known') : (es ? 'Ya la sé' : 'Known')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSetWordStatus(selectedWord.basicForm, isIgnored ? 'new' : 'ignored')}
-                    style={action(isIgnored, '#e4e4e7')}
-                  >
-                    {es ? 'Ignorar' : 'Ignore'}
-                  </button>
-                  {/*
-                    Aquí había un botón de Anki. Fuera, por decisión de zams (14 nov 2026).
-                    Mandar la palabra a Anki sigue estando con la tecla A, y la
-                    integración entera sigue en Ajustes → Diccionarios y vocabulario.
-                  */}
-                </div>
 
                     {deckSelectorWord === selectedWord.basicForm && (() => {
                       const srsData = db.getSrsData();
@@ -3925,6 +3960,9 @@ export default function Reader({
                               value={newDeckInput}
                               onChange={(e) => setNewDeckInput(e.target.value)}
                               onKeyDown={(e) => {
+                                // Con un nombre de mazo en japonés, este Enter es el que confirma
+                                // el candidato del IME: crearía el mazo con el texto a medias.
+                                if (componiendoConIME(e)) return;
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
                                   handleCreateAndAssignDeck(newDeckInput);
