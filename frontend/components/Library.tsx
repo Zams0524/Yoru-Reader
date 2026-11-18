@@ -613,11 +613,17 @@ const Library = React.memo(function Library({
     document.addEventListener('click', handleOutsideClick);
     // El menú va anclado a la ventana, así que al rodar la página se quedaría flotando
     // lejos de su libro: se cierra, como hace cualquier menú de este tipo.
-    window.addEventListener('scroll', handleOutsideClick, true);
+    // Rodar *dentro* del menú no cuenta: es la manera de llegar a sus últimas filas.
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.book-context-menu-dropdown')) return;
+      handleOutsideClick();
+    };
+    window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', handleOutsideClick);
     return () => {
       document.removeEventListener('click', handleOutsideClick);
-      window.removeEventListener('scroll', handleOutsideClick, true);
+      window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', handleOutsideClick);
     };
   }, []);

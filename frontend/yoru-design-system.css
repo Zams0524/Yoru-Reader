@@ -4082,6 +4082,17 @@ html.platform-android .reader-engine-content {
   bottom: 6px;
 }
 
+/* Si el menú no cabe entero, su barra es fina y discreta, no la gris del sistema. */
+.book-context-menu-dropdown {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+  overscroll-behavior: contain;
+}
+.book-context-menu-dropdown::-webkit-scrollbar { width: 6px; }
+.book-context-menu-dropdown::-webkit-scrollbar-track { background: transparent; }
+.book-context-menu-dropdown::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 999px; }
+.book-context-menu-dropdown::-webkit-scrollbar-button { display: none; }
+
 /* Phones: portalled, fixed to the viewport (position set inline from the ⋮ button). */
 .book-context-menu-dropdown.is-floating {
   position: fixed;
