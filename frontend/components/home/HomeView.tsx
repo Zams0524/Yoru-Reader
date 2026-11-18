@@ -53,7 +53,7 @@ export default function HomeView({
 }) {
   const openMenu = useBookMenu();
   const menuActions = useBookActions();
-  const { apartados, apartar } = useApartados();
+  const { apartar, estaApartado } = useApartados();
 
   /*
     El orden de los carruseles lo decide el usuario en Ajustes → Organizar inicio.
@@ -267,7 +267,8 @@ export default function HomeView({
       return {
         at: entry.at,
         esAudio,
-        hidden: apartados.has(item.id),
+        // Apartado solo cuenta si no se ha avanzado después de apartarlo.
+        hidden: estaApartado(item.id, entry.at),
         node: (
           <ServerContinueCard
             key={entry.key}

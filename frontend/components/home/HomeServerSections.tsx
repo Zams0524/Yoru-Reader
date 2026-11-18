@@ -31,25 +31,38 @@ import { kavitaVolumeCoverUrl } from '../../utils/kavitaService';
 const APARTADOS = 'yoru_server_continue_hidden_v1';
 const APARTADOS_EVENTO = 'yoru-server-continue-hidden';
 
-function leerApartados(): string[] {
+/**
+ * Lo apartado, con el momento en que se apartó.
+ *
+ * Antes era una lista de ids sin fecha, y apartar era para siempre: quitabas un
+ * audiolibro de «Continuar», lo seguías escuchando y ya no volvía nunca, aunque su
+ * ficha dijera 50 %. Le pasó a zams (18 nov 2026). Con la fecha, apartar significa
+ * «ahora no»: en cuanto vuelves a leerlo o escucharlo, regresa a la fila. Las listas
+ * viejas se leen como apartadas sin fecha, o sea, cualquier avance las devuelve.
+ */
+function leerApartados(): Record<string, string> {
   try {
     const crudo = localStorage.getItem(APARTADOS);
-    const lista = crudo ? JSON.parse(crudo) : [];
-    return Array.isArray(lista) ? lista.filter((id): id is string => typeof id === 'string') : [];
+    const dato = crudo ? JSON.parse(crudo) : {};
+    if (Array.isArray(dato)) {
+      return Object.fromEntries(dato.filter((id): id is string => typeof id === 'string').map((id) => [id, '']));
+    }
+    if (!dato || typeof dato !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(dato).filter((par): par is [string, string] => typeof par[1] === 'string')
+    );
   } catch {
-    return [];
+    return {};
   }
 }
 
 function apartar(id: string): void {
-  const lista = leerApartados();
-  if (!lista.includes(id)) {
-    lista.push(id);
-    try {
-      localStorage.setItem(APARTADOS, JSON.stringify(lista));
-    } catch {
-      /* Sin sitio en el almacén: se queda sin apartar, que es mejor que romper la vista. */
-    }
+  const mapa = leerApartados();
+  mapa[id] = new Date().toISOString();
+  try {
+    localStorage.setItem(APARTADOS, JSON.stringify(mapa));
+  } catch {
+    /* Sin sitio en el almacén: se queda sin apartar, que es mejor que romper la vista. */
   }
   window.dispatchEvent(new Event(APARTADOS_EVENTO));
 }
@@ -58,15 +71,28 @@ function apartar(id: string): void {
  * Lo apartado a mano de las filas de «continuar», y cómo apartar más.
  * Lo usan las filas del servidor y también el «Continuar» de Inicio, que pinta ahí
  * mismo los tomos del servidor que lleva este perfil.
+ *
+ * `estaApartado(id, at)` es la pregunta buena cuando se sabe cuándo fue el último
+ * avance (`at`): lo apartado antes de ese avance ya no cuenta. `apartados` queda para
+ * las filas que vienen de la cuenta del servidor, donde no hay fecha que comparar.
  */
-export function useApartados(): { apartados: Set<string>; apartar: (id: string) => void } {
-  const [apartados, setApartados] = useState(() => new Set(leerApartados()));
+export function useApartados(): {
+  apartados: Set<string>;
+  apartar: (id: string) => void;
+  estaApartado: (id: string, at?: string) => boolean;
+} {
+  const [mapa, setMapa] = useState(() => leerApartados());
   useEffect(() => {
-    const onUpdate = () => setApartados(new Set(leerApartados()));
+    const onUpdate = () => setMapa(leerApartados());
     window.addEventListener(APARTADOS_EVENTO, onUpdate);
     return () => window.removeEventListener(APARTADOS_EVENTO, onUpdate);
   }, []);
-  return { apartados, apartar };
+  const apartados = useMemo(() => new Set(Object.keys(mapa)), [mapa]);
+  const estaApartado = (id: string, at?: string) => {
+    if (!(id in mapa)) return false;
+    return !at || at <= mapa[id];
+  };
+  return { apartados, apartar, estaApartado };
 }
 
 export function useServerRails({
