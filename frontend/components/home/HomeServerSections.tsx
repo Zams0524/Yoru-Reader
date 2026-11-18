@@ -11,7 +11,8 @@ import {
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
 import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
-import { LOCAL_PROGRESS_EVENT } from '../../utils/serverProgress';
+import { LOCAL_PROGRESS_EVENT, localKavitaSeriesRead } from '../../utils/serverProgress';
+import { kavitaVolumeCoverUrl } from '../../utils/kavitaService';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -423,15 +424,17 @@ function ServerItemMenu({
 }
 
 /**
- * Los libros del servidor dentro de la Biblioteca.
+ * Los libros del servidor que lees, dentro de la Biblioteca.
  *
- * La Biblioteca enseñaba solo lo importado, así que un perfil recién hecho la veía
- * vacía aunque detrás hubiera un Kavita lleno: dos botones y nada más. Lo que lees
- * del servidor es tuyo igual que lo descargado, así que sale aquí, en su sección, sin
- * tener que importarlo. Lo pidió zams (18 nov 2026).
+ * La Biblioteca enseñaba solo lo importado, así que quien lee de Kavita sin descargar
+ * nada la veía vacía. Un tomo que lees en el servidor es tuyo igual que uno
+ * descargado, así que entra aquí con su avance en cuanto lo abres. Lo pidió zams
+ * (18 nov 2026).
  *
- * Sale de la misma caché que Inicio, así que aparece al momento y sin pedir nada; sin
- * servidor o sin caché no se pinta, ni deja hueco ni un cartel de error.
+ * No es el servidor entero: eso es «Explorar Kavita», y meterlo aquí convertía la
+ * Biblioteca en un escaparate de treinta y seis libros que nadie había abierto. Lo
+ * leído es de este perfil, apuntado en el aparato; los títulos y las portadas salen
+ * de la caché que ya alimenta Inicio, así que no se pide nada al servidor.
  */
 export function ServerLibrarySection({
   es,
@@ -444,18 +447,41 @@ export function ServerLibrarySection({
   onExplore?: () => void;
 }) {
   const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
+  const [leidas, setLeidas] = useState(() => localKavitaSeriesRead());
   useEffect(() => {
-    const onUpdate = () => setCatalog(getCachedServerCatalog());
-    window.addEventListener('yoru-server-catalog-updated', onUpdate);
-    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+    const onCatalog = () => setCatalog(getCachedServerCatalog());
+    const onProgress = () => setLeidas(localKavitaSeriesRead());
+    window.addEventListener('yoru-server-catalog-updated', onCatalog);
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+    return () => {
+      window.removeEventListener('yoru-server-catalog-updated', onCatalog);
+      window.removeEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+    };
   }, []);
 
-  if (catalog.kavita.length === 0) return null;
+  const items = useMemo(() => {
+    const delServidor = new Map(catalog.kavita.map((item) => [serverItemId(item), item]));
+    return leidas.map((serie) => {
+      const conocida = delServidor.get(String(serie.seriesId));
+      return {
+        id: `kavita-${serie.seriesId}`,
+        serverId: String(serie.seriesId),
+        title: conocida?.title || serie.title,
+        // La portada es la del tomo por el que vas, no la de la serie.
+        cover: kavitaVolumeCoverUrl(serie.volumeId) || conocida?.cover || '',
+        source: 'kavita' as const,
+        author: conocida?.author,
+        percent: serie.percent,
+      };
+    });
+  }, [leidas, catalog.kavita]);
+
+  if (items.length === 0) return null;
   return (
     <div className="library-section">
       <div className="section-header">
-        <h2 className="section-title">{es ? 'En tu servidor' : 'On your server'}</h2>
-        <span className="section-count">{catalog.kavita.length}</span>
+        <h2 className="section-title">{es ? 'Lo que lees en el servidor' : 'What you read on the server'}</h2>
+        <span className="section-count">{items.length}</span>
         {onExplore && (
           <button type="button" className="yoru-chip-link" onClick={onExplore}>
             {es ? 'Explorar Kavita' : 'Explore Kavita'}
@@ -463,7 +489,7 @@ export function ServerLibrarySection({
         )}
       </div>
       <div className="yoru-grid">
-        {catalog.kavita.map((item) => (
+        {items.map((item) => (
           <ServerCard key={`bib-${item.id}`} item={item} es={es} onOpen={onOpenItem} />
         ))}
       </div>

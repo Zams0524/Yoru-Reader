@@ -176,20 +176,21 @@ const Library = React.memo(function Library({
   const customAvatarInputRef = useRef(null);
 
   /*
-    Si la Biblioteca tiene libros del servidor delante. Solo sirve para no soltar el
-    cartel de «tu biblioteca está vacía» encima de una rejilla llena de tomos de
-    Kavita. Sale de la caché que ya alimenta Inicio: ni una petición más.
+    Si la Biblioteca tiene libros del servidor delante: los que este perfil lee en
+    Kavita, no el servidor entero. Solo sirve para no soltar el cartel de «tu
+    biblioteca está vacía» encima de una rejilla con libros dentro. Sale de lo
+    apuntado en el aparato: ni una petición.
   */
   const [hayLibrosDeServidor, setHayLibrosDeServidor] = useState(false);
   useEffect(() => {
     const mirar = () => {
-      void import('../utils/serverCatalog')
-        .then(({ getCachedServerCatalog }) => setHayLibrosDeServidor(getCachedServerCatalog().kavita.length > 0))
+      void import('../utils/serverProgress')
+        .then(({ localKavitaSeriesRead }) => setHayLibrosDeServidor(localKavitaSeriesRead().length > 0))
         .catch(() => setHayLibrosDeServidor(false));
     };
     mirar();
-    window.addEventListener('yoru-server-catalog-updated', mirar);
-    return () => window.removeEventListener('yoru-server-catalog-updated', mirar);
+    window.addEventListener('yoru-local-progress-updated', mirar);
+    return () => window.removeEventListener('yoru-local-progress-updated', mirar);
   }, []);
 
   const { showConfirm, confirmModal } = useConfirm();

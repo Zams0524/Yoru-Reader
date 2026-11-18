@@ -125,6 +125,44 @@ export function localKavitaSeriesLastRead(seriesId: number): string | undefined 
   return latest;
 }
 
+/** Una serie de Kavita que este perfil ha leído, para la Biblioteca. */
+export interface LocalKavitaSeries {
+  seriesId: number;
+  /** El último tomo abierto de la serie, que es el que enseña su portada. */
+  volumeId: number;
+  title: string;
+  seriesName?: string;
+  percent: number;
+  at: string;
+}
+
+/**
+ * Las series del servidor que este perfil ha leído, lo último primero.
+ *
+ * Es «mis libros» del servidor, no el servidor entero: una serie entra aquí en
+ * cuanto se abre un tomo y se queda aunque se termine. A diferencia de
+ * `localContinueEntries`, los terminados también cuentan: son tuyos igual.
+ */
+export function localKavitaSeriesRead(limit = 60): LocalKavitaSeries[] {
+  const bySeries = new Map<number, LocalKavitaProgress>();
+  for (const entry of Object.values(readMap<LocalKavitaProgress>(KAVITA_KEY))) {
+    if (!(entry.percent > 0) || !entry.seriesId) continue;
+    const current = bySeries.get(entry.seriesId);
+    if (!current || entry.at > current.at) bySeries.set(entry.seriesId, entry);
+  }
+  return [...bySeries.values()]
+    .sort((a, b) => (a.at < b.at ? 1 : -1))
+    .slice(0, limit)
+    .map((entry) => ({
+      seriesId: entry.seriesId,
+      volumeId: entry.volumeId,
+      title: entry.seriesName || entry.volumeTitle || 'Kavita',
+      seriesName: entry.seriesName,
+      percent: Math.round(Math.min(100, Math.max(0, entry.percent))),
+      at: entry.at,
+    }));
+}
+
 // ── Audiobookshelf ──────────────────────────────────────────────────────
 
 export interface LocalAudiobookProgress {
