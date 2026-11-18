@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Play, Server, Tag, X } from 'lucide-react';
+import { Play, Tag, X } from 'lucide-react';
 import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
@@ -478,27 +478,22 @@ export function ServerLibrarySection({
 
   if (items.length === 0) return null;
   return (
-    <section className="yoru-serverlib">
-      <header className="yoru-serverlib-head">
-        <span className="yoru-serverlib-mark" aria-hidden="true"><Server size={17} /></span>
-        <div className="yoru-serverlib-heading">
-          <h2 className="yoru-serverlib-title">
-            {es ? 'Lo que lees en el servidor' : 'What you read on the server'}
-            <span className="yoru-serverlib-count">{items.length}</span>
-          </h2>
-          <p className="yoru-serverlib-sub">
-            {es
-              ? 'Los tomos que llevas abiertos en Kavita, sin descargar nada.'
-              : 'The volumes you have open on Kavita, without downloading anything.'}
-          </p>
-        </div>
+    /*
+      El mismo encabezado que los apartados de la Biblioteca («Sin iniciar»,
+      «Leyendo actualmente»), y a propósito: esto es un apartado más de la misma
+      pantalla. Antes iba en un panel aparte, con su recuadro y su explicación, y
+      parecía un cartel pegado encima en vez de parte de la página.
+    */
+    <div className="library-section">
+      <div className="section-header">
+        <h2 className="section-title">{es ? 'Lo que lees en el servidor' : 'What you read on the server'}</h2>
+        <span className="section-count">{items.length}</span>
         {onExplore && (
-          <button type="button" className="yoru-serverlib-explore" onClick={onExplore}>
+          <button type="button" className="yoru-chip-link" onClick={onExplore}>
             {es ? 'Explorar Kavita' : 'Explore Kavita'}
-            <ChevronRight size={15} />
           </button>
         )}
-      </header>
+      </div>
       <div className="yoru-serverlib-grid">
         {items.map((item) => (
           <button
@@ -523,7 +518,7 @@ export function ServerLibrarySection({
           </button>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 
