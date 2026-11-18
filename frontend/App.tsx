@@ -6,7 +6,10 @@ const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const DiscordGate = React.lazy(() => import('./components/DiscordGate'));
 import { db } from './utils/db';
+import { decidirAcceso, tocaRecomprobar, type EstadoAcceso } from './utils/discordAccess';
+import { clientIdDiscord, leerSesion, revisarYGuardar } from './utils/discordAuth';
 import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
@@ -1002,6 +1005,60 @@ export default function App() {
   useEffect(() => {
     activeBookRef.current = activeBook;
   }, [activeBook]);
+
+  /*
+    La puerta de Discord. Yoru es para los miembros del servidor, asi que antes de
+    cualquier otra vista hay que saber si quien abre la app lo es.
+
+    `decidirAcceso` es sincrono y mira solo lo que ya hay guardado, asi que el primer
+    pintado no espera a la red: quien entro hace tres dias ve su biblioteca al
+    instante. La pregunta a Discord va por detras, y como mucho una vez al dia.
+  */
+  const [acceso, setAcceso] = useState<EstadoAcceso>(() => decidirAcceso({
+    sesion: leerSesion(),
+    clientId: clientIdDiscord(),
+    ahora: Date.now(),
+    hayRed: navigator.onLine,
+  }));
+
+  const revisarAcceso = useCallback(() => {
+    setAcceso(decidirAcceso({
+      sesion: leerSesion(),
+      clientId: clientIdDiscord(),
+      ahora: Date.now(),
+      hayRed: navigator.onLine,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (acceso !== 'permitido') return undefined;
+    let vivo = true;
+
+    const comprobar = async () => {
+      const sesion = leerSesion();
+      if (!sesion || !tocaRecomprobar({ sesion, hayRed: navigator.onLine, ahora: Date.now() })) return;
+      // Si Discord falla, `revisarYGuardar` deja la sesion como estaba y esto no
+      // cambia nada: nadie se queda fuera porque su API tuviera un mal dia.
+      await revisarYGuardar(sesion);
+      if (vivo) revisarAcceso();
+    };
+
+    void comprobar();
+    // Al volver la red se reintenta, para que el margen no se gaste esperando.
+    const alConectar = () => { void comprobar(); };
+    window.addEventListener('online', alConectar);
+    return () => { vivo = false; window.removeEventListener('online', alConectar); };
+  }, [acceso, revisarAcceso]);
+
+  if (acceso !== 'permitido') {
+    return (
+      <div className="app-container" data-theme={resolvedTheme}>
+        <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" /></div>}>
+          <DiscordGate estado={acceso} es={lang === 'es'} onEntrar={revisarAcceso} />
+        </React.Suspense>
+      </div>
+    );
+  }
 
   return (
     <div

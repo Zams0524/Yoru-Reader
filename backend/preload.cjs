@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   startGoogleOauth: (clientId) => ipcRenderer.invoke('start-google-oauth', clientId),
+  startDiscordOauth: (clientId, state) => ipcRenderer.invoke('start-discord-oauth', clientId, state),
   speakText: (params) => ipcRenderer.invoke('speak-text', params),
   ankiRequest: (host, body) => ipcRenderer.invoke('anki-request', { host, body }),
   downloadGoogleDrive: (urlString, id) => ipcRenderer.invoke('download-google-drive', { urlString, id }),

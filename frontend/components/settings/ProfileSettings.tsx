@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, User } from 'lucide-react';
+import { Check, LogOut, User } from 'lucide-react';
 import { resizeToJpeg } from '../../utils/profileImage';
+import { cerrarSesion, leerSesion } from '../../utils/discordAuth';
 
 /**
  * El perfil, dentro de Ajustes.
@@ -44,6 +45,8 @@ export default function ProfileSettings({
   const [banner, setBanner] = useState(profile?.banner || '');
   const [bannerError, setBannerError] = useState('');
   const [saved, setSaved] = useState(false);
+  /** Se lee una vez al montar: la sesión no cambia mientras esta pantalla está abierta. */
+  const [sesionDiscord] = useState(() => leerSesion());
   const fileRef = useRef<HTMLInputElement | null>(null);
   const bannerRef = useRef<HTMLInputElement | null>(null);
 
@@ -209,6 +212,39 @@ export default function ProfileSettings({
             : (es ? 'Guardar cambios' : 'Save changes')}
         </button>
       </div>
+
+      {/*
+        La cuenta de Discord con la que se entró. Vive aquí, en el perfil, porque es
+        quién eres para Yoru y no un servidor que se configure. Cerrar sesión deja la
+        app en la pantalla de entrada: no es «desconectar un servicio», es salir.
+      */}
+      {sesionDiscord && (
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <span className="settings-row-label">{es ? 'Cuenta de Discord' : 'Discord account'}</span>
+            <span className="settings-row-desc">
+              {es
+                ? `Entraste como ${sesionDiscord.usuarioNombre || sesionDiscord.usuarioId}. Yoru comprueba con esta cuenta que estás en el servidor.`
+                : `You signed in as ${sesionDiscord.usuarioNombre || sesionDiscord.usuarioId}. Yoru uses this account to check that you are in the server.`}
+            </span>
+          </div>
+          <div className="settings-row-control">
+            <button
+              type="button"
+              className="settings-btn"
+              onClick={() => {
+                cerrarSesion();
+                // Al montarse de nuevo, la app vuelve a decidir el acceso, y sin
+                // sesión eso es la pantalla de entrada.
+                window.location.reload();
+              }}
+            >
+              <LogOut size={15} />
+              {es ? 'Cerrar sesión' : 'Sign out'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

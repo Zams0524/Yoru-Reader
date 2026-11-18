@@ -7368,3 +7368,64 @@ html.yoru-compact #root {
   .settings-row-end { align-items: flex-start; }
   .settings-input { min-width: 0; width: 100%; }
 }
+
+/* ------------------------------------------------------------------ La puerta
+   Pantalla de bloqueo de Discord (DiscordGate). Es lo primero que ve alguien que
+   todavia no ha entrado, asi que se parece a la app y no a un error del navegador:
+   la caja centrada, el icono grande y el texto ancho de lectura. */
+.yoru-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--bg-base, #0d0d0f);
+}
+.yoru-gate-caja {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 28px 22px;
+  border-radius: var(--radius-base, 14px);
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+}
+.yoru-gate-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  color: var(--primary, #e4b663);
+  background: color-mix(in srgb, var(--primary, #e4b663) 14%, transparent);
+}
+.yoru-gate-titulo {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-strong, #f4f4f5);
+}
+.yoru-gate-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-base, #d4d4d8);
+}
+.yoru-gate-nota {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted, #a1a1aa);
+}
+.yoru-gate-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
