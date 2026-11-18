@@ -3388,3 +3388,23 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-sett
 .yoru-notice-text strong { font-size: 14.5px; color: var(--text-main); }
 .yoru-notice-text span { font-size: 13px; color: var(--text-muted); }
 .yoru-notice time { flex-shrink: 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+/* Los desconectados: el servidor de sincronizacion sabe que existen, Discord no los
+   publica. Van atenuados, con la inicial en vez de foto (el servidor no guarda
+   ninguna) y el punto apagado. */
+.yoru-member.is-offline .yoru-member-name,
+.yoru-member.is-offline .yoru-member-activity { opacity: 0.62; }
+.yoru-member.is-offline .yoru-member-avatar { opacity: 0.72; }
+.yoru-member-dot.is-offline { background: #80848e; }
+.yoru-member-inicial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  background: var(--surface-raised);
+}

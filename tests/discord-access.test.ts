@@ -20,7 +20,9 @@ import {
   INTERVALO_MAXIMO_MS,
   mismaLista,
   RITMO_INICIAL,
+  repartirMiembros,
   siguienteRitmo,
+  type FichaParaLista,
 } from '../frontend/utils/miembrosVivos';
 
 let failures = 0;
@@ -369,6 +371,44 @@ function sondeoTests() {
   // modo, así que un estado raro no deja el punto apagado.
   check(estadoMiembro(undefined, true).clase === 'is-online', 'Sin estado se asume en línea, no un punto apagado');
   check(estadoMiembro('vete-a-saber', true).clase === 'is-online', 'Un estado desconocido tampoco apaga el punto');
+
+  // --- quién está sin conexión ---
+  const ficha = (nombre: string, extra: Partial<FichaParaLista> = {}): FichaParaLista => ({
+    usuarioId: `u-${nombre}`, nombre, comparte: true, leyendo: null, ...extra,
+  });
+
+  const r1 = repartirMiembros([persona('Ana')], [ficha('Ana'), ficha('Beto')]);
+  check(
+    r1.sinConexion.length === 1 && r1.sinConexion[0].nombre === 'Beto',
+    'Quien no está en Discord sale como desconectado',
+  );
+
+  check(
+    repartirMiembros([persona('ANA')], [ficha('ana')]).sinConexion.length === 0,
+    'El emparejamiento no distingue mayúsculas: nadie sale dos veces',
+  );
+
+  // Lo que protege de enseñar el progreso de otra persona.
+  const repetidos = repartirMiembros([], [ficha('Hade'), ficha('hade'), ficha('Ana')]);
+  check(
+    repetidos.sinConexion.length === 1 && repetidos.sinConexion[0].nombre === 'Ana',
+    'Dos fichas con el mismo nombre se caen las dos: mejor nada que confundirlas',
+  );
+
+  check(
+    repartirMiembros([], [ficha('Mudae'), ficha('TTS Bot'), ficha('Ana')]).sinConexion.length === 1,
+    'Los bots tampoco salen entre los desconectados',
+  );
+
+  check(repartirMiembros([persona('Ana')], []).sinConexion.length === 0, 'Sin fichas no hay sección');
+  check(
+    repartirMiembros([], [ficha('  ')]).sinConexion.length === 0,
+    'Una ficha sin nombre no pinta una fila vacía',
+  );
+  check(
+    estadoMiembro('offline', true).clase === 'is-offline' && estadoMiembro('offline', false).etiqueta === 'Offline',
+    'El estado «sin conexión» tiene su propia clase y etiqueta',
+  );
 
   // --- repintar o no ---
   check(mismaLista([], []), 'Dos listas vacías son iguales');

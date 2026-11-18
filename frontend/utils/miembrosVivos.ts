@@ -13,7 +13,7 @@
  *     propia app: sabe de sobra que está aquí, porque está aquí.
  */
 
-import type { DiscordMember } from './discordWidget';
+import { esBot, type DiscordMember } from './discordWidget';
 
 /** Lo normal entre dos preguntas, con la pantalla abierta y delante. */
 export const INTERVALO_BASE_MS = 20_000;
@@ -84,7 +84,71 @@ export function estadoMiembro(
 ): { clase: string; etiqueta: string } {
   if (status === 'idle') return { clase: 'is-idle', etiqueta: es ? 'Ausente' : 'Idle' };
   if (status === 'dnd') return { clase: 'is-dnd', etiqueta: es ? 'No molestar' : 'Do not disturb' };
+  // Los desconectados no vienen del widget, sino del servidor de sincronización: ahí
+  // el punto sí va apagado, porque de verdad no hay nadie al otro lado.
+  if (status === 'offline') return { clase: 'is-offline', etiqueta: es ? 'Sin conexión' : 'Offline' };
   return { clase: 'is-online', etiqueta: es ? 'En línea' : 'Online' };
+}
+
+/** Lo mínimo que hace falta de una ficha del servidor para pintar una fila. */
+export interface FichaParaLista {
+  usuarioId: string;
+  nombre: string;
+  comparte?: boolean;
+  leyendo?: { titulo?: string } | null;
+}
+
+/**
+ * Quién está sin conexión: los que el servidor conoce y Discord no publica ahora.
+ *
+ * El widget solo cuenta a los conectados, así que la única forma de saber que existe
+ * alguien más es el servidor de sincronización, que conoce a todo el que ha entrado en
+ * Yoru alguna vez. Sin conexión = está en esa lista y no en la de Discord.
+ *
+ * Dos cuidados, los dos por lo mismo —que el emparejamiento va por nombre, porque el
+ * widget no da el id real—:
+ *
+ *  - **Un bot nunca sale**, aunque el servidor tuviera una ficha con su nombre.
+ *  - **Un nombre repetido se cae entero.** Si dos fichas se llaman igual no hay manera
+ *    de saber cuál es cuál, y enseñar a una con el progreso de la otra es peor que no
+ *    enseñar nada.
+ */
+export function repartirMiembros(
+  enLinea: DiscordMember[],
+  fichas: FichaParaLista[],
+): { sinConexion: FichaParaLista[] } {
+  const conectados = new Set(enLinea.map((m) => claveNombre(m.name)));
+
+  const vecesPorNombre = new Map<string, number>();
+  for (const ficha of fichas) {
+    const clave = claveNombre(ficha.nombre);
+    if (!clave) continue;
+    vecesPorNombre.set(clave, (vecesPorNombre.get(clave) || 0) + 1);
+  }
+
+  const sinConexion = fichas.filter((ficha) => {
+    const clave = claveNombre(ficha.nombre);
+    if (!clave) return false;
+    if (conectados.has(clave)) return false;
+    if ((vecesPorNombre.get(clave) || 0) > 1) return false;
+    return !esBot(ficha.nombre);
+  });
+
+  return { sinConexion };
+}
+
+/**
+ * La ficha de un miembro, emparejada por nombre.
+ *
+ * Devuelve nada cuando hay dos fichas con el mismo nombre normalizado: sin el id real
+ * de Discord no hay forma de saber cuál es, y enseñar el progreso de otra persona es
+ * mucho peor que no enseñar ninguno.
+ */
+export function fichaDe(nombre: string, fichas: FichaParaLista[]): FichaParaLista | null {
+  const clave = claveNombre(nombre);
+  if (!clave) return null;
+  const iguales = fichas.filter((f) => claveNombre(f.nombre) === clave);
+  return iguales.length === 1 ? iguales[0] : null;
 }
 
 /**

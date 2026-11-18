@@ -21,6 +21,8 @@ export interface LecturaActual {
   portada?: string;
   /** Porcentaje 0–100. */
   progreso: number;
+  /** El capítulo, o el autor si no hay capítulo. Línea de apoyo, puede faltar. */
+  detalle?: string;
 }
 
 export default function MemberCard({
@@ -107,8 +109,12 @@ export default function MemberCard({
             </div>
           )}
 
-          {/* Lo que Yoru sabe de ti, y solo de ti. */}
-          {esTuyo && lectura && (
+          {/*
+            El bloque de lectura. De uno mismo sale de este aparato; de los demás, de
+            su ficha en el servidor de sincronización, y solo si esa persona dejó
+            encendido el compartir. Sin dato no hay bloque: nunca una barra inventada.
+          */}
+          {lectura && (
             <div className="yoru-member-card-bloque">
               <span className="yoru-member-card-titulo-bloque">
                 {es ? 'Leyendo' : 'Reading'}
@@ -119,6 +125,9 @@ export default function MemberCard({
                   : <span className="yoru-member-card-portada is-vacia" aria-hidden="true" />}
                 <div className="yoru-member-card-lectura-texto">
                   <span className="yoru-member-card-libro">{lectura.titulo}</span>
+                  {lectura.detalle && (
+                    <span className="yoru-member-card-porcentaje">{lectura.detalle}</span>
+                  )}
                   <span className="yoru-member-card-barra" aria-hidden="true">
                     <i style={{ width: `${Math.max(0, Math.min(100, lectura.progreso))}%` }} />
                   </span>

@@ -9,7 +9,16 @@ import {
   type DiscordWidgetError,
 } from '../../utils/discordWidget';
 import { leerSesion } from '../../utils/discordAuth';
-import { estadoMiembro, mismaLista, RITMO_INICIAL, siguienteRitmo } from '../../utils/miembrosVivos';
+import {
+  estadoMiembro,
+  mismaLista,
+  fichaDe,
+  repartirMiembros,
+  RITMO_INICIAL,
+  siguienteRitmo,
+  type FichaParaLista,
+} from '../../utils/miembrosVivos';
+import { fichasDeMiembros, type FichaMiembro } from '../../utils/yoruSyncService';
 import { continueReading, type ShelfBook } from './libraryIndex';
 import MemberCard, { type LecturaActual } from './MemberCard';
 
@@ -62,6 +71,13 @@ export default function MembersView({
   onVerPerfil?: () => void;
 }) {
   const [elegido, setElegido] = useState<DiscordMember | null>(null);
+  /**
+   * Las fichas del servidor de sincronización: todo el que ha entrado en Yoru alguna
+   * vez. Es la única forma de saber que existe alguien a quien Discord no publica.
+   * Si el servidor está apagado devuelve [], y entonces no hay sección y ya está: no
+   * es un error que haya que contarle a nadie.
+   */
+  const [fichas, setFichas] = useState<FichaParaLista[]>([]);
   /** La sesión de Discord: tu nombre y tu foto, para reconocerte y pintarte. */
   const [miSesion] = useState(() => leerSesion());
   const miNombre = miSesion?.usuarioNombre || '';
@@ -157,6 +173,26 @@ export default function MembersView({
     };
   }, []);
 
+  /*
+    Las fichas se piden al entrar en la pantalla y, como mucho, una vez por minuto:
+    cambian cuando alguien lee, no cada veinte segundos como la lista de conectados.
+    Si el servidor no está, `fichasDeMiembros` devuelve [] sin ruido y no hay sección.
+  */
+  useEffect(() => {
+    let vivo = true;
+    let reloj = 0;
+
+    const pedir = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const lista = await fichasDeMiembros();
+      if (vivo) setFichas(lista);
+    };
+
+    void pedir();
+    reloj = window.setInterval(() => { void pedir(); }, 60_000);
+    return () => { vivo = false; window.clearInterval(reloj); };
+  }, []);
+
   const errorText = (code: DiscordWidgetError | ''): string => {
     if (code === 'bad-id') return es ? 'El servidor de Yoru está mal puesto en la app. No es cosa tuya; habría que corregirlo.' : 'Yoru\'s server is misconfigured in the app. Not your fault; it needs fixing.';
     if (code === 'widget-off') return es ? 'El servidor de Yoru tiene el widget apagado, así que Discord no publica quién está conectado.' : 'Yoru\'s server has its widget turned off, so Discord does not publish who is online.';
@@ -175,12 +211,52 @@ export default function MembersView({
     confunde. Aquí se enseña lo que Discord publica, de ti igual que de los demás, o no
     se enseña nada.
   */
+  /** La inicial que se pinta cuando no hay foto: el servidor no guarda ninguna. */
+  const inicialDe = (nombre: string) => (nombre || '?').trim().charAt(0).toUpperCase() || '?';
+
+  /**
+   * Una ficha, vestida de miembro para que la tarjeta la entienda.
+   *
+   * `status: 'offline'` no es un estado del widget —Discord solo publica conectados—,
+   * así que `estadoMiembro` lo tratará como desconocido; por eso la tarjeta recibe
+   * aparte la etiqueta correcta.
+   */
+  const comoMiembro = (ficha: FichaParaLista): DiscordMember => ({
+    id: ficha.usuarioId || `ficha:${ficha.nombre}`,
+    name: ficha.nombre,
+    status: 'offline' as DiscordMember['status'],
+    avatar: '',
+    activity: ficha.comparte && ficha.leyendo?.titulo
+      ? `${es ? 'Leyendo' : 'Reading'} ${ficha.leyendo.titulo}`
+      : '',
+  });
+
   const members = (widget ? widget.members : [])
     .slice()
     .sort((a, b) =>
       Number(Boolean(b.activity)) - Number(Boolean(a.activity))
       || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
       || a.name.localeCompare(b.name));
+
+  /** Los que el servidor conoce y Discord no publica ahora mismo. */
+  const { sinConexion } = repartirMiembros(members, fichas);
+
+  /**
+   * Lo que lee otra persona, si lo comparte y si se la puede identificar sin dudas.
+   *
+   * Devuelve nada en cuanto hay la menor ambigüedad —dos fichas con el mismo nombre—,
+   * porque de los demás solo se enseña lo que es seguro que es suyo.
+   */
+  const lecturaDeFicha = (nombre: string): LecturaActual | null => {
+    const suya = fichaDe(nombre, fichas) as FichaMiembro | null;
+    if (!suya || suya.comparte === false || !suya.leyendo?.titulo) return null;
+    return {
+      titulo: suya.leyendo.titulo,
+      portada: suya.leyendo.portada || undefined,
+      progreso: Number(suya.leyendo.porcentaje) || 0,
+      detalle: suya.leyendo.capitulo || suya.leyendo.autor || '',
+    };
+  };
 
   return (
     <div className="yoru-members">
@@ -264,6 +340,47 @@ export default function MembersView({
               ))}
             </ul>
           )}
+
+          {/*
+            Los desconectados. Discord no los publica —su widget solo cuenta a los
+            conectados—, así que salen del servidor de sincronización, que conoce a
+            todo el que ha entrado en Yoru. Sin servidor no hay sección y nadie se
+            entera: es un extra, no algo que falte.
+          */}
+          {sinConexion.length > 0 && (
+            <>
+              <div className="yoru-members-group-title">
+                {es ? 'Sin conexión' : 'Offline'} · {sinConexion.length}
+              </div>
+              <ul className="yoru-members-list">
+                {sinConexion.map((ficha) => (
+                  <li key={ficha.usuarioId || ficha.nombre}>
+                    <button
+                      type="button"
+                      className="yoru-member is-pulsable is-offline"
+                      onClick={() => setElegido(comoMiembro(ficha))}
+                      aria-haspopup="dialog"
+                    >
+                      <span className="yoru-member-avatar">
+                        {/* El servidor no guarda la foto de nadie, así que aquí va la
+                            inicial sobre color, como en la referencia. */}
+                        <span className="yoru-member-inicial">{inicialDe(ficha.nombre)}</span>
+                        <i className="yoru-member-dot is-offline" title={es ? 'Sin conexión' : 'Offline'} />
+                      </span>
+                      <span className="yoru-member-text">
+                        <span className="yoru-member-name">{ficha.nombre}</span>
+                        <span className="yoru-member-activity">
+                          {ficha.comparte && ficha.leyendo?.titulo
+                            ? `${es ? 'Leyendo' : 'Reading'} ${ficha.leyendo.titulo}`
+                            : (es ? 'Sin conexión' : 'Offline')}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       )}
 
@@ -272,7 +389,7 @@ export default function MembersView({
           miembro={elegido}
           es={es}
           esTuyo={esMiCuenta(elegido.name)}
-          lectura={esMiCuenta(elegido.name) ? miLectura : null}
+          lectura={esMiCuenta(elegido.name) ? miLectura : lecturaDeFicha(elegido.name)}
           onCerrar={() => setElegido(null)}
           onVerPerfil={onVerPerfil ? () => { setElegido(null); onVerPerfil(); } : undefined}
         />
