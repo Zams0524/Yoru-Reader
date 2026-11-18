@@ -90,7 +90,9 @@ const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], fo
 export function getCachedServerCatalog(): ServerCatalog {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return EMPTY;
+    // Sin caché todavía, lo escuchado por este perfil ya se puede enseñar: no depende
+    // de ningún servidor, está apuntado aquí.
+    if (!raw) return sharesServerProgress() ? EMPTY : { ...EMPTY, continueAudio: localAudioContinueItems() };
     const parsed = JSON.parse(raw) as ServerCatalog;
     return {
       at: Number(parsed?.at) || 0,
@@ -101,10 +103,11 @@ export function getCachedServerCatalog(): ServerCatalog {
       onDeck: Array.isArray(parsed?.onDeck) && sharesServerProgress() ? parsed.onDeck : [],
       forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
       // Igual con «Seguir escuchando»: lo de la cuenta solo si este perfil comparte.
-      // Lo de este perfil vuelve en el siguiente refresco, ya desde lo local.
-      continueAudio: Array.isArray(parsed?.continueAudio) && sharesServerProgress()
-        ? parsed.continueAudio
-        : [],
+      // Si no comparte, lo suyo sale de lo apuntado en el aparato, sin esperar a
+      // ningún refresco y sin mirar la caché, que es de la cuenta.
+      continueAudio: sharesServerProgress()
+        ? (Array.isArray(parsed?.continueAudio) ? parsed.continueAudio : [])
+        : localAudioContinueItems(),
     };
   } catch {
     return EMPTY;
@@ -216,28 +219,36 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
   }));
 }
 
+/**
+ * Lo que este perfil tiene a medias de oír, apuntado en el aparato.
+ *
+ * Es lo que llena «Seguir escuchando» cuando el perfil no comparte el progreso con la
+ * cuenta. Sale de aquí y no de la caché a propósito: la caché es de la cuenta y la
+ * comparten todos los perfiles, así que un perfil no puede fiarse de ella.
+ */
+export function localAudioContinueItems(): ServerItem[] {
+  return localContinueEntries()
+    .map((entry) => (entry.kind === 'audiobook'
+      ? {
+        id: 'enescucha-' + entry.itemId,
+        serverId: entry.itemId,
+        title: entry.title,
+        cover: absCoverUrl(entry.itemId),
+        source: 'audiobookshelf' as const,
+        author: entry.author || undefined,
+        percent: entry.percent,
+      }
+      : null))
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
 /** «Continuar escuchando»: lo que Audiobookshelf tiene a medias, con su avance. */
 async function fetchContinueAudio(): Promise<ServerItem[]> {
   /*
     Sin compartir el progreso, lo «a medias» de la cuenta es lo que escucha otra
     persona. En ese caso sale lo escuchado en este perfil, apuntado en el aparato.
   */
-  if (!sharesServerProgress()) {
-    return localContinueEntries()
-      .filter((entry) => entry.kind === 'audiobook')
-      .map((entry) => (entry.kind === 'audiobook'
-        ? {
-          id: 'enescucha-' + entry.itemId,
-          serverId: entry.itemId,
-          title: entry.title,
-          cover: absCoverUrl(entry.itemId),
-          source: 'audiobookshelf' as const,
-          author: entry.author || undefined,
-          percent: entry.percent,
-        }
-        : null))
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-  }
+  if (!sharesServerProgress()) return localAudioContinueItems();
 
   /*
     Más tiempo que los demás, y por eso lleva su propio plazo.

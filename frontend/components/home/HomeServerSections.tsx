@@ -11,6 +11,7 @@ import {
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
 import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
+import { LOCAL_PROGRESS_EVENT } from '../../utils/serverProgress';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -52,6 +53,21 @@ function apartar(id: string): void {
   window.dispatchEvent(new Event(APARTADOS_EVENTO));
 }
 
+/**
+ * Lo apartado a mano de las filas de «continuar», y cómo apartar más.
+ * Lo usan las filas del servidor y también el «Continuar» de Inicio, que pinta ahí
+ * mismo los tomos del servidor que lleva este perfil.
+ */
+export function useApartados(): { apartados: Set<string>; apartar: (id: string) => void } {
+  const [apartados, setApartados] = useState(() => new Set(leerApartados()));
+  useEffect(() => {
+    const onUpdate = () => setApartados(new Set(leerApartados()));
+    window.addEventListener(APARTADOS_EVENTO, onUpdate);
+    return () => window.removeEventListener(APARTADOS_EVENTO, onUpdate);
+  }, []);
+  return { apartados, apartar };
+}
+
 export function useServerRails({
   es,
   localTitles,
@@ -75,7 +91,13 @@ export function useServerRails({
   useEffect(() => {
     const onUpdate = () => setCatalog(getCachedServerCatalog());
     window.addEventListener('yoru-server-catalog-updated', onUpdate);
-    return () => window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+    // «Seguir escuchando» sale de lo apuntado en este perfil cuando no comparte el
+    // progreso de la cuenta, así que cambia al escuchar, sin pasar por el servidor.
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    return () => {
+      window.removeEventListener('yoru-server-catalog-updated', onUpdate);
+      window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    };
   }, []);
 
 
@@ -86,12 +108,7 @@ export function useServerRails({
     que alimenta el resto de carruseles. Un id que ya no esté en el servidor
     sencillamente no aparece, en vez de dejar una tarjeta rota.
   */
-  const [apartados, setApartados] = useState(() => new Set(leerApartados()));
-  useEffect(() => {
-    const onUpdate = () => setApartados(new Set(leerApartados()));
-    window.addEventListener(APARTADOS_EVENTO, onUpdate);
-    return () => window.removeEventListener(APARTADOS_EVENTO, onUpdate);
-  }, []);
+  const { apartados } = useApartados();
   const quitar = (item: ServerItem) => apartar(item.id);
 
   const [listIds, setListIds] = useState(() => audiobookList());
@@ -242,7 +259,7 @@ export function useServerRails({
  * parecer secciones distintas. Lo único que cambia es la línea de estado, que dice
  * si es novela o audiolibro.
  */
-function ServerContinueCard({
+export function ServerContinueCard({
   item,
   es,
   onOpen,

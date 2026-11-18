@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
-import { useServerRails } from './HomeServerSections';
+import { ServerContinueCard, useApartados, useServerRails } from './HomeServerSections';
 import { useBookActions, useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
@@ -53,6 +53,7 @@ export default function HomeView({
 }) {
   const openMenu = useBookMenu();
   const menuActions = useBookActions();
+  const { apartados, apartar } = useApartados();
 
   /*
     El orden de los carruseles lo decide el usuario en Ajustes → Organizar inicio.
@@ -220,55 +221,58 @@ export default function HomeView({
       })(),
     }));
 
-    // Un tomo de Kavita ya importado sale como libro propio: no se repite.
+    /*
+      Aquí solo van los tomos. Los audiolibros tienen su propia fila, «Seguir
+      escuchando», y salía el mismo audiolibro en las dos: lo pidió zams (18 nov
+      2026), que cada cosa esté en la suya.
+
+      Un tomo de Kavita ya importado sale como libro propio: no se repite. Y lo
+      apartado a mano de las filas de «continuar» tampoco vuelve por aquí.
+    */
     const serverCards = serverContinue
-      .filter((entry) => !(entry.kind === 'kavita' && localTitles.has(entry.title)))
+      .filter((entry) => entry.kind === 'kavita' && !localTitles.has(entry.title))
       .map((entry) => {
-      const isAudio = entry.kind === 'audiobook';
-      // Pulsar abre la ficha: la serie en Kavita (con su «Seguir leyendo»), el tomo
-      // en Audiobookshelf. Las dos ya retoman donde lo dejó este perfil.
-      const item: ServerItem = entry.kind === 'audiobook'
-        ? { id: `abs-${entry.itemId}`, serverId: entry.itemId, title: entry.title, cover: absCoverUrl(entry.itemId), source: 'audiobookshelf', author: entry.author }
-        : { id: `kavita-${entry.seriesId}`, serverId: String(entry.seriesId), title: entry.seriesName || entry.title, cover: kavitaSeriesCoverUrl(entry.seriesId), source: 'kavita' };
-      const cover = entry.kind === 'kavita' ? kavitaVolumeCoverUrl(entry.volumeId) : item.cover;
-      const subtitle = entry.kind === 'audiobook'
-        ? (entry.author || (es ? 'Audiolibro' : 'Audiobook'))
-        : (entry.seriesName && entry.seriesName !== entry.title ? entry.seriesName : 'Kavita');
+      // Pulsar abre la ficha de la serie en Kavita, con su «Seguir leyendo», que ya
+      // retoma donde lo dejó este perfil.
+      const seriesId = entry.kind === 'kavita' ? entry.seriesId : 0;
+      const seriesName = entry.kind === 'kavita' ? entry.seriesName : undefined;
+      const item: ServerItem = {
+        id: `kavita-${seriesId}`,
+        serverId: String(seriesId),
+        title: entry.title,
+        // La portada es la del tomo que se está leyendo, no la de la serie.
+        cover: entry.kind === 'kavita' ? kavitaVolumeCoverUrl(entry.volumeId) : kavitaSeriesCoverUrl(seriesId),
+        source: 'kavita',
+        series: seriesName && seriesName !== entry.title ? seriesName : 'Kavita',
+        percent: entry.percent,
+      };
       return {
         at: entry.at,
+        hidden: apartados.has(item.id),
         node: (
-          <button
+          <ServerContinueCard
             key={entry.key}
-            type="button"
-            className="yoru-continue-card"
-            onClick={() => onOpenServerItem(item)}
-            title={entry.title}
-          >
-            <span className="yoru-continue-cover">
-              {cover ? <img src={cover} alt="" loading="lazy" /> : <span />}
-            </span>
-            <span className="yoru-continue-body">
-              <span className="yoru-continue-title">{entry.title}</span>
-              <span className="yoru-continue-author">{subtitle}</span>
-              <span className="yoru-continue-state">
-                {isAudio ? (es ? 'Audiolibro' : 'Audiobook') : (es ? 'Novela' : 'Novel')} · {entry.percent} %
-              </span>
-              <span className="yoru-continue-bar">
-                <span style={{ width: `${entry.percent}%` }} />
-              </span>
-            </span>
-          </button>
+            item={item}
+            es={es}
+            onOpen={() => onOpenServerItem({ ...item, title: seriesName || entry.title })}
+            onHide={() => apartar(item.id)}
+          />
         ),
       };
-    });
+    })
+      .filter((card) => !card.hidden);
 
-    localRails.continue = (
-      <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
-        {[...bookCards, ...serverCards]
-          .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-          .map((card) => card.node)}
-      </Rail>
-    );
+    // Con los audiolibros fuera y lo apartado quitado, la fila puede quedarse vacía:
+    // entonces no se pinta, como el resto.
+    const continueCards = [...bookCards, ...serverCards]
+      .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    if (continueCards.length > 0) {
+      localRails.continue = (
+        <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
+          {continueCards.map((card) => card.node)}
+        </Rail>
+      );
+    }
   }
 
   if (data.recent.length > 0) {
