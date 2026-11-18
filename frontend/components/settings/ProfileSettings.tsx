@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, User } from 'lucide-react';
+import { resizeToJpeg } from '../../utils/profileImage';
 
 /**
  * El perfil, dentro de Ajustes.
@@ -20,6 +21,8 @@ export interface YoruProfile {
   /** Una imagen (`data:` o ruta) o un degradado CSS, que es el hueco por defecto. */
   avatar: string;
   avatarEmoji?: string;
+  /** La imagen de portada de la página de perfil (`data:`), si ha puesto una. */
+  banner?: string;
 }
 
 export default function ProfileSettings({
@@ -33,20 +36,25 @@ export default function ProfileSettings({
   es: boolean;
   profile: YoruProfile | undefined;
   profileCount: number;
-  onSave: (changes: { name: string; avatar: string; avatarEmoji: string }) => void;
+  onSave: (changes: { name: string; avatar: string; avatarEmoji: string; banner: string }) => void;
   onPickImage: (file: File) => Promise<string>;
 }) {
   const [name, setName] = useState(profile?.name || '');
   const [avatar, setAvatar] = useState(profile?.avatar || '');
+  const [banner, setBanner] = useState(profile?.banner || '');
+  const [bannerError, setBannerError] = useState('');
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const bannerRef = useRef<HTMLInputElement | null>(null);
 
   // Al cambiar de perfil activo, el formulario pasa a hablar del nuevo.
   useEffect(() => {
     setName(profile?.name || '');
     setAvatar(profile?.avatar || '');
+    setBanner(profile?.banner || '');
+    setBannerError('');
     setSaved(false);
-  }, [profile?.id, profile?.name, profile?.avatar]);
+  }, [profile?.id, profile?.name, profile?.avatar, profile?.banner]);
 
   if (!profile) {
     return (
@@ -58,12 +66,12 @@ export default function ProfileSettings({
 
   const esImagen = avatar.startsWith('data:') || avatar.startsWith('/') || avatar.startsWith('http');
   const limpio = name.trim();
-  const cambiado = limpio !== profile.name || avatar !== profile.avatar;
+  const cambiado = limpio !== profile.name || avatar !== profile.avatar || banner !== (profile.banner || '');
 
   const guardar = () => {
     if (!limpio || !cambiado) return;
     // El emoji se vacía cuando hay foto: si no, se pintarían los dos encima.
-    onSave({ name: limpio, avatar, avatarEmoji: esImagen ? '' : (profile.avatarEmoji || '') });
+    onSave({ name: limpio, avatar, avatarEmoji: esImagen ? '' : (profile.avatarEmoji || ''), banner });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
   };
@@ -76,6 +84,18 @@ export default function ProfileSettings({
     } finally {
       // Se limpia para que elegir dos veces el mismo fichero vuelva a avisar.
       event.target.value = '';
+    }
+  };
+
+  const elegirPortada = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setBannerError('');
+    try {
+      setBanner(await resizeToJpeg(file));
+    } catch {
+      setBannerError(es ? 'No se pudo usar esa imagen.' : 'That image could not be used.');
     }
   };
 
@@ -104,6 +124,50 @@ export default function ProfileSettings({
             {es ? 'Cambiar foto' : 'Change photo'}
           </button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={elegirFoto} />
+        </div>
+      </div>
+
+      {/*
+        La portada es la franja de arriba de la página de perfil. Se guarda reducida:
+        los perfiles viven en el almacenamiento del navegador, que es pequeño.
+      */}
+      <div className="settings-row">
+        <div className="settings-row-text">
+          <span className="settings-row-label">{es ? 'Portada del perfil' : 'Profile banner'}</span>
+          <span className="settings-row-desc">
+            {bannerError || (es
+              ? 'Una imagen ancha que se ve arriba de tu perfil. Se queda en este equipo.'
+              : 'A wide image shown at the top of your profile. It stays on this computer.')}
+          </span>
+        </div>
+        <div className="settings-row-control settings-profile-photo">
+          <span
+            aria-hidden="true"
+            style={{
+              width: 132,
+              height: 48,
+              flexShrink: 0,
+              borderRadius: 10,
+              border: '1px solid var(--border-light)',
+              background: banner ? `center / cover no-repeat url(${banner})` : 'var(--surface-raised)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11.5,
+              color: 'var(--text-muted)',
+            }}
+          >
+            {banner ? '' : (es ? 'Sin portada' : 'No banner')}
+          </span>
+          <button type="button" className="settings-btn" onClick={() => bannerRef.current?.click()}>
+            {banner ? (es ? 'Cambiar' : 'Change') : (es ? 'Subir portada' : 'Upload banner')}
+          </button>
+          {banner && (
+            <button type="button" className="settings-btn" onClick={() => setBanner('')}>
+              {es ? 'Quitar' : 'Remove'}
+            </button>
+          )}
+          <input ref={bannerRef} type="file" accept="image/*" hidden onChange={elegirPortada} />
         </div>
       </div>
 

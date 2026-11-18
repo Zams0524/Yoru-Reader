@@ -30,6 +30,7 @@ import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
+import ProfileView from './ProfileView';
 import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { ServerLibrarySection } from './HomeServerSections';
@@ -66,6 +67,7 @@ type View =
   | 'home'
   | 'catalog'
   | 'statistics'
+  | 'profile'
   | 'srs'
   | 'settings'
   | 'series'
@@ -147,6 +149,8 @@ export default function YoruShell({
   const [shelf, setShelf] = useState<ShelfId>('reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  /** El menú del avatar de la cabecera: Perfil y Ajustes. */
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
   const [collectionsVersion, setCollectionsVersion] = useState(0);
@@ -262,6 +266,7 @@ export default function YoruShell({
 
   // Botón atrás de Android: cierra lo último que se abrió, igual que en la biblioteca.
   const backSteps: [boolean, () => void][] = [
+    [isProfileMenuOpen, () => setIsProfileMenuOpen(false)],
     [isSearchOpen, () => setIsSearchOpen(false)],
     [isDrawerOpen, () => setIsDrawerOpen(false)],
     [view === 'detail', () => go(group ? 'group' : 'home')],
@@ -482,6 +487,21 @@ export default function YoruShell({
 
     if (view === 'statistics') {
       return <StatsView books={books} es={es} />;
+    }
+
+    if (view === 'profile') {
+      const profiles: any[] = libraryProps.profiles || [];
+      return (
+        <ProfileView
+          books={books}
+          es={es}
+          profile={profiles.find((entry) => entry.id === libraryProps.activeProfileId) || profiles[0]}
+          onOpenDetail={openDetail}
+          onOpenServerItem={openServerItem}
+          onOpenSettings={() => go('settings')}
+          onUpdateProfile={(profileId, changes) => libraryProps.onUpdateProfile?.(profileId, changes)}
+        />
+      );
     }
 
     if (view === 'listen') {
@@ -799,7 +819,8 @@ export default function YoruShell({
       onClick: () => go('catalog'),
       active: view === 'catalog',
     },
-    { key: 'me', label: es ? 'Yo' : 'Me', icon: User, onClick: () => go('settings'), active: view === 'settings' },
+    // «Yo» abre el perfil, que es donde están tus listas; Ajustes queda a un toque, en su botón.
+    { key: 'me', label: es ? 'Yo' : 'Me', icon: User, onClick: () => go('profile'), active: view === 'profile' || view === 'settings' },
   ];
 
   return (
@@ -878,12 +899,48 @@ export default function YoruShell({
           <button
             type="button"
             className="yoru-shell-avatar"
-            onClick={() => go('settings')}
+            onClick={() => setIsProfileMenuOpen((open) => !open)}
             title={es ? 'Tu perfil' : 'Your profile'}
             aria-label={es ? 'Tu perfil' : 'Your profile'}
+            aria-haspopup="menu"
+            aria-expanded={isProfileMenuOpen}
           >
             {avatarFor(libraryProps)}
           </button>
+          {/*
+            El avatar abre un menú corto en vez de saltar a Ajustes: el perfil y los
+            ajustes son dos sitios distintos, y antes solo se llegaba a uno.
+          */}
+          {isProfileMenuOpen && (
+            <>
+              <button
+                type="button"
+                className="yoru-menu-scrim"
+                aria-label={es ? 'Cerrar menú' : 'Close menu'}
+                onClick={() => setIsProfileMenuOpen(false)}
+              />
+              <div className="yoru-menu yoru-profile-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="yoru-menu-item"
+                  onClick={() => { setIsProfileMenuOpen(false); go('profile'); }}
+                >
+                  <User size={16} />
+                  {es ? 'Perfil' : 'Profile'}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="yoru-menu-item"
+                  onClick={() => { setIsProfileMenuOpen(false); go('settings'); }}
+                >
+                  <Settings size={16} />
+                  {es ? 'Ajustes' : 'Settings'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
