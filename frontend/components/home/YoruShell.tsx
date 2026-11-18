@@ -543,11 +543,7 @@ export default function YoruShell({
 
     if (view === 'members') {
       return (
-        <MembersView
-          es={es}
-          guildId={String(settings?.discordGuildId || '')}
-          onSaveGuildId={(guildId) => libraryProps.onSaveSettings?.({ ...settings, discordGuildId: guildId })}
-        />
+        <MembersView es={es} />
       );
     }
 

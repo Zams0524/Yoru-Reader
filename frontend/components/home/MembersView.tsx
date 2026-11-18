@@ -1,19 +1,21 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ExternalLink, RefreshCw, Users } from 'lucide-react';
 import { EmptyState } from './primitives';
 import {
   fetchDiscordWidget,
-  isDiscordId,
+  YORU_DISCORD_GUILD_ID,
   type DiscordWidget,
   type DiscordWidgetError,
 } from '../../utils/discordWidget';
 
 /**
- * Miembros: quién de tu servidor de Discord está conectado ahora, y con qué.
+ * Miembros: quién del servidor de Yoru está conectado ahora, y con qué.
  *
- * Sale del widget público del servidor (ver `discordWidget.ts`): no hace falta bot ni
- * clave, solo el ID del servidor y tener el widget encendido. Por eso mismo solo salen
- * los conectados; Discord no publica a los desconectados por esa vía.
+ * El servidor viene puesto (`YORU_DISCORD_GUILD_ID`): no hay nada que conectar ni
+ * ningún ID que pegar, igual que Kavita y Audiobookshelf vienen puestos. Sale del
+ * widget público (ver `discordWidget.ts`), así que no hace falta bot ni clave, y por
+ * eso mismo solo salen los conectados: Discord no publica a los desconectados por esa
+ * vía.
  */
 
 /** Cada cuánto se vuelve a preguntar. Discord refresca el widget más o menos al minuto. */
@@ -21,16 +23,7 @@ const REFRESH_MS = 60_000;
 
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 } as const;
 
-export default function MembersView({
-  es,
-  guildId,
-  onSaveGuildId,
-}: {
-  es: boolean;
-  guildId: string;
-  onSaveGuildId: (guildId: string) => void;
-}) {
-  const [draft, setDraft] = useState(guildId);
+export default function MembersView({ es }: { es: boolean }) {
   const [widget, setWidget] = useState<DiscordWidget | null>(null);
   const [error, setError] = useState<DiscordWidgetError | ''>('');
   const [loading, setLoading] = useState(false);
@@ -38,19 +31,12 @@ export default function MembersView({
   const [tick, setTick] = useState(0);
   const firstLoad = useRef(true);
 
-  useEffect(() => { setDraft(guildId); }, [guildId]);
-
   useEffect(() => {
-    if (!isDiscordId(guildId)) {
-      setWidget(null);
-      setError('');
-      return undefined;
-    }
     const controller = new AbortController();
     let alive = true;
     const load = () => {
       setLoading(true);
-      fetchDiscordWidget(guildId, controller.signal)
+      fetchDiscordWidget(YORU_DISCORD_GUILD_ID, controller.signal)
         .then((data) => { if (alive) { setWidget(data); setError(''); } })
         .catch((reason: Error) => {
           if (!alive || reason?.name === 'AbortError') return;
@@ -65,20 +51,12 @@ export default function MembersView({
     load();
     const timer = window.setInterval(load, REFRESH_MS);
     return () => { alive = false; controller.abort(); window.clearInterval(timer); };
-  }, [guildId, tick]);
-
-  const save = useCallback(() => {
-    const value = draft.trim();
-    if (value === guildId) return;
-    if (value && !isDiscordId(value)) { setError('bad-id'); return; }
-    setError('');
-    onSaveGuildId(value);
-  }, [draft, guildId, onSaveGuildId]);
+  }, [tick]);
 
   const errorText = (code: DiscordWidgetError | ''): string => {
-    if (code === 'bad-id') return es ? 'Eso no parece un ID de servidor: es un número largo, de unas 18 cifras.' : 'That does not look like a server ID: it is a long number, about 18 digits.';
-    if (code === 'widget-off') return es ? 'El servidor tiene el widget apagado. Enciéndelo en Ajustes del servidor → Widget.' : 'The server has its widget turned off. Turn it on in Server Settings → Widget.';
-    if (code === 'not-found') return es ? 'Discord no conoce ningún servidor con ese ID.' : 'Discord does not know any server with that ID.';
+    if (code === 'bad-id') return es ? 'El servidor de Yoru está mal puesto en la app. No es cosa tuya; habría que corregirlo.' : 'Yoru\'s server is misconfigured in the app. Not your fault; it needs fixing.';
+    if (code === 'widget-off') return es ? 'El servidor de Yoru tiene el widget apagado, así que Discord no publica quién está conectado.' : 'Yoru\'s server has its widget turned off, so Discord does not publish who is online.';
+    if (code === 'not-found') return es ? 'Discord no encuentra el servidor de Yoru.' : 'Discord cannot find Yoru\'s server.';
     if (code === 'rate-limit') return es ? 'Discord pide esperar un momento antes de volver a preguntar.' : 'Discord asks to wait a moment before asking again.';
     if (code === 'network') return es ? 'No se pudo hablar con Discord. Revisa la conexión.' : 'Could not reach Discord. Check your connection.';
     return '';
@@ -94,8 +72,6 @@ export default function MembersView({
   const statusLabel = (status: keyof typeof STATUS_ORDER) =>
     status === 'idle' ? (es ? 'Ausente' : 'Idle') : status === 'dnd' ? (es ? 'No molestar' : 'Do not disturb') : (es ? 'En línea' : 'Online');
 
-  const connected = isDiscordId(guildId);
-
   return (
     <div className="yoru-members">
       <div className="yoru-view-head">
@@ -104,73 +80,36 @@ export default function MembersView({
           <div className="yoru-view-sub">
             {widget?.name
               ? `${widget.name} · Discord`
-              : (es ? 'Tu servidor de Discord, desde Yoru.' : 'Your Discord server, from Yoru.')}
+              : (es ? 'La comunidad de Yoru, desde la app.' : 'The Yoru community, from the app.')}
           </div>
         </div>
-        {connected && (
-          <div className="yoru-detail-actions" style={{ marginBottom: 0 }}>
-            {widget?.invite && (
-              <a className="yoru-btn" href={widget.invite} target="_blank" rel="noopener noreferrer">
-                <ExternalLink size={15} />
-                {es ? 'Abrir en Discord' : 'Open in Discord'}
-              </a>
-            )}
-            <button
-              type="button"
-              className="yoru-btn"
-              onClick={() => setTick((value) => value + 1)}
-              disabled={loading}
-              title={es ? 'Actualizar' : 'Refresh'}
-              aria-label={es ? 'Actualizar' : 'Refresh'}
-            >
-              <RefreshCw size={15} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Conectar el servidor: un campo y lo que hay que hacer en Discord, en dos pasos. */}
-      <div className="yoru-members-connect">
-        <label className="yoru-control-label" htmlFor="yoru-discord-guild">
-          {es ? 'ID de tu servidor de Discord' : 'Your Discord server ID'}
-        </label>
-        <div className="yoru-members-connect-row">
-          <div className="yoru-control-field">
-            <input
-              id="yoru-discord-guild"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              spellCheck={false}
-              value={draft}
-              placeholder="123456789012345678"
-              onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, ''))}
-              onKeyDown={(event) => { if (event.key === 'Enter') save(); }}
-            />
-          </div>
-          <button type="button" className="yoru-btn yoru-btn-primary" onClick={save} disabled={draft.trim() === guildId}>
-            {connected ? (es ? 'Cambiar' : 'Change') : (es ? 'Conectar' : 'Connect')}
-          </button>
-          {connected && (
-            <button type="button" className="yoru-btn" onClick={() => { setDraft(''); onSaveGuildId(''); }}>
-              {es ? 'Desconectar' : 'Disconnect'}
-            </button>
+        <div className="yoru-detail-actions" style={{ marginBottom: 0 }}>
+          {widget?.invite && (
+            <a className="yoru-btn" href={widget.invite} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={15} />
+              {es ? 'Abrir en Discord' : 'Open in Discord'}
+            </a>
           )}
+          <button
+            type="button"
+            className="yoru-btn"
+            onClick={() => setTick((value) => value + 1)}
+            disabled={loading}
+            title={es ? 'Actualizar' : 'Refresh'}
+            aria-label={es ? 'Actualizar' : 'Refresh'}
+          >
+            <RefreshCw size={15} />
+          </button>
         </div>
-        {!connected && (
-          <ol className="yoru-members-steps">
-            <li>{es
-              ? 'En Discord, abre Ajustes del servidor → Widget y enciende «Habilitar widget del servidor».'
-              : 'In Discord, open Server Settings → Widget and turn on “Enable Server Widget”.'}</li>
-            <li>{es
-              ? 'En esa misma pantalla, copia el «ID del servidor» y pégalo aquí.'
-              : 'On that same screen, copy the “Server ID” and paste it here.'}</li>
-          </ol>
-        )}
-        {error && <p className="yoru-profile-error" role="alert" style={{ margin: '10px 0 0' }}>{errorText(error)}</p>}
       </div>
 
-      {connected && !widget && loading && (
+      {error && (
+        <div className="yoru-members-connect">
+          <p className="yoru-profile-error" role="alert" style={{ margin: 0 }}>{errorText(error)}</p>
+        </div>
+      )}
+
+      {!widget && loading && (
         <div className="app-section-loading" role="status" aria-live="polite">
           <span className="app-section-loading-indicator" />
           {es ? 'Preguntando a Discord…' : 'Asking Discord…'}

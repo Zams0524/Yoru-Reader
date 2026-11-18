@@ -13,6 +13,20 @@
  *    («Yoru Reader», un juego…), sin el detalle de qué libro o qué capítulo.
  */
 
+/**
+ * El servidor de Yoru Reader, de fábrica.
+ *
+ * Miembros no pregunta a quién mirar: Discord aquí no es «un servidor cualquiera que
+ * tú conectas», es *el* servidor de Yoru, y por eso el ID vive en el código y no en
+ * los ajustes. La pantalla no deja apuntar a otro, así que nadie convierte Miembros en
+ * un visor de servidores ajenos ni se queda delante de una pantalla vacía porque no
+ * sabía qué ID pegar.
+ *
+ * Para que haya lista, este servidor tiene que tener el widget encendido en «Ajustes
+ * del servidor → Widget»; si se apaga, la pantalla lo dice.
+ */
+export const YORU_DISCORD_GUILD_ID = '1372928430634565775';
+
 export interface DiscordMember {
   id: string;
   name: string;
