@@ -260,13 +260,18 @@ export async function startAudiobookPlayback(itemId: string): Promise<Audiobooks
   // Sin compartir, se retoma donde lo dejó este perfil, no donde lo dejó la cuenta.
   const shared = sharesServerProgress();
   if (!shared && data.id) localSessions.add(data.id);
-  const startTime = shared ? serverTime : (getLocalAudiobookProgress(itemId)?.currentTime || 0);
+  const localTime = getLocalAudiobookProgress(itemId)?.currentTime || 0;
+  // Compartiendo, manda la cuenta; si no sabe nada, lo apuntado en el perfil.
+  const startTime = shared ? (serverTime || localTime) : localTime;
   if (tracks.length === 0) throw new Error('Audiobookshelf no devolvió pistas de audio para este libro.');
+  const title = data.displayTitle || data.mediaMetadata?.title || '';
+  const author = data.displayAuthor || data.mediaMetadata?.authorName || '';
+  playingMeta.set(itemId, { title, author });
   return {
     id: data.id,
     itemId,
-    title: data.displayTitle || data.mediaMetadata?.title || '',
-    author: data.displayAuthor || data.mediaMetadata?.authorName || '',
+    title,
+    author,
     coverUrl: absCoverUrl(itemId),
     currentTime: startTime,
     duration: Number(data.duration) || tracks.reduce((sum, track) => sum + track.duration, 0),
@@ -303,11 +308,14 @@ export async function closeAudiobookSession(sessionId: string, update: Listening
   await absRequest(`/api/session/${encodeURIComponent(sessionId)}/close`, { method: 'POST', body: update });
 }
 
+/** Título y autor de lo que se está escuchando, para que «Continuar» lo pinte sin preguntar. */
+const playingMeta = new Map<string, { title?: string; author?: string }>();
+
 export async function updateAudiobookProgress(itemId: string, currentTime: number, duration: number): Promise<void> {
-  if (!sharesServerProgress()) {
-    saveLocalAudiobookProgress(itemId, currentTime, duration);
-    return;
-  }
+  // Siempre se apunta en el perfil (es lo que pinta «Continuar»). A la cuenta solo
+  // sube si el perfil comparte su progreso.
+  saveLocalAudiobookProgress(itemId, currentTime, duration, playingMeta.get(itemId));
+  if (!sharesServerProgress()) return;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   await absRequest(`/api/me/progress/${encodeURIComponent(itemId)}`, {
     method: 'PATCH',

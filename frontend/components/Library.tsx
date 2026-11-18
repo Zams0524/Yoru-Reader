@@ -5,6 +5,7 @@ import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import MediaServerSettings from './settings/MediaServerSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
+import { sharesServerProgress } from '../utils/serverProgress';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import LibraryQuickBar, { type LibraryView } from './LibraryQuickBar';
 import LibraryMoreMenu from './LibraryMoreMenu';
@@ -4093,14 +4094,14 @@ const Library = React.memo(function Library({
                   </span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     {lang === 'es'
-                      ? 'Apagado, tu progreso de lectura y escucha se guarda solo en este dispositivo, en tu perfil. Enciéndelo solo si la cuenta de Kavita y Audiobookshelf es solo tuya.'
-                      : 'Off: your reading and listening progress stays on this device, in your profile. Turn it on only if the Kavita and Audiobookshelf account is yours alone.'}
+                      ? 'Apagado, tu progreso de lectura y escucha se guarda solo en este dispositivo, en tu perfil, y no ves el de la cuenta. Viene encendido solo en el primer perfil; los perfiles nuevos empiezan apagados.'
+                      : 'Off: your reading and listening progress stays on this device, in your profile, and you do not see the account\'s. Only the first profile starts with it on; new profiles start off.'}
                   </span>
                 </div>
                 <label className="migaku-switch">
                   <input
                     type="checkbox"
-                    checked={settings.shareServerProgress === true}
+                    checked={sharesServerProgress()}
                     onChange={(e) => {
                       onSaveSettings({ ...settings, shareServerProgress: e.target.checked });
                       // La portada vuelve a leer la caché, que ya filtra el «seguir leyendo» de la cuenta.

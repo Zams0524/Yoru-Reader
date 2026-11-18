@@ -510,6 +510,8 @@ export async function importKavitaBook(book: KavitaBook): Promise<any[]> {
       chapterId: book.chapterId,
       libraryId: book.libraryId,
       pages: book.pages,
+      seriesName: book.seriesName,
+      volumeTitle: parsed.title,
     });
   }
   return parsedBooks;
@@ -592,14 +594,16 @@ export function kavitaPercentForPage(pages: number, pageNum: number): number {
  * comodidad, no algo por lo que merezca la pena fallar al abrir un libro.
  */
 export async function getKavitaProgressPercent(chapterId: number, pages: number): Promise<number> {
-  if (!sharesServerProgress()) return getLocalKavitaProgress(chapterId)?.percent || 0;
+  const local = getLocalKavitaProgress(chapterId)?.percent || 0;
+  if (!sharesServerProgress()) return local;
   try {
     const response = await kavitaRequest<any>('/api/Reader/get-progress?chapterId=' + chapterId);
     const pageNum = Number(response.data?.pageNum);
-    if (!Number.isFinite(pageNum) || pageNum <= 0) return 0;
+    // Si la cuenta no sabe nada (o no contesta), vale lo apuntado en el perfil.
+    if (!Number.isFinite(pageNum) || pageNum <= 0) return local;
     return kavitaPercentForPage(pages, pageNum);
   } catch {
-    return 0;
+    return local;
   }
 }
 
@@ -644,18 +648,18 @@ export function queueKavitaProgress(title: string, percent: number): void {
   if (!title) return;
   const source = getKavitaSource(title);
   if (!source) return;
-  // Sin compartir, el progreso se queda en el dispositivo y no se toca la cuenta.
-  if (!sharesServerProgress()) {
-    saveLocalKavitaProgress({
-      chapterId: source.chapterId,
-      volumeId: source.volumeId,
-      seriesId: source.seriesId,
-      pages: source.pages,
-      percent,
-    });
-    return;
-  }
-  if (!isKavitaConfigured()) return;
+  // Siempre se apunta en el perfil (es lo que pinta «Continuar»). A la cuenta solo
+  // sube si el perfil comparte su progreso.
+  saveLocalKavitaProgress({
+    chapterId: source.chapterId,
+    volumeId: source.volumeId,
+    seriesId: source.seriesId,
+    pages: source.pages,
+    percent,
+    seriesName: source.seriesName,
+    volumeTitle: source.volumeTitle || title,
+  });
+  if (!sharesServerProgress() || !isKavitaConfigured()) return;
   const pending = pendingProgress.get(title);
   if (pending) clearTimeout(pending.timer);
   const timer = setTimeout(() => {

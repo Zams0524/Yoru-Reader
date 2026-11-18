@@ -5,6 +5,7 @@ import {
   audiobookSeriesOf,
   getCachedServerCatalog,
   sample,
+  serverItemId,
   type ServerItem,
   type ServerSeries,
 } from '../../utils/serverCatalog';
@@ -22,10 +23,13 @@ import type { RailId } from '../../utils/homeRails';
 export function useServerRails({
   es,
   localTitles,
+  skipSeriesIds,
   onOpenItem,
   onOpenSeries,
 }: {
   es: boolean;
+  /** Series que ya salen en «Continuar» (leídas en este perfil), para no repetirlas. */
+  skipSeriesIds?: Set<string>;
   /** Títulos que ya están en la biblioteca local, para no repetirlos. */
   localTitles?: Set<string>;
   /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
@@ -47,8 +51,9 @@ export function useServerRails({
 
   // «Continuar en el servidor» no repite lo que ya sale en el «Continuar» local.
   const onDeck = useMemo(
-    () => catalog.onDeck.filter((item) => !localTitles || !localTitles.has(item.title)),
-    [catalog.onDeck, localTitles]
+    () => catalog.onDeck.filter((item) => (!localTitles || !localTitles.has(item.title))
+      && (!skipSeriesIds || !skipSeriesIds.has(serverItemId(item)))),
+    [catalog.onDeck, localTitles, skipSeriesIds]
   );
   const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);

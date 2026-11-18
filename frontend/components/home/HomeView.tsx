@@ -4,6 +4,9 @@ import { useServerRails } from './HomeServerSections';
 import { useBookMenu } from './BookContextMenu';
 import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
+import { LOCAL_PROGRESS_EVENT, localContinueEntries, type LocalContinueEntry } from '../../utils/serverProgress';
+import { kavitaSeriesCoverUrl, kavitaVolumeCoverUrl } from '../../utils/kavitaService';
+import { absCoverUrl } from '../../utils/audiobookshelfService';
 import {
   collectionGroups,
   continueReading,
@@ -61,10 +64,28 @@ export default function HomeView({
     return () => window.removeEventListener('yoru-home-rails-updated', onUpdate);
   }, []);
 
+  /*
+    Lo empezado en el servidor sin importarlo (tomos de Kavita leídos de paso,
+    audiolibros) también va en «Continuar»: es lo que lee este perfil, apuntado en
+    el dispositivo, no lo que la cuenta del servidor tenga a medias.
+  */
+  const [serverContinue, setServerContinue] = useState<LocalContinueEntry[]>(() => localContinueEntries());
+  useEffect(() => {
+    const onUpdate = () => setServerContinue(localContinueEntries());
+    onUpdate();
+    window.addEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+    return () => window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
+  }, [books]);
+
   const localTitles = useMemo(() => new Set(books.map((book) => book.title)), [books]);
+  const continuingSeries = useMemo(
+    () => new Set(serverContinue.filter((entry) => entry.kind === 'kavita').map((entry) => String((entry as any).seriesId))),
+    [serverContinue]
+  );
   const serverRails = useServerRails({
     es,
     localTitles,
+    skipSeriesIds: continuingSeries,
     onOpenItem: onOpenServerItem,
     onOpenSeries: onOpenServerSeries,
   });
@@ -94,7 +115,7 @@ export default function HomeView({
     { key: 'audio', label: es ? 'Audiolibros' : 'Audiobooks', go: onGoAudiobooks },
   ];
 
-  if (books.length === 0) {
+  if (books.length === 0 && serverContinue.length === 0) {
     return (
       <EmptyState
         title={es ? 'Tu biblioteca está vacía' : 'Your library is empty'}
@@ -114,10 +135,11 @@ export default function HomeView({
   */
   const localRails: Partial<Record<RailId, React.ReactNode>> = {};
 
-  if (data.continuing.length > 0) {
-    localRails.continue = (
-      <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
-        {data.continuing.map((book) => {
+  if (data.continuing.length > 0 || serverContinue.length > 0) {
+    // Libros propios y lo empezado en el servidor, juntos y por fecha: lo último, primero.
+    const bookCards = data.continuing.map((book) => ({
+      at: String((book as any).lastRead || ''),
+      node: (() => {
           const percent = Math.min(100, Math.max(0, Math.round(book.progress?.percent ?? 0)));
           // Miniatura de 56 px: aquí el respaldo es solo color, sin el título, que a
           // ese tamaño no se lee. Quién tiene imagen y quién degradado lo decide
@@ -150,7 +172,56 @@ export default function HomeView({
               </span>
             </button>
           );
-        })}
+      })(),
+    }));
+
+    // Un tomo de Kavita ya importado sale como libro propio: no se repite.
+    const serverCards = serverContinue
+      .filter((entry) => !(entry.kind === 'kavita' && localTitles.has(entry.title)))
+      .map((entry) => {
+      const isAudio = entry.kind === 'audiobook';
+      // Pulsar abre la ficha: la serie en Kavita (con su «Seguir leyendo»), el tomo
+      // en Audiobookshelf. Las dos ya retoman donde lo dejó este perfil.
+      const item: ServerItem = entry.kind === 'audiobook'
+        ? { id: `abs-${entry.itemId}`, serverId: entry.itemId, title: entry.title, cover: absCoverUrl(entry.itemId), source: 'audiobookshelf', author: entry.author }
+        : { id: `kavita-${entry.seriesId}`, serverId: String(entry.seriesId), title: entry.seriesName || entry.title, cover: kavitaSeriesCoverUrl(entry.seriesId), source: 'kavita' };
+      const cover = entry.kind === 'kavita' ? kavitaVolumeCoverUrl(entry.volumeId) : item.cover;
+      const subtitle = entry.kind === 'audiobook'
+        ? (entry.author || (es ? 'Audiolibro' : 'Audiobook'))
+        : (entry.seriesName && entry.seriesName !== entry.title ? entry.seriesName : 'Kavita');
+      return {
+        at: entry.at,
+        node: (
+          <button
+            key={entry.key}
+            type="button"
+            className="yoru-continue-card"
+            onClick={() => onOpenServerItem(item)}
+            title={entry.title}
+          >
+            <span className="yoru-continue-cover">
+              {cover ? <img src={cover} alt="" loading="lazy" /> : <span />}
+            </span>
+            <span className="yoru-continue-body">
+              <span className="yoru-continue-title">{entry.title}</span>
+              <span className="yoru-continue-author">{subtitle}</span>
+              <span className="yoru-continue-state">
+                {isAudio ? (es ? 'Audiolibro' : 'Audiobook') : (es ? 'Novela' : 'Novel')} · {entry.percent} %
+              </span>
+              <span className="yoru-continue-bar">
+                <span style={{ width: `${entry.percent}%` }} />
+              </span>
+            </span>
+          </button>
+        ),
+      };
+    });
+
+    localRails.continue = (
+      <Rail title={es ? 'Continuar' : 'Continue'} es={es}>
+        {[...bookCards, ...serverCards]
+          .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+          .map((card) => card.node)}
       </Rail>
     );
   }

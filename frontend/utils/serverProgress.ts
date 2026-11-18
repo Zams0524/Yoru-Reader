@@ -2,15 +2,17 @@
  * Progreso local frente al progreso del servidor.
  *
  * Kavita y Audiobookshelf guardan el progreso por cuenta, no por persona. Cuando
- * varias personas usan la misma cuenta (cada una con su propia app), el progreso de
- * una pisa el de la otra: abre un tomo y la app la lleva a la página donde lo dejó
- * otra persona, y «Continuar en el servidor» enseña lo que leyó otra.
+ * varias personas usan la misma cuenta, el progreso de una pisa el de la otra: abre
+ * un tomo y la app la lleva a la página donde lo dejó otra persona, y «Continuar»
+ * enseña lo que leyó otra.
  *
- * Por eso, salvo que el perfil diga lo contrario (`shareServerProgress`), el
- * progreso se queda en el dispositivo, apartado por perfil:
- *  - Kavita: no se sube nada al servidor y lo que se lee de él se toma de aquí.
- *  - Audiobookshelf: no se sincroniza la sesión ni el progreso; la posición de
- *    escucha se guarda aquí y se retoma desde aquí.
+ * Reglas:
+ *  - El progreso de lo leído y escuchado en el servidor se apunta **siempre** aquí,
+ *    apartado por perfil. Es lo que pinta «Continuar» en Inicio.
+ *  - Solo un perfil que comparte (`shareServerProgress`) lo sube a la cuenta y lee
+ *    de ella. Sin decir nada, comparte el perfil original (el primero, el de quien
+ *    montó la cuenta) y los perfiles nuevos no: su progreso se queda en el
+ *    dispositivo y no ven el de la cuenta.
  *
  * Los libros importados ya guardaban su progreso en local (en el propio libro); lo
  * nuevo es lo que solo vivía en el servidor: los tomos leídos sin importar y los
@@ -20,11 +22,20 @@ import { db } from './db';
 
 const KAVITA_KEY = 'yoru_kavita_local_progress';
 const ABS_KEY = 'yoru_abs_local_progress';
+/** Avisa a Inicio de que «Continuar» puede haber cambiado. */
+export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
 
-/** Si el perfil activo comparte el progreso con la cuenta del servidor. Por defecto, no. */
+/**
+ * Si el perfil activo comparte el progreso con la cuenta del servidor.
+ * Lo que diga el ajuste manda; sin ajuste, solo el perfil original.
+ */
 export function sharesServerProgress(): boolean {
   try {
-    return db.getSettings()?.shareServerProgress === true;
+    const setting = db.getSettings()?.shareServerProgress;
+    if (typeof setting === 'boolean') return setting;
+    const profiles = db.getProfiles();
+    const active = db.getActiveProfileId();
+    return profiles.length === 0 || profiles[0]?.id === active;
   } catch {
     return false;
   }
@@ -48,6 +59,7 @@ function readMap<T>(base: string): Record<string, T> {
 function writeMap<T>(base: string, map: Record<string, T>): void {
   try {
     localStorage.setItem(profileKey(base), JSON.stringify(map));
+    window.dispatchEvent(new Event(LOCAL_PROGRESS_EVENT));
   } catch {
     /* almacenamiento lleno: el libro importado conserva su progreso igual */
   }
@@ -64,6 +76,8 @@ export interface LocalKavitaProgress {
   percent: number;
   /** ISO, cuándo se leyó por última vez. */
   at: string;
+  seriesName?: string;
+  volumeTitle?: string;
 }
 
 /** Por capítulo de Kavita: es lo que identifica un tomo al abrirlo y al listarlo. */
@@ -76,7 +90,14 @@ export function saveLocalKavitaProgress(entry: Omit<LocalKavitaProgress, 'at'>):
   if (!entry.chapterId) return;
   const map = readMap<LocalKavitaProgress>(KAVITA_KEY);
   const percent = Math.min(100, Math.max(0, Number(entry.percent) || 0));
-  map[String(entry.chapterId)] = { ...entry, percent, at: new Date().toISOString() };
+  const previous = map[String(entry.chapterId)];
+  map[String(entry.chapterId)] = {
+    ...entry,
+    seriesName: entry.seriesName || previous?.seriesName,
+    volumeTitle: entry.volumeTitle || previous?.volumeTitle,
+    percent,
+    at: new Date().toISOString(),
+  };
   writeMap(KAVITA_KEY, map);
 }
 
@@ -110,6 +131,8 @@ export interface LocalAudiobookProgress {
   currentTime: number;
   duration: number;
   at: string;
+  title?: string;
+  author?: string;
 }
 
 export function getLocalAudiobookProgress(itemId: string): LocalAudiobookProgress | null {
@@ -117,9 +140,67 @@ export function getLocalAudiobookProgress(itemId: string): LocalAudiobookProgres
   return readMap<LocalAudiobookProgress>(ABS_KEY)[itemId] || null;
 }
 
-export function saveLocalAudiobookProgress(itemId: string, currentTime: number, duration: number): void {
+export function saveLocalAudiobookProgress(
+  itemId: string,
+  currentTime: number,
+  duration: number,
+  meta: { title?: string; author?: string } = {},
+): void {
   if (!itemId || !Number.isFinite(currentTime)) return;
   const map = readMap<LocalAudiobookProgress>(ABS_KEY);
-  map[itemId] = { currentTime: Math.max(0, currentTime), duration: Number(duration) || 0, at: new Date().toISOString() };
+  const previous = map[itemId];
+  map[itemId] = {
+    currentTime: Math.max(0, currentTime),
+    duration: Number(duration) || 0,
+    at: new Date().toISOString(),
+    title: meta.title || previous?.title,
+    author: meta.author || previous?.author,
+  };
   writeMap(ABS_KEY, map);
+}
+
+// ── «Continuar» ─────────────────────────────────────────────────────────
+
+export type LocalContinueEntry =
+  | { kind: 'kavita'; key: string; at: string; percent: number; seriesId: number; volumeId: number; title: string; seriesName?: string }
+  | { kind: 'audiobook'; key: string; at: string; percent: number; itemId: string; title: string; author?: string };
+
+/**
+ * Lo empezado y sin terminar en el servidor por este perfil, lo último primero.
+ * Un tomo por serie: el que se leyó más tarde.
+ */
+export function localContinueEntries(limit = 20): LocalContinueEntry[] {
+  const started = (percent: number) => percent > 0 && percent < 99.5;
+
+  const bySeries = new Map<number, LocalKavitaProgress>();
+  for (const entry of Object.values(readMap<LocalKavitaProgress>(KAVITA_KEY))) {
+    if (!started(entry.percent)) continue;
+    const current = bySeries.get(entry.seriesId);
+    if (!current || entry.at > current.at) bySeries.set(entry.seriesId, entry);
+  }
+  const kavita: LocalContinueEntry[] = [...bySeries.values()].map((entry) => ({
+    kind: 'kavita',
+    key: `kavita-${entry.chapterId}`,
+    at: entry.at,
+    percent: Math.round(entry.percent),
+    seriesId: entry.seriesId,
+    volumeId: entry.volumeId,
+    title: entry.volumeTitle || entry.seriesName || 'Kavita',
+    seriesName: entry.seriesName,
+  }));
+
+  const audio: LocalContinueEntry[] = Object.entries(readMap<LocalAudiobookProgress>(ABS_KEY))
+    .map(([itemId, entry]) => ({ itemId, entry, percent: entry.duration > 0 ? (entry.currentTime / entry.duration) * 100 : 0 }))
+    .filter(({ percent }) => started(percent))
+    .map(({ itemId, entry, percent }) => ({
+      kind: 'audiobook' as const,
+      key: `abs-${itemId}`,
+      at: entry.at,
+      percent: Math.round(percent),
+      itemId,
+      title: entry.title || 'Audiolibro',
+      author: entry.author,
+    }));
+
+  return [...kavita, ...audio].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, limit);
 }
