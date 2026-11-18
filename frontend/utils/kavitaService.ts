@@ -10,6 +10,14 @@ import type {
   KavitaVolume,
 } from '../types/integrations';
 import { describeServerError, normalizeServerUrl, serverDownload, serverRequest, ServerHttpError } from './serverHttp';
+import {
+  getLocalKavitaProgress,
+  localKavitaPagesRead,
+  localKavitaSeriesLastRead,
+  localKavitaSeriesPagesRead,
+  saveLocalKavitaProgress,
+  sharesServerProgress,
+} from './serverProgress';
 
 /**
  * Kavita client (https://www.kavitareader.com): browse the user's light novel libraries, download a
@@ -169,8 +177,11 @@ function readPagination(headers: Record<string, string>, page: number, count: nu
 }
 
 function toSeries(raw: any): KavitaSeries {
+  const id = raw.id ?? raw.seriesId;
+  // Lo leído es de la cuenta, no de quien usa la app: sin compartir, manda lo local.
+  const local = !sharesServerProgress();
   return {
-    id: raw.id ?? raw.seriesId,
+    id,
     name: raw.name || raw.localizedName || raw.originalName || '',
     originalName: raw.originalName,
     localizedName: raw.localizedName,
@@ -179,8 +190,8 @@ function toSeries(raw: any): KavitaSeries {
     avgHoursToRead: raw.avgHoursToRead,
     wordCount: raw.wordCount,
     format: raw.format,
-    pagesRead: raw.pagesRead,
-    latestReadDate: raw.latestReadDate,
+    pagesRead: local ? localKavitaSeriesPagesRead(id) : raw.pagesRead,
+    latestReadDate: local ? localKavitaSeriesLastRead(id) : raw.latestReadDate,
   };
 }
 
@@ -300,6 +311,9 @@ export async function getKavitaSeries(libraryId: number, page = 1, pageSize = 30
  * Dato real de Kavita, no una invencion nuestra.
  */
 export async function getKavitaOnDeck(limit = 20): Promise<KavitaSeries[]> {
+  // «Seguir leyendo» del servidor es el de la cuenta: con la cuenta compartida sería
+  // lo que lee otra persona. Lo empezado en este perfil ya sale en su biblioteca.
+  if (!sharesServerProgress()) return [];
   const response = await kavitaRequest<any[]>('/api/Series/on-deck?PageNumber=1&PageSize=' + limit, {
     method: 'POST',
     body: {},
@@ -316,17 +330,27 @@ export async function searchKavitaSeries(query: string): Promise<KavitaSeries[]>
 
 export async function getKavitaVolumes(seriesId: number): Promise<KavitaVolume[]> {
   const { data } = await kavitaRequest<any[]>(`/api/Series/volumes?seriesId=${seriesId}`);
-  return (Array.isArray(data) ? data : []).map((raw) => ({
-    id: raw.id,
-    seriesId: raw.seriesId ?? seriesId,
-    name: raw.name || '',
-    number: raw.minNumber ?? raw.number ?? 0,
-    pages: raw.pages ?? 0,
-    chapters: Array.isArray(raw.chapters) ? raw.chapters : [],
-    pagesRead: raw.pagesRead,
-    lastReadingProgressUtc: raw.lastReadingProgressUtc,
-    createdUtc: raw.createdUtc ?? raw.created,
-  }));
+  const local = !sharesServerProgress();
+  return (Array.isArray(data) ? data : []).map((raw) => {
+    const pages = raw.pages ?? 0;
+    // Sin compartir, el progreso de la cuenta no se enseña: ni en el tomo ni en sus
+    // capítulos, que es de donde `kavitaVolumesToBooks` saca la fecha de lectura.
+    const chapters = Array.isArray(raw.chapters)
+      ? (local ? raw.chapters.map((chapter: any) => ({ ...chapter, lastReadingProgressUtc: undefined, pagesRead: undefined })) : raw.chapters)
+      : [];
+    const localEntry = local ? getLocalKavitaProgress(chapters[0]?.id) : null;
+    return {
+      id: raw.id,
+      seriesId: raw.seriesId ?? seriesId,
+      name: raw.name || '',
+      number: raw.minNumber ?? raw.number ?? 0,
+      pages,
+      chapters,
+      pagesRead: local ? localKavitaPagesRead(chapters[0]?.id, pages) : raw.pagesRead,
+      lastReadingProgressUtc: local ? localEntry?.at : raw.lastReadingProgressUtc,
+      createdUtc: raw.createdUtc ?? raw.created,
+    };
+  });
 }
 
 export function kavitaSeriesCoverUrl(seriesId: number): string {
@@ -568,6 +592,7 @@ export function kavitaPercentForPage(pages: number, pageNum: number): number {
  * comodidad, no algo por lo que merezca la pena fallar al abrir un libro.
  */
 export async function getKavitaProgressPercent(chapterId: number, pages: number): Promise<number> {
+  if (!sharesServerProgress()) return getLocalKavitaProgress(chapterId)?.percent || 0;
   try {
     const response = await kavitaRequest<any>('/api/Reader/get-progress?chapterId=' + chapterId);
     const pageNum = Number(response.data?.pageNum);
@@ -616,7 +641,21 @@ async function sendKavitaProgress(title: string, percent: number): Promise<void>
  * few seconds. Silent on failure (the server may simply be off, e.g. away from home).
  */
 export function queueKavitaProgress(title: string, percent: number): void {
-  if (!title || !getKavitaSource(title) || !isKavitaConfigured()) return;
+  if (!title) return;
+  const source = getKavitaSource(title);
+  if (!source) return;
+  // Sin compartir, el progreso se queda en el dispositivo y no se toca la cuenta.
+  if (!sharesServerProgress()) {
+    saveLocalKavitaProgress({
+      chapterId: source.chapterId,
+      volumeId: source.volumeId,
+      seriesId: source.seriesId,
+      pages: source.pages,
+      percent,
+    });
+    return;
+  }
+  if (!isKavitaConfigured()) return;
   const pending = pendingProgress.get(title);
   if (pending) clearTimeout(pending.timer);
   const timer = setTimeout(() => {

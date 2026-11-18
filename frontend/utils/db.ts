@@ -78,6 +78,12 @@ export interface Settings {
   betaUpdates?: boolean;
   disabledDictionaries?: string[];
   dictionaryOrder?: string[];
+  /**
+   * Subir y leer el progreso de la cuenta de Kavita/Audiobookshelf. Por defecto no:
+   * la cuenta suele ser compartida, y el progreso de cada perfil se queda en local
+   * (ver `utils/serverProgress.ts`).
+   */
+  shareServerProgress?: boolean;
 }
 
 export interface Profile {

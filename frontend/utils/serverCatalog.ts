@@ -12,6 +12,7 @@ import {
   getAudiobooks,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
+import { sharesServerProgress } from './serverProgress';
 
 /**
  * Novedades de los servidores de casa, para que al abrir la app ya haya algo que
@@ -89,7 +90,9 @@ export function getCachedServerCatalog(): ServerCatalog {
       at: Number(parsed?.at) || 0,
       kavita: Array.isArray(parsed?.kavita) ? parsed.kavita : [],
       audiobooks: Array.isArray(parsed?.audiobooks) ? parsed.audiobooks : [],
-      onDeck: Array.isArray(parsed?.onDeck) ? parsed.onDeck : [],
+      // Una caché de antes puede traer el «seguir leyendo» de la cuenta: sin compartir
+      // el progreso no se enseña, que sería lo que lee otra persona.
+      onDeck: Array.isArray(parsed?.onDeck) && sharesServerProgress() ? parsed.onDeck : [],
       forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
     };
   } catch {

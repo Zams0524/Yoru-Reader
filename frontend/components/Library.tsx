@@ -33,7 +33,7 @@ const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnó
 
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
 const KavitaBrowser = React.lazy(() => import('./KavitaBrowser'));
-const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan';
+const MEDIA_SERVER_SEARCH_TERMS = 'servidores servers kavita audiobookshelf audiolibro audiobook novelas ligeras light novels opds red local lan progreso progress compartir share cuenta account perfil profile';
 const VocabularyModal = React.lazy(() => import('./VocabularyModal'));
 const SrsReviewModal = React.lazy(() => import('./SrsReviewModal'));
 const ProgressDashboard = React.lazy(() => import('./ProgressDashboard'));
@@ -4081,6 +4081,37 @@ const Library = React.memo(function Library({
                   : 'Connect your home servers: Kavita to import light novels and Audiobookshelf to listen to the audiobook while you read.'}
               </p>
               <MediaServerSettings lang={lang} />
+
+              {/*
+                La cuenta de Kavita/Audiobookshelf suele ser compartida: con esto apagado
+                (lo normal), cada app guarda su propio progreso y no lee el de los demás.
+              */}
+              <div className="settings-row-control" style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span className="settings-label-text">
+                    {lang === 'es' ? 'Compartir el progreso con la cuenta del servidor' : 'Share progress with the server account'}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {lang === 'es'
+                      ? 'Apagado, tu progreso de lectura y escucha se guarda solo en este dispositivo, en tu perfil. Enciéndelo solo si la cuenta de Kavita y Audiobookshelf es solo tuya.'
+                      : 'Off: your reading and listening progress stays on this device, in your profile. Turn it on only if the Kavita and Audiobookshelf account is yours alone.'}
+                  </span>
+                </div>
+                <label className="migaku-switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.shareServerProgress === true}
+                    onChange={(e) => {
+                      onSaveSettings({ ...settings, shareServerProgress: e.target.checked });
+                      // La portada vuelve a leer la caché, que ya filtra el «seguir leyendo» de la cuenta.
+                      void import('../utils/serverCatalog')
+                        .then(({ refreshServerCatalog }) => refreshServerCatalog())
+                        .finally(() => window.dispatchEvent(new Event('yoru-server-catalog-updated')));
+                    }}
+                  />
+                  <span className="migaku-switch-slider"></span>
+                </label>
+              </div>
             </div>
           )}
 
