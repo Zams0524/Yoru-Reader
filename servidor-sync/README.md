@@ -45,6 +45,36 @@ un servidor privado y uno que contesta a toda la red del piso:
 New-NetFirewallRule -DisplayName "Yoru sync (Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 3747 -RemoteAddress 100.64.0.0/10 -Action Allow
 ```
 
+## Dar acceso a los miembros (compartir el equipo)
+
+Un nombre `.ts.net` **no existe fuera del tailnet**: mientras un aparato no esté
+dentro, la app no llega al servidor. Lo decidido (zams, 18 nov 2026) es **compartir
+solo este equipo** (*node sharing*), no invitar a nadie al tailnet entero: así el
+invitado ve esta máquina y nada más de la red de casa.
+
+En la consola de Tailscale, **Machines** → el equipo `desktop-go1ujdd` → menú `...` →
+**Share**. Dos formas:
+
+- **Copy invite link** → activar **Reusable link** → **Copy share link**. Un enlace
+  que vale para todos, hasta 1.000 usos, y es el que se pega en el Discord.
+- **Share by email**, si se prefiere uno por persona.
+
+Los enlaces sin usar caducan a los 30 días, y hay que tratarlos como una contraseña:
+quien tenga el enlace entra. Para quitar a alguien: Share → `...` → **Revoke invite**.
+
+Quien acepte necesita su propia cuenta de Tailscale (gratuita) y aceptar desde ella.
+El primer aparato que hay que meter es el teléfono de zams, que es lo que hace falta
+para probar el ciclo entero.
+
+Si un invitado llega al tailnet pero el servidor no le responde, es la lista de
+control de acceso del tailnet. La regla que lo abre, en el editor de la consola:
+
+```json
+{ "src": ["autogroup:shared"], "dst": ["100.121.94.3"], "ip": ["3747"] }
+```
+
+Pone el puerto 3747 de este equipo al alcance de los invitados, y solo ese puerto.
+
 ## Ajustes
 
 Todo por variables de entorno, y todas tienen un valor por defecto que ya sirve:
