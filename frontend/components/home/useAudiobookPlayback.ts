@@ -9,6 +9,7 @@ import {
   updateAudiobookProgress,
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
+import { saveLocalAudiobookProgress } from '../../utils/serverProgress';
 import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
 
 /**
@@ -25,6 +26,7 @@ import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/o
  */
 
 const SYNC_INTERVAL_MS = 15_000;
+const LOCAL_SAVE_INTERVAL_MS = 3_000;
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export type PlaybackPhase =
@@ -122,6 +124,23 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     listenedRef.current = 0;
   }
 
+  /*
+    Apuntar por dónde vas en el aparato, al momento.
+
+    Es lo que pinta «Continuar», y antes solo se apuntaba cada quince segundos, solo
+    mientras sonaba y después de esperar la respuesta del servidor. Saltar a la mitad
+    con el audio en pausa no guardaba nada: la tarjeta decía 1 % con el reproductor en
+    4:21:06. Lo vio zams (18 nov 2026). Guardar aquí es escribir en el almacén local,
+    no cuesta red, así que se hace al saltar, al pausar y cada pocos segundos.
+  */
+  const lastLocalSaveRef = useRef(0);
+  const saveLocal = useCallback(() => {
+    const current = sessionRef.current;
+    if (!current) return;
+    lastLocalSaveRef.current = performance.now();
+    saveLocalAudiobookProgress(current.itemId, timeRef.current, current.duration);
+  }, []);
+
   const report = useCallback(async (close: boolean) => {
     const current = sessionRef.current;
     if (!current) return;
@@ -131,6 +150,8 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       duration: current.duration,
     };
     listenedRef.current = 0;
+    // Lo local primero: no depende de que el servidor conteste.
+    saveLocalAudiobookProgress(current.itemId, update.currentTime, current.duration);
     try {
       if (close) await closeAudiobookSession(current.id, update);
       else await syncAudiobookSession(current.id, update);
@@ -238,8 +259,9 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     timeRef.current = clamped;
     setTime(clamped);
     lastTickRef.current = null;
+    saveLocal();
     loadTrack(current, clamped, playing);
-  }, [loadTrack, playing, start]);
+  }, [loadTrack, playing, start, saveLocal]);
 
   const nextRate = useCallback(() => {
     setRate((current) => {
@@ -320,9 +342,12 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
       lastTickRef.current = audio.paused ? null : now;
       timeRef.current = globalTime;
       setTime(globalTime);
+      // Mientras suena, se apunta cada pocos segundos; el servidor sigue yendo cada quince.
+      if (!audio.paused && now - lastLocalSaveRef.current > LOCAL_SAVE_INTERVAL_MS) saveLocal();
     },
     onPlay: () => setPlaying(true),
-    onPause: () => { setPlaying(false); lastTickRef.current = null; },
+    // Al pausar se guarda en el aparato y se avisa al servidor, sin esperar al reloj.
+    onPause: () => { setPlaying(false); lastTickRef.current = null; void report(false); },
     onEnded: () => {
       const current = sessionRef.current;
       if (!current) return;
