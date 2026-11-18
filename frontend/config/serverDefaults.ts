@@ -52,18 +52,31 @@ export interface AudiobookshelfDefaults {
 }
 
 /**
- * Kavita. Con `apiKey` vacío no se usa: la app pedirá configurarlo como hasta ahora.
+ * Kavita, en el PC de zams y publicado con Funnel en el puerto 8443.
+ *
+ * Antes esto era `http://localhost:5000`, que solo valía estando en el propio PC: en
+ * el teléfono de cualquier miembro no hay nada escuchando en ese puerto. Con Funnel la
+ * misma instalación sale por `https` con un certificado de verdad, así que nadie
+ * instala Tailscale y Android no necesita ninguna excepción de tráfico en claro.
+ *
+ * El puerto va en la dirección porque Funnel solo sirve 443, 8443 y 10000, y el 443 ya
+ * lo ocupa el servidor de sincronización (ver `YORU_SYNC_DEFAULTS` más abajo).
+ *
+ * Con `apiKey` vacío no se usa: la app pedirá configurarlo como hasta ahora, y para
+ * probar contra una instalación local `VITE_KAVITA_URL` sigue mandando.
  */
 export const KAVITA_DEFAULTS: KavitaDefaults = {
-  serverUrl: env('VITE_KAVITA_URL') || 'http://localhost:5000',
+  serverUrl: env('VITE_KAVITA_URL') || 'https://desktop-go1ujdd.tail6db786.ts.net:8443',
   apiKey: env('VITE_KAVITA_API_KEY') || 'TpThYNJN3ehxG6Ftfc2mWsprqLUc0kYm',
 };
 
 /**
- * Audiobookshelf. Con `token` vacío no se usa.
+ * Audiobookshelf, igual que Kavita: en el PC de zams, por Funnel, puerto 10000.
+ *
+ * Con `token` vacío no se usa. `VITE_ABS_URL` manda sobre esto.
  */
 export const AUDIOBOOKSHELF_DEFAULTS: AudiobookshelfDefaults = {
-  serverUrl: env('VITE_ABS_URL') || 'http://localhost:13378',
+  serverUrl: env('VITE_ABS_URL') || 'https://desktop-go1ujdd.tail6db786.ts.net:10000',
   token: env('VITE_ABS_TOKEN')
     || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlJZCI6ImE4OGI0NTM0LTc2NmQtNGI1YS1iMjdhLTFkZDkwNDNlNWRhMyIsIm5hbWUiOiJ1c3VhcmlvcyIsInR5cGUiOiJhcGkiLCJpYXQiOjE3OTM5MjI0NzJ9.OtBu6XhqdvnvpqIEl30e8iaGYpGW2_vxKidVT59jByE',
 };
