@@ -6,7 +6,10 @@ const YoruShell = React.lazy(() => import('./components/home/YoruShell'));
 const WelcomeScreen = React.lazy(() => import('./components/WelcomeScreen'));
 const Reader = React.lazy(() => import('./components/Reader'));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const DiscordGate = React.lazy(() => import('./components/DiscordGate'));
 import { db } from './utils/db';
+import { decidirAcceso, pantallaQueToca, tocaRecomprobar, type EstadoAcceso } from './utils/discordAccess';
+import { clientIdDiscord, leerSesion, perfilDesdeDiscord, refrescarAvatar, revisarYGuardar } from './utils/discordAuth';
 import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
@@ -1003,6 +1006,131 @@ export default function App() {
     activeBookRef.current = activeBook;
   }, [activeBook]);
 
+  /*
+    La puerta de Discord. Yoru es para los miembros del servidor, asi que antes de
+    cualquier otra vista hay que saber si quien abre la app lo es.
+
+    `decidirAcceso` es sincrono y mira solo lo que ya hay guardado, asi que el primer
+    pintado no espera a la red: quien entro hace tres dias ve su biblioteca al
+    instante. La pregunta a Discord va por detras, y como mucho una vez al dia.
+  */
+  /**
+   * Si ya se vio la guía. Antes esto se deducía de «no hay perfil», que valía mientras
+   * el perfil se creaba a mano al final del tutorial; ahora el perfil llega solo con
+   * la cuenta de Discord, así que la guía necesita su propia marca.
+   */
+  const [tutorialVisto, setTutorialVisto] = useState(() => {
+    try { return localStorage.getItem('yoru_tutorial_seen_v1') === 'true'; } catch { return false; }
+  });
+
+  const [acceso, setAcceso] = useState<EstadoAcceso>(() => decidirAcceso({
+    sesion: leerSesion(),
+    clientId: clientIdDiscord(),
+    ahora: Date.now(),
+    hayRed: navigator.onLine,
+  }));
+
+  const revisarAcceso = useCallback(() => {
+    setAcceso(decidirAcceso({
+      sesion: leerSesion(),
+      clientId: clientIdDiscord(),
+      ahora: Date.now(),
+      hayRed: navigator.onLine,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (acceso !== 'permitido') return undefined;
+    let vivo = true;
+
+    const comprobar = async () => {
+      const sesion = leerSesion();
+      if (!sesion || !tocaRecomprobar({ sesion, hayRed: navigator.onLine, ahora: Date.now() })) return;
+      // Si Discord falla, `revisarYGuardar` deja la sesion como estaba y esto no
+      // cambia nada: nadie se queda fuera porque su API tuviera un mal dia.
+      await revisarYGuardar(sesion);
+      if (vivo) revisarAcceso();
+    };
+
+    void comprobar();
+    // Al volver la red se reintenta, para que el margen no se gaste esperando.
+    const alConectar = () => { void comprobar(); };
+    window.addEventListener('online', alConectar);
+    return () => { vivo = false; window.removeEventListener('online', alConectar); };
+  }, [acceso, revisarAcceso]);
+
+  /*
+    El perfil se hace solo con lo que Discord ya nos ha dicho: nombre y foto. No se
+    pregunta nada, porque no hay nada que preguntar que no sepamos ya.
+
+    Con un perfil anterior (el de quien lleva meses leyendo) **no se crea otro**: se
+    enlaza el activo y se le ponen al día el nombre y la foto. Sus libros, su progreso
+    y sus ajustes no se tocan, que son suyos y no tienen nada que ver con Discord.
+  */
+  useEffect(() => {
+    if (acceso !== 'permitido') return;
+    let vivo = true;
+
+    void (async () => {
+      let sesion = leerSesion();
+      if (!sesion) return;
+
+      // La foto puede faltar si el día que entró no había red; este es el momento de
+      // intentarlo otra vez, sin molestar a nadie.
+      sesion = await refrescarAvatar(sesion);
+      if (!vivo) return;
+
+      const actuales = db.getProfiles() || [];
+      if (actuales.length === 0) {
+        handleAddProfile(perfilDesdeDiscord(sesion));
+        return;
+      }
+
+      const activoId = db.getActiveProfileId() || actuales[0]?.id;
+      const activo = actuales.find((p: any) => p.id === activoId);
+      if (!activo) return;
+
+      const puestoAlDia = perfilDesdeDiscord(sesion, activo.id);
+      const cambia = activo.name !== puestoAlDia.name
+        || activo.avatar !== puestoAlDia.avatar
+        || (activo.avatarEmoji || '') !== puestoAlDia.avatarEmoji;
+      if (!cambia) return;
+
+      // Solo nombre, foto y emoji. Lo demás del perfil se queda como estaba.
+      const fusionados = actuales.map((p: any) => (p.id === activo.id
+        ? { ...p, name: puestoAlDia.name, avatar: puestoAlDia.avatar, avatarEmoji: puestoAlDia.avatarEmoji }
+        : p));
+      db.saveProfiles(fusionados);
+      if (vivo) setProfiles(fusionados);
+    })();
+
+    return () => { vivo = false; };
+    // `profiles.length` entra para que, recién creado el primero, no se vuelva a mirar.
+  }, [acceso, profiles.length]);
+
+  /*
+    Qué se enseña, en una sola decisión (`pantallaQueToca`). La puerta va delante de
+    todo lo demás, el tutorial incluido: sin ser miembro no se llega ni a la guía, ni a
+    restaurar una copia, ni a entrar con Google, porque todo eso vive dentro de
+    `WelcomeScreen`, que ya solo se monta después.
+  */
+  const pantalla = pantallaQueToca({ acceso, tutorialVisto });
+
+  if (pantalla === 'entrada') {
+    return (
+      <div className="app-container" data-theme={resolvedTheme}>
+        <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" /></div>}>
+          <DiscordGate
+            estado={acceso}
+            es={lang === 'es'}
+            onEntrar={revisarAcceso}
+            onCambiarIdioma={(idioma) => handleSaveSettings({ ...settings, appLanguage: idioma })}
+          />
+        </React.Suspense>
+      </div>
+    );
+  }
+
   return (
     <div
       className="app-container"
@@ -1019,8 +1147,8 @@ export default function App() {
         : undefined}
     >
       <React.Suspense fallback={<div className="app-section-loading" role="status" aria-live="polite"><span className="app-section-loading-indicator" />{activeBook ? (lang === 'es' ? 'Cargando lector...' : 'Loading reader...') : (lang === 'es' ? 'Cargando biblioteca...' : 'Loading library...')}</div>}>
-        {profiles.length === 0 ? (
-          <WelcomeScreen onCreateProfile={handleAddProfile} settings={settings} onSaveSettings={handleSaveSettings} />
+        {pantalla === 'guia' ? (
+          <WelcomeScreen onTerminar={() => setTutorialVisto(true)} settings={settings} onSaveSettings={handleSaveSettings} />
         ) : activeBook ? (
           <Reader 
             book={activeBook}

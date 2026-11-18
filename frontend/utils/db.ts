@@ -92,7 +92,12 @@ export interface Settings {
 export interface Profile {
   id: string;
   name: string;
+  /** Una foto (data URL) o un degradado CSS, cuando no hay foto. */
   avatar?: string;
+  /** El emoji que acompaña al degradado, si el avatar no es una foto. */
+  avatarEmoji?: string;
+  /** La franja de arriba de la página de perfil. */
+  banner?: string;
 }
 
 const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';

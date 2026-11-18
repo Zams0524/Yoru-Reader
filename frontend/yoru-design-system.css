@@ -3206,6 +3206,14 @@ html:where(.yoru-compact) .reader-gallery-image {
   color: rgba(236, 236, 242, 0.75);
 }
 
+/* La segunda linea del recibimiento, la que cuenta que ya entraste con Discord: mas
+   pequena y mas apagada, para que no compita con el reclamo de arriba. */
+.guide-tagline-sub {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: rgba(236, 236, 242, 0.55);
+}
+
 .guide-points {
   list-style: none;
   margin: 22px 0 0;
@@ -7367,4 +7375,328 @@ html.yoru-compact #root {
   }
   .settings-row-end { align-items: flex-start; }
   .settings-input { min-width: 0; width: 100%; }
+}
+
+/* ------------------------------------------------------------------ La puerta
+   Pantalla de bloqueo de Discord (DiscordGate). Es lo primero que ve alguien que
+   todavia no ha entrado, asi que se parece a la app y no a un error del navegador:
+   la caja centrada, el icono grande y el texto ancho de lectura. */
+.yoru-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--bg-app);
+}
+.yoru-gate-caja {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 28px 22px;
+  border-radius: var(--radius-base, 14px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel, none);
+}
+.yoru-gate-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.yoru-gate-titulo {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.yoru-gate-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-main);
+}
+.yoru-gate-nota {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.yoru-gate-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* La pantalla de acceso, la primera de todas: no es un aviso centrado, es una
+   pantalla de entrada. Titulo grande a la izquierda, subtitulo gris y boton ancho,
+   como la referencia que paso zams. Todo con los tokens de Yoru, asi que el tema
+   claro, el sepia y el oscuro salen solos. */
+.yoru-gate-caja.is-acceso {
+  position: relative;
+  align-items: flex-start;
+  text-align: left;
+  gap: 10px;
+  padding: 32px 26px 26px;
+}
+.yoru-gate-idioma {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+.yoru-gate-idioma button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.yoru-gate-idioma button.activo {
+  color: var(--bg-panel);
+  background: var(--primary);
+}
+.yoru-gate-marca {
+  font-size: 1.9rem;
+  line-height: 1;
+  color: var(--primary);
+}
+.yoru-gate-titulo.is-grande {
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+}
+.yoru-gate-sub {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+/* El boton de Discord: ancho completo y con su logotipo, pero con el acento de Yoru
+   y no con el morado de Discord, porque esta pantalla sigue siendo Yoru. */
+.yoru-gate-discord {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  padding: 13px 18px;
+  border: none;
+  border-radius: var(--radius-base, 12px);
+  cursor: pointer;
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--bg-panel);
+  background: var(--primary);
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.yoru-gate-discord:hover:not(:disabled) { filter: brightness(1.07); }
+.yoru-gate-discord:disabled { opacity: 0.6; cursor: default; }
+.yoru-gate-caja.is-acceso .yoru-gate-nota { text-align: left; }
+
+@media (max-width: 520px) {
+  .yoru-gate-caja.is-acceso { padding: 26px 18px 20px; }
+  .yoru-gate-titulo.is-grande { font-size: 1.5rem; }
+}
+
+/* ------------------------------------------------- Tarjeta de miembro
+   Al pulsar a alguien en «Miembros». La disposicion es la de la referencia que paso
+   zams —franja de color, foto grande con punto de estado, nombre, bloques— pero con
+   los tokens de Yoru, asi que claro, sepia y oscuro salen solos. */
+.yoru-member.is-pulsable {
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.yoru-member.is-pulsable:hover { background: var(--surface-soft); }
+.yoru-member-card-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.yoru-member-card {
+  position: relative;
+  width: 100%;
+  max-width: 21rem;
+  border-radius: var(--radius-base, 14px);
+  overflow: hidden;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel, none);
+}
+.yoru-member-card-franja {
+  height: 72px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--primary) 70%, transparent),
+    color-mix(in srgb, var(--primary) 25%, transparent));
+}
+.yoru-member-card-cerrar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+}
+.yoru-member-card-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+.yoru-member-card-avatar {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  margin-top: -37px;
+  border-radius: 50%;
+  overflow: visible;
+  border: 4px solid var(--bg-panel);
+  background: var(--surface-raised);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.yoru-member-card-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.yoru-member-card-avatar > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+.yoru-member-card-avatar .yoru-member-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--bg-panel);
+}
+.yoru-member-card-nombre {
+  margin: 4px 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.yoru-member-card-estado {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.yoru-member-card-bloque {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-base, 10px);
+  background: var(--surface-soft);
+}
+.yoru-member-card-titulo-bloque {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-member-card-actividad {
+  margin: 5px 0 0;
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+.yoru-member-card-lectura {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+.yoru-member-card-portada {
+  width: 42px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+  background: var(--surface-raised);
+}
+.yoru-member-card-portada.is-vacia { display: block; }
+.yoru-member-card-lectura-texto {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+.yoru-member-card-libro {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yoru-member-card-barra {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.yoru-member-card-barra i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.yoru-member-card-porcentaje {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.yoru-member-card-boton { margin-top: 10px; justify-content: center; }
+.yoru-member-card-nota {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }

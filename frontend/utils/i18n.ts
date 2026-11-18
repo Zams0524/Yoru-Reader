@@ -9,7 +9,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
 
     // Welcome Screen
     welcomeTitle: 'YORU READER',
-    welcomeSubtitle: 'Crea tu perfil para empezar a leer japonés',
+    // Ya se entró con Discord antes de llegar aquí, así que el perfil es el último
+    // paso y no el primero: el texto lo dice para que no parezca que vuelve a empezar.
+    welcomeSubtitle: 'Ya estás dentro. Crea tu perfil y empieza a leer japonés',
     profileName: 'Nombre de perfil',
     namePlaceholder: 'Introduce tu nombre...',
     chooseAvatar: 'O elige un avatar rápido:',
@@ -139,7 +141,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
 
     // Welcome Screen
     welcomeTitle: 'YORU READER',
-    welcomeSubtitle: 'Create your profile to start reading Japanese',
+    welcomeSubtitle: 'You are in. Create your profile and start reading Japanese',
     profileName: 'Profile Name',
     namePlaceholder: 'Enter your name...',
     chooseAvatar: 'Or choose a quick avatar:',

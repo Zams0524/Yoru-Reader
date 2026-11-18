@@ -16,7 +16,8 @@ export interface ServerResponse<T> {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH';
+  // PUT y DELETE los usa el servidor de sincronización de Yoru (yoruSyncService.ts).
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;
