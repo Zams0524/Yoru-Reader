@@ -148,8 +148,8 @@ export default function MembersView({ es }: { es: boolean }) {
           )}
           <p className="yoru-members-note">
             {es
-              ? 'Discord solo publica aquí a quien está conectado, y de cada uno el nombre de lo que tiene abierto, no el detalle. Se actualiza cada minuto.'
-              : 'Discord only publishes who is online here, and for each the name of what they have open, not the detail. It refreshes every minute.'}
+              ? 'Discord solo publica aquí a quien está conectado, y de cada uno el nombre de lo que tiene abierto, no el detalle. Los bots del servidor no salen. Se actualiza cada minuto.'
+              : 'Discord only publishes who is online here, and for each the name of what they have open, not the detail. The server\'s bots are left out. It refreshes every minute.'}
           </p>
         </>
       )}

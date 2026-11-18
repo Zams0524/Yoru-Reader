@@ -45,6 +45,56 @@ export interface DiscordWidget {
 
 export type DiscordWidgetError = 'bad-id' | 'not-found' | 'widget-off' | 'rate-limit' | 'network';
 
+/**
+ * Los bots del servidor, por nombre.
+ *
+ * Esta lista existe porque **el widget no dice quién es un bot**. Comprobado contra la
+ * respuesta de verdad: de cada miembro llegan `id`, `username`, `discriminator`,
+ * `avatar`, `status`, `avatar_url` y `game`, y nada más. El `id` ni siquiera es el de
+ * Discord, es un número de orden (0, 1, 2…), y el `discriminator` es «0000» para
+ * todos. Así que no hay ningún dato con el que distinguirlos: solo el nombre.
+ *
+ * Saber quién es bot de verdad exigiría un bot con su token, y un token dentro de una
+ * app que se descarga cualquiera no es un secreto. Queda descartado.
+ *
+ * Para añadir uno nuevo basta escribir su nombre aquí, en minúsculas.
+ */
+export const BOTS_CONOCIDOS = [
+  'bump buddy',
+  'disboard',
+  'dyno',
+  'jockie music',
+  'kotoba',
+  'mudae',
+  'nekotina',
+  'tts bot',
+];
+
+function normalizar(nombre: string): string {
+  return nombre.trim().toLowerCase();
+}
+
+/**
+ * Si este miembro es un bot.
+ *
+ * La regla de oro es **ante la duda, es una persona**: dejar colarse un bot es una
+ * molestia, pero esconder a alguien de la lista de miembros de su propia comunidad es
+ * mucho peor. Por eso solo se excluye a los de la lista y a quien lleva «bot» como
+ * palabra suelta al final del nombre («TTS Bot»); nunca por contenerlo dentro, que se
+ * llevaría por delante a cualquiera que se llame Robot, Botella o Abbot.
+ */
+export function esBot(nombre: string): boolean {
+  const limpio = normalizar(nombre);
+  if (!limpio) return false;
+  if (BOTS_CONOCIDOS.includes(limpio)) return true;
+  return / bot$/.test(limpio);
+}
+
+/** La lista sin bots. Función pura: la misma entrada da siempre la misma salida. */
+export function sinBots(miembros: DiscordMember[]): DiscordMember[] {
+  return miembros.filter((miembro) => !esBot(miembro.name));
+}
+
 /** Un ID de Discord es un número largo; cualquier otra cosa no merece ni la petición. */
 export function isDiscordId(value: string): boolean {
   return /^\d{15,22}$/.test(value.trim());
@@ -74,7 +124,7 @@ export async function fetchDiscordWidget(guildId: string, signal?: AbortSignal):
   const data = await response.json().catch(() => null);
   if (!data || typeof data !== 'object') throw new Error('network' satisfies DiscordWidgetError);
 
-  const members: DiscordMember[] = (Array.isArray(data.members) ? data.members : [])
+  const todos: DiscordMember[] = (Array.isArray(data.members) ? data.members : [])
     .map((entry: any): DiscordMember => ({
       id: String(entry?.id ?? ''),
       name: String(entry?.username ?? '').trim(),
@@ -91,10 +141,17 @@ export async function fetchDiscordWidget(guildId: string, signal?: AbortSignal):
     ? data.instant_invite
     : '';
 
+  const members = sinBots(todos);
+
   return {
     name: String(data.name ?? '').trim(),
     invite,
-    onlineCount: Number.isFinite(Number(data.presence_count)) ? Number(data.presence_count) : members.length,
+    /*
+      Se cuenta lo que se enseña, no lo que manda Discord. `presence_count` incluye a
+      los bots, así que usarlo dejaría «En línea · 9» encima de una lista de una
+      persona, y el que sobra parecería un fallo.
+    */
+    onlineCount: members.length,
     members,
   };
 }

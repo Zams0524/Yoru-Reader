@@ -11,6 +11,7 @@ import {
   tokenCaducado,
   type SesionDiscord,
 } from '../frontend/utils/discordAccess';
+import { esBot, sinBots, type DiscordMember } from '../frontend/utils/discordWidget';
 
 let failures = 0;
 function check(condicion: boolean, nombre: string) {
@@ -227,10 +228,46 @@ function pantallaTests() {
   }
 }
 
+function botsTests() {
+  console.log('\nMiembros: fuera los bots');
+
+  // Los nueve que devuelve hoy el widget del servidor de Yoru, tal cual.
+  const reales = ['Bump Buddy', 'DISBOARD', 'Dyno', 'Hade', 'Jockie Music', 'Kotoba', 'Mudae', 'Nekotina', 'TTS Bot'];
+  const miembros: DiscordMember[] = reales.map((name, i) => ({
+    id: String(i), name, status: 'online', avatar: '', activity: '',
+  }));
+
+  const quedan = sinBots(miembros).map((m) => m.name);
+  check(quedan.length === 1 && quedan[0] === 'Hade', 'De los nueve de hoy solo queda la persona: Hade');
+
+  for (const bot of ['DISBOARD', 'Dyno', 'Kotoba', 'Mudae', 'Bump Buddy', 'Jockie Music', 'Nekotina', 'TTS Bot']) {
+    check(esBot(bot), `«${bot}» se reconoce como bot`);
+  }
+
+  check(esBot('  disboard  '), 'Da igual el espaciado y las mayúsculas');
+  check(esBot('Mi Bot'), 'Un nombre que acaba en «bot» como palabra suelta es un bot');
+
+  // La parte que protege a las personas: ante la duda, se muestran.
+  check(!esBot('Hade'), 'Hade es una persona y se muestra');
+  check(!esBot('Robot'), 'Robot no se excluye: «bot» va pegado, no es palabra suelta');
+  check(!esBot('Botella'), 'Botella tampoco');
+  check(!esBot('Abbot'), 'Abbot tampoco');
+  check(!esBot('Botan'), 'Botan tampoco, aunque empiece por bot');
+  check(!esBot('bottle rocket'), 'Un nombre que solo contiene «bot» dentro se muestra');
+  check(!esBot(''), 'Un nombre vacío no se toma por bot');
+
+  check(sinBots([]).length === 0, 'Una lista vacía sigue vacía');
+  check(
+    sinBots(miembros) !== miembros && miembros.length === 9,
+    'El filtro no toca la lista original',
+  );
+}
+
 decisionTests();
 recomprobarTests();
 tokenTests();
 respuestaTests();
 pantallaTests();
+botsTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);
