@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Headphones, Info, Play, X } from 'lucide-react';
 import { BookRail, Cover } from './primitives';
+import BookHistoryPanel from './BookHistoryPanel';
 import { bookStatus, sameAuthor, sameSeries, similarBooks, type ShelfBook } from './libraryIndex';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
 
@@ -187,6 +188,7 @@ export default function BookDetailView({
       </div>
 
       {tab === 'summary' ? (
+        <>
         <table className="yoru-meta-table">
           <tbody>
             <tr>
@@ -264,6 +266,13 @@ export default function BookDetailView({
             </tr>
           </tbody>
         </table>
+        {/*
+          El historial va debajo de la tabla y no en una pestaña propia: es lo que se
+          mira mientras lees un libro, y una pestaña lo esconderia justo cuando más
+          sirve. Se pinta solo si el libro se ha abierto alguna vez.
+        */}
+        {started && <BookHistoryPanel book={book} es={es} />}
+        </>
       ) : (
         <div className="yoru-chapter-list">
           {chapters.map((chapter: any, index: number) => (

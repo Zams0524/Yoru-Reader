@@ -1502,6 +1502,18 @@
 .yoru-stats-weekday-track span { display: block; width: 100%; min-height: 2px; border-radius: 5px 5px 0 0; background: var(--primary); }
 .yoru-stats-weekday .yoru-stats-bar-label { position: static; }
 
+/*
+  Historial de lectura de un libro, en su ficha.
+
+  Reaprovecha las barras y las cifras de Estadísticas tal cual: es el mismo gráfico con
+  los datos de un solo título, y pintarlo distinto haría pensar que mide otra cosa. Solo
+  cambian dos detalles: una fecha no es una cifra y no quiere 26 píxeles de titular, y la
+  tarjeta del ritmo se separa con el color de acento porque lo que dice es una
+  estimación, no un dato medido.
+*/
+.yoru-stats-figure.is-date { font-size: 18px; letter-spacing: 0.1px; }
+.yoru-book-pace { border-left: 3px solid var(--primary); }
+.yoru-book-pace .yoru-stats-figures { padding-top: 0; border-top: none; }
 /* Varias tarjetas seguidas dentro de una misma sección (Hábitos). */
 .yoru-stats-section > .yoru-stats-card + .yoru-stats-card { margin-top: 16px; }
 
