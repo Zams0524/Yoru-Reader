@@ -7608,12 +7608,16 @@ html.yoru-compact #root {
   height: 100%;
   border-radius: 50%;
 }
+/* El punto de estado de la tarjeta es el mismo que el de la lista: aqui solo cambian
+   el tamano y el aro, que va sobre el panel y no sobre el fondo de la app. El color lo
+   sigue poniendo `.yoru-member-dot` (en yoru-shell.css), que es quien sabe de estados;
+   esta regla no toca el fondo a proposito. */
 .yoru-member-card-avatar .yoru-member-dot {
   position: absolute;
   right: 2px;
   bottom: 2px;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: 3px solid var(--bg-panel);
 }
 .yoru-member-card-nombre {

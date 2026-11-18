@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { User, X } from 'lucide-react';
 import type { DiscordMember } from '../../utils/discordWidget';
+import { estadoMiembro } from '../../utils/miembrosVivos';
 
 /**
  * La tarjeta de un miembro, al pulsarlo en «Miembros».
@@ -53,11 +54,9 @@ export default function MemberCard({
     return () => document.removeEventListener('keydown', alPulsarTecla);
   }, [onCerrar]);
 
-  const etiquetaEstado = miembro.status === 'idle'
-    ? (es ? 'Ausente' : 'Idle')
-    : miembro.status === 'dnd'
-      ? (es ? 'No molestar' : 'Do not disturb')
-      : (es ? 'En línea' : 'Online');
+  // La misma función que usa la fila de la lista, para que el punto no pueda salir de
+  // un color aquí y de otro allí.
+  const estado = estadoMiembro(miembro.status, es);
 
   return (
     <div
@@ -92,11 +91,11 @@ export default function MemberCard({
             {miembro.avatar
               ? <img src={miembro.avatar} alt="" />
               : <span><User size={30} /></span>}
-            <i className={`yoru-member-dot is-${miembro.status}`} title={etiquetaEstado} />
+            <i className={`yoru-member-dot ${estado.clase}`} title={estado.etiqueta} />
           </span>
 
           <h2 className="yoru-member-card-nombre">{miembro.name}</h2>
-          <p className="yoru-member-card-estado">{etiquetaEstado}</p>
+          <p className="yoru-member-card-estado">{estado.etiqueta}</p>
 
           {/* Solo si Discord publica algo. Sin actividad, no hay bloque. */}
           {miembro.activity && (

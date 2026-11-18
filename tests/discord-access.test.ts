@@ -15,7 +15,7 @@ import { esBot, sinBots, type DiscordMember } from '../frontend/utils/discordWid
 import { esLaMismaPersona, lecturaActual } from '../frontend/components/home/MembersView';
 import type { ShelfBook } from '../frontend/components/home/libraryIndex';
 import {
-  conmigoDentro,
+  estadoMiembro,
   INTERVALO_BASE_MS,
   INTERVALO_MAXIMO_MS,
   mismaLista,
@@ -358,29 +358,17 @@ function sondeoTests() {
     'Un fallo de red no cuenta como rechazo de Discord',
   );
 
-  // --- quién sale ---
-  const yo = { nombre: 'Zams', avatar: 'data:foto', actividad: 'Leyendo よつばと！' };
-
-  const soloBots = conmigoDentro([], yo);
-  check(soloBots.length === 1 && soloBots[0].name === 'Zams', 'Con la lista vacía, al menos sales tú');
-  check(soloBots[0].status === 'online', 'Y sales en línea, porque estás aquí');
-  check(soloBots[0].activity === 'Leyendo よつばと！', 'Con lo que estás leyendo como actividad');
-
-  const conOtro = conmigoDentro([persona('Jeff', { status: 'idle' })], yo);
-  check(conOtro.length === 2, 'Te añades sin quitar a nadie');
-
-  // Lo que evita verse dos veces.
-  const yaEstaba = conmigoDentro([persona('zams', { status: 'dnd', activity: 'Yoru Reader' })], yo);
-  check(yaEstaba.length === 1, 'Si el widget ya te trae, no sales dos veces');
-  check(yaEstaba[0].status === 'dnd', 'Y manda el estado de Discord, no el nuestro');
-  check(yaEstaba[0].activity === 'Yoru Reader', 'La actividad también la pone Discord');
-  check(yaEstaba[0].avatar === 'data:foto', 'Pero la foto ya descargada se aprovecha');
-
-  check(conmigoDentro([persona('Jeff')], null).length === 1, 'Sin sesión no se añade a nadie');
-  check(
-    conmigoDentro([persona('Jeff')], { nombre: '   ' }).length === 1,
-    'Un nombre en blanco tampoco añade a nadie',
-  );
+  // --- el estado, el mismo en la lista y en la tarjeta ---
+  check(estadoMiembro('online', true).clase === 'is-online', 'En línea: clase is-online (verde)');
+  check(estadoMiembro('idle', true).clase === 'is-idle', 'Ausente: clase is-idle (amarillo)');
+  check(estadoMiembro('dnd', true).clase === 'is-dnd', 'No molestar: clase is-dnd (rojo)');
+  check(estadoMiembro('idle', true).etiqueta === 'Ausente', 'La etiqueta en español');
+  check(estadoMiembro('idle', false).etiqueta === 'Idle', 'Y en inglés');
+  check(estadoMiembro('dnd', false).etiqueta === 'Do not disturb', 'No molestar, en inglés');
+  // Si Discord publica a alguien es que está conectado: lo que no se sabe es de qué
+  // modo, así que un estado raro no deja el punto apagado.
+  check(estadoMiembro(undefined, true).clase === 'is-online', 'Sin estado se asume en línea, no un punto apagado');
+  check(estadoMiembro('vete-a-saber', true).clase === 'is-online', 'Un estado desconocido tampoco apaga el punto');
 
   // --- repintar o no ---
   check(mismaLista([], []), 'Dos listas vacías son iguales');
