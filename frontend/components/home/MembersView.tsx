@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ExternalLink, RefreshCw, Users } from 'lucide-react';
+import { ExternalLink, Users } from 'lucide-react';
 import { EmptyState } from './primitives';
 import {
   fetchDiscordWidget,
@@ -9,6 +9,7 @@ import {
   type DiscordWidgetError,
 } from '../../utils/discordWidget';
 import { leerSesion } from '../../utils/discordAuth';
+import { conmigoDentro, mismaLista, RITMO_INICIAL, siguienteRitmo } from '../../utils/miembrosVivos';
 import { continueReading, type ShelfBook } from './libraryIndex';
 import MemberCard, { type LecturaActual } from './MemberCard';
 
@@ -22,8 +23,6 @@ import MemberCard, { type LecturaActual } from './MemberCard';
  * vía.
  */
 
-/** Cada cuánto se vuelve a preguntar. Discord refresca el widget más o menos al minuto. */
-const REFRESH_MS = 60_000;
 
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 } as const;
 
@@ -63,38 +62,100 @@ export default function MembersView({
   onVerPerfil?: () => void;
 }) {
   const [elegido, setElegido] = useState<DiscordMember | null>(null);
-  /** El nombre de la cuenta con la que se entró, para reconocerte en la lista. */
-  const [miNombre] = useState(() => leerSesion()?.usuarioNombre || '');
+  /** La sesión de Discord: tu nombre y tu foto, para reconocerte y pintarte. */
+  const [miSesion] = useState(() => leerSesion());
+  const miNombre = miSesion?.usuarioNombre || '';
   const esMiCuenta = (nombre: string) => esLaMismaPersona(nombre, miNombre);
   const miLectura = lecturaActual(libros);
   const [widget, setWidget] = useState<DiscordWidget | null>(null);
   const [error, setError] = useState<DiscordWidgetError | ''>('');
   const [loading, setLoading] = useState(false);
-  /** Sube para volver a pedir a mano. */
-  const [tick, setTick] = useState(0);
+
   const firstLoad = useRef(true);
 
+  /*
+    El sondeo. Tres cosas que no se ven pero se notan:
+
+    - **No se solapa.** Si una petición sigue en el aire, la siguiente no sale.
+    - **Se calla cuando no miras.** Con la ventana oculta no se pregunta, y al volver
+      se pregunta al instante, igual que al recuperar la red: el momento en que alguien
+      vuelve a la pantalla es justo cuando quiere verla al día.
+    - **Nunca se vacía.** Mientras llega la respuesta nueva se queda la de antes, así
+      que la lista no parpadea ni se queda en blanco por un corte de red.
+  */
   useEffect(() => {
-    const controller = new AbortController();
     let alive = true;
-    const load = () => {
-      setLoading(true);
-      fetchDiscordWidget(YORU_DISCORD_GUILD_ID, controller.signal)
-        .then((data) => { if (alive) { setWidget(data); setError(''); } })
-        .catch((reason: Error) => {
-          if (!alive || reason?.name === 'AbortError') return;
-          // Si ya había lista y falla un refresco, se queda la que había: un corte de
-          // red de un minuto no tiene por qué vaciar la pantalla.
-          setError((reason?.message as DiscordWidgetError) || 'network');
-          if (firstLoad.current) setWidget(null);
-        })
-        .finally(() => { if (alive) { setLoading(false); firstLoad.current = false; } });
+    let enVuelo = false;
+    let reloj = 0;
+    let ritmo = RITMO_INICIAL;
+    const controller = new AbortController();
+
+    const programar = (ms: number) => {
+      window.clearTimeout(reloj);
+      reloj = window.setTimeout(() => { void load(); }, ms);
     };
+
+    const load = async () => {
+      if (!alive || enVuelo) return;
+      if (document.visibilityState === 'hidden') return; // Al volver se reprograma.
+      enVuelo = true;
+      // El indicador, solo en la primera carga: después hay lista que enseñar, y un
+      // spinner encima de datos buenos es ruido.
+      if (firstLoad.current) setLoading(true);
+      try {
+        const data = await fetchDiscordWidget(YORU_DISCORD_GUILD_ID, controller.signal);
+        if (!alive) return;
+        setError('');
+        // Si Discord devuelve lo mismo de siempre, no se toca el estado: sin repintado
+        // no hay parpadeo, y la tarjeta que alguien tenga abierta sigue abierta.
+        setWidget((previo) => (previo
+          && previo.name === data.name
+          && previo.invite === data.invite
+          && mismaLista(previo.members, data.members)
+          ? previo
+          : data));
+        ritmo = siguienteRitmo(ritmo, { ok: true });
+      } catch (reason: any) {
+        if (!alive || reason?.name === 'AbortError') return;
+        const codigo = (reason?.message as DiscordWidgetError) || 'network';
+        setError(codigo);
+        // Si ya había lista y falla un refresco, se queda la que había: un corte de
+        // red de un minuto no tiene por qué vaciar la pantalla.
+        if (firstLoad.current) setWidget(null);
+        ritmo = siguienteRitmo(ritmo, {
+          ok: false,
+          limitado: codigo === 'rate-limit',
+          retryAfterSegundos: reason?.retryAfterSegundos,
+        });
+      } finally {
+        enVuelo = false;
+        if (alive) {
+          setLoading(false);
+          firstLoad.current = false;
+          programar(ritmo.esperaMs);
+        }
+      }
+    };
+
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') { ritmo = RITMO_INICIAL; void load(); }
+    };
+
     firstLoad.current = true;
-    load();
-    const timer = window.setInterval(load, REFRESH_MS);
-    return () => { alive = false; controller.abort(); window.clearInterval(timer); };
-  }, [tick]);
+    void load();
+    document.addEventListener('visibilitychange', alVolver);
+    window.addEventListener('focus', alVolver);
+    window.addEventListener('online', alVolver);
+
+    return () => {
+      alive = false;
+      controller.abort();
+      window.clearTimeout(reloj);
+      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('focus', alVolver);
+      window.removeEventListener('online', alVolver);
+    };
+  }, []);
 
   const errorText = (code: DiscordWidgetError | ''): string => {
     if (code === 'bad-id') return es ? 'El servidor de Yoru está mal puesto en la app. No es cosa tuya; habría que corregirlo.' : 'Yoru\'s server is misconfigured in the app. Not your fault; it needs fixing.';
@@ -105,12 +166,27 @@ export default function MembersView({
     return '';
   };
 
-  const members = widget
-    ? [...widget.members].sort((a, b) =>
-        Number(Boolean(b.activity)) - Number(Boolean(a.activity))
-        || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
-        || a.name.localeCompare(b.name))
-    : [];
+  /*
+    A uno mismo lo pone la app, siempre.
+
+    Es lo que arregla el «En línea · 0» estando delante de la pantalla: el widget de
+    Discord publica a muy poca gente —hoy solo bots—, pero de quien tiene Yoru abierto
+    no hay ninguna duda. Si el widget también lo trae, manda el widget y no se duplica.
+  */
+  const yoEnLinea = miNombre
+    ? {
+      nombre: miNombre,
+      avatar: miSesion?.avatarDataUrl || '',
+      actividad: miLectura ? `${es ? 'Leyendo' : 'Reading'} ${miLectura.titulo}` : '',
+    }
+    : null;
+
+  const members = (widget ? conmigoDentro(widget.members, yoEnLinea) : [])
+    .slice()
+    .sort((a, b) =>
+      Number(Boolean(b.activity)) - Number(Boolean(a.activity))
+      || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+      || a.name.localeCompare(b.name));
 
   const statusLabel = (status: keyof typeof STATUS_ORDER) =>
     status === 'idle' ? (es ? 'Ausente' : 'Idle') : status === 'dnd' ? (es ? 'No molestar' : 'Do not disturb') : (es ? 'En línea' : 'Online');
@@ -133,16 +209,12 @@ export default function MembersView({
               {es ? 'Abrir en Discord' : 'Open in Discord'}
             </a>
           )}
-          <button
-            type="button"
-            className="yoru-btn"
-            onClick={() => setTick((value) => value + 1)}
-            disabled={loading}
-            title={es ? 'Actualizar' : 'Refresh'}
-            aria-label={es ? 'Actualizar' : 'Refresh'}
-          >
-            <RefreshCw size={15} />
-          </button>
+          {/*
+            Aquí estaba el botón de actualizar. Se quita porque ya no hay nada que
+            pedirle a nadie: la lista se refresca sola mientras esta pantalla está
+            delante y en cuanto se vuelve a la ventana. Un botón que hace lo que ya
+            pasa solo únicamente siembra la duda de si hacía falta pulsarlo.
+          */}
         </div>
       </div>
 
@@ -162,7 +234,8 @@ export default function MembersView({
       {widget && (
         <>
           <div className="yoru-members-group-title">
-            {es ? 'En línea' : 'Online'} · {widget.onlineCount}
+            {/* El contador cuenta lo que hay en la lista, contigo incluido. */}
+            {es ? 'En línea' : 'Online'} · {members.length}
           </div>
           {members.length === 0 ? (
             <EmptyState
@@ -202,8 +275,8 @@ export default function MembersView({
           )}
           <p className="yoru-members-note">
             {es
-              ? 'Discord solo publica aquí a quien está conectado, y de cada uno el nombre de lo que tiene abierto, no el detalle. Los bots del servidor no salen. Se actualiza cada minuto.'
-              : 'Discord only publishes who is online here, and for each the name of what they have open, not the detail. The server\'s bots are left out. It refreshes every minute.'}
+              ? 'Se actualiza sola mientras tengas esta pantalla delante, y en cuanto vuelves a la ventana. Discord solo publica aquí a quien está conectado, y de cada uno el nombre de lo que tiene abierto, no el detalle; además tarda unos minutos en enterarse. Los bots del servidor no salen.'
+              : 'It updates on its own while this screen is in front of you, and the moment you come back to the window. Discord only publishes who is online here, and for each the name of what they have open, not the detail; it also takes a few minutes to notice. The server\'s bots are left out.'}
           </p>
         </>
       )}
