@@ -14,6 +14,7 @@ import {
   getAudiobooksInProgress,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
+import { localContinueEntries, sharesServerProgress } from './serverProgress';
 
 /**
  * Novedades de los servidores de casa, para que al abrir la app ya haya algo que
@@ -95,9 +96,15 @@ export function getCachedServerCatalog(): ServerCatalog {
       at: Number(parsed?.at) || 0,
       kavita: Array.isArray(parsed?.kavita) ? parsed.kavita : [],
       audiobooks: Array.isArray(parsed?.audiobooks) ? parsed.audiobooks : [],
-      onDeck: Array.isArray(parsed?.onDeck) ? parsed.onDeck : [],
+      // Una caché de antes puede traer el «seguir leyendo» de la cuenta: sin compartir
+      // el progreso no se enseña, que sería lo que lee otra persona.
+      onDeck: Array.isArray(parsed?.onDeck) && sharesServerProgress() ? parsed.onDeck : [],
       forYouAudio: Array.isArray(parsed?.forYouAudio) ? parsed.forYouAudio : [],
-      continueAudio: Array.isArray(parsed?.continueAudio) ? parsed.continueAudio : [],
+      // Igual con «Seguir escuchando»: lo de la cuenta solo si este perfil comparte.
+      // Lo de este perfil vuelve en el siguiente refresco, ya desde lo local.
+      continueAudio: Array.isArray(parsed?.continueAudio) && sharesServerProgress()
+        ? parsed.continueAudio
+        : [],
     };
   } catch {
     return EMPTY;
@@ -212,12 +219,32 @@ async function fetchForYouAudio(): Promise<ServerItem[]> {
 /** «Continuar escuchando»: lo que Audiobookshelf tiene a medias, con su avance. */
 async function fetchContinueAudio(): Promise<ServerItem[]> {
   /*
+    Sin compartir el progreso, lo «a medias» de la cuenta es lo que escucha otra
+    persona. En ese caso sale lo escuchado en este perfil, apuntado en el aparato.
+  */
+  if (!sharesServerProgress()) {
+    return localContinueEntries()
+      .filter((entry) => entry.kind === 'audiobook')
+      .map((entry) => (entry.kind === 'audiobook'
+        ? {
+          id: 'enescucha-' + entry.itemId,
+          serverId: entry.itemId,
+          title: entry.title,
+          cover: absCoverUrl(entry.itemId),
+          source: 'audiobookshelf' as const,
+          author: entry.author || undefined,
+          percent: entry.percent,
+        }
+        : null))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }
+
+  /*
     Más tiempo que los demás, y por eso lleva su propio plazo.
 
-    Este son dos peticiones encadenadas —la lista y el avance—, y a veces alguna
+    Esto son dos peticiones encadenadas —la lista y el avance—, y a veces alguna
     suelta más. Con los 2,5 s de todos se pasaba de largo, el intento se daba por
     fallido y se quedaba lo de la caché: las tarjetas de siempre, con la barra a cero.
-    Eso es justo lo que se veía después del primer arreglo.
   */
   const enCurso = await withTimeout(getAudiobooksInProgress(12), TIMEOUT_MS * 4);
   return enCurso.map(({ item, percent }) => ({

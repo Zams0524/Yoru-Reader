@@ -9,6 +9,7 @@ import type {
   ConnectionTestResult,
 } from '../types/integrations';
 import { describeServerError, normalizeServerUrl, serverRequest, ServerHttpError } from './serverHttp';
+import { getLocalAudiobookProgress, saveLocalAudiobookProgress, sharesServerProgress } from './serverProgress';
 
 /**
  * Audiobookshelf client (https://www.audiobookshelf.org): find the audiobook of the novel being
@@ -227,7 +228,12 @@ function text(value: unknown): string | undefined {
 export async function getAudiobookPersonalized(libraryId: string, limit = 12): Promise<AudiobookItem[]> {
   const shelves = await absRequest<any[]>('/api/libraries/' + libraryId + '/personalized?limit=' + limit);
   const list = Array.isArray(shelves.data) ? shelves.data : [];
+  // Las estanterías que salen de lo escuchado son de la cuenta: sin compartir el
+  // progreso, serían lo que escucha otra persona.
+  const local = !sharesServerProgress();
+  const fromProgress = new Set(['continue-listening', 'continue-series', 'listen-again', 'continue-reading', 'read-again']);
   for (const shelf of list) {
+    if (local && fromProgress.has(String(shelf?.id || ''))) continue;
     const entities = Array.isArray(shelf?.entities) ? shelf.entities : [];
     const books = entities.filter((entity: any) => entity?.media);
     if (books.length) return books.slice(0, limit).map(toAudiobookItem);
@@ -329,6 +335,10 @@ export async function searchAudiobooks(query: string, limit = 12): Promise<Audio
  * saber el progreso no debe impedir enseñar la ficha.
  */
 export async function getAudiobookProgress(itemId: string): Promise<{ currentTime: number; duration: number } | null> {
+  if (!sharesServerProgress()) {
+    const local = getLocalAudiobookProgress(itemId);
+    return local && local.currentTime > 0 ? { currentTime: local.currentTime, duration: local.duration } : null;
+  }
   try {
     const { data } = await absRequest<any>(`/api/me/progress/${encodeURIComponent(itemId)}`);
     const currentTime = Number(data?.currentTime);
@@ -385,14 +395,24 @@ export async function startAudiobookPlayback(itemId: string): Promise<Audiobooks
       };
     })
     .sort((a: AudioTrack, b: AudioTrack) => a.startOffset - b.startOffset);
+  const serverTime = Number(data.currentTime) || 0;
+  // Sin compartir, se retoma donde lo dejó este perfil, no donde lo dejó la cuenta.
+  const shared = sharesServerProgress();
+  if (!shared && data.id) localSessions.add(data.id);
+  const localTime = getLocalAudiobookProgress(itemId)?.currentTime || 0;
+  // Compartiendo, manda la cuenta; si no sabe nada, lo apuntado en el perfil.
+  const startTime = shared ? (serverTime || localTime) : localTime;
   if (tracks.length === 0) throw new Error('Audiobookshelf no devolvió pistas de audio para este libro.');
+  const title = data.displayTitle || data.mediaMetadata?.title || '';
+  const author = data.displayAuthor || data.mediaMetadata?.authorName || '';
+  playingMeta.set(itemId, { title, author });
   return {
     id: data.id,
     itemId,
-    title: data.displayTitle || data.mediaMetadata?.title || '',
-    author: data.displayAuthor || data.mediaMetadata?.authorName || '',
+    title,
+    author,
     coverUrl: absCoverUrl(itemId),
-    currentTime: Number(data.currentTime) || 0,
+    currentTime: startTime,
     duration: Number(data.duration) || tracks.reduce((sum, track) => sum + track.duration, 0),
     chapters: toChapters(data.chapters),
     tracks,
@@ -406,15 +426,35 @@ export interface ListeningUpdate {
   duration: number;
 }
 
+/**
+ * Sesiones abiertas sin compartir el progreso. Ni se sincronizan ni se cierran con
+ * datos: las dos cosas escriben el progreso de la cuenta, y devolverle el punto que
+ * tenía al abrir pisaría lo que otra persona haya escuchado mientras tanto. La
+ * sesión queda abierta y el propio servidor retira las que llevan tiempo calladas.
+ */
+const localSessions = new Set<string>();
+
 export async function syncAudiobookSession(sessionId: string, update: ListeningUpdate): Promise<void> {
+  if (localSessions.has(sessionId) || !sharesServerProgress()) return;
   await absRequest(`/api/session/${encodeURIComponent(sessionId)}/sync`, { method: 'POST', body: update });
 }
 
 export async function closeAudiobookSession(sessionId: string, update: ListeningUpdate): Promise<void> {
+  if (localSessions.has(sessionId) || !sharesServerProgress()) {
+    localSessions.delete(sessionId);
+    return;
+  }
   await absRequest(`/api/session/${encodeURIComponent(sessionId)}/close`, { method: 'POST', body: update });
 }
 
+/** Título y autor de lo que se está escuchando, para que «Continuar» lo pinte sin preguntar. */
+const playingMeta = new Map<string, { title?: string; author?: string }>();
+
 export async function updateAudiobookProgress(itemId: string, currentTime: number, duration: number): Promise<void> {
+  // Siempre se apunta en el perfil (es lo que pinta «Continuar»). A la cuenta solo
+  // sube si el perfil comparte su progreso.
+  saveLocalAudiobookProgress(itemId, currentTime, duration, playingMeta.get(itemId));
+  if (!sharesServerProgress()) return;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   await absRequest(`/api/me/progress/${encodeURIComponent(itemId)}`, {
     method: 'PATCH',

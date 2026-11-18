@@ -80,6 +80,12 @@ export interface Settings {
   dictionaryOrder?: string[];
   /** De dónde salen las definiciones. Sin valor, se comporta como `ambos`. */
   definitionSource?: 'locales' | 'jiten' | 'ambos';
+  /**
+   * Subir y leer el progreso de la cuenta de Kavita/Audiobookshelf. Por defecto no:
+   * la cuenta suele ser compartida, y el progreso de cada perfil se queda en local
+   * (ver `utils/serverProgress.ts`).
+   */
+  shareServerProgress?: boolean;
 }
 
 export interface Profile {

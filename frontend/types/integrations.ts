@@ -126,6 +126,9 @@ export interface KavitaBookSource {
   chapterId: number;
   libraryId: number;
   pages: number;
+  /** Nombre de la serie y del tomo, para enseñarlo en «Continuar» sin preguntar al servidor. */
+  seriesName?: string;
+  volumeTitle?: string;
 }
 
 // ── Audiobookshelf ──────────────────────────────────────────────────────

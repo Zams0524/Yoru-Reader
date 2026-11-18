@@ -4,6 +4,8 @@ import JSZip from 'jszip';
 import {
   extractKavitaDownload,
   getKavitaLibraries,
+  getKavitaOnDeck,
+  getKavitaProgressPercent,
   getKavitaSeries,
   getKavitaVolumes,
   kavitaChapterForPercent,
@@ -43,6 +45,8 @@ import { ordenEfectivo, rangoDeDiccionario } from '../frontend/utils/ordenDiccio
 import {
   audiobookMatchScore,
   chapterAt,
+  closeAudiobookSession,
+  getAudiobookProgress,
   getAudiobooks,
   locateTrack,
   loginAudiobookshelf,
@@ -50,12 +54,19 @@ import {
   saveAudiobookshelfConfig,
   searchAudiobooks,
   startAudiobookPlayback,
+  syncAudiobookSession,
   testAudiobookshelfConnection,
   updateAudiobookProgress,
   volumeNumberOf,
 } from '../frontend/utils/audiobookshelfService';
 import { normalizeServerUrl } from '../frontend/utils/serverHttp';
 import { sitioEnVertical } from '../frontend/utils/posicionPopupVertical';
+import {
+  getLocalAudiobookProgress,
+  localContinueEntries,
+  saveLocalKavitaProgress,
+  sharesServerProgress,
+} from '../frontend/utils/serverProgress';
 
 type Call = { method: string; url: string; headers: Record<string, string>; body: any };
 const calls: Call[] = [];
@@ -446,6 +457,8 @@ async function absTests() {
     'Dos copias del mismo tomo empatan y son el mismo tomo'
   );
 
+  // Lo de abajo es el modo de siempre: el progreso va y viene de la cuenta.
+  shareProgress('p1', true);
   const session = await startAudiobookPlayback('li1');
   const playCall = calls.find((c) => c.url.endsWith('/play'))!;
   check(playCall.body.forceDirectPlay === true && playCall.body.deviceInfo.clientName === 'Yoru Reader', 'Sesión con reproducción directa');
@@ -642,6 +655,85 @@ function fueraTests() {
 
   check(mereceBuscarseFuera('') === true && mereceBuscarseFuera(undefined as any) === true,
     'Buscar fuera: sin categoría, se busca igual, que es lo prudente');
+}
+
+/** El perfil activo y si comparte el progreso con la cuenta del servidor. */
+function shareProgress(profileId: string, share: boolean) {
+  store.set('migaku_reader_active_profile_id', profileId);
+  store.set(`migaku_reader_settings_${profileId}`, JSON.stringify({ shareServerProgress: share }));
+}
+
+/**
+ * Cuenta compartida: sin `shareServerProgress`, el progreso se queda en el dispositivo
+ * y por perfil, y no se lee ni se escribe el de la cuenta.
+ */
+async function localProgressTests() {
+  routes = [
+    (c) => c.url.startsWith(`${K}/api/Plugin/authenticate`) ? json({ username: 'zams', token: 'jwt-2', apiKey: 'key-1' }) : null,
+    (c) => c.url === `${K}/api/Series/volumes?seriesId=5` ? json([
+      { id: 50, seriesId: 5, name: '1', minNumber: 1, pages: 100, pagesRead: 80, lastReadingProgressUtc: '2026-11-01T00:00:00Z',
+        chapters: [{ id: 500, pages: 100, lastReadingProgressUtc: '2026-11-01T00:00:00Z' }] },
+    ]) : null,
+    (c) => c.url.includes('/api/Reader/get-progress') ? json({ pageNum: 90 }) : null,
+    (c) => c.url.includes('/api/Series/on-deck') ? json([{ id: 5, name: 'de otra persona' }]) : null,
+    (c) => c.url === `${A}/api/items/li1/play` && c.method === 'POST' ? json({
+      id: 'sess2', currentTime: 4000, duration: 7200,
+      audioTracks: [{ index: 1, startOffset: 0, duration: 7200, contentUrl: '/api/items/li1/file/111', mimeType: 'audio/mpeg' }],
+    }) : null,
+  ];
+  saveKavitaConfig({ serverUrl: K, apiKey: 'key-1' } as any);
+  // Un perfil sin nada: «p1» ya apuntó lo escuchado en las pruebas de arriba.
+  shareProgress('pl', false);
+  calls.length = 0;
+
+  const [before] = await getKavitaVolumes(5);
+  check(!before.pagesRead && !before.lastReadingProgressUtc && !before.chapters[0].lastReadingProgressUtc,
+    'Local: el tomo no enseña lo leído por la cuenta');
+  check(await getKavitaProgressPercent(500, 100) === 0 && !calls.some((c) => c.url.includes('get-progress')),
+    'Local: abrir un tomo no retoma el progreso de la cuenta');
+  check((await getKavitaOnDeck(10)).length === 0 && !calls.some((c) => c.url.includes('on-deck')),
+    'Local: sin «seguir leyendo» de la cuenta');
+
+  saveLocalKavitaProgress({ chapterId: 500, volumeId: 50, seriesId: 5, pages: 100, percent: 25 });
+  const [after] = await getKavitaVolumes(5);
+  check(after.pagesRead === 25 && !!after.lastReadingProgressUtc, 'Local: el tomo enseña lo leído en este perfil');
+  check(await getKavitaProgressPercent(500, 100) === 25, 'Local: abrir un tomo retoma el progreso del perfil');
+
+  const fresh = await startAudiobookPlayback('li1');
+  check(fresh.currentTime === 0, 'Local: el audiolibro no empieza donde lo dejó la cuenta');
+  await updateAudiobookProgress('li1', 1234, 7200);
+  await syncAudiobookSession(fresh.id, { currentTime: 1234, timeListened: 30, duration: 7200 });
+  await closeAudiobookSession(fresh.id, { currentTime: 1234, timeListened: 0, duration: 7200 });
+  check(!calls.some((c) => c.method === 'PATCH' || c.url.includes('/api/session/')),
+    'Local: escuchar no toca el progreso ni la sesión de la cuenta');
+  check((await getAudiobookProgress('li1'))?.currentTime === 1234, 'Local: la ficha enseña lo escuchado en este perfil');
+  check((await startAudiobookPlayback('li1')).currentTime === 1234, 'Local: el audiolibro retoma donde lo dejó el perfil');
+
+  const continuing = localContinueEntries();
+  check(continuing.length === 2 && continuing.some((e) => e.kind === 'kavita' && e.percent === 25)
+    && continuing.some((e) => e.kind === 'audiobook' && e.percent === 17),
+    'Local: «Continuar» tiene el tomo y el audiolibro a medias del perfil');
+
+  shareProgress('p2', false);
+  check(await getAudiobookProgress('li1') === null && await getKavitaProgressPercent(500, 100) === 0
+    && localContinueEntries().length === 0,
+    'Local: otro perfil empieza de cero');
+
+  // Sin ajuste: comparte el perfil original y no los nuevos.
+  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p1', name: 'zams' }, { id: 'p3', name: 'otro' }]));
+  store.delete('migaku_reader_settings_p1');
+  store.set('migaku_reader_active_profile_id', 'p1');
+  const originalShares = sharesServerProgress();
+  store.set('migaku_reader_active_profile_id', 'p3');
+  check(originalShares && !sharesServerProgress(), 'Sin ajuste, comparte el perfil original y no los nuevos');
+
+  // Compartiendo, el progreso sube a la cuenta y también queda en el perfil.
+  shareProgress('p1', true);
+  calls.length = 0;
+  routes.push((c) => c.url === `${A}/api/me/progress/li1` && c.method === 'PATCH' ? json({}) : null);
+  await updateAudiobookProgress('li1', 3600, 7200);
+  check(calls.some((c) => c.method === 'PATCH') && getLocalAudiobookProgress('li1')?.currentTime === 3600,
+    'Compartiendo: sube a la cuenta y queda apuntado en el perfil');
 }
 
 await kavitaTests();
@@ -1040,5 +1132,6 @@ analizadorTests();
 await pausaTests();
 await repintarTests();
 ordenTests();
+await localProgressTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);
