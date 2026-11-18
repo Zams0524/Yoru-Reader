@@ -237,18 +237,24 @@ function botsTests() {
     id: String(i), name, status: 'online', avatar: '', activity: '',
   }));
 
+  // Los nueve son bots, Hade incluido: en Discord lleva la etiqueta APP.
   const quedan = sinBots(miembros).map((m) => m.name);
-  check(quedan.length === 1 && quedan[0] === 'Hade', 'De los nueve de hoy solo queda la persona: Hade');
+  check(quedan.length === 0, 'De los nueve de hoy no queda ninguno: los nueve son bots');
 
-  for (const bot of ['DISBOARD', 'Dyno', 'Kotoba', 'Mudae', 'Bump Buddy', 'Jockie Music', 'Nekotina', 'TTS Bot']) {
+  for (const bot of ['DISBOARD', 'Dyno', 'Kotoba', 'Mudae', 'Bump Buddy', 'Jockie Music', 'Nekotina', 'TTS Bot', 'Hade']) {
     check(esBot(bot), `«${bot}» se reconoce como bot`);
   }
 
   check(esBot('  disboard  '), 'Da igual el espaciado y las mayúsculas');
   check(esBot('Mi Bot'), 'Un nombre que acaba en «bot» como palabra suelta es un bot');
 
+  // Una persona de las que salen desconectadas en Discord, por si algún día el widget
+  // las publicara: no se las puede confundir con bots.
+  for (const persona of ['Ala3', 'alex', 'alfa5', 'Antonio:v', 'Chococrispi789', 'Dian', 'galletas', 'isa2', 'Jeff', 'JhErk', 'marlonluffyxd.0', 'Rain', 'Zams']) {
+    check(!esBot(persona), `«${persona}» se muestra: es una persona`);
+  }
+
   // La parte que protege a las personas: ante la duda, se muestran.
-  check(!esBot('Hade'), 'Hade es una persona y se muestra');
   check(!esBot('Robot'), 'Robot no se excluye: «bot» va pegado, no es palabra suelta');
   check(!esBot('Botella'), 'Botella tampoco');
   check(!esBot('Abbot'), 'Abbot tampoco');

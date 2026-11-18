@@ -63,6 +63,10 @@ export const BOTS_CONOCIDOS = [
   'bump buddy',
   'disboard',
   'dyno',
+  // «Hade» no lo parece por el nombre, pero en Discord lleva la etiqueta APP: es un
+  // bot. Justo el caso que demuestra por qué hace falta la lista y por qué adivinar
+  // por el nombre no basta.
+  'hade',
   'jockie music',
   'kotoba',
   'mudae',

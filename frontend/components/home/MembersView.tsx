@@ -123,8 +123,10 @@ export default function MembersView({ es }: { es: boolean }) {
           </div>
           {members.length === 0 ? (
             <EmptyState
-              title={es ? 'Nadie conectado ahora' : 'Nobody online right now'}
-              sub={es ? 'Cuando alguien del servidor se conecte, saldrá aquí.' : 'When someone from the server comes online, they will show up here.'}
+              title={es ? 'Nadie conectado ahora mismo' : 'Nobody online right now'}
+              sub={es
+                ? 'Cuando alguien del servidor se conecte, saldrá aquí. Los bots no cuentan.'
+                : 'When someone from the server comes online, they will show up here. Bots do not count.'}
             />
           ) : (
             <ul className="yoru-members-list">
