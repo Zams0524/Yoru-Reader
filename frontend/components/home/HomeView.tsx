@@ -81,8 +81,14 @@ export default function HomeView({
   }, [books]);
 
   const localTitles = useMemo(() => new Set(books.map((book) => book.title)), [books]);
+  /*
+    Lo que ya sale en «Continuar», para que las filas del servidor no lo repitan:
+    las series de Kavita y los audiolibros a medias de este perfil. Sin esto, el
+    audiolibro que estás oyendo salía dos veces en la pestaña «Audiolibros», en
+    «Continuar» y en «Seguir escuchando».
+  */
   const continuingSeries = useMemo(
-    () => new Set(serverContinue.filter((entry) => entry.kind === 'kavita').map((entry) => String((entry as any).seriesId))),
+    () => new Set(serverContinue.map((entry) => (entry.kind === 'kavita' ? String(entry.seriesId) : entry.itemId))),
     [serverContinue]
   );
   const serverRails = useServerRails({
@@ -222,39 +228,52 @@ export default function HomeView({
     }));
 
     /*
-      Aquí solo van los tomos. Los audiolibros tienen su propia fila, «Seguir
-      escuchando», y salía el mismo audiolibro en las dos: lo pidió zams (18 nov
-      2026), que cada cosa esté en la suya.
+      Lo del servidor que lleva a medias este perfil: tomos y audiolibros. Los
+      audiolibros vuelven aquí porque su avance tiene que verse arriba, al lado del de
+      las novelas; lo pidió zams (18 nov 2026). Lo que no quiere es verlos en la
+      pestaña «Libros», y de eso se encarga el filtro de abajo, no esta lista.
 
       Un tomo de Kavita ya importado sale como libro propio: no se repite. Y lo
       apartado a mano de las filas de «continuar» tampoco vuelve por aquí.
     */
     const serverCards = serverContinue
-      .filter((entry) => entry.kind === 'kavita' && !localTitles.has(entry.title))
+      .filter((entry) => !(entry.kind === 'kavita' && localTitles.has(entry.title)))
       .map((entry) => {
-      // Pulsar abre la ficha de la serie en Kavita, con su «Seguir leyendo», que ya
-      // retoma donde lo dejó este perfil.
+      // Pulsar abre la ficha: la serie en Kavita (con su «Seguir leyendo»), el tomo
+      // en Audiobookshelf. Las dos retoman donde lo dejó este perfil.
+      const esAudio = entry.kind === 'audiobook';
       const seriesId = entry.kind === 'kavita' ? entry.seriesId : 0;
       const seriesName = entry.kind === 'kavita' ? entry.seriesName : undefined;
-      const item: ServerItem = {
-        id: `kavita-${seriesId}`,
-        serverId: String(seriesId),
-        title: entry.title,
-        // La portada es la del tomo que se está leyendo, no la de la serie.
-        cover: entry.kind === 'kavita' ? kavitaVolumeCoverUrl(entry.volumeId) : kavitaSeriesCoverUrl(seriesId),
-        source: 'kavita',
-        series: seriesName && seriesName !== entry.title ? seriesName : 'Kavita',
-        percent: entry.percent,
-      };
+      const item: ServerItem = esAudio
+        ? {
+          id: `abs-${entry.kind === 'audiobook' ? entry.itemId : ''}`,
+          serverId: entry.kind === 'audiobook' ? entry.itemId : '',
+          title: entry.title,
+          cover: absCoverUrl(entry.kind === 'audiobook' ? entry.itemId : ''),
+          source: 'audiobookshelf',
+          author: entry.kind === 'audiobook' ? entry.author : undefined,
+          percent: entry.percent,
+        }
+        : {
+          id: `kavita-${seriesId}`,
+          serverId: String(seriesId),
+          title: entry.title,
+          // La portada es la del tomo que se está leyendo, no la de la serie.
+          cover: kavitaVolumeCoverUrl(entry.kind === 'kavita' ? entry.volumeId : 0),
+          source: 'kavita',
+          series: seriesName && seriesName !== entry.title ? seriesName : 'Kavita',
+          percent: entry.percent,
+        };
       return {
         at: entry.at,
+        esAudio,
         hidden: apartados.has(item.id),
         node: (
           <ServerContinueCard
             key={entry.key}
             item={item}
             es={es}
-            onOpen={() => onOpenServerItem({ ...item, title: seriesName || entry.title })}
+            onOpen={() => onOpenServerItem(esAudio ? item : { ...item, title: seriesName || entry.title })}
             onHide={() => apartar(item.id)}
           />
         ),
@@ -262,9 +281,16 @@ export default function HomeView({
     })
       .filter((card) => !card.hidden);
 
-    // Con los audiolibros fuera y lo apartado quitado, la fila puede quedarse vacía:
-    // entonces no se pinta, como el resto.
-    const continueCards = [...bookCards, ...serverCards]
+    /*
+      La pestaña manda sobre el contenido de la fila: en «Libros» no salen los
+      audiolibros —que es lo que molestaba— y en «Audiolibros» solo salen ellos. Si no
+      queda nada, la fila no se pinta.
+    */
+    const continueCards = [
+      ...bookCards.map((card) => ({ ...card, esAudio: false })),
+      ...serverCards,
+    ]
+      .filter((card) => (scope === 'books' ? !card.esAudio : scope === 'audio' ? card.esAudio : true))
       .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     if (continueCards.length > 0) {
       localRails.continue = (
@@ -369,6 +395,13 @@ export default function HomeView({
       {(() => {
         const visibles = layout.order.filter((id) => {
           if (hidden.has(id) || !all[id]) return false;
+          /*
+            «Continuar» lleva las dos cosas, y lo que filtra es su contenido, no el
+            carrusel entero: con «Audiolibros» puesto trae los audiolibros a medias, y
+            con «Libros», los tomos. Si en esa pestaña no le queda nada, no se ha
+            construido y ya no está aquí.
+          */
+          if (id === 'continue') return true;
           if (scope === 'books') return !RAILES_DE_AUDIO.has(id);
           if (scope === 'audio') return RAILES_DE_AUDIO.has(id);
           return true;

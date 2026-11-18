@@ -131,9 +131,11 @@ export function useServerRails({
       && !apartados.has(item.id)),
     [catalog.onDeck, localTitles, skipSeriesIds, apartados]
   );
+  // Tampoco repite lo que «Continuar» ya enseña de este perfil.
   const continueAudio = useMemo(
-    () => catalog.continueAudio.filter((item) => !apartados.has(item.id)),
-    [catalog.continueAudio, apartados]
+    () => catalog.continueAudio.filter((item) => !apartados.has(item.id)
+      && (!skipSeriesIds || !skipSeriesIds.has(serverItemId(item)))),
+    [catalog.continueAudio, apartados, skipSeriesIds]
   );
   const audioSeries = useMemo(() => audiobookSeriesOf(catalog.audiobooks), [catalog.audiobooks]);
   const randomBooks = useMemo(() => sample(catalog.kavita, 10, seed), [catalog.kavita, seed]);
@@ -486,7 +488,7 @@ export function ServerLibrarySection({
     */
     <div className="library-section">
       <div className="section-header">
-        <h2 className="section-title">{es ? 'Lo que lees en el servidor' : 'What you read on the server'}</h2>
+        <h2 className="section-title">{es ? 'Leyendo' : 'Reading'}</h2>
         <span className="section-count">{items.length}</span>
         {onExplore && (
           <button type="button" className="yoru-chip-link" onClick={onExplore}>
