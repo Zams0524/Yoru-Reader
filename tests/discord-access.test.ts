@@ -12,6 +12,8 @@ import {
   type SesionDiscord,
 } from '../frontend/utils/discordAccess';
 import { esBot, sinBots, type DiscordMember } from '../frontend/utils/discordWidget';
+import { esLaMismaPersona, lecturaActual } from '../frontend/components/home/MembersView';
+import type { ShelfBook } from '../frontend/components/home/libraryIndex';
 
 let failures = 0;
 function check(condicion: boolean, nombre: string) {
@@ -269,11 +271,49 @@ function botsTests() {
   );
 }
 
+function tarjetaTests() {
+  console.log('\nTarjeta de miembro');
+
+  check(esLaMismaPersona('Zams', 'Zams'), 'Tu propio nombre se reconoce');
+  check(esLaMismaPersona('  zams ', 'Zams'), 'Da igual el espaciado y las mayúsculas');
+  check(!esLaMismaPersona('Zams', 'Hade'), 'Otra persona no eres tú');
+  check(!esLaMismaPersona('', ''), 'Sin sesión no se reconoce a nadie como uno mismo');
+  check(!esLaMismaPersona('Zams', ''), 'Sin nombre de sesión, nadie es uno mismo');
+
+  const libro = (extra: Partial<ShelfBook>): ShelfBook => ({
+    id: 'b1', title: 'よつばと！', lastRead: '2026-11-18T10:00:00Z', ...extra,
+  } as ShelfBook);
+
+  check(lecturaActual([]) === null, 'Sin libros no hay bloque de lectura');
+
+  const unoAMedias = lecturaActual([libro({ cover: 'data:x', progress: { percent: 42 } as any })]);
+  check(
+    unoAMedias?.titulo === 'よつばと！' && unoAMedias?.progreso === 42 && unoAMedias?.portada === 'data:x',
+    'Un libro a medias da título, portada y porcentaje',
+  );
+
+  // Terminado no es «lo que estás leyendo»: continueReading ya lo descarta.
+  check(
+    lecturaActual([libro({ progress: { percent: 100 } as any })]) === null,
+    'Un libro terminado no sale como lectura actual',
+  );
+
+  check(
+    lecturaActual([libro({ hiddenFromContinue: true, progress: { percent: 10 } as any })]) === null,
+    'Un libro apartado de «Continuar» tampoco sale',
+  );
+
+  // La portada oculta a propósito se respeta: no se cuela por la puerta de atrás.
+  const sinPortada = lecturaActual([libro({ cover: 'data:x', hideCover: true, progress: { percent: 5 } as any })]);
+  check(sinPortada !== null && !sinPortada.portada, 'Si la portada está oculta, no se enseña');
+}
+
 decisionTests();
 recomprobarTests();
 tokenTests();
 respuestaTests();
 pantallaTests();
 botsTests();
+tarjetaTests();
 console.log(failures ? `\n${failures} pruebas fallaron` : '\nTodas las pruebas pasaron');
 if (failures) process.exit(1);

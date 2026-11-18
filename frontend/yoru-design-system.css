@@ -7517,3 +7517,186 @@ html.yoru-compact #root {
   .yoru-gate-caja.is-acceso { padding: 26px 18px 20px; }
   .yoru-gate-titulo.is-grande { font-size: 1.5rem; }
 }
+
+/* ------------------------------------------------- Tarjeta de miembro
+   Al pulsar a alguien en «Miembros». La disposicion es la de la referencia que paso
+   zams —franja de color, foto grande con punto de estado, nombre, bloques— pero con
+   los tokens de Yoru, asi que claro, sepia y oscuro salen solos. */
+.yoru-member.is-pulsable {
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.yoru-member.is-pulsable:hover { background: var(--surface-soft); }
+.yoru-member-card-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.yoru-member-card {
+  position: relative;
+  width: 100%;
+  max-width: 21rem;
+  border-radius: var(--radius-base, 14px);
+  overflow: hidden;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel, none);
+}
+.yoru-member-card-franja {
+  height: 72px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--primary) 70%, transparent),
+    color-mix(in srgb, var(--primary) 25%, transparent));
+}
+.yoru-member-card-cerrar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+}
+.yoru-member-card-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+.yoru-member-card-avatar {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  margin-top: -37px;
+  border-radius: 50%;
+  overflow: visible;
+  border: 4px solid var(--bg-panel);
+  background: var(--surface-raised);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.yoru-member-card-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.yoru-member-card-avatar > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+.yoru-member-card-avatar .yoru-member-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--bg-panel);
+}
+.yoru-member-card-nombre {
+  margin: 4px 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.yoru-member-card-estado {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.yoru-member-card-bloque {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-base, 10px);
+  background: var(--surface-soft);
+}
+.yoru-member-card-titulo-bloque {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.yoru-member-card-actividad {
+  margin: 5px 0 0;
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+.yoru-member-card-lectura {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+.yoru-member-card-portada {
+  width: 42px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+  background: var(--surface-raised);
+}
+.yoru-member-card-portada.is-vacia { display: block; }
+.yoru-member-card-lectura-texto {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+.yoru-member-card-libro {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yoru-member-card-barra {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.yoru-member-card-barra i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.yoru-member-card-porcentaje {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.yoru-member-card-boton { margin-top: 10px; justify-content: center; }
+.yoru-member-card-nota {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}

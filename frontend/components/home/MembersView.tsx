@@ -4,9 +4,13 @@ import { EmptyState } from './primitives';
 import {
   fetchDiscordWidget,
   YORU_DISCORD_GUILD_ID,
+  type DiscordMember,
   type DiscordWidget,
   type DiscordWidgetError,
 } from '../../utils/discordWidget';
+import { leerSesion } from '../../utils/discordAuth';
+import { continueReading, type ShelfBook } from './libraryIndex';
+import MemberCard, { type LecturaActual } from './MemberCard';
 
 /**
  * Miembros: quién del servidor de Yoru está conectado ahora, y con qué.
@@ -23,7 +27,46 @@ const REFRESH_MS = 60_000;
 
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 } as const;
 
-export default function MembersView({ es }: { es: boolean }) {
+/**
+ * Si un nombre del widget es el de la cuenta con la que se entró.
+ *
+ * Se compara por nombre porque el widget **no da el id real**: el suyo es un número de
+ * orden (0, 1, 2…). No es infalible —dos personas podrían llamarse igual— y por eso lo
+ * único que hay en juego es enseñarte de más sobre ti mismo, nunca datos de otro: el
+ * bloque de lectura sale de lo que hay guardado en este aparato, que es tuyo.
+ */
+export function esLaMismaPersona(nombreWidget: string, nombreSesion: string): boolean {
+  const a = (nombreWidget || '').trim().toLowerCase();
+  const b = (nombreSesion || '').trim().toLowerCase();
+  return a.length > 0 && a === b;
+}
+
+/** Lo que estás leyendo ahora, de «Continuar». Sin libro a medias, no hay bloque. */
+export function lecturaActual(libros: ShelfBook[]): LecturaActual | null {
+  const primero = continueReading(libros)[0];
+  if (!primero) return null;
+  return {
+    titulo: primero.title,
+    portada: primero.hideCover ? undefined : primero.cover,
+    progreso: Number(primero.progress?.percent ?? 0),
+  };
+}
+
+export default function MembersView({
+  es,
+  libros = [],
+  onVerPerfil,
+}: {
+  es: boolean;
+  /** La estantería, para contar qué estás leyendo tú. De los demás no se sabe nada. */
+  libros?: ShelfBook[];
+  onVerPerfil?: () => void;
+}) {
+  const [elegido, setElegido] = useState<DiscordMember | null>(null);
+  /** El nombre de la cuenta con la que se entró, para reconocerte en la lista. */
+  const [miNombre] = useState(() => leerSesion()?.usuarioNombre || '');
+  const esMiCuenta = (nombre: string) => esLaMismaPersona(nombre, miNombre);
+  const miLectura = lecturaActual(libros);
   const [widget, setWidget] = useState<DiscordWidget | null>(null);
   const [error, setError] = useState<DiscordWidgetError | ''>('');
   const [loading, setLoading] = useState(false);
@@ -131,19 +174,28 @@ export default function MembersView({ es }: { es: boolean }) {
           ) : (
             <ul className="yoru-members-list">
               {members.map((member) => (
-                <li key={member.id || member.name} className="yoru-member">
-                  <span className="yoru-member-avatar">
-                    {member.avatar
-                      ? <img src={member.avatar} alt="" loading="lazy" />
-                      : <span><Users size={18} /></span>}
-                    <i className={`yoru-member-dot is-${member.status}`} title={statusLabel(member.status)} />
-                  </span>
-                  <span className="yoru-member-text">
-                    <span className="yoru-member-name">{member.name}</span>
-                    <span className="yoru-member-activity">
-                      {member.activity || statusLabel(member.status)}
+                <li key={member.id || member.name}>
+                  {/* Un botón y no un div con onClick: así el teclado y los lectores
+                      de pantalla lo encuentran solos, sin tener que apañarlo. */}
+                  <button
+                    type="button"
+                    className="yoru-member is-pulsable"
+                    onClick={() => setElegido(member)}
+                    aria-haspopup="dialog"
+                  >
+                    <span className="yoru-member-avatar">
+                      {member.avatar
+                        ? <img src={member.avatar} alt="" loading="lazy" />
+                        : <span><Users size={18} /></span>}
+                      <i className={`yoru-member-dot is-${member.status}`} title={statusLabel(member.status)} />
                     </span>
-                  </span>
+                    <span className="yoru-member-text">
+                      <span className="yoru-member-name">{member.name}</span>
+                      <span className="yoru-member-activity">
+                        {member.activity || statusLabel(member.status)}
+                      </span>
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -154,6 +206,17 @@ export default function MembersView({ es }: { es: boolean }) {
               : 'Discord only publishes who is online here, and for each the name of what they have open, not the detail. The server\'s bots are left out. It refreshes every minute.'}
           </p>
         </>
+      )}
+
+      {elegido && (
+        <MemberCard
+          miembro={elegido}
+          es={es}
+          esTuyo={esMiCuenta(elegido.name)}
+          lectura={esMiCuenta(elegido.name) ? miLectura : null}
+          onCerrar={() => setElegido(null)}
+          onVerPerfil={onVerPerfil ? () => { setElegido(null); onVerPerfil(); } : undefined}
+        />
       )}
     </div>
   );

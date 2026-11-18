@@ -543,7 +543,7 @@ export default function YoruShell({
 
     if (view === 'members') {
       return (
-        <MembersView es={es} />
+        <MembersView es={es} libros={books} onVerPerfil={() => go('profile')} />
       );
     }
 
