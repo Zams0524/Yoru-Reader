@@ -208,6 +208,84 @@ export function guardarProgreso(base, usuarioId, datos, baseVersion, ahora = Dat
   return { ok: true, version: version + 1, actualizadoEn: ahora, bytes: texto.length };
 }
 
+/* ---------------------------------------------------------- lo que ven los demás */
+
+/**
+ * Qué está leyendo alguien, para que la tarjeta de Miembros lo enseñe.
+ *
+ * Esto es lo único que un miembro puede ver de otro, y es a propósito. Lo que la app
+ * sube es la biblioteca entera: todos los libros, los estados de cada palabra, las
+ * tarjetas del SRS, los ajustes. Devolver eso a cualquiera que pregunte convertiría
+ * una tarjeta de «qué está leyendo fulano» en una copia de su cuenta, y nadie que
+ * entre con Discord espera eso. Así que aquí se saca **un libro y un porcentaje**, y
+ * se tira el resto.
+ *
+ * Y se respeta lo que cada uno ya había decidido sobre enseñar lo que lee:
+ *
+ *  - `shareReadingWithMembers: false` → no se enseña nada.
+ *  - La lista negra de Discord (`discordBlacklist`) vale también aquí, con la misma
+ *    regla que en `discordRpc.ts`: un título por línea, comparado en minúsculas. Un
+ *    libro que alguien escondió de sus amigos en Discord no va a aparecer en la
+ *    tarjeta de Miembros por la puerta de atrás.
+ */
+export function queEstaLeyendo(datos) {
+  const perfiles = Array.isArray(datos?.profiles) ? datos.profiles : [];
+  const perfilId = datos?.activeProfileId || perfiles[0]?.id;
+  const perfil = perfilId ? datos?.profileData?.[perfilId] : null;
+  if (!perfil) return { comparte: true, leyendo: null };
+
+  const ajustes = perfil.settings || {};
+  // Por defecto sí se comparte: la tarjeta de Miembros es la razón de que esto exista.
+  // Quien no quiera, lo apaga en Ajustes y deja de salir desde la siguiente subida.
+  if (ajustes.shareReadingWithMembers === false) return { comparte: false, leyendo: null };
+
+  const libros = (Array.isArray(perfil.books) ? perfil.books : []).filter((libro) => libro && !libro.isDeleted);
+  let ultimo = null;
+  let cuando = 0;
+  for (const libro of libros) {
+    const momento = Date.parse(libro.lastRead || '') || 0;
+    if (momento > cuando) { cuando = momento; ultimo = libro; }
+  }
+  if (!ultimo || !cuando) return { comparte: true, leyendo: null };
+
+  const negra = String(ajustes.discordBlacklist || '')
+    .split('\n').map((linea) => linea.trim().toLowerCase()).filter(Boolean);
+  if (negra.includes(String(ultimo.title || '').toLowerCase())) return { comparte: false, leyendo: null };
+
+  const progreso = ultimo.progress || {};
+  const capitulo = Array.isArray(ultimo.chapters) ? ultimo.chapters[progreso.currentChapter] : null;
+  return {
+    comparte: true,
+    leyendo: {
+      titulo: String(ultimo.title || ''),
+      autor: String(ultimo.author || ''),
+      portada: String(ultimo.cover || ''),
+      capitulo: capitulo ? String(capitulo.title || '') : '',
+      porcentaje: Math.max(0, Math.min(100, Math.round(Number(progreso.percent) || 0))),
+      ultimaLectura: cuando,
+    },
+  };
+}
+
+/** La ficha pública de un miembro: quién es y qué lee. Nunca sus datos. */
+export function fichaDe(base, usuarioId) {
+  const fila = base.prepare('SELECT id, nombre, actualizado FROM usuarios WHERE id = ?').get(usuarioId);
+  if (!fila) return null;
+  const { datos } = leerProgreso(base, usuarioId);
+  return {
+    usuarioId: String(fila.id),
+    nombre: String(fila.nombre || ''),
+    actualizadoEn: Number(fila.actualizado || 0),
+    ...queEstaLeyendo(datos),
+  };
+}
+
+/** Todos los que alguna vez han sincronizado, del más reciente al más antiguo. */
+export function fichasDeTodos(base) {
+  const filas = base.prepare('SELECT id FROM usuarios WHERE datos IS NOT NULL ORDER BY actualizado DESC').all();
+  return filas.map((fila) => fichaDe(base, fila.id)).filter(Boolean);
+}
+
 /* ------------------------------------------------------------------------- el HTTP */
 
 function responder(res, status, cuerpo) {
@@ -302,6 +380,27 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
 
       if (ruta === '/api/progreso' && req.method === 'GET') {
         responder(res, 200, leerProgreso(bd, sesion.usuario_id));
+        return;
+      }
+
+      /*
+        Lo que ven los demás miembros: la tarjeta de «qué está leyendo fulano».
+
+        Ojo con la diferencia, que es toda la seguridad de esto: `/api/progreso` (sin
+        nada detrás) devuelve **tus** datos enteros y va por tu propia sesión;
+        `/api/progreso/<id>` devuelve de cualquiera **solo un libro y un porcentaje**,
+        con lo que cada uno haya decidido compartir. Nunca se cruzan.
+      */
+      if (ruta === '/api/miembros' && req.method === 'GET') {
+        responder(res, 200, { miembros: fichasDeTodos(bd) });
+        return;
+      }
+
+      const unMiembro = ruta.match(/^\/api\/progreso\/([0-9]{1,32})$/);
+      if (unMiembro && req.method === 'GET') {
+        const ficha = fichaDe(bd, unMiembro[1]);
+        if (!ficha) { responder(res, 404, { error: 'no-existe' }); return; }
+        responder(res, 200, ficha);
         return;
       }
 

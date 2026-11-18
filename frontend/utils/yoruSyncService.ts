@@ -306,3 +306,61 @@ export function recargarSiHizoFalta(resultado: ResultadoSync): void {
 export function sincronizacionDisponible(): boolean {
   return Boolean(urlServidorSync()) && (Capacitor.getPlatform() === 'android' || Capacitor.getPlatform() === 'web' || Capacitor.getPlatform() === 'electron');
 }
+
+/* --------------------------------------------- qué están leyendo los demás */
+
+/** Lo que el servidor cuenta de otro miembro. Un libro y un porcentaje, nada más. */
+export interface FichaMiembro {
+  usuarioId: string;
+  nombre: string;
+  /** Cuándo subió su progreso por última vez, en milisegundos desde época. */
+  actualizadoEn: number;
+  /** Si comparte lo que lee. Falso también cuando el libro está en su lista negra. */
+  comparte: boolean;
+  leyendo: {
+    titulo: string;
+    autor: string;
+    portada: string;
+    capitulo: string;
+    porcentaje: number;
+    ultimaLectura: number;
+  } | null;
+}
+
+/**
+ * Qué está leyendo cada miembro, para la tarjeta de Miembros.
+ *
+ * Devuelve la lista vacía en vez de lanzar: esto adorna una pantalla, no la sostiene,
+ * y que el PC de zams esté apagado no puede dejar a nadie sin ver a su gente.
+ */
+export async function fichasDeMiembros(): Promise<FichaMiembro[]> {
+  const base = urlServidorSync();
+  if (!base) return [];
+  const sesion = await sesionUsable();
+  if (!sesion) return [];
+  try {
+    const { data } = await serverRequest<{ miembros: FichaMiembro[] }>(urlSync(base, '/api/miembros'), {
+      headers: { Authorization: `Bearer ${sesion.token}` },
+    });
+    return Array.isArray(data?.miembros) ? data.miembros : [];
+  } catch (error) {
+    console.warn('[yoru-sync] miembros:', error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
+/** Lo mismo para uno solo. `null` si no ha sincronizado nunca o no se pudo preguntar. */
+export async function fichaDeMiembro(usuarioId: string): Promise<FichaMiembro | null> {
+  const base = urlServidorSync();
+  if (!base || !usuarioId) return null;
+  const sesion = await sesionUsable();
+  if (!sesion) return null;
+  try {
+    const { data } = await serverRequest<FichaMiembro>(urlSync(base, `/api/progreso/${encodeURIComponent(usuarioId)}`), {
+      headers: { Authorization: `Bearer ${sesion.token}` },
+    });
+    return data?.usuarioId ? data : null;
+  } catch {
+    return null;
+  }
+}

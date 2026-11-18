@@ -19,6 +19,8 @@ export default function YoruSyncSettings({
   detalle,
   ultima,
   servidor,
+  settings,
+  onSaveSettings,
   onSincronizar,
 }: {
   lang: string;
@@ -26,6 +28,8 @@ export default function YoruSyncSettings({
   detalle: string;
   ultima: number;
   servidor: string;
+  settings: Record<string, any>;
+  onSaveSettings: (next: Record<string, any>) => void;
   onSincronizar: () => void;
 }) {
   const es = lang === 'es';
@@ -64,6 +68,33 @@ export default function YoruSyncSettings({
             <span style={{ color: 'rgba(255,255,255,0.3)', wordBreak: 'break-all', textAlign: 'right' }}>{servidor}</span>
           </div>
         )}
+      </div>
+
+      {/*
+        Lo que ven los demás.
+
+        Va aquí y no en la tarjeta de Discord porque es otra cosa: aquello es tu
+        estado en Discord, esto es la tarjeta de Miembros dentro de Yoru. Viene
+        encendido, que es lo que hace que la tarjeta sirva para algo, y lo que se
+        enseña es un libro y un porcentaje, nunca tu biblioteca. La lista negra de la
+        tarjeta de Discord vale también aquí: un libro que escondiste allí no asoma
+        por este lado.
+      */}
+      <div className="settings-row-control">
+        <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span>{es ? 'Enseñar a los miembros lo que lees' : 'Show members what you are reading'}</span>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>
+            {es ? 'Solo el libro y por dónde vas, en la pestaña de Miembros' : 'Only the book and how far you are, in the Members tab'}
+          </span>
+        </span>
+        <label className="migaku-switch">
+          <input
+            type="checkbox"
+            checked={settings.shareReadingWithMembers !== false}
+            onChange={(e) => onSaveSettings({ ...settings, shareReadingWithMembers: e.target.checked })}
+          />
+          <span className="migaku-switch-slider"></span>
+        </label>
       </div>
 
       <button

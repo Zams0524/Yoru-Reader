@@ -83,8 +83,22 @@ los que está: solo su ID, su nombre y su progreso.
 | `GET` | `/api/salud` | `{ ok: true }`. Sin token |
 | `POST` | `/api/sesion` | `{ accessToken }` → `{ token, expiraEn, usuarioId, nombre }` |
 | `DELETE` | `/api/sesion` | Cierra la sesión de ese token |
-| `GET` | `/api/progreso` | `{ version, actualizadoEn, datos }` |
+| `GET` | `/api/progreso` | **Lo tuyo, entero**: `{ version, actualizadoEn, datos }` |
 | `PUT` | `/api/progreso` | `{ baseVersion, datos }` → `{ version, actualizadoEn }`, o **409** |
+| `GET` | `/api/progreso/<id>` | **De cualquiera, reducido**: `{ usuarioId, nombre, comparte, leyendo }` |
+| `GET` | `/api/miembros` | Lo mismo para todos: `{ miembros: [...] }` |
+
+Las dos últimas son para la tarjeta de Miembros, y la diferencia con `/api/progreso`
+a secas es toda su seguridad: **`/api/progreso` devuelve lo tuyo entero y va por tu
+propia sesión; `/api/progreso/<id>` devuelve de cualquiera solo un libro y un
+porcentaje.** Lo que la app sube es la biblioteca completa —todos los libros, el
+estado de cada palabra, las tarjetas del SRS, los ajustes—, y devolver eso a quien
+pregunte convertiría una tarjeta de «qué está leyendo fulano» en una copia de su
+cuenta. Nadie que entre con Discord espera eso.
+
+`leyendo` es `null`, y `comparte` es `false`, cuando esa persona apagó
+«Enseñar a los miembros lo que lees» (`shareReadingWithMembers`) o cuando el libro
+está en su lista negra de Discord: un libro escondido allí no asoma por aquí.
 
 El 409 es la pieza que evita que dos aparatos se pisen. `baseVersion` es la versión
 que el cliente leyó antes de combinar; si entretanto escribió otro, el número ya no

@@ -3229,6 +3229,8 @@ const Library = React.memo(function Library({
                 detalle={yoruSyncDetalle}
                 ultima={yoruSyncUltima}
                 servidor={urlServidorSync()}
+                settings={settings}
+                onSaveSettings={onSaveSettings}
                 onSincronizar={() => { void sincronizarConYoru('bidireccional', true); }}
               />
             </div>

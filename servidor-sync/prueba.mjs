@@ -153,6 +153,100 @@ await prueba('cerrar sesión deja el token inservible', async () => {
   assert.equal((await pedir('/api/progreso', { headers: auth })).status, 401);
 });
 
+/* ------------------------------------------- lo que un miembro ve de otro miembro */
+
+/** Una biblioteca como la que sube la app, con lo justo para estas pruebas. */
+function biblioteca({ titulo = 'よつばと!', ajustes = {} } = {}) {
+  return {
+    version: 2,
+    activeProfileId: 'p1',
+    profiles: [{ id: 'p1', name: 'zams' }],
+    profileData: {
+      p1: {
+        settings: ajustes,
+        books: [
+          { id: 'b1', title: 'un libro viejo', lastRead: '2026-01-01T00:00:00.000Z', progress: { percent: 10 } },
+          {
+            id: 'b2', title: titulo, author: 'Azuma Kiyohiko',
+            lastRead: '2026-11-18T10:00:00.000Z',
+            chapters: [{ title: 'Capítulo 1' }, { title: 'Capítulo 2' }],
+            progress: { percent: 42.6, currentChapter: 1 },
+          },
+          { id: 'b3', title: 'borrado', isDeleted: true, lastRead: '2026-11-19T00:00:00.000Z', progress: { percent: 99 } },
+        ],
+        wordStatuses: { 四葉: 'known' },
+        srsData: { 四葉: { state: 2 } },
+      },
+    },
+  };
+}
+
+async function subirComo(accessToken, datos) {
+  const { token } = await (await entrar(accessToken)).json();
+  const auth = { Authorization: `Bearer ${token}` };
+  const { version } = await (await pedir('/api/progreso', { headers: auth })).json();
+  const r = await pedir('/api/progreso', { method: 'PUT', headers: auth, cuerpo: { baseVersion: version, datos } });
+  assert.equal(r.status, 200);
+  return auth;
+}
+
+await prueba('un miembro ve qué lee otro: el último libro, no el borrado', async () => {
+  await subirComo('tok-zams', biblioteca());
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+
+  const ficha = await (await pedir('/api/progreso/111', { headers: auth })).json();
+  assert.equal(ficha.nombre, 'zams');
+  assert.equal(ficha.leyendo.titulo, 'よつばと!');
+  assert.equal(ficha.leyendo.capitulo, 'Capítulo 2');
+  assert.equal(ficha.leyendo.porcentaje, 43, 'el porcentaje se redondea');
+});
+
+await prueba('y no ve nada más de él', async () => {
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const crudo = await (await pedir('/api/progreso/111', { headers: auth })).text();
+  // Lo que importa no es lo que sale, sino lo que no sale: la ficha pública no puede
+  // ser una copia de la cuenta de nadie.
+  assert.ok(!crudo.includes('wordStatuses'), 'los estados de palabras no salen');
+  assert.ok(!crudo.includes('srsData'), 'las tarjetas del SRS no salen');
+  assert.ok(!crudo.includes('un libro viejo'), 'el resto de la biblioteca no sale');
+  assert.ok(!crudo.includes('profileData'), 'la biblioteca entera no sale');
+});
+
+await prueba('la lista negra de Discord vale también aquí', async () => {
+  await subirComo('tok-zams', biblioteca({ ajustes: { discordBlacklist: 'otra\nよつばと!\n' } }));
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const ficha = await (await pedir('/api/progreso/111', { headers: auth })).json();
+  assert.equal(ficha.leyendo, null, 'un libro escondido en Discord no asoma por aquí');
+  assert.equal(ficha.comparte, false);
+});
+
+await prueba('quien apaga el compartir no sale', async () => {
+  await subirComo('tok-zams', biblioteca({ ajustes: { shareReadingWithMembers: false } }));
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const ficha = await (await pedir('/api/progreso/111', { headers: auth })).json();
+  assert.equal(ficha.comparte, false);
+  assert.equal(ficha.leyendo, null);
+});
+
+await prueba('sin sesión no se ve la ficha de nadie', async () => {
+  assert.equal((await pedir('/api/progreso/111')).status, 401);
+  assert.equal((await pedir('/api/miembros')).status, 401);
+});
+
+await prueba('la lista de miembros trae a todos los que han sincronizado', async () => {
+  await subirComo('tok-zams', biblioteca());
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const { miembros } = await (await pedir('/api/miembros', { headers: auth })).json();
+  const ids = miembros.map((m) => m.usuarioId).sort();
+  assert.deepEqual(ids, ['111', '222']);
+  assert.equal(miembros.find((m) => m.usuarioId === '222').leyendo.titulo, 'otra cosa');
+});
+
+await prueba('preguntar por alguien que no existe es un 404, no un vacío', async () => {
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  assert.equal((await pedir('/api/progreso/987654321', { headers: auth })).status, 404);
+});
+
 await new Promise((listo) => servidor.close(listo));
 base.close();
 

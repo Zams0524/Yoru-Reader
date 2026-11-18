@@ -73,6 +73,37 @@ sola para siempre y no habría forma de llegar a Ajustes a apagarla.
 Nada de esto estorba. Sin red, con el PC de zams apagado o con el token caducado, la
 app se abre y se lee igual; lo único que pasa es que el progreso espera.
 
+## Qué ven los demás miembros
+
+Para la tarjeta de Miembros, el servidor cuenta de cada uno **un libro y un
+porcentaje**: `GET /api/progreso/<usuarioId>` y `GET /api/miembros`, ambos con sesión.
+En la app, `fichasDeMiembros()` y `fichaDeMiembro(id)` en `yoruSyncService.ts`.
+
+```json
+{ "usuarioId": "111", "nombre": "zams", "actualizadoEn": 1795016000000,
+  "comparte": true,
+  "leyendo": { "titulo": "よつばと!", "autor": "Azuma Kiyohiko", "portada": "",
+               "capitulo": "Capítulo 2", "porcentaje": 43, "ultimaLectura": 1795010000000 } }
+```
+
+La diferencia con `GET /api/progreso` a secas es toda la seguridad de esto:
+**`/api/progreso` devuelve lo tuyo entero y va por tu propia sesión;
+`/api/progreso/<id>` devuelve de cualquiera solo esa ficha.** Lo que la app sube es la
+biblioteca completa —todos los libros, el estado de cada palabra, las tarjetas del SRS,
+los ajustes—, y devolver eso a quien pregunte convertiría una tarjeta de «qué está
+leyendo fulano» en una copia de su cuenta.
+
+Dos formas de no salir, y las dos ya existían en espíritu:
+
+- **El interruptor** «Enseñar a los miembros lo que lees» (`shareReadingWithMembers`),
+  en Ajustes → Sincronización de Yoru. **Viene encendido**, que es lo que hace que la
+  tarjeta sirva para algo el primer día; apagarlo deja de enseñar desde la siguiente
+  subida. Si zams prefiere que venga apagado, es cambiar el `!== false` por `=== true`
+  en `YoruSyncSettings.tsx` y en `queEstaLeyendo()`.
+- **La lista negra de Discord** (`discordBlacklist`) vale también aquí, con la misma
+  regla que en `discordRpc.ts`. Un libro que alguien escondió de sus amigos en Discord
+  no va a aparecer en Miembros por la puerta de atrás.
+
 ## Android
 
 `android/app/src/main/res/xml/network_security_config.xml` permite HTTP en claro al
