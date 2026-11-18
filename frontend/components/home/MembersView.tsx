@@ -9,7 +9,7 @@ import {
   type DiscordWidgetError,
 } from '../../utils/discordWidget';
 import { leerSesion } from '../../utils/discordAuth';
-import { conmigoDentro, mismaLista, RITMO_INICIAL, siguienteRitmo } from '../../utils/miembrosVivos';
+import { estadoMiembro, mismaLista, RITMO_INICIAL, siguienteRitmo } from '../../utils/miembrosVivos';
 import { continueReading, type ShelfBook } from './libraryIndex';
 import MemberCard, { type LecturaActual } from './MemberCard';
 
@@ -167,29 +167,20 @@ export default function MembersView({
   };
 
   /*
-    A uno mismo lo pone la app, siempre.
+    La lista es la de Discord, y solo la de Discord.
 
-    Es lo que arregla el «En línea · 0» estando delante de la pantalla: el widget de
-    Discord publica a muy poca gente —hoy solo bots—, pero de quien tiene Yoru abierto
-    no hay ninguna duda. Si el widget también lo trae, manda el widget y no se duplica.
+    Hubo un momento en que la app se añadía a sí misma para que no saliera «En línea ·
+    0». Se quitó a propósito: estando apagado en Discord, Yoru decía que estabas
+    encendido, y una pantalla que contradice a Discord sobre tu propio estado no ayuda,
+    confunde. Aquí se enseña lo que Discord publica, de ti igual que de los demás, o no
+    se enseña nada.
   */
-  const yoEnLinea = miNombre
-    ? {
-      nombre: miNombre,
-      avatar: miSesion?.avatarDataUrl || '',
-      actividad: miLectura ? `${es ? 'Leyendo' : 'Reading'} ${miLectura.titulo}` : '',
-    }
-    : null;
-
-  const members = (widget ? conmigoDentro(widget.members, yoEnLinea) : [])
+  const members = (widget ? widget.members : [])
     .slice()
     .sort((a, b) =>
       Number(Boolean(b.activity)) - Number(Boolean(a.activity))
       || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
       || a.name.localeCompare(b.name));
-
-  const statusLabel = (status: keyof typeof STATUS_ORDER) =>
-    status === 'idle' ? (es ? 'Ausente' : 'Idle') : status === 'dnd' ? (es ? 'No molestar' : 'Do not disturb') : (es ? 'En línea' : 'Online');
 
   return (
     <div className="yoru-members">
@@ -260,12 +251,12 @@ export default function MembersView({
                       {member.avatar
                         ? <img src={member.avatar} alt="" loading="lazy" />
                         : <span><Users size={18} /></span>}
-                      <i className={`yoru-member-dot is-${member.status}`} title={statusLabel(member.status)} />
+                      <i className={`yoru-member-dot ${estadoMiembro(member.status, es).clase}`} title={estadoMiembro(member.status, es).etiqueta} />
                     </span>
                     <span className="yoru-member-text">
                       <span className="yoru-member-name">{member.name}</span>
                       <span className="yoru-member-activity">
-                        {member.activity || statusLabel(member.status)}
+                        {member.activity || estadoMiembro(member.status, es).etiqueta}
                       </span>
                     </span>
                   </button>
@@ -275,8 +266,8 @@ export default function MembersView({
           )}
           <p className="yoru-members-note">
             {es
-              ? 'Se actualiza sola mientras tengas esta pantalla delante, y en cuanto vuelves a la ventana. Discord solo publica aquí a quien está conectado, y de cada uno el nombre de lo que tiene abierto, no el detalle; además tarda unos minutos en enterarse. Los bots del servidor no salen.'
-              : 'It updates on its own while this screen is in front of you, and the moment you come back to the window. Discord only publishes who is online here, and for each the name of what they have open, not the detail; it also takes a few minutes to notice. The server\'s bots are left out.'}
+              ? 'Se actualiza sola mientras tengas esta pantalla delante, y en cuanto vuelves a la ventana. Aquí sale lo que publica Discord y nada más: quien está conectado, con el nombre de lo que tiene abierto, no el detalle. Si tú no sales, es que Discord no te está publicando; tarda unos minutos en enterarse. Los bots del servidor no salen.'
+              : 'It updates on its own while this screen is in front of you, and the moment you come back to the window. What you see is what Discord publishes and nothing else: who is online, with the name of what they have open, not the detail. If you are not here, Discord is not publishing you; it takes a few minutes to notice. The server\'s bots are left out.'}
           </p>
         </>
       )}

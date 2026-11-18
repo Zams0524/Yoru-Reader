@@ -63,41 +63,28 @@ export function claveNombre(nombre: string): string {
 }
 
 /**
- * Añade a la lista a quien está usando Yoru ahora mismo.
+ * El estado de un miembro: su etiqueta y la clase que le da color.
  *
- * Esto es lo que arregla el «En línea · 0» estando uno delante de la pantalla. El
- * widget de Discord publica a muy poca gente, pero de una persona tenemos certeza
- * absoluta: la que tiene la app abierta. Así que se la pone, y punto.
+ * Vive aquí, en un solo sitio, porque lo usan dos pantallas —la fila de la lista y la
+ * tarjeta— y era cuestión de tiempo que divergieran: basta con que una escriba la
+ * clase a mano y se quede sin el color que la otra sí tiene. Los colores los pone el
+ * CSS: verde en línea, amarillo ausente, rojo no molestar.
  *
- * Si el widget sí la trae, **manda el widget**: su estado y su actividad son los de
- * Discord de verdad, y aquí solo sabríamos decir «en línea». Lo único que se conserva
- * de lo nuestro es la foto, porque la del perfil ya está descargada y la del widget
- * puede tardar.
+ * Un estado desconocido se trata como «en línea» y no como un hueco gris, porque si
+ * Discord publica a alguien es que está conectado; lo que no sabríamos es de qué modo.
+ *
+ * (Aquí vivió un rato `conmigoDentro`, que añadía a la lista a quien tuviera la app
+ * abierta. Se quitó: decía «en línea» de alguien que en Discord estaba apagado, y una
+ * pantalla que contradice a Discord sobre tu propio estado confunde más de lo que
+ * ayuda.)
  */
-export function conmigoDentro(
-  delWidget: DiscordMember[],
-  yo: { nombre: string; avatar?: string; actividad?: string } | null,
-): DiscordMember[] {
-  if (!yo || !claveNombre(yo.nombre)) return delWidget;
-
-  const miClave = claveNombre(yo.nombre);
-  const indice = delWidget.findIndex((m) => claveNombre(m.name) === miClave);
-
-  if (indice >= 0) {
-    const copia = [...delWidget];
-    copia[indice] = { ...delWidget[indice], avatar: yo.avatar || delWidget[indice].avatar };
-    return copia;
-  }
-
-  const mio: DiscordMember = {
-    id: `yo:${miClave}`,
-    name: yo.nombre,
-    status: 'online',
-    avatar: yo.avatar || '',
-    activity: yo.actividad || '',
-  };
-
-  return [mio, ...delWidget];
+export function estadoMiembro(
+  status: string | undefined,
+  es: boolean,
+): { clase: string; etiqueta: string } {
+  if (status === 'idle') return { clase: 'is-idle', etiqueta: es ? 'Ausente' : 'Idle' };
+  if (status === 'dnd') return { clase: 'is-dnd', etiqueta: es ? 'No molestar' : 'Do not disturb' };
+  return { clase: 'is-online', etiqueta: es ? 'En línea' : 'Online' };
 }
 
 /**
