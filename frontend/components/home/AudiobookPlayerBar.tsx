@@ -9,11 +9,13 @@ import {
   Moon,
   MoreHorizontal,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   RotateCw,
   SkipBack,
   SkipForward,
+  Trash2,
   Volume1,
   Volume2,
   VolumeX,
@@ -22,16 +24,27 @@ import {
 import type { AudiobookItem } from '../../types/integrations';
 import { absCoverUrl } from '../../utils/audiobookshelfService';
 import { useAudiobookPlayback, type AudiobookPlayback } from './useAudiobookPlayback';
+import {
+  AUDIO_PREFS_EVENT,
+  getMarcadores,
+  getSaltos,
+  marcar,
+  quitarMarcador,
+  renombrarMarcador,
+  SALTOS,
+  setSaltos as guardarSaltos,
+  type MarcadorAudio,
+  type SaltosAudio,
+} from '../../utils/reproductorAudio';
 
-/**
- * Cuánto salta cada botón, en segundos.
- *
- * Atrás 10 y adelante 30, como en la referencia que pidió zams: al volver atrás
- * quieres repetir una frase, y al ir adelante saltarte algo. No es configurable
- * todavía; cuando lo sea, este es el sitio del que tirar.
- */
-const SKIP_BACK = 10;
-const SKIP_FORWARD = 30;
+/*
+  Cuánto salta cada botón ya no se decide aquí.
+
+  Eran dos constantes —atrás 10, adelante 30— con una nota que decía «cuando sea
+  configurable, este es el sitio del que tirar». Ya lo es: los dos saltos se eligen en
+  «Más opciones › Saltos» y se guardan por perfil, porque los 30 de adelante son para
+  saltarse un anuncio o un pasaje y hay quien los quiere en 15 y quien en 60.
+*/
 
 /**
  * El temporizador de sueño.
@@ -159,6 +172,19 @@ function PlayerBar({
   const [muted, setMuted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [sleep, setSleep] = useState<SleepTimer>({ kind: 'off' });
+  /*
+    Los saltos y los marcadores se leen de lo guardado y se vuelven a leer con el
+    aviso: la barra y el ampliado son dos vistas de lo mismo, y poner un marcador en
+    uno tiene que verse en el otro sin cerrar nada.
+  */
+  const [saltos, setSaltos] = useState(getSaltos);
+  const [marcadores, setMarcadores] = useState(() => getMarcadores(item.id));
+  useEffect(() => {
+    const onUpdate = () => { setSaltos(getSaltos()); setMarcadores(getMarcadores(item.id)); };
+    onUpdate();
+    window.addEventListener(AUDIO_PREFS_EVENT, onUpdate);
+    return () => window.removeEventListener(AUDIO_PREFS_EVENT, onUpdate);
+  }, [item.id]);
 
   // El arranque que dejó apuntado `open`, ya con el audiolibro correcto montado.
   React.useEffect(() => {
@@ -295,11 +321,11 @@ function PlayerBar({
           <button
             type="button"
             className="yoru-player-btn"
-            onClick={() => playback.seekTo(position - SKIP_BACK)}
-            aria-label={es ? `Atrás ${SKIP_BACK} segundos` : `Back ${SKIP_BACK} seconds`}
+            onClick={() => playback.seekTo(position - saltos.back)}
+            aria-label={es ? `Atrás ${saltos.back} segundos` : `Back ${saltos.back} seconds`}
           >
             <RotateCcw size={17} />
-            <span className="yoru-player-jump">{SKIP_BACK}</span>
+            <span className="yoru-player-jump">{saltos.back}</span>
           </button>
           <button
             type="button"
@@ -312,11 +338,11 @@ function PlayerBar({
           <button
             type="button"
             className="yoru-player-btn"
-            onClick={() => playback.seekTo(position + SKIP_FORWARD)}
-            aria-label={es ? `Adelante ${SKIP_FORWARD} segundos` : `Forward ${SKIP_FORWARD} seconds`}
+            onClick={() => playback.seekTo(position + saltos.forward)}
+            aria-label={es ? `Adelante ${saltos.forward} segundos` : `Forward ${saltos.forward} seconds`}
           >
             <RotateCw size={17} />
-            <span className="yoru-player-jump">{SKIP_FORWARD}</span>
+            <span className="yoru-player-jump">{saltos.forward}</span>
           </button>
           <button
             type="button"
@@ -364,9 +390,16 @@ function PlayerBar({
           <button
             type="button"
             className="yoru-player-btn"
-            onClick={() => playback.seekTo(position)}
-            aria-label={es ? 'Guardar la posición' : 'Save position'}
-            title={es ? 'Guardar la posición' : 'Save position'}
+            /*
+              Antes este botón decía «Guardar la posición» y lo que hacía era saltar al
+              segundo en el que ya estabas, solo para forzar el guardado. El progreso se
+              guarda solo —cada pocos segundos y al pausar—, así que el botón pasa a lo
+              que un marcapáginas quiere decir: marcar este momento para volver. El
+              nombre se le pone luego, en la lista del reproductor ampliado.
+            */
+            onClick={() => marcar(item.id, position)}
+            aria-label={es ? 'Marcar este momento' : 'Bookmark this moment'}
+            title={es ? 'Marcar este momento' : 'Bookmark this moment'}
           >
             <Bookmark size={17} />
           </button>
@@ -406,6 +439,8 @@ function PlayerBar({
           volume={volume}
           muted={muted}
           sleep={sleep}
+          saltos={saltos}
+          marcadores={marcadores}
           onVolume={(value) => { setMuted(false); setVolume(value); }}
           onMute={() => setMuted((value) => !value)}
           onSleep={setSleep}
@@ -438,6 +473,8 @@ function ExpandedPlayer({
   volume,
   muted,
   sleep,
+  saltos,
+  marcadores,
   onVolume,
   onMute,
   onSleep,
@@ -453,13 +490,24 @@ function ExpandedPlayer({
   volume: number;
   muted: boolean;
   sleep: SleepTimer;
+  saltos: SaltosAudio;
+  marcadores: MarcadorAudio[];
   onVolume: (value: number) => void;
   onMute: () => void;
   onSleep: (value: SleepTimer) => void;
   onCollapse: () => void;
 }) {
-  const [panel, setPanel] = useState<'none' | 'chapters' | 'sleep' | 'more'>('none');
+  const [panel, setPanel] = useState<'none' | 'chapters' | 'sleep' | 'more' | 'bookmarks' | 'jumps'>('none');
   const tint = useCoverTint(item.id);
+  /** El marcador al que se le está escribiendo el nombre, por su segundo. */
+  const [renombrando, setRenombrando] = useState<number | null>(null);
+  const [nombre, setNombre] = useState('');
+  /*
+    A la derecha, lo que queda del capítulo o del libro. Se puede cambiar porque las
+    dos preguntas son normales y ninguna sustituye a la otra: «¿acabo el capítulo antes
+    de dormirme?» y «¿cuánto me falta para terminarlo?».
+  */
+  const [ambito, setAmbito] = useState<'chapter' | 'book'>('chapter');
 
   const chapter = chapterIndex >= 0 ? chapters[chapterIndex] : null;
   /*
@@ -529,9 +577,16 @@ function ExpandedPlayer({
       />
       <div className="yoru-player-full-times">
         <span>{formatClock(position)}</span>
-        <span className="yoru-player-full-left">
-          {es ? 'CAPÍTULO' : 'CHAPTER'} −{formatClock(chapterLeft)}
-        </span>
+        <button
+          type="button"
+          className="yoru-player-full-left"
+          onClick={() => setAmbito((previo) => (previo === 'chapter' ? 'book' : 'chapter'))}
+          title={es ? 'Cambiar entre el capítulo y el libro' : 'Switch between chapter and book'}
+        >
+          {ambito === 'chapter'
+            ? `${es ? 'CAPÍTULO' : 'CHAPTER'} −${formatClock(chapterLeft)}`
+            : `${es ? 'LIBRO' : 'BOOK'} −${formatClock(Math.max(0, duration - position))}`}
+        </button>
       </div>
 
       <div className="yoru-player-full-controls">
@@ -547,11 +602,11 @@ function ExpandedPlayer({
         <button
           type="button"
           className="yoru-player-btn"
-          onClick={() => playback.seekTo(position - SKIP_BACK)}
-          aria-label={es ? `Atrás ${SKIP_BACK} segundos` : `Back ${SKIP_BACK} seconds`}
+          onClick={() => playback.seekTo(position - saltos.back)}
+          aria-label={es ? `Atrás ${saltos.back} segundos` : `Back ${saltos.back} seconds`}
         >
           <RotateCcw size={24} />
-          <span className="yoru-player-jump">{SKIP_BACK}</span>
+          <span className="yoru-player-jump">{saltos.back}</span>
         </button>
         <button
           type="button"
@@ -564,11 +619,11 @@ function ExpandedPlayer({
         <button
           type="button"
           className="yoru-player-btn"
-          onClick={() => playback.seekTo(position + SKIP_FORWARD)}
-          aria-label={es ? `Adelante ${SKIP_FORWARD} segundos` : `Forward ${SKIP_FORWARD} seconds`}
+          onClick={() => playback.seekTo(position + saltos.forward)}
+          aria-label={es ? `Adelante ${saltos.forward} segundos` : `Forward ${saltos.forward} seconds`}
         >
           <RotateCw size={24} />
-          <span className="yoru-player-jump">{SKIP_FORWARD}</span>
+          <span className="yoru-player-jump">{saltos.forward}</span>
         </button>
         <button
           type="button"
@@ -691,6 +746,18 @@ function ExpandedPlayer({
         <div className="yoru-player-full-panel">
           <ul>
             <li>
+              <button type="button" onClick={() => setPanel('bookmarks')}>
+                <span>{es ? 'Marcadores' : 'Bookmarks'}</span>
+                <span>{marcadores.length || ''}</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" onClick={() => setPanel('jumps')}>
+                <span>{es ? 'Saltos' : 'Jump amounts'}</span>
+                <span>−{saltos.back}s / +{saltos.forward}s</span>
+              </button>
+            </li>
+            <li>
               <button type="button" onClick={() => { playback.seekTo(0); setPanel('none'); }}>
                 <span>{es ? 'Volver al principio' : 'Back to the start'}</span>
               </button>
@@ -700,6 +767,118 @@ function ExpandedPlayer({
                 <span>{es ? 'Plegar el reproductor' : 'Collapse the player'}</span>
               </button>
             </li>
+          </ul>
+        </div>
+      )}
+
+      {/*
+        Marcadores: cada uno es un segundo del audiolibro con un nombre que le pones tú.
+        Pulsarlo lleva ahí; el lápiz le cambia el nombre y la papelera lo quita. El
+        nombre se escribe aquí y no al marcar, porque se marca en mitad de una frase
+        —muchas veces desde la barra, sin abrir esto— y pararlo todo para pedir un
+        título sería perder el momento que querías guardar.
+      */}
+      {panel === 'bookmarks' && (
+        <div className="yoru-player-full-panel">
+          <ul>
+            <li>
+              <button type="button" onClick={() => { marcar(item.id, position); setRenombrando(Math.round(position)); setNombre(''); }}>
+                <span>{es ? 'Marcar este momento' : 'Bookmark this moment'}</span>
+                <span>{formatClock(position)}</span>
+              </button>
+            </li>
+            {marcadores.length === 0 ? (
+              <li>
+                <p>
+                  {es
+                    ? 'Todavía no has marcado nada. Guarda un momento para volver a él.'
+                    : 'Nothing bookmarked yet. Save a moment to come back to it.'}
+                </p>
+              </li>
+            ) : (
+              marcadores.map((entrada) => (
+                <li key={entrada.at} className="yoru-player-bookmark">
+                  {renombrando === entrada.at ? (
+                    <form
+                      className="yoru-player-bookmark-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        renombrarMarcador(item.id, entrada.at, nombre.trim());
+                        setRenombrando(null);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={nombre}
+                        autoFocus
+                        onChange={(event) => setNombre(event.target.value)}
+                        placeholder={es ? 'Nombre (opcional)' : 'Label (optional)'}
+                        aria-label={es ? 'Nombre del marcador' : 'Bookmark label'}
+                      />
+                      <button type="submit">{es ? 'Guardar' : 'Save'}</button>
+                    </form>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className={Math.abs(position - entrada.at) <= 2 ? 'current' : ''}
+                        onClick={() => { playback.seekTo(entrada.at); setPanel('none'); }}
+                      >
+                        <span>{entrada.label || (es ? 'Sin nombre' : 'Unlabelled')}</span>
+                        <span>{formatClock(entrada.at)}</span>
+                      </button>
+                      <span className="yoru-player-bookmark-tools">
+                        <button
+                          type="button"
+                          onClick={() => { setRenombrando(entrada.at); setNombre(entrada.label); }}
+                          aria-label={es ? 'Cambiar el nombre' : 'Edit label'}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quitarMarcador(item.id, entrada.at)}
+                          aria-label={es ? 'Quitar el marcador' : 'Delete bookmark'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </span>
+                    </>
+                  )}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+
+      {panel === 'jumps' && (
+        <div className="yoru-player-full-panel">
+          <ul>
+            <li><p>{es ? 'Atrás' : 'Back'}</p></li>
+            {SALTOS.map((segundos) => (
+              <li key={`back-${segundos}`}>
+                <button
+                  type="button"
+                  className={saltos.back === segundos ? 'current' : ''}
+                  onClick={() => guardarSaltos({ ...saltos, back: segundos })}
+                >
+                  <span>{segundos} s</span>
+                </button>
+              </li>
+            ))}
+            <li><p>{es ? 'Adelante' : 'Forward'}</p></li>
+            {SALTOS.map((segundos) => (
+              <li key={`forward-${segundos}`}>
+                <button
+                  type="button"
+                  className={saltos.forward === segundos ? 'current' : ''}
+                  onClick={() => guardarSaltos({ ...saltos, forward: segundos })}
+                >
+                  <span>{segundos} s</span>
+                </button>
+              </li>
+            ))}
           </ul>
         </div>
       )}

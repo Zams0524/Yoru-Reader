@@ -2799,7 +2799,20 @@
   font-variant-numeric: tabular-nums;
 }
 /* Se dice que el tiempo que queda es del capitulo, no del libro. */
-.yoru-player-full-left { letter-spacing: 0.04em; }
+/*
+  Lo que queda, a la derecha del reloj. Es un botón porque cambia entre el capítulo y
+  el libro, pero no se pinta como tal: ahí lo que importa es el número, y un botón con
+  su marco en medio de los tiempos parecía otro mando del reproductor.
+*/
+.yoru-player-full-left {
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
 
 .yoru-player-full-controls {
   display: flex;
@@ -2887,6 +2900,45 @@
 .yoru-player-full-panel button:disabled { opacity: 0.4; cursor: default; }
 .yoru-player-full-panel button.current { color: var(--primary); }
 .yoru-player-full-panel button span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/*
+  Un marcador: el nombre y su hora a la izquierda, el lápiz y la papelera a la derecha.
+
+  Las herramientas solo aparecen al pasar por encima o al enfocarlas con el teclado;
+  dos iconos fijos en cada fila convierten una lista de sitios a los que volver en una
+  lista de cosas que se pueden romper. En un teléfono no hay «pasar por encima», así
+  que ahí se quedan siempre a la vista: es eso o no poder borrar.
+*/
+.yoru-player-bookmark { display: flex; align-items: center; gap: 4px; }
+.yoru-player-bookmark > button { flex: 1; min-width: 0; }
+.yoru-player-bookmark-tools { display: flex; gap: 2px; opacity: 0; transition: opacity 120ms ease; }
+.yoru-player-bookmark:hover .yoru-player-bookmark-tools,
+.yoru-player-bookmark:focus-within .yoru-player-bookmark-tools { opacity: 1; }
+.yoru-player-bookmark-tools button {
+  width: 30px;
+  padding: 7px 0;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.yoru-player-bookmark-tools button:hover { color: var(--text-main); }
+.yoru-player-bookmark-form { display: flex; gap: 6px; width: 100%; padding: 6px 8px; }
+.yoru-player-bookmark-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+}
+.yoru-player-bookmark-form input:focus { outline: none; border-color: var(--border-focus); }
+.yoru-player-bookmark-form button { width: auto; flex: 0 0 auto; color: var(--primary); font-weight: 600; }
+
+@media (hover: none) {
+  .yoru-player-bookmark-tools { opacity: 1; }
+}
 
 /* ── La cascada: el centinela y el final de la lista ────────────────────────
    El centinela no se ve salvo cuando hay algo que decir —que viene mas, o
