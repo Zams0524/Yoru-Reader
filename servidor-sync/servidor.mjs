@@ -30,13 +30,48 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
 /* ------------------------------------------------------------------ configuración */
+
+/**
+ * Lee `servidor-sync/.env`, que git ignora.
+ *
+ * Aquí viven las claves de Kavita y de Audiobookshelf, y por eso hace falta este
+ * trozo de código en vez de pedirle a nadie que escriba variables de entorno en el
+ * `.bat`: las claves tienen que estar en **un** sitio, ese sitio no puede subir al
+ * repositorio, y el servidor se arranca con doble clic.
+ *
+ * Lo que ya venga del entorno manda sobre el fichero, para poder probar sin tocarlo.
+ * Sin fichero no pasa nada: el servidor arranca igual y la sincronización funciona;
+ * lo único que queda apagado es `/api/medios`.
+ */
+export function cargarEnvLocal(ruta = join(AQUI, '.env')) {
+  let texto = '';
+  try { texto = readFileSync(ruta, 'utf8'); } catch { return 0; }
+  let puestas = 0;
+  for (const linea of texto.split(/\r?\n/)) {
+    const limpia = linea.trim();
+    if (!limpia || limpia.startsWith('#')) continue;
+    const corte = limpia.indexOf('=');
+    if (corte <= 0) continue;
+    const nombre = limpia.slice(0, corte).trim();
+    let valor = limpia.slice(corte + 1).trim();
+    const comilla = valor.slice(0, 1);
+    const entrecomillado = valor.length >= 2
+      && (comilla === '"' || comilla === "'")
+      && valor.endsWith(comilla);
+    if (entrecomillado) valor = valor.slice(1, -1);
+    if (process.env[nombre] === undefined) { process.env[nombre] = valor; puestas += 1; }
+  }
+  return puestas;
+}
+
+cargarEnvLocal();
 
 /** El servidor de Discord de Yoru. El mismo que mira la app en `discordWidget.ts`. */
 export const GUILD_YORU = process.env.YORU_SYNC_GUILD || '1372928430634565775';
@@ -62,6 +97,65 @@ const VIDA_SESION_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CUERPO = 64 * 1024 * 1024;
 
 const TIEMPO_DISCORD_MS = 15_000;
+
+/* --------------------------------------------------- los servidores de medios */
+
+function limpiarUrl(valor) {
+  return String(valor || '').trim().replace(/\/+$/, '');
+}
+
+/**
+ * Kavita y Audiobookshelf, con sus claves, para repartirlas solo a los miembros.
+ *
+ * Antes las dos claves venían escritas en el código de la app
+ * (`frontend/config/serverDefaults.ts`), y como el repositorio es público eso era
+ * publicarlas. Mientras los dos servidores solo escuchaban en `localhost` no
+ * importaba demasiado, porque no había dirección a la que ir; en cuanto salen por
+ * Funnel, dirección y clave están las dos publicadas y entra cualquiera.
+ *
+ * Ahora viven aquí, en un `.env` que no sube a ningún sitio, y las reparte
+ * `/api/medios`, que exige sesión: es decir, haber entrado con Discord y estar en el
+ * servidor de Yoru. La puerta pasa de «saber leer GitHub» a «ser miembro».
+ *
+ * Lo que esto **no** arregla: un miembro que abra las herramientas del navegador
+ * sigue viendo la clave que le han dado, porque es su propia app la que habla con
+ * Kavita. Para que la clave no saliera nunca de este PC haría falta que el tráfico
+ * pasara por aquí en vez de ir directo. Queda anotado en el README.
+ *
+ * Dos direcciones por servidor porque no son la misma: `*_URL` es por dónde llega
+ * este proceso, que está en el mismo PC (`localhost`), y `*_URL_PUBLICA` es por
+ * dónde llega el teléfono de un miembro (la salida de Funnel). Si falta la pública
+ * se manda la interna, que es lo que había antes.
+ */
+export const MEDIOS = {
+  kavita: {
+    campo: 'apiKey',
+    interna: limpiarUrl(process.env.YORU_SYNC_KAVITA_URL || 'http://localhost:5000'),
+    publica: limpiarUrl(process.env.YORU_SYNC_KAVITA_URL_PUBLICA || ''),
+    clave: String(process.env.YORU_SYNC_KAVITA_API_KEY || '').trim(),
+  },
+  audiobookshelf: {
+    campo: 'token',
+    interna: limpiarUrl(process.env.YORU_SYNC_ABS_URL || 'http://localhost:13378'),
+    publica: limpiarUrl(process.env.YORU_SYNC_ABS_URL_PUBLICA || ''),
+    clave: String(process.env.YORU_SYNC_ABS_TOKEN || '').trim(),
+  },
+};
+
+/**
+ * Lo que se le da a un miembro con sesión. Un servidor sin clave sale como `null`:
+ * la app lo entiende como «esto no viene configurado» y pide configurarlo a mano,
+ * que es exactamente lo que hacía antes de que existiera nada de esto.
+ */
+export function credencialesMedios(medios = MEDIOS) {
+  const salida = {};
+  for (const [nombre, m] of Object.entries(medios)) {
+    salida[nombre] = m.clave
+      ? { serverUrl: m.publica || m.interna, [m.campo]: m.clave }
+      : null;
+  }
+  return salida;
+}
 
 /* ------------------------------------------------------------------ base de datos */
 
@@ -473,6 +567,18 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
         return;
       }
 
+      /*
+        Las claves de Kavita y de Audiobookshelf, para quien sea miembro.
+
+        Va aquí abajo a propósito, debajo del `if (!sesion)`: sin sesión viva esto
+        contesta 401 y no suelta nada. Es toda la diferencia entre repartir una clave
+        entre los miembros y publicarla.
+      */
+      if (ruta === '/api/medios' && req.method === 'GET') {
+        responder(res, 200, credencialesMedios());
+        return;
+      }
+
       const unMiembro = ruta.match(/^\/api\/progreso\/([0-9]{1,32})$/);
       if (unMiembro && req.method === 'GET') {
         const ficha = fichaDe(bd, unMiembro[1]);
@@ -525,6 +631,13 @@ if (esElPrograma) {
   servidor.listen(PUERTO, HOST, () => {
     registrar(`Yoru sync escuchando en ${HOST}:${PUERTO}`);
     registrar(`Servidor de Discord: ${GUILD_YORU}`);
+    for (const [nombre, m] of Object.entries(MEDIOS)) {
+      // Que se vea al arrancar, porque un `.env` que falta se nota tarde y mal: la
+      // app dice «no responde» y a nadie se le ocurre mirar aquí.
+      registrar(m.clave
+        ? `${nombre}: se reparte a los miembros (${m.publica || m.interna})`
+        : `${nombre}: sin clave en .env, no se reparte`);
+    }
   });
   for (const senal of ['SIGINT', 'SIGTERM']) {
     process.on(senal, () => { registrar('cerrando'); servidor.close(() => process.exit(0)); });

@@ -11,7 +11,10 @@
  */
 
 import assert from 'node:assert/strict';
-import { abrirBase, crearServidor, GUILD_YORU, frenado, anotarFallo, ipDe, INTENTOS_ENTRADA } from './servidor.mjs';
+import { mkdtempSync, writeFileSync as escribir } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { abrirBase, crearServidor, GUILD_YORU, frenado, anotarFallo, ipDe, INTENTOS_ENTRADA, credencialesMedios, cargarEnvLocal } from './servidor.mjs';
 
 /** Un Discord de mentira: un mapa de token a lo que contestaría Discord. */
 function discordDeMentira(cuentas) {
@@ -245,6 +248,71 @@ await prueba('la lista de miembros trae a todos los que han sincronizado', async
 await prueba('preguntar por alguien que no existe es un 404, no un vacío', async () => {
   const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
   assert.equal((await pedir('/api/progreso/987654321', { headers: auth })).status, 404);
+});
+
+/*
+  Las claves de Kavita y de Audiobookshelf.
+
+  Lo que se prueba aquí no es que la ruta conteste: es que **no** conteste sin
+  sesión. Toda la mejora de sacar las claves del repositorio público se apoya en esa
+  línea; el día que alguien mueva esta ruta por encima del `if (!sesion)`, las claves
+  vuelven a ser públicas y nada más en la app se quejaría.
+*/
+await prueba('las claves de los medios no salen sin sesión', async () => {
+  assert.equal((await pedir('/api/medios')).status, 401);
+  assert.equal((await pedir('/api/medios', { headers: { Authorization: 'Bearer invento' } })).status, 401);
+});
+
+await prueba('con sesión, las claves de los medios salen', async () => {
+  const auth = await subirComo('tok-zams', biblioteca());
+  const respuesta = await pedir('/api/medios', { headers: auth });
+  assert.equal(respuesta.status, 200);
+  const cuerpo = await respuesta.json();
+  // En la prueba no hay `.env`, así que los dos salen a `null`: «no viene configurado».
+  assert.deepEqual(Object.keys(cuerpo).sort(), ['audiobookshelf', 'kavita']);
+});
+
+await prueba('cada servidor sale con su campo, y la dirección pública manda', () => {
+  const reparto = credencialesMedios({
+    kavita: { campo: 'apiKey', interna: 'http://localhost:5000', publica: 'https://fuera:8443', clave: 'clave-k' },
+    audiobookshelf: { campo: 'token', interna: 'http://localhost:13378', publica: '', clave: 'clave-a' },
+  });
+  assert.deepEqual(reparto.kavita, { serverUrl: 'https://fuera:8443', apiKey: 'clave-k' });
+  // Sin dirección pública se manda la interna, que es lo que había antes de Funnel.
+  assert.deepEqual(reparto.audiobookshelf, { serverUrl: 'http://localhost:13378', token: 'clave-a' });
+});
+
+await prueba('un servidor sin clave sale como null, no como una clave vacía', () => {
+  const reparto = credencialesMedios({
+    kavita: { campo: 'apiKey', interna: 'http://localhost:5000', publica: '', clave: '' },
+  });
+  // `null` es lo que la app lee como «configúralo tú»; `{ apiKey: "" }` la dejaría
+  // creyendo que viene configurada y fallando en cada petición.
+  assert.equal(reparto.kavita, null);
+});
+
+await prueba('el .env se lee, pero el entorno manda sobre él', () => {
+  const carpeta = mkdtempSync(join(tmpdir(), 'yoru-env-'));
+  const fichero = join(carpeta, '.env');
+  escribir(fichero, [
+    '# un comentario',
+    '',
+    'YORU_PRUEBA_UNO=valor-uno',
+    'YORU_PRUEBA_DOS="entre comillas"',
+    'YORU_PRUEBA_TRES=ya-estaba',
+    'sin-igual',
+  ].join('\n'));
+  process.env.YORU_PRUEBA_TRES = 'del-entorno';
+  const puestas = cargarEnvLocal(fichero);
+  assert.equal(puestas, 2);
+  assert.equal(process.env.YORU_PRUEBA_UNO, 'valor-uno');
+  assert.equal(process.env.YORU_PRUEBA_DOS, 'entre comillas');
+  assert.equal(process.env.YORU_PRUEBA_TRES, 'del-entorno');
+  for (const nombre of ['YORU_PRUEBA_UNO', 'YORU_PRUEBA_DOS', 'YORU_PRUEBA_TRES']) delete process.env[nombre];
+});
+
+await prueba('sin fichero .env no se rompe nada', () => {
+  assert.equal(cargarEnvLocal(join(tmpdir(), 'no-existe-este-fichero-de-yoru', '.env')), 0);
 });
 
 await prueba('el freno aguanta unos cuantos fallos y luego corta', async () => {

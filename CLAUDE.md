@@ -29,7 +29,11 @@ Ver especificación técnica y soluciones en `docs/TAREAS_NIX_CLAUDE_CODE.md`:
 Los valores OAuth de Google Drive están en `.env.local` (git-ignorado; plantilla en `.env.example`) y como secrets de GitHub Actions (`VITE_GDRIVE_CLIENT_ID`, `VITE_GDRIVE_CLIENT_SECRET`, `VITE_GDRIVE_ANDROID_CLIENT_ID`). El workflow falla rápido si los dos primeros faltan.
 
 ## Servidores multimedia — no se configuran desde la app
-Kavita y Audiobookshelf vienen puestos y se conectan solos al arrancar: **la app ya no tiene pantalla para editarlos** (decisión de zams, 7 nov 2026). Para cambiar dirección o credenciales se edita `frontend/config/serverDefaults.ts`, o se ponen `VITE_KAVITA_URL`, `VITE_KAVITA_API_KEY`, `VITE_ABS_URL` y `VITE_ABS_TOKEN` en `.env.local`, que manda sobre el fichero.
+Kavita y Audiobookshelf vienen puestos y se conectan solos al arrancar: **la app ya no tiene pantalla para editarlos** (decisión de zams, 7 nov 2026).
+Las direcciones están en `frontend/config/serverDefaults.ts`, y salen por Tailscale Funnel: Kavita en el 8443, ABS en el 10000 (el 443 es del servidor de sincronización; Funnel no sirve más puertos).
+**Las claves no están en el código y no vuelven a estarlo.** Hasta el 18 nov 2026 estaban en `serverDefaults.ts`, que se publica con la app en un repositorio público; eso las dejaba publicadas, y en el historial de git para siempre. Ahora viven en `servidor-sync/.env` (git-ignorado, plantilla en `.env.example`) y el servidor de sincronización se las da por `GET /api/medios` solo a quien tenga sesión, es decir a los miembros del Discord de Yoru. En la app lo recoge `frontend/utils/credencialesMedios.ts` y lo guarda en `localStorage`; lo piden `getKavitaConfig()` y `getAudiobookshelfConfig()` como respaldo.
+Para probar contra una instalación local, `.env.local` manda sobre todo: `VITE_KAVITA_URL`, `VITE_KAVITA_API_KEY`, `VITE_ABS_URL`, `VITE_ABS_TOKEN`.
+Lo que sigue sin arreglar: la clave acaba en el aparato del miembro, porque su app habla con Kavita directamente. Para que no saliera del PC habría que proxyficar los medios por el servidor de sync; anotado en `servidor-sync/README.md`.
 Si un servidor no responde, la pantalla lo dice y el motivo queda en la consola con el host (`[servidor] …`): es el único diagnóstico que queda.
 
 ## Sincronización de progreso (Discord + Tailscale Funnel)
