@@ -264,11 +264,6 @@ export default function MembersView({
               ))}
             </ul>
           )}
-          <p className="yoru-members-note">
-            {es
-              ? 'Se actualiza sola mientras tengas esta pantalla delante, y en cuanto vuelves a la ventana. Aquí sale lo que publica Discord y nada más: quien está conectado, con el nombre de lo que tiene abierto, no el detalle. Si tú no sales, es que Discord no te está publicando; tarda unos minutos en enterarse. Los bots del servidor no salen.'
-              : 'It updates on its own while this screen is in front of you, and the moment you come back to the window. What you see is what Discord publishes and nothing else: who is online, with the name of what they have open, not the detail. If you are not here, Discord is not publishing you; it takes a few minutes to notice. The server\'s bots are left out.'}
-          </p>
         </>
       )}
 

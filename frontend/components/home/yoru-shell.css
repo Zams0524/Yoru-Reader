@@ -3363,7 +3363,6 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-sett
 .yoru-member-text { display: flex; flex-direction: column; min-width: 0; }
 .yoru-member-name { font-size: 15px; font-weight: 700; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .yoru-member-activity { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.yoru-members-note { max-width: 760px; margin: 18px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--text-muted); }
 
 .yoru-notices-empty {
   display: flex;
