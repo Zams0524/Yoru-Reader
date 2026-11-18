@@ -249,11 +249,16 @@ export default function ProfileView({
                 </button>
               )}
             </div>
-            {shelves.reading.length + shelves.completed.length === 0 ? (
+            {/*
+              Los mismos libros que la pestaña «Lista de libros», no solo los empezados:
+              un perfil con un libro sin abrir decía aquí «estante vacío» y dos líneas
+              más arriba «1 libro».
+            */}
+            {listed.length === 0 ? (
               <p className="yoru-profile-empty">{es ? 'Este estante está vacío.' : 'This shelf is empty.'}</p>
             ) : (
               <div className="yoru-grid is-covers">
-                {[...shelves.reading, ...shelves.completed].slice(0, 6).map((book) => (
+                {listed.slice(0, 6).map((book) => (
                   <BookPoster key={book.id} book={book} onOpen={onOpenDetail} />
                 ))}
               </div>
