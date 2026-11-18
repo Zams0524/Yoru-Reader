@@ -163,6 +163,22 @@ export function localKavitaSeriesRead(limit = 60): LocalKavitaSeries[] {
     }));
 }
 
+/**
+ * Olvida lo leído de una serie de Kavita en este perfil.
+ *
+ * Es lo que hace el «Eliminar» de la Biblioteca: el tomo sigue en el servidor, lo que
+ * se borra es la marca de que este perfil lo abrió, así que la serie se cae de
+ * «Leyendo» y de «Continuar». Si se vuelve a abrir, vuelve a aparecer.
+ */
+export function forgetKavitaSeries(seriesId: number): void {
+  const map = readMap<LocalKavitaProgress>(KAVITA_KEY);
+  let cambiado = false;
+  for (const [key, entry] of Object.entries(map)) {
+    if (entry.seriesId === seriesId) { delete map[key]; cambiado = true; }
+  }
+  if (cambiado) writeMap(KAVITA_KEY, map);
+}
+
 // ── Audiobookshelf ──────────────────────────────────────────────────────
 
 export interface LocalAudiobookProgress {
@@ -189,7 +205,9 @@ export function saveLocalAudiobookProgress(
   const previous = map[itemId];
   map[itemId] = {
     currentTime: Math.max(0, currentTime),
-    duration: Number(duration) || 0,
+    // Si el reproductor todavía no sabe cuánto dura, no borramos la duración que
+    // ya teníamos: sin ella el porcentaje sale 0 y el audiolibro se cae de «Continuar».
+    duration: Number(duration) > 0 ? Number(duration) : (previous?.duration || 0),
     at: new Date().toISOString(),
     title: meta.title || previous?.title,
     author: meta.author || previous?.author,
@@ -229,7 +247,9 @@ export function localContinueEntries(limit = 20): LocalContinueEntry[] {
 
   const audio: LocalContinueEntry[] = Object.entries(readMap<LocalAudiobookProgress>(ABS_KEY))
     .map(([itemId, entry]) => ({ itemId, entry, percent: entry.duration > 0 ? (entry.currentTime / entry.duration) * 100 : 0 }))
-    .filter(({ percent }) => started(percent))
+    // Empezado es «hay un minuto escuchado». Si no sabemos la duración el porcentaje
+    // no se puede calcular, pero el audiolibro sigue estando a medias: entra igual.
+    .filter(({ entry, percent }) => (entry.duration > 0 ? started(percent) : entry.currentTime > 0))
     .map(({ itemId, entry, percent }) => ({
       kind: 'audiobook' as const,
       key: `abs-${itemId}`,

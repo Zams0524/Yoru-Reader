@@ -725,6 +725,16 @@
   font-size: 11.5px;
   color: var(--text-muted);
 }
+/*
+  El botón de tres puntos, donde lo tienen los libros de la Biblioteca: arriba a la
+  derecha de la portada. Reusa `.card-menu-wrapper`, que ya se coloca sola en la
+  esquina, así que solo hace falta que la tarjeta sea su referencia.
+*/
+.yoru-serverlib-slot {
+  position: relative;
+  width: 144px;
+}
+.yoru-serverlib-menu { z-index: 5; }
 
 /*
   Los apartados de la Biblioteca («Sin iniciar», «Leyendo actualmente»…) dentro del
@@ -2075,6 +2085,12 @@
   color: var(--text-muted);
 }
 .yoru-menu-more { margin-left: auto; color: var(--text-dark); }
+/* Lo que borra algo se ve que borra antes de pulsarlo. */
+.yoru-menu-item.is-danger { color: var(--yoru-danger, #e05b55); }
+.yoru-menu-item.is-danger:hover,
+.yoru-menu-item.is-danger:focus-visible {
+  background: var(--yoru-danger-soft, rgba(224, 91, 85, 0.12));
+}
 .yoru-menu-sep {
   height: 1px;
   margin: 4px 6px;

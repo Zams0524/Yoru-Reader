@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Tag, X } from 'lucide-react';
+import { MoreVertical, Play, Tag, Trash2, X } from 'lucide-react';
 import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
@@ -11,7 +11,7 @@ import {
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
 import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
-import { LOCAL_PROGRESS_EVENT, localKavitaSeriesRead } from '../../utils/serverProgress';
+import { LOCAL_PROGRESS_EVENT, forgetKavitaSeries, localKavitaSeriesRead } from '../../utils/serverProgress';
 import { kavitaVolumeCoverUrl } from '../../utils/kavitaService';
 
 /**
@@ -346,6 +346,8 @@ function ServerItemMenu({
   onOpen,
   onHide,
   onClose,
+  removeLabel,
+  destructive,
 }: {
   item: ServerItem;
   es: boolean;
@@ -354,6 +356,10 @@ function ServerItemMenu({
   onOpen: (item: ServerItem) => void;
   onHide: (item: ServerItem) => void;
   onClose: () => void;
+  /** Cómo se llama aquí lo de quitar; por defecto, quitarlo de la fila. */
+  removeLabel?: string;
+  /** Si quitar borra algo de verdad (lo leído), se pinta como acción destructiva. */
+  destructive?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState({ left: x, top: y, ready: false });
@@ -416,9 +422,14 @@ function ServerItemMenu({
 
         <div className="yoru-menu-sep" />
 
-        <button type="button" className="yoru-menu-item" role="menuitem" onClick={run(() => onHide(item))}>
-          <X size={15} />
-          {es ? 'Quitar de esta fila' : 'Remove from this row'}
+        <button
+          type="button"
+          className={`yoru-menu-item${destructive ? ' is-danger' : ''}`}
+          role="menuitem"
+          onClick={run(() => onHide(item))}
+        >
+          {destructive ? <Trash2 size={15} /> : <X size={15} />}
+          {removeLabel || (es ? 'Quitar de esta fila' : 'Remove from this row')}
         </button>
       </div>
     </div>
@@ -498,28 +509,96 @@ export function ServerLibrarySection({
       </div>
       <div className="yoru-serverlib-grid">
         {items.map((item) => (
-          <button
+          <ServerLibraryCard
             key={`bib-${item.id}`}
-            type="button"
-            className="yoru-serverlib-card"
-            title={item.title}
-            onClick={() => onOpenItem(item)}
-          >
-            <span className="yoru-serverlib-cover">
-              {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span className="yoru-serverlib-blank" />}
-              <span className="yoru-serverlib-bar" aria-hidden="true">
-                <span style={{ width: `${Math.min(100, Math.max(2, item.percent))}%` }} />
-              </span>
-            </span>
-            <span className="yoru-serverlib-name">{item.title}</span>
-            <span className="yoru-serverlib-meta">
-              {item.percent >= 99
-                ? (es ? 'Terminado' : 'Finished')
-                : `${item.percent} % ${es ? 'leído' : 'read'}`}
-            </span>
-          </button>
+            item={item}
+            es={es}
+            onOpen={onOpenItem}
+            onForget={() => forgetKavitaSeries(Number(item.serverId))}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Una tarjeta de «Leyendo», con el mismo menú que los libros de la Biblioteca.
+ *
+ * Las tarjetas locales tienen su botón de tres puntos arriba a la derecha y su menú;
+ * estas no tenían nada, así que en la misma pantalla unas portadas respondían al menú
+ * y otras no. Ahora llevan el mismo botón, en el mismo sitio, y el menú abre con el
+ * botón o con el clic derecho. Lo pidió zams (18 nov 2026).
+ */
+function ServerLibraryCard({
+  item,
+  es,
+  onOpen,
+  onForget,
+}: {
+  item: ServerItem;
+  es: boolean;
+  onOpen: (item: ServerItem) => void;
+  /** Olvida lo leído de esta serie en este perfil: la saca de «Leyendo». */
+  onForget: () => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const percent = Math.min(100, Math.max(0, item.percent || 0));
+  const abrirMenu = (x: number, y: number) => setMenu({ x, y });
+  return (
+    <div
+      className="yoru-serverlib-slot"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        abrirMenu(event.clientX, event.clientY);
+      }}
+    >
+      <button
+        type="button"
+        className="yoru-serverlib-card"
+        title={item.title}
+        onClick={() => onOpen(item)}
+      >
+        <span className="yoru-serverlib-cover">
+          {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span className="yoru-serverlib-blank" />}
+          <span className="yoru-serverlib-bar" aria-hidden="true">
+            <span style={{ width: `${Math.max(2, percent)}%` }} />
+          </span>
+        </span>
+        <span className="yoru-serverlib-name">{item.title}</span>
+        <span className="yoru-serverlib-meta">
+          {percent >= 99 ? (es ? 'Terminado' : 'Finished') : `${percent} % ${es ? 'leído' : 'read'}`}
+        </span>
+      </button>
+      <div className="card-menu-wrapper yoru-serverlib-menu">
+        <button
+          type="button"
+          className="card-menu-trigger-btn"
+          aria-label={es ? 'Opciones del libro' : 'Book options'}
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          onClick={(event) => {
+            event.stopPropagation();
+            const caja = event.currentTarget.getBoundingClientRect();
+            abrirMenu(caja.right, caja.bottom + 4);
+          }}
+        >
+          <MoreVertical size={14} />
+        </button>
+      </div>
+      {menu && (
+        <ServerItemMenu
+          item={item}
+          es={es}
+          x={menu.x}
+          y={menu.y}
+          onOpen={onOpen}
+          onHide={() => onForget()}
+          onClose={() => setMenu(null)}
+          removeLabel={es ? 'Eliminar de Leyendo' : 'Remove from Reading'}
+          destructive
+        />
+      )}
     </div>
   );
 }
