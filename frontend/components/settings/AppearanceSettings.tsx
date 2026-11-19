@@ -144,27 +144,8 @@ export default function AppearanceSettings({
             <span>{lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language'}</span>
           </h3>
 
-          {/*
-            La guía, aquí dentro.
-
-            Estaba en un cartel dorado a toda anchura en la cabecera de Ajustes,
-            encima de todo lo demás. Un cartel así solo se lee la primera vez;
-            a partir de ahí es un trozo de pantalla que se salta. Esta entrada
-            de la lista ya se anuncia como «Tema, idioma y guía», así que la
-            guía va donde la lista dice que está, y en el tamaño que le toca.
-          */}
-          <div className="settings-row-control">
-            <span className="settings-label-text">
-              {lang === 'es' ? 'Guía de Yoru Reader' : 'Yoru Reader guide'}
-            </span>
-            <button type="button" className="settings-btn" onClick={() => onOpenTutorial()}>
-              <Sparkles size={15} />
-              {lang === 'es' ? 'Ver de nuevo' : 'See it again'}
-            </button>
-          </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
               {/*
                 Un solo control de esquema. Antes había dos llamados «tema», aquí
                 y en «Estilo de texto», con vocabularios distintos — y no eran
@@ -199,11 +180,33 @@ export default function AppearanceSettings({
                     : ''}
               </div>
 
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+                {lang === 'es' ? 'Idioma' : 'Language'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+                {lang === 'es' ? 'Idioma general de menús y opciones.' : 'Language for menus and app settings.'}
+              </div>
+              <select 
+                value={settings.appLanguage || 'en'}
+                onChange={(e) => {
+                  const selectedLang = e.target.value;
+                  localStorage.setItem('app_language', selectedLang);
+                  onSaveSettings({ ...settings, appLanguage: selectedLang });
+                }}
+                className="migaku-select"
+                style={{ width: '100%' }}
+              >
+                <option value="es">Español</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
               {/*
                 Acento. El dorado va primero y es el que viene puesto: es la
                 identidad de Yoru, no una opción más de la lista.
               */}
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', margin: '18px 0 4px' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
                 {lang === 'es' ? 'Acento' : 'Accent'}
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
@@ -249,7 +252,7 @@ export default function AppearanceSettings({
                 min={0}
                 max={20}
                 step={1}
-                value={typeof settings.cornerRadius === 'number' ? settings.cornerRadius : 10}
+                value={typeof settings.cornerRadius === 'number' ? settings.cornerRadius : 6}
                 onChange={(e) => onSaveSettings({ ...settings, cornerRadius: parseInt(e.target.value, 10) })}
                 style={{ width: '100%' }}
                 aria-label={lang === 'es' ? 'Radio de las esquinas' : 'Corner radius'}
@@ -266,12 +269,14 @@ export default function AppearanceSettings({
                   margin: '18px 0 0', cursor: 'pointer',
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={settings.showPosterTitles !== false}
-                  onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
-                  style={{ marginTop: '3px' }}
-                />
+                <span className="migaku-switch" style={{ order: 2, marginLeft: 'auto', flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={settings.showPosterTitles !== false}
+                    onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
+                  />
+                  <span className="migaku-switch-slider"></span>
+                </span>
                 <span>
                   <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)' }}>
                     {lang === 'es' ? 'Títulos bajo la portada' : 'Titles under covers'}
@@ -287,38 +292,47 @@ export default function AppearanceSettings({
 
             {/* Organizar inicio: el orden de los carruseles y los que se esconden. */}
             <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '4px' }}>
-                {lang === 'es' ? 'Organizar inicio' : 'Arrange home'}
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', marginBottom: '10px' }}>
+              <details>
+              <summary style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', cursor: 'pointer', marginBottom: '4px' }}>
+                {lang === 'es' ? 'Organizar la pantalla de inicio' : 'Arrange the home screen'}
+              </summary>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-dark)', margin: '6px 0 10px' }}>
                 {lang === 'es'
                   ? 'Inicio puede llegar a once carruseles. Ponlos en tu orden y esconde los que no uses.'
                   : 'Home can reach eleven rails. Put them in your order and hide the ones you never use.'}
               </div>
               <HomeRailsEditor lang={lang} />
+              </details>
             </div>
+          </div>
 
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '14px' }}>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff', marginBottom: '4px' }}>
-                {lang === 'es' ? 'Idioma de la Interfaz' : 'Interface Language'}
-              </div>
-              <div style={{ fontSize: '0.78rem', color: '#888899', marginBottom: '10px' }}>
-                {lang === 'es' ? 'Idioma general de menús y opciones.' : 'Language for menus and app settings.'}
-              </div>
-              <select 
-                value={settings.appLanguage || 'en'}
-                onChange={(e) => {
-                  const selectedLang = e.target.value;
-                  localStorage.setItem('app_language', selectedLang);
-                  onSaveSettings({ ...settings, appLanguage: selectedLang });
-                }}
-                className="migaku-select"
-                style={{ width: '100%' }}
-              >
-                <option value="es">Español 🇪🇸</option>
-                <option value="en">English 🇺🇸</option>
-              </select>
-            </div>
+          {/*
+            Lo del texto del libro no está aquí, y hay que decirlo: es lo primero que
+            alguien viene a buscar a Ajustes.
+          */}
+          <p className="settings-card-desc" style={{ margin: 0 }}>
+            {lang === 'es'
+              ? 'El tamaño de letra, la dirección del texto, el furigana y los colores de la página se cambian dentro del libro, con el botón «Aa».'
+              : 'Font size, text direction, furigana and page colours are changed inside the book, with the “Aa” button.'}
+          </p>
+
+          {/*
+            La guía, aquí dentro.
+
+            Estaba en un cartel dorado a toda anchura en la cabecera de Ajustes,
+            encima de todo lo demás. Un cartel así solo se lee la primera vez;
+            a partir de ahí es un trozo de pantalla que se salta. Esta entrada
+            de la lista ya se anuncia como «Tema, idioma y guía», así que la
+            guía va donde la lista dice que está, y en el tamaño que le toca.
+          */}
+          <div className="settings-row-control">
+            <span className="settings-label-text">
+              {lang === 'es' ? 'Guía de Yoru Reader' : 'Yoru Reader guide'}
+            </span>
+            <button type="button" className="settings-btn" onClick={() => onOpenTutorial()}>
+              <Sparkles size={15} />
+              {lang === 'es' ? 'Ver de nuevo' : 'See it again'}
+            </button>
           </div>
         </div>
   );
