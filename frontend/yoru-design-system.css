@@ -1,26 +1,86 @@
-﻿/* Yoru Reader interface system: quiet surfaces, warm focus, clear hierarchy. */
+/*
+  Yoru Reader — sistema de interfaz.
+
+  La identidad sale de dos sitios que ya eran de Yoru: el icono (flor blanca y tinta
+  sobre amarillo) y lo que la app es, un sitio para leer japonés de noche. De ahí:
+
+  - Fondo de tinta (sumi) cálida, no el azul-negro de panel de control.
+  - Texto color papel (washi), no blanco puro.
+  - Un solo acento, el amarillo del icono llevado a yamabuki, siempre plano: sin
+    degradados ni resplandores. El bermellón (shu) queda para avisos y sellos.
+  - Titulares en Mincho (Shippori Mincho para el latín, el Mincho del sistema para el
+    japonés): los títulos de los libros se ven como en una librería.
+  - Interfaz en Zen Kaku Gothic New, dibujada para convivir con texto japonés.
+
+  Las dos fuentes van dentro de la app (OFL, solo el subconjunto latino, ~130 KB en
+  total): Yoru se usa sin red y no puede depender de un CDN.
+*/
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/shippori-mincho-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/shippori-mincho-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/zen-kaku-gothic-new-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/zen-kaku-gothic-new-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/zen-kaku-gothic-new-latin-700-normal.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
-  --bg-app: #0b0e12;
-  --bg-card: #141920;
-  --bg-card-hover: #1b222b;
-  --bg-panel: #10151b;
-  --bg-panel-translucent: rgba(13, 17, 22, 0.94);
-  --text-main: #eef1f4;
-  --text-muted: #a4adb8;
-  --text-dark: #798390;
-  --primary: #f2c866;
-  --primary-hover: #ffdc88;
-  --primary-gradient: linear-gradient(135deg, #f5d47e, #d6a940);
-  --button-gradient: linear-gradient(135deg, #f5d47e, #d6a940);
-  --border-light: rgba(204, 216, 228, 0.11);
-  --border-focus: rgba(242, 200, 102, 0.62);
-  --surface-raised: #1a2028;
-  --surface-soft: rgba(255, 255, 255, 0.035);
-  --shadow-panel: 0 18px 55px rgba(0, 0, 0, 0.34);
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-heading: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
-  --font-japanese: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif;
+  --bg-app: #141210;
+  --bg-card: #1d1a17;
+  --bg-card-hover: #26221d;
+  --bg-panel: #181613;
+  --bg-panel-translucent: rgba(24, 22, 19, 0.96);
+  --text-main: #ece5d6;
+  --text-muted: #a89f8e;
+  --text-dark: #867d6d;
+  --primary: #e0b040;
+  --primary-hover: #ecc362;
+  /* Texto y iconos encima del acento. */
+  --on-primary: #1c1505;
+  /*
+    Los dos «degradados» se quedan como tokens porque medio centenar de reglas los usan
+    de fondo, pero ya no degradan nada: son el acento, plano.
+  */
+  --primary-gradient: linear-gradient(var(--primary), var(--primary));
+  --button-gradient: linear-gradient(var(--primary), var(--primary));
+  /* Bermellón de sello: avisos, pendientes, borrar. Nunca como segundo acento decorativo. */
+  --shu: #d9583c;
+  --border-light: rgba(236, 229, 214, 0.1);
+  --border-focus: color-mix(in srgb, var(--primary) 62%, transparent);
+  --surface-raised: #24201b;
+  --surface-soft: rgba(236, 229, 214, 0.04);
+  --shadow-panel: 0 12px 32px rgba(0, 0, 0, 0.42);
+  --font-ui: 'Zen Kaku Gothic New', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans CJK JP', 'Noto Sans JP', system-ui, sans-serif;
+  --font-heading: 'Shippori Mincho', 'Yu Mincho', 'Hiragino Mincho ProN', 'Noto Serif CJK JP', 'Noto Serif JP', serif;
+  --font-japanese: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif;
 
   /*
     Radio de las esquinas.
@@ -33,7 +93,7 @@
 
     `--radius-pill` no se escala: una píldora es una píldora en cualquier ajuste.
   */
-  --radius-base: 10px;
+  --radius-base: 6px;
   --radius-sm: calc(var(--radius-base) * 0.6);
   --radius-md: var(--radius-base);
   --radius-lg: calc(var(--radius-base) * 1.6);
@@ -68,29 +128,21 @@
 [data-accent='crimson'] {
   --primary: #f0888f;
   --primary-hover: #ffa3a9;
-  --primary-gradient: linear-gradient(135deg, #f49aa0, #cf5f6a);
-  --button-gradient: linear-gradient(135deg, #f49aa0, #cf5f6a);
   --border-focus: rgba(240, 136, 143, 0.62);
 }
 [data-accent='jade'] {
   --primary: #6fd1a6;
   --primary-hover: #8fe6bf;
-  --primary-gradient: linear-gradient(135deg, #85dcb4, #3fa37c);
-  --button-gradient: linear-gradient(135deg, #85dcb4, #3fa37c);
   --border-focus: rgba(111, 209, 166, 0.62);
 }
 [data-accent='indigo'] {
   --primary: #8fa8f0;
   --primary-hover: #adbdff;
-  --primary-gradient: linear-gradient(135deg, #a0b4f4, #5d79d2);
-  --button-gradient: linear-gradient(135deg, #a0b4f4, #5d79d2);
   --border-focus: rgba(143, 168, 240, 0.62);
 }
 [data-accent='violet'] {
   --primary: #c197ef;
   --primary-hover: #d6b4ff;
-  --primary-gradient: linear-gradient(135deg, #cba7f2, #9566cc);
-  --button-gradient: linear-gradient(135deg, #cba7f2, #9566cc);
   --border-focus: rgba(193, 151, 239, 0.62);
 }
 
@@ -98,54 +150,46 @@
 [data-theme='sepia'][data-accent='crimson'] {
   --primary: #b03744;
   --primary-hover: #8c2932;
-  --primary-gradient: linear-gradient(135deg, #cf5f6a, #b03744);
-  --button-gradient: linear-gradient(135deg, #cf5f6a, #b03744);
   --border-focus: rgba(176, 55, 68, 0.48);
 }
 [data-theme='light'][data-accent='jade'],
 [data-theme='sepia'][data-accent='jade'] {
   --primary: #1f7d58;
   --primary-hover: #156243;
-  --primary-gradient: linear-gradient(135deg, #3fa37c, #1f7d58);
-  --button-gradient: linear-gradient(135deg, #3fa37c, #1f7d58);
   --border-focus: rgba(31, 125, 88, 0.48);
 }
 [data-theme='light'][data-accent='indigo'],
 [data-theme='sepia'][data-accent='indigo'] {
   --primary: #3f58b0;
   --primary-hover: #2e438c;
-  --primary-gradient: linear-gradient(135deg, #5d79d2, #3f58b0);
-  --button-gradient: linear-gradient(135deg, #5d79d2, #3f58b0);
   --border-focus: rgba(63, 88, 176, 0.48);
 }
 [data-theme='light'][data-accent='violet'],
 [data-theme='sepia'][data-accent='violet'] {
   --primary: #70479e;
   --primary-hover: #593680;
-  --primary-gradient: linear-gradient(135deg, #9566cc, #70479e);
-  --button-gradient: linear-gradient(135deg, #9566cc, #70479e);
   --border-focus: rgba(112, 71, 158, 0.48);
 }
 
 [data-theme='light'] {
   color-scheme: light;
-  --bg-app: #f2f4f6;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f8f9fa;
-  --bg-panel: #ffffff;
-  --bg-panel-translucent: rgba(255, 255, 255, 0.94);
-  --text-main: #202832;
-  --text-muted: #5c6773;
-  --text-dark: #78838e;
-  --primary: #a36b12;
-  --primary-hover: #80520b;
-  --primary-gradient: linear-gradient(135deg, #d7a642, #a36b12);
-  --button-gradient: linear-gradient(135deg, #d7a642, #a36b12);
-  --border-light: rgba(32, 40, 50, 0.12);
-  --border-focus: rgba(163, 107, 18, 0.48);
-  --surface-raised: #f7f8fa;
-  --surface-soft: rgba(25, 33, 42, 0.035);
-  --shadow-panel: 0 18px 48px rgba(30, 42, 54, 0.12);
+  --bg-app: #f4f2ed;
+  --bg-card: #fffefb;
+  --bg-card-hover: #faf8f3;
+  --bg-panel: #fbfaf6;
+  --bg-panel-translucent: rgba(251, 250, 246, 0.95);
+  --text-main: #23201b;
+  --text-muted: #625b50;
+  --text-dark: #7f776a;
+  --primary: #8f5f0a;
+  --primary-hover: #724a05;
+  --on-primary: #fffdf6;
+  --shu: #b83a22;
+  --border-light: rgba(35, 32, 27, 0.13);
+  --border-focus: rgba(143, 95, 10, 0.5);
+  --surface-raised: #f1eee7;
+  --surface-soft: rgba(35, 32, 27, 0.04);
+  --shadow-panel: 0 12px 32px rgba(40, 34, 24, 0.12);
 }
 
 [data-theme='sepia'] {
@@ -160,8 +204,8 @@
   --text-dark: #948574;
   --primary: #946021;
   --primary-hover: #744a18;
-  --primary-gradient: linear-gradient(135deg, #c08a3d, #946021);
-  --button-gradient: linear-gradient(135deg, #c08a3d, #946021);
+  --on-primary: #fffaf0;
+  --shu: #b0412a;
   --border-light: rgba(62, 53, 43, 0.13);
   --border-focus: rgba(148, 96, 33, 0.48);
   --surface-raised: #eee4d1;
@@ -202,7 +246,7 @@ textarea:focus-visible,
 
 .app-container {
   background:
-    radial-gradient(ellipse at 50% -28%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 52%),
+    linear-gradient(transparent, transparent),
     var(--bg-app);
 }
 
@@ -230,7 +274,7 @@ textarea:focus-visible,
     font-family: var(--font-heading);
     font-size: 1.04rem;
     letter-spacing: 0.18em;
-    background-image: linear-gradient(110deg, var(--primary), var(--primary-hover));
+    background-image: linear-gradient(var(--primary), var(--primary));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -896,9 +940,9 @@ html.platform-android:where(.yoru-compact) #root {
     box-sizing: border-box;
     isolation: isolate;
     background:
-      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
-      linear-gradient(180deg, rgba(24, 27, 34, 0.96), rgba(14, 17, 22, 0.94));
-    border-bottom: 1px solid rgba(255, 218, 94, 0.13);
+      linear-gradient(transparent, transparent),
+      linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+    border-bottom: 1px solid color-mix(in srgb, var(--primary) 13%, transparent);
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
     backdrop-filter: blur(18px) saturate(1.18);
     -webkit-backdrop-filter: blur(18px) saturate(1.18);
@@ -910,7 +954,7 @@ html.platform-android:where(.yoru-compact) #root {
     z-index: -1;
     inset: auto 14px -1px;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(242, 200, 102, 0.7) 24%, rgba(255, 126, 101, 0.62) 76%, transparent);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 70%, transparent) 24%, color-mix(in srgb, var(--primary) 62%, transparent) 76%, transparent);
     pointer-events: none;
   }
 
@@ -925,7 +969,7 @@ html.platform-android:where(.yoru-compact) #root {
     font-weight: 800;
     letter-spacing: -0.035em;
     line-height: 1.2;
-    text-shadow: 0 1px 14px rgba(255, 218, 94, 0.12);
+    text-shadow: 0 1px 14px color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
   html.platform-android:where(.yoru-compact) .mobile-icon-btn {
@@ -937,7 +981,7 @@ html.platform-android:where(.yoru-compact) #root {
     padding: 0 10px;
     border: 1px solid rgba(255, 255, 255, 0.085);
     border-radius: 14px;
-    background: linear-gradient(145deg, rgba(35, 39, 47, 0.92), rgba(22, 25, 31, 0.86));
+    background: linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
     color: var(--text-main);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 4px 12px rgba(0, 0, 0, 0.14);
     touch-action: manipulation;
@@ -945,19 +989,19 @@ html.platform-android:where(.yoru-compact) #root {
   }
 
   html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-icon-btn {
-    border-color: rgba(242, 200, 102, 0.24);
-    background: linear-gradient(145deg, rgba(242, 200, 102, 0.13), rgba(255, 126, 101, 0.08));
-    color: #ffe45c;
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 13%, transparent), color-mix(in srgb, var(--primary) 8%, transparent));
+    color: var(--primary);
   }
 
   html.platform-android:where(.yoru-compact) .mobile-icon-btn:active {
     transform: scale(0.94);
-    border-color: rgba(242, 200, 102, 0.42);
-    background: linear-gradient(145deg, rgba(242, 200, 102, 0.19), rgba(255, 126, 101, 0.12));
+    border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 19%, transparent), color-mix(in srgb, var(--primary) 12%, transparent));
   }
 
   html.platform-android:where(.yoru-compact) .mobile-icon-btn:focus-visible {
-    outline: 2px solid rgba(242, 200, 102, 0.82);
+    outline: 2px solid color-mix(in srgb, var(--primary) 82%, transparent);
     outline-offset: 2px;
   }
 
@@ -983,7 +1027,7 @@ html.platform-android:where(.yoru-compact) .progress-dashboard {
   html.platform-android:where(.yoru-compact) .library-main-content {
     padding-top: 20px;
     padding-bottom: calc(88px + var(--yoru-safe-bottom, 0px));
-    background-image: radial-gradient(ellipse at 92% 0%, rgba(255, 214, 102, 0.08), transparent 34rem);
+    background-image: linear-gradient(transparent, transparent);
   }
 
   html.platform-android:where(.yoru-compact) .section-header {
@@ -1003,12 +1047,12 @@ html.platform-android:where(.yoru-compact) .progress-dashboard {
     place-items: center;
     border: 1px solid color-mix(in srgb, var(--primary) 38%, transparent);
     border-radius: 11px;
-    background: linear-gradient(145deg, rgba(255, 217, 102, 0.16), rgba(255, 122, 97, 0.1));
+    background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 16%, transparent), color-mix(in srgb, var(--primary) 10%, transparent));
     color: var(--primary);
     font-family: var(--font-japanese);
     font-size: 1rem;
     font-weight: 800;
-    box-shadow: 0 6px 18px rgba(255, 196, 61, 0.08);
+    box-shadow: none;
   }
 
   html.platform-android:where(.yoru-compact) .section-title {
@@ -1237,7 +1281,7 @@ html.platform-android:where(.yoru-compact) .srs-empty-state {
     gap: 10px;
     min-height: 60px;
     padding: max(10px, var(--yoru-safe-top, 0px)) 14px 10px !important;
-    border-bottom-color: rgba(255, 218, 94, 0.1);
+    border-bottom-color: color-mix(in srgb, var(--primary) 10%, transparent);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   }
 
@@ -1258,7 +1302,7 @@ html.platform-android:where(.yoru-compact) .mobile-top-app-bar > .mobile-leading
     margin: 0;
     padding-bottom: 7px;
     font-size: 1.12rem;
-    background: linear-gradient(90deg, #ffe45c, #ff8a6b) no-repeat center bottom / 22px 3px;
+    background: linear-gradient(var(--primary), var(--primary)) no-repeat center bottom / 22px 3px;
     border-radius: 0;
   }
 
@@ -1332,9 +1376,9 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     height: calc(68px + var(--yoru-safe-bottom, 0px));
     padding: 6px 10px max(6px, var(--yoru-safe-bottom, 0px));
     background:
-      radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
-      linear-gradient(0deg, rgba(12, 14, 19, 0.98), rgba(20, 23, 30, 0.96));
-    border-top: 1px solid rgba(255, 218, 94, 0.1);
+      linear-gradient(transparent, transparent),
+      linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+    border-top: 1px solid color-mix(in srgb, var(--primary) 10%, transparent);
     box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.3);
   }
 
@@ -1343,7 +1387,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     position: absolute;
     inset: -1px 14px auto;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(242, 200, 102, 0.55) 24%, rgba(255, 126, 101, 0.5) 76%, transparent);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 55%, transparent) 24%, color-mix(in srgb, var(--primary) 50%, transparent) 76%, transparent);
     pointer-events: none;
   }
 
@@ -1365,8 +1409,8 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     width: 58px;
     height: 30px;
     border-radius: 999px;
-    background: linear-gradient(135deg, rgba(242, 200, 102, 0.2), rgba(255, 126, 101, 0.12));
-    box-shadow: inset 0 0 0 1px rgba(242, 200, 102, 0.22), 0 4px 14px rgba(255, 196, 61, 0.12);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--primary) 12%, transparent));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
     opacity: 0;
     transform: translateX(-50%) scale(0.6);
     transition: opacity 160ms ease, transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
@@ -1399,7 +1443,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
   }
 
   html.platform-android:where(.yoru-compact) .bottom-tab-btn.active svg {
-    color: #ffe45c;
+    color: var(--primary);
     transform: translateY(-1px);
   }
 
@@ -1600,7 +1644,7 @@ html:where(.yoru-compact) .reader-gallery-image {
    Read aloud (v1.3.10): sentence highlight and the floating control bar
    ========================================================================== */
 ::highlight(yoru-read-aloud) {
-  background-color: rgba(255, 213, 74, 0.28);
+  background-color: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 .read-aloud-bar {
@@ -1615,8 +1659,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   max-width: calc(100vw - 24px);
   padding: 6px 8px;
   border-radius: 999px;
-  background: linear-gradient(0deg, rgba(12, 14, 19, 0.97), rgba(20, 23, 30, 0.95));
-  border: 1px solid rgba(255, 218, 94, 0.16);
+  background: linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
   box-sizing: border-box;
@@ -1644,12 +1688,12 @@ html:where(.yoru-compact) .reader-gallery-image {
 .read-aloud-play {
   width: 44px;
   height: 44px;
-  background: var(--read-aloud-accent, #ffd54a);
+  background: var(--read-aloud-accent, var(--primary));
   color: #111;
 }
 
 .read-aloud-play:hover {
-  background: var(--read-aloud-accent, #ffd54a);
+  background: var(--read-aloud-accent, var(--primary));
   filter: brightness(1.08);
 }
 
@@ -1672,8 +1716,8 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .read-aloud-chip.is-on {
-  border-color: color-mix(in srgb, var(--read-aloud-accent, #ffd54a) 60%, transparent);
-  color: var(--read-aloud-accent, #ffd54a);
+  border-color: color-mix(in srgb, var(--read-aloud-accent, var(--primary)) 60%, transparent);
+  color: var(--read-aloud-accent, var(--primary));
 }
 
 .read-aloud-progress {
@@ -1785,7 +1829,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .reader-search-field input:focus {
-  border-color: rgba(255, 218, 94, 0.45);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .reader-search-results {
@@ -2101,8 +2145,8 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .library-quick-chip.active {
-  border-color: color-mix(in srgb, var(--primary, #ffd54a) 70%, transparent);
-  background: color-mix(in srgb, var(--primary, #ffd54a) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--text-main, #fff);
 }
 
@@ -2136,7 +2180,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .library-view-toggle button.active {
-  background: color-mix(in srgb, var(--primary, #ffd54a) 18%, transparent);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   color: var(--text-main, #fff);
 }
 
@@ -2158,11 +2202,11 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .book-list-row:hover {
-  border-color: color-mix(in srgb, var(--primary, #ffd54a) 35%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
 .book-list-row.selected {
-  border-color: var(--primary, #ffd54a);
+  border-color: var(--primary);
 }
 
 .book-list-cover {
@@ -2228,7 +2272,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 .book-list-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--primary, #ffd54a);
+  background: var(--primary);
 }
 
 .book-list-row .card-menu-wrapper {
@@ -2376,8 +2420,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   right: 0;
   z-index: 9999;
   padding: var(--yoru-safe-top, 0px) 6px 10px;
-  background: linear-gradient(180deg, rgba(14, 16, 22, 0.98), rgba(18, 20, 27, 0.96));
-  border-bottom: 1px solid rgba(255, 218, 94, 0.12);
+  background: linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 12%, transparent);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(16px);
   color: #e8e8f0;
@@ -2543,7 +2587,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  color: #ffd54a;
+  color: var(--primary);
 }
 
 .readera-settings-body {
@@ -2670,19 +2714,19 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .readera-switch.on {
-  background: rgba(255, 213, 74, 0.45);
+  background: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .readera-switch.on span {
   transform: translateX(18px);
-  background: #ffd54a;
+  background: var(--primary);
 }
 
 .readera-settings-link {
   flex-direction: row;
   justify-content: center;
   padding: 13px 12px;
-  color: #ffd54a;
+  color: var(--primary);
   font-size: 0.92rem;
   font-weight: 700;
   cursor: pointer;
@@ -2711,8 +2755,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   bottom: 0;
   z-index: 9995;
   padding: 10px 18px calc(14px + var(--yoru-safe-bottom, 0px));
-  background: linear-gradient(0deg, rgba(14, 16, 22, 0.98), rgba(18, 20, 27, 0.95));
-  border-top: 1px solid rgba(255, 218, 94, 0.12);
+  background: linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+  border-top: 1px solid color-mix(in srgb, var(--primary) 12%, transparent);
   box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(16px);
   box-sizing: border-box;
@@ -2762,7 +2806,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 12px;
   margin-left: -1px;
   border-radius: 1px;
-  background: color-mix(in srgb, var(--pagebar-accent, #ffd54a) 55%, transparent);
+  background: color-mix(in srgb, var(--pagebar-accent, var(--primary)) 55%, transparent);
 }
 
 /* Page bookmarks on the slider: a small ribbon each, a tap goes there. */
@@ -2796,7 +2840,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   top: 0;
   width: 10px;
   height: 14px;
-  background: var(--pagebar-accent, #ffd54a);
+  background: var(--pagebar-accent, var(--primary));
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
 }
 
@@ -2810,7 +2854,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 26px;
   padding: 0;
   border: none;
-  background: var(--ribbon-color, #ffd54a);
+  background: var(--ribbon-color, var(--primary));
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
   opacity: 0.9;
   cursor: pointer;
@@ -2830,7 +2874,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 .reader-pagebar-track input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--pagebar-accent, #ffd54a) 35%, rgba(255, 255, 255, 0.12));
+  background: color-mix(in srgb, var(--pagebar-accent, var(--primary)) 35%, rgba(255, 255, 255, 0.12));
 }
 
 .reader-pagebar-track input[type="range"]::-webkit-slider-thumb {
@@ -2839,7 +2883,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 22px;
   margin-top: -9.5px;
   border-radius: 50%;
-  background: var(--pagebar-accent, #ffd54a);
+  background: var(--pagebar-accent, var(--primary));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
@@ -2854,7 +2898,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 22px;
   border: none;
   border-radius: 50%;
-  background: var(--pagebar-accent, #ffd54a);
+  background: var(--pagebar-accent, var(--primary));
 }
 
 .read-aloud-bar.is-raised {
@@ -2932,7 +2976,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .readera-dropdown > button.selected {
-  color: #ffd54a;
+  color: var(--primary);
 }
 
 .readera-dropdown-header {
@@ -2966,7 +3010,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 .readera-settings-slider::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #ffd54a var(--fill, 50%), rgba(255, 255, 255, 0.2) var(--fill, 50%));
+  background: linear-gradient(90deg, var(--primary) var(--fill, 50%), rgba(255, 255, 255, 0.2) var(--fill, 50%));
 }
 
 .readera-settings-slider::-webkit-slider-thumb {
@@ -2975,7 +3019,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 20px;
   margin-top: -8.5px;
   border-radius: 50%;
-  background: #ffd54a;
+  background: var(--primary);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
@@ -2984,7 +3028,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 20px;
   border: none;
   border-radius: 50%;
-  background: #ffd54a;
+  background: var(--primary);
 }
 
 /* The chosen alignment wins over the book's own paragraph styles. */
@@ -3035,7 +3079,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #ffd54a;
+  color: var(--primary);
 }
 
 .library-menu-direction {
@@ -3075,7 +3119,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .library-menu-item svg {
-  color: #ffd54a;
+  color: var(--primary);
   flex-shrink: 0;
 }
 
@@ -3097,8 +3141,8 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .library-menu-check.on {
-  border-color: #ffd54a;
-  background: #ffd54a;
+  border-color: var(--primary);
+  background: var(--primary);
 }
 
 .library-menu-check.on svg {
@@ -3127,7 +3171,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .library-menu-segments button.active {
-  background: rgba(255, 213, 74, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   color: #fff;
 }
 
@@ -3152,7 +3196,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   min-width: 0;
   height: 28px;
   margin: 0;
-  accent-color: #ffd54a;
+  accent-color: var(--primary);
   cursor: pointer;
 }
 
@@ -3174,7 +3218,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   flex-direction: column;
   padding: calc(16px + var(--yoru-safe-top, 0px)) 20px calc(18px + var(--yoru-safe-bottom, 0px));
   background:
-    radial-gradient(ellipse at 50% -10%, rgba(255, 213, 74, 0.16), transparent 55%),
+    linear-gradient(transparent, transparent),
     radial-gradient(ellipse at 100% 110%, rgba(167, 139, 250, 0.12), transparent 55%),
     #0c0e13;
   color: #ececf2;
@@ -3219,7 +3263,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .guide-lang button.active {
-  background: #ffd54a;
+  background: var(--primary);
   color: #111;
 }
 
@@ -3231,10 +3275,10 @@ html:where(.yoru-compact) .reader-gallery-image {
   align-items: center;
   justify-content: center;
   border-radius: 26px;
-  background: linear-gradient(145deg, rgba(255, 213, 74, 0.22), rgba(255, 138, 107, 0.12));
-  border: 1px solid rgba(255, 213, 74, 0.35);
-  box-shadow: 0 16px 40px rgba(255, 213, 74, 0.12);
-  color: #ffe45c;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 22%, transparent), color-mix(in srgb, var(--primary) 12%, transparent));
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  box-shadow: none;
+  color: var(--primary);
   font-family: var(--font-japanese), serif;
   font-size: 2.6rem;
   font-weight: 700;
@@ -3290,8 +3334,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   height: 8px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #ffd54a;
-  box-shadow: 0 0 10px rgba(255, 213, 74, 0.6);
+  background: var(--primary);
+  box-shadow: none;
 }
 
 .guide-actions {
@@ -3320,9 +3364,9 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .guide-primary {
-  background: linear-gradient(135deg, #ffe45c, #ffbf3c);
+  background: linear-gradient(var(--primary), var(--primary));
   color: #141414;
-  box-shadow: 0 10px 26px rgba(255, 200, 60, 0.25);
+  box-shadow: none;
 }
 
 .guide-primary:disabled {
@@ -3407,7 +3451,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 
 .guide-dots button.active {
   width: 22px;
-  background: #ffd54a;
+  background: var(--primary);
 }
 
 .guide-slide {
@@ -3441,8 +3485,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   justify-content: center;
   margin-bottom: 10px;
   border-radius: 10px;
-  background: rgba(255, 213, 74, 0.14);
-  color: #ffd54a;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
 }
 
 .guide-title {
@@ -3507,7 +3551,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   padding: 10px 12px;
   border-radius: 12px;
   background: #1f2128;
-  border: 1px solid rgba(255, 213, 74, 0.25);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
   text-align: left;
   font-size: 0.75rem;
 }
@@ -3529,7 +3573,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 
 .guide-mock-popup-head svg {
   margin-left: auto;
-  color: #ffd54a;
+  color: var(--primary);
 }
 
 .guide-mock-pitch {
@@ -3562,8 +3606,8 @@ html:where(.yoru-compact) .reader-gallery-image {
 .guide-mock-chips span {
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 213, 74, 0.35);
-  color: #ffd54a;
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  color: var(--primary);
   font-size: 0.68rem;
   font-weight: 700;
 }
@@ -3572,7 +3616,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   position: absolute;
   top: 92px;
   right: 46px;
-  color: #ffd54a;
+  color: var(--primary);
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
   animation: guide-tap 1.6s ease-in-out infinite;
 }
@@ -3601,7 +3645,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 }
 
 .guide-mock-lines span.is-read {
-  background: rgba(255, 213, 74, 0.45);
+  background: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .guide-mock-bar {
@@ -3615,7 +3659,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   padding: 6px 12px;
   border-radius: 999px;
   background: #1f2128;
-  border: 1px solid rgba(255, 213, 74, 0.2);
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 .guide-mock-bar .dot {
@@ -3632,7 +3676,7 @@ html:where(.yoru-compact) .reader-gallery-image {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #ffd54a;
+  background: var(--primary);
   color: #111;
 }
 
@@ -3709,8 +3753,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: rgba(255, 213, 74, 0.14);
-  color: #ffd54a;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
   font-size: 1.05rem;
 }
 
@@ -3732,8 +3776,8 @@ html:where(.yoru-compact) .reader-gallery-image {
   align-items: center;
   justify-content: center;
   border-radius: 22px;
-  background: rgba(255, 213, 74, 0.14);
-  color: #ffd54a;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
 }
 
 .guide-dictionary-text {
@@ -3761,7 +3805,7 @@ html:where(.yoru-compact) .reader-gallery-image {
 
 .guide-progress-track div {
   height: 100%;
-  background: #ffd54a;
+  background: var(--primary);
   transition: width 0.3s ease;
 }
 
@@ -3844,7 +3888,7 @@ html:where(.yoru-compact) .reader-gallery-image {
     bottom: 14px;
     transform: translateX(-50%);
     padding: 10px 22px 12px;
-    border: 1px solid rgba(255, 218, 94, 0.12);
+    border: 1px solid color-mix(in srgb, var(--primary) 12%, transparent);
     border-radius: 16px;
   }
 
@@ -4061,7 +4105,7 @@ html.platform-android .reader-engine-content {
   --yoru-danger: #ef7d7d;
   --yoru-danger-soft: rgba(239, 125, 125, 0.12);
   --yoru-ok: #8fd19e;
-  --yoru-gold-soft: rgba(242, 200, 102, 0.13);
+  --yoru-gold-soft: color-mix(in srgb, var(--primary) 13%, transparent);
   --yoru-on-gold: #1d1708;
 }
 
@@ -4922,14 +4966,14 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
   html.platform-android:where(.yoru-compact) .bottom-navigation-bar {
     z-index: 1100;
     background:
-      radial-gradient(ellipse at 50% 160%, rgba(255, 218, 94, 0.1), transparent 70%),
-      linear-gradient(0deg, #0c0e13, #14171e);
+      linear-gradient(transparent, transparent),
+      linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
   }
 
   html.platform-android:where(.yoru-compact) .mobile-top-app-bar {
     background:
-      radial-gradient(ellipse at 50% -70%, rgba(255, 218, 94, 0.16), transparent 72%),
-      linear-gradient(180deg, #181b22, #0e1116);
+      linear-gradient(transparent, transparent),
+      linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -5643,7 +5687,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
   height: 88px;
   border: 1px solid var(--border-focus);
   border-radius: 999px;
-  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+  background: var(--yoru-gold-soft, color-mix(in srgb, var(--primary) 13%, transparent));
   color: var(--primary);
   cursor: pointer;
   transition: transform 0.15s ease;
@@ -5691,7 +5735,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
 
 .srs-front-mode.is-selected {
   border-color: var(--border-focus);
-  background: var(--yoru-gold-soft, rgba(242, 200, 102, 0.13));
+  background: var(--yoru-gold-soft, color-mix(in srgb, var(--primary) 13%, transparent));
 }
 
 /* ---------- SRS deck settings / create deck modal ---------- */
@@ -5888,7 +5932,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
 }
 
 .dict-install-toast-row svg {
-  color: var(--primary, #f2c866);
+  color: var(--primary);
   flex-shrink: 0;
 }
 
@@ -5922,7 +5966,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
 
 .dict-install-toast-track div {
   height: 100%;
-  background: var(--primary, #f2c866);
+  background: var(--primary);
   transition: width 0.3s ease;
 }
 
@@ -5982,8 +6026,8 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
   gap: 8px;
   padding: 14px;
   border-radius: 14px;
-  border: 1px solid rgba(242, 200, 102, 0.3);
-  background: linear-gradient(160deg, rgba(242, 200, 102, 0.1), rgba(242, 200, 102, 0.02));
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--primary) 10%, transparent), color-mix(in srgb, var(--primary) 2%, transparent));
 }
 
 .dict-settings-pack.ready {
@@ -6929,8 +6973,8 @@ html.yoru-compact #root {
   max-height: min(60vh, 460px);
   padding: 10px 12px;
   border-radius: 18px;
-  background: linear-gradient(0deg, rgba(12, 14, 19, 0.97), rgba(20, 23, 30, 0.95));
-  border: 1px solid rgba(255, 218, 94, 0.16);
+  background: linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
   box-sizing: border-box;
@@ -7003,16 +7047,16 @@ html.yoru-compact #root {
 }
 .audio-sync-open:hover { background: rgba(255, 255, 255, 0.07); }
 .audio-sync-open:hover .audio-sync-title { color: #ffda5e; }
-.audio-sync-open:focus-visible { outline: 2px solid rgba(255, 218, 94, 0.75); outline-offset: 2px; }
+.audio-sync-open:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 75%, transparent); outline-offset: 2px; }
 /* Con capitulos el boton solo lleva la portada: que no se coma el sitio del selector. */
 .audio-sync-open.is-cover-only { flex: 0 0 auto; }
 
 /* El que abre otra pantalla, no uno mas de la fila de controles. */
 .audio-sync-expand {
-  border: 1px solid rgba(255, 218, 94, 0.45);
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
   color: #ffda5e;
 }
-.audio-sync-expand:hover { background: rgba(255, 218, 94, 0.14); }
+.audio-sync-expand:hover { background: color-mix(in srgb, var(--primary) 14%, transparent); }
 
 .audio-sync-title {
   flex: 1;
@@ -7053,7 +7097,7 @@ html.yoru-compact #root {
 .audio-sync-scrubber {
   flex: 1;
   min-width: 0;
-  accent-color: var(--read-aloud-accent, #ffd54a);
+  accent-color: var(--read-aloud-accent, var(--primary));
 }
 
 .audio-sync-message {
@@ -7154,8 +7198,8 @@ html.yoru-compact #root {
   overflow-y: auto;
   color: #e9e9f2;
   background:
-    radial-gradient(120% 80% at 50% 0%, rgba(255, 218, 94, 0.07), transparent 60%),
-    linear-gradient(180deg, rgba(16, 18, 24, 0.99), rgba(10, 11, 15, 0.99));
+    linear-gradient(transparent, transparent),
+    linear-gradient(var(--bg-panel-translucent), var(--bg-panel-translucent));
   backdrop-filter: blur(22px);
   animation: audio-full-in 0.22s ease-out;
 }
@@ -7755,4 +7799,123 @@ html.yoru-compact #root {
   font-size: 0.74rem;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+/* =========================================================
+   Estantería vacía
+   Una frase y un botón. Sin pila de portadas, sin emojis, sin resplandor.
+   ========================================================= */
+.library-empty-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: clamp(40px, 12vh, 120px) 24px 40px;
+}
+.empty-hero-kicker {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  letter-spacing: 0.3em;
+  color: var(--primary);
+}
+.empty-hero-title {
+  font-family: var(--font-heading);
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-main);
+}
+.empty-hero-sub {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.empty-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.empty-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+.empty-add-btn:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.empty-add-btn--quiet {
+  background: transparent;
+  border-color: var(--border-light);
+  color: var(--text-main);
+}
+.empty-add-btn--quiet:hover { background: var(--surface-soft); border-color: var(--text-dark); }
+
+/* =========================================================
+   Ajustes: piezas compartidas
+   Antes cada tarjeta traía sus botones y sus filas de estado en estilos en línea, con
+   blancos al 30 % que desaparecían en los temas claro y sepia y un azul y un verde
+   que no eran de la app. Ahora hay un botón y una lista de estado, con los tokens.
+   ========================================================= */
+.settings-status-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  margin: 4px 0 14px;
+}
+.settings-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.settings-status-row + .settings-status-row { border-top: 1px solid var(--border-light); }
+.settings-status-row strong { font-weight: 600; color: var(--text-main); text-align: right; }
+.settings-status-row strong.is-ok { color: var(--yoru-ok, #5fae7b); }
+.settings-status-row strong.is-warn { color: var(--primary); }
+
+.settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.settings-actions .settings-btn { flex: 1 1 160px; }
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-btn:hover:not(:disabled) { border-color: var(--text-dark); }
+.settings-btn.is-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.settings-btn.is-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.settings-btn.is-quiet { background: transparent; color: var(--text-muted); }
+.settings-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/*
+  En el teléfono una sección corta empieza arriba, como cualquier pantalla. Centrarla
+  en vertical tiene sentido en la columna ancha del ordenador; en una pantalla de
+  780 px de alto dejaba «Zona de peligro» flotando en mitad de la nada.
+*/
+html:where(.yoru-compact) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane {
+  justify-content: flex-start;
+  padding: 16px;
 }

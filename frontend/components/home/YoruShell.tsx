@@ -49,6 +49,7 @@ import { descartar } from '../../utils/recomendaciones';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
+import yoruMark from '../../assets/yoru-mark.png';
 import {
   authorGroups,
   collectionGroups,
@@ -911,9 +912,7 @@ export default function YoruShell({
         )}
 
         <button type="button" className="yoru-shell-brand" onClick={() => go('home')}>
-          <span className="yoru-shell-logo">
-            <BookOpen size={20} />
-          </span>
+          <img className="yoru-shell-logo" src={yoruMark} alt="" width={36} height={36} draggable={false} />
           <span className="yoru-shell-brand-text">
             <span className="yoru-shell-brand-title">Yoru</span>
             <span className="yoru-shell-brand-sub">Reader</span>

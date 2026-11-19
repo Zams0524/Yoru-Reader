@@ -56,14 +56,11 @@
 .yoru-shell-logo {
   width: 36px;
   height: 36px;
-  border-radius: 9px;
+  /* El icono de la app tal cual: la flor sobre amarillo. Es la marca, no un adorno. */
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary-gradient);
-  color: var(--bg-app);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  display: block;
+  object-fit: cover;
 }
 
 .yoru-shell-brand-text {
@@ -3018,6 +3015,13 @@
   min-height: 0;
   overflow: hidden;
 }
+/*
+  El embebido lleva márgenes negativos para comerse el relleno del lienzo. A pantalla
+  completa el lienzo ya no tiene relleno, así que esos márgenes sacaban Ajustes 16 px
+  por cada lado de la pantalla: en el teléfono el texto quedaba pegado al borde
+  izquierdo y las tarjetas se cortaban por el derecho.
+*/
+.yoru-shell.is-settings-fullscreen .yoru-shell-embed { margin: 0; }
 
 /*
   El contenedor de Ajustes se ancla a su hueco en vez de pedir el 100% del padre.
@@ -3117,7 +3121,7 @@ button.yoru-menu-scrim { border: none; padding: 0; background: none; cursor: def
   border-radius: 18px;
   border: 1px solid var(--border-light);
   background:
-    radial-gradient(120% 140% at 85% 0%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 60%),
+    linear-gradient(transparent, transparent),
     var(--surface-raised);
   background-size: cover;
   background-position: center;
