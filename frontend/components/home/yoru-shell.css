@@ -12,6 +12,8 @@
   --shell-header-h: 64px;
   --shell-sidebar-w: 212px;
   --shell-radius: 12px;
+  /* Cero en el ordenador; en compacto lo fija la regla de la barra de abajo. */
+  --yoru-bottom-nav-h: 0px;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -348,7 +350,8 @@
 
 /* El lienzo embebe la biblioteca antigua para Catálogo/SRS/Estadísticas/Ajustes */
 .yoru-shell-embed {
-  margin: -20px -24px -64px;
+  /* Se come el relleno de arriba y de los lados; el de abajo no, que es el hueco de las barras fijas. */
+  margin: -20px -24px 0;
 }
 .library-container.is-embedded {
   min-height: 0;
@@ -1221,11 +1224,19 @@
   }
   .yoru-shell-sidebar.open { transform: translateX(0); }
 
+  /*
+    El alto de la barra de abajo, con la zona segura dentro. Se publica aquí y lo usan
+    los tres que dependen de él: el relleno del lienzo, el reproductor de audiolibros
+    y el embebido. Antes cada uno suponía 58 px a secas, y en un teléfono con botones
+    de navegación (48 px de zona segura) la barra mide más de cien: el reproductor
+    quedaba escondido detrás y el final de cada pantalla, debajo de la barra.
+  */
+  .yoru-shell { --yoru-bottom-nav-h: calc(58px + var(--yoru-safe-bottom, 0px)); }
   .yoru-shell-canvas {
     --yoru-canvas-pad: 16px;
-    padding: 16px 16px calc(76px + var(--yoru-safe-bottom, 0px));
+    padding: 16px 16px calc(24px + var(--yoru-player-h) + var(--yoru-bottom-nav-h));
   }
-  .yoru-shell-embed { margin: -16px -16px calc(-76px - var(--yoru-safe-bottom, 0px)); }
+  .yoru-shell-embed { margin: -16px -16px 0; }
 
   .yoru-shell-bottom-nav {
     display: flex;
@@ -1234,10 +1245,16 @@
     right: 0;
     bottom: 0;
     z-index: 150;
-    background: var(--bg-panel-translucent);
-    backdrop-filter: blur(12px);
+    /*
+      Opaca. Con el fondo translúcido y el desenfoque, en Android se leía el
+      contenido a través de la barra, mezclado con sus rótulos; y el desenfoque es de
+      lo más caro que se le puede pedir al WebView mientras se desplaza la página.
+    */
+    background: var(--bg-panel);
     border-top: 1px solid var(--border-light);
     padding-bottom: var(--yoru-safe-bottom, 0px);
+    min-height: var(--yoru-bottom-nav-h);
+    box-sizing: border-box;
   }
   .yoru-shell-bottom-btn {
     flex: 1;
@@ -2398,7 +2415,7 @@
   final de la lateral —«Crea tu primera coleccion» quedaba debajo— y la ultima fila
   de cualquier cuadricula.
 */
-.yoru-shell-canvas { padding-bottom: calc(24px + var(--yoru-player-h)); }
+.yoru-shell-canvas { padding-bottom: calc(24px + var(--yoru-player-h) + var(--yoru-bottom-nav-h)); }
 .yoru-shell-sidebar { padding-bottom: var(--yoru-player-h); }
 
 /* El progreso, pegado al borde de arriba y a todo lo ancho. */
@@ -2575,12 +2592,11 @@
   las dos, o la ultima fila de la cuadricula queda inalcanzable.
 */
 @media (max-width: 900px) {
-  .yoru-player-bar { bottom: var(--yoru-bottom-nav-h, 58px); }
-  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: calc(86px + var(--yoru-bottom-nav-h, 58px)); }
+  .yoru-player-bar { bottom: var(--yoru-bottom-nav-h); }
 }
 
 @media (max-width: 600px) {
-  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: calc(76px + var(--yoru-bottom-nav-h, 58px)); }
+  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: 76px; }
   .yoru-player-bar { padding: 0 10px 8px; }
   .yoru-player-row { gap: 8px; }
   .yoru-player-controls .yoru-player-btn:first-child,

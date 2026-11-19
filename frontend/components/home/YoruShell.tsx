@@ -929,16 +929,11 @@ export default function YoruShell({
         )}
 
         <div className="yoru-shell-actions">
-          {isMobile && (
-            <button
-              type="button"
-              className="yoru-shell-icon-btn"
-              onClick={() => setIsSearchOpen(true)}
-              aria-label={es ? 'Buscar' : 'Search'}
-            >
-              <Search size={20} />
-            </button>
-          )}
+          {/*
+            En el teléfono la lupa no va aquí: «Buscar» ya está en la barra de abajo, al
+            alcance del pulgar. Repetida arriba, la cabecera juntaba siete iconos en
+            360 px y ninguno respiraba.
+          */}
           <button
             type="button"
             className="yoru-shell-icon-btn"
