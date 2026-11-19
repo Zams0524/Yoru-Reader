@@ -174,10 +174,14 @@ export default function YoruShell({
       es ? 'Diccionarios actualizados' : 'Dictionaries updated',
       es ? 'Los cambios ya se usan al buscar palabras.' : 'The changes are already used when looking up words.'
     );
-    // Y la versión nueva, si se acaba de actualizar: una vez, y queda en la campana.
-    anunciarNovedadEnAvisos(es);
     window.addEventListener(NOTICES_EVENT, refresh);
     window.addEventListener('yoru-dictionaries-changed', onDictionaries);
+    /*
+      Y la versión nueva, si se acaba de actualizar: una vez, y queda en la campana.
+      Va después de escuchar el evento, no antes: apuntar el aviso lo lanza, y si
+      nadie escucha todavía el punto de la campana se queda apagado hasta reiniciar.
+    */
+    anunciarNovedadEnAvisos(es);
     return () => {
       window.removeEventListener(NOTICES_EVENT, refresh);
       window.removeEventListener('yoru-dictionaries-changed', onDictionaries);
