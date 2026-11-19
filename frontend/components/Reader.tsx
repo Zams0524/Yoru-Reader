@@ -2840,7 +2840,15 @@ export default function Reader({
           colors={colors}
           onCancel={() => setNoteDraft(null)}
           onDelete={() => {
-            if (!noteDraft.isNew) saveHighlights(highlights.filter((h) => h.id !== noteDraft.highlight.id));
+            /*
+              El mismo borrado que usa el resto del lector, con su aviso.
+
+              Antes esto filtraba la lista aquí mismo y se quedaba callado, así que
+              borrar desde la nota no decía nada y borrar desde otro sitio sí. Dos
+              copias de «quitar un subrayado» son dos sitios donde arreglar el día
+              que haya que tocarlo.
+            */
+            if (!noteDraft.isNew) handleDeleteHighlight(noteDraft.highlight);
             setNoteDraft(null);
           }}
           onSave={({ note, color }) => {
@@ -3433,7 +3441,6 @@ export default function Reader({
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
           onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
-          onDeleteHighlight={handleDeleteHighlight}
           onExportHighlights={handleExportHighlights}
           readingSession={session}
           onToggleSession={handleToggleSession}
