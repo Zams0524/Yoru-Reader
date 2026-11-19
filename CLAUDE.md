@@ -46,6 +46,7 @@ Detalles en `docs/SINCRONIZACION_YORU.md`; cómo arrancar el servidor y dejarlo 
 `android/keystore/yoru-reader-debug.keystore` (SHA-1 `F5:0A:…:3E:C2`) está registrado en Google Cloud OAuth. Borrar o regenerar rompe Google Drive en Android y obliga a desinstalar.
 
 ## Compilar y publicar
+- **Antes de publicar**: añade arriba de `NOVEDADES` (`frontend/utils/novedades.ts`) una frase con lo que cambió. Es lo que sale en Inicio y en Notificaciones al abrir la app ya actualizada. Si no hay frase nueva, el aviso sale en genérico («se actualizó a la versión X»), que no dice nada útil.
 - **APK**: doble clic en `COMPILAR-APK.bat` → `PUBLICAR-APK.bat` (sube a release `latest` como `Yoru-Reader.apk`, reescribe y empuja `mobile/mobile-stable.json`).
 - **Escritorio**: cualquier push a `main` lo publica el workflow. Si cambian `backend/`, `build/` o `package.json`, se recompilan los instaladores; si no, solo la OTA (`dist.zip`). La OTA de Android (`mobile/mobile-ota.json`) se actualiza igual, salvo que haya cambios nativos (`android/`, Capacitor) desde el commit del que se compiló el APK publicado (`sourceCommit` en `mobile/mobile-stable.json`, lo escriben `build-apk.ps1` y `publish-apk.ps1`); entonces hay que subir `versionCode` y publicar APK.
 - **Probar actualizaciones sin red**: lanzar Electron con `--user-data-dir=<tmp> --proxy-server=127.0.0.1:9`; para el manifest: `set YORU_UPDATE_MANIFEST_URL=http://127.0.0.1:<puerto>/manifest.json`.

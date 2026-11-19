@@ -1,0 +1,131 @@
+/**
+ * Novedades: el aviso corto de «esto se actualizó» que sale en Inicio al abrir la app
+ * después de una versión nueva.
+ *
+ * No es el historial de versiones de Ajustes → Acerca de (`changelog.ts`), que es la
+ * lista larga de cada cambio. Aquí va una frase, la que quieres leer de pasada antes de
+ * volver a tu libro. Lo pidió zams (19 nov 2026).
+ *
+ * Qué dispara el aviso: que haya cambiado la versión del paquete web
+ * (`stable.json` → `hotUpdateVersion`), que es la que cambia en cada publicación, también
+ * cuando llega por OTA sin APK nuevo.
+ *
+ * Qué dice: la nota de más arriba de `NOVEDADES` que este aparato no haya visto todavía.
+ * Las notas van por identificador y no por número de versión a propósito: el número lo
+ * pone el taller al publicar (`build/prepare-update-manifest.cjs`), así que al escribir la
+ * nota aún no se sabe cuál le tocará. Sin nota nueva que contar, el aviso lo dice en
+ * genérico, que sigue siendo verdad.
+ *
+ * Quien instala por primera vez no ve nada: no se ha actualizado de nada. Solo se apunta
+ * la versión con la que entró, y el aviso llega con la siguiente.
+ */
+
+import stableManifest from '../../stable.json';
+import { pushNotice } from './appNotices';
+
+export interface Novedad {
+  /** Identificador estable y único de la nota; lo que se guarda como «ya visto». */
+  id: string;
+  es: string;
+  en: string;
+}
+
+/** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
+export const NOVEDADES: Novedad[] = [
+  {
+    id: '2026-11-19-inicio-novedades',
+    es: 'La app abre siempre en Inicio, y aquí te contamos en una línea lo que cambió en cada versión.',
+    en: 'The app always opens on Home, and tells you here in one line what changed in each version.',
+  },
+];
+
+const VERSION_KEY = 'yoru_novedades_version';
+const NOTA_KEY = 'yoru_novedades_nota';
+const AVISO_KEY = 'yoru_novedades_aviso';
+
+/** La versión del paquete web que está corriendo ahora mismo. */
+export function versionActual(): string {
+  const manifest = stableManifest as { hotUpdateVersion?: string; appVersion?: string };
+  return String(manifest.hotUpdateVersion || manifest.appVersion || '');
+}
+
+function leer(clave: string): string {
+  try {
+    return localStorage.getItem(clave) || '';
+  } catch {
+    return '';
+  }
+}
+
+function escribir(clave: string, valor: string): void {
+  try {
+    localStorage.setItem(clave, valor);
+  } catch {
+    // Sin almacenamiento el aviso saldrá otra vez; es lo de menos.
+  }
+}
+
+export interface NovedadPendiente {
+  version: string;
+  texto: string;
+}
+
+/** La nota de arriba del todo, si este aparato no la ha visto ya. */
+function notaSinVer(): Novedad | null {
+  const nota = NOVEDADES[0];
+  if (!nota) return null;
+  return leer(NOTA_KEY) === nota.id ? null : nota;
+}
+
+function textoDeAviso(es: boolean, version: string): string {
+  const nota = notaSinVer();
+  if (nota) return es ? nota.es : nota.en;
+  return es
+    ? `Yoru Reader se actualizó a la versión ${version}.`
+    : `Yoru Reader was updated to version ${version}.`;
+}
+
+/** Da la novedad por leída: no vuelve a salir hasta la siguiente versión. */
+export function marcarNovedadVista(): void {
+  const version = versionActual();
+  if (version) escribir(VERSION_KEY, version);
+  const nota = NOVEDADES[0];
+  if (nota) escribir(NOTA_KEY, nota.id);
+}
+
+/**
+ * La novedad que toca enseñar, o nulo si no hay ninguna: porque es la primera vez que se
+ * abre la app, porque ya se vio esta versión, o porque no se sabe qué versión corre.
+ */
+export function novedadPendiente(es: boolean): NovedadPendiente | null {
+  const version = versionActual();
+  if (!version) return null;
+
+  const vista = leer(VERSION_KEY);
+  if (!vista) {
+    // Primera vez: no se ha actualizado de nada, solo se deja apuntado desde dónde parte.
+    marcarNovedadVista();
+    return null;
+  }
+  if (vista === version) return null;
+
+  return { version, texto: textoDeAviso(es, version) };
+}
+
+/**
+ * Deja la novedad también en Notificaciones, una sola vez por versión, para que siga ahí
+ * después de cerrar la tarjeta de Inicio y para que se encienda la campana.
+ */
+export function anunciarNovedadEnAvisos(es: boolean): void {
+  const version = versionActual();
+  if (!version) return;
+  const vista = leer(VERSION_KEY);
+  // Sin versión apuntada no hay actualización que anunciar: es una instalación nueva.
+  if (!vista || vista === version) return;
+  if (leer(AVISO_KEY) === version) return;
+  escribir(AVISO_KEY, version);
+  pushNotice(
+    es ? `Yoru se actualizó a la ${version}` : `Yoru was updated to ${version}`,
+    textoDeAviso(es, version)
+  );
+}
