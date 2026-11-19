@@ -65,7 +65,7 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
       if (shownRef.current) {
         shownRef.current = false;
         artworkSentRef.current = null;
-        void YoruNotifications.stopReadAloud().catch(() => {});
+        void YoruNotifications.stopReadAloud({ source: 'readAloud' }).catch(() => {});
       }
       return;
     }
@@ -79,6 +79,7 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
     const note = error
       || (minutesLeft ? (es ? `Se apaga en ${minutesLeft} min` : `Stops in ${minutesLeft} min`) : '');
     const state = {
+      source: 'readAloud' as const,
       bookTitle: book.title || '',
       // The heading just read names the chapter better than the reader's "Chapter 9" for untitled ones.
       chapter: position.heading || chapter,
@@ -107,7 +108,7 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
 
   // Leaving the reader removes the player.
   useEffect(() => () => {
-    if (shownRef.current) void YoruNotifications.stopReadAloud().catch(() => {});
+    if (shownRef.current) void YoruNotifications.stopReadAloud({ source: 'readAloud' }).catch(() => {});
   }, []);
 
   // The player's buttons, the lock screen and the headset.
@@ -115,7 +116,9 @@ export function useReadAloudPlayer({ readAloud, open, book, chapter, settings, l
     if (!enabled) return;
     let handle: PluginListenerHandle | null = null;
     let removed = false;
-    void YoruNotifications.addListener('readAloudAction', ({ action, positionMs }) => {
+    void YoruNotifications.addListener('readAloudAction', ({ action, positionMs, source }) => {
+      // An audiobook's player shares the notification: its buttons are not for the voice.
+      if (source && source !== 'readAloud') return;
       const { readAloud: controls, onClose: close } = controlsRef.current;
       switch (action as ReadAloudControl) {
         case 'play':

@@ -41,10 +41,11 @@ public class YoruNotificationsPlugin extends Plugin {
     public void load() {
         Intent intent = getActivity() == null ? null : getActivity().getIntent();
         launchAction = takeAction(intent);
-        ReadAloudService.listener = (action, positionMs) -> {
+        ReadAloudService.listener = (action, positionMs, source) -> {
             JSObject event = new JSObject();
             event.put("action", action);
             event.put("positionMs", positionMs);
+            event.put("source", source);
             notifyListeners("readAloudAction", event);
         };
     }
@@ -148,6 +149,12 @@ public class YoruNotificationsPlugin extends Plugin {
         Float rate = call.getFloat("rate", 1f);
         state.rate = rate == null ? 1f : rate;
         state.spanish = !"en".equals(call.getString("lang", "es"));
+        state.source = call.getString("source", ReadAloudService.SOURCE_READ_ALOUD);
+        state.ownsAudio = !Boolean.FALSE.equals(call.getBoolean("ownsAudio", true));
+        state.showSleep = !Boolean.FALSE.equals(call.getBoolean("showSleep", true));
+        state.previousLabel = call.getString("previousLabel", "");
+        state.nextLabel = call.getString("nextLabel", "");
+        state.clearArtwork = Boolean.TRUE.equals(call.getBoolean("clearArtwork", false));
         String artwork = call.getString("artwork", null);
         if (artwork != null && !artwork.isEmpty()) state.artwork = decodeArtwork(artwork);
         keepRendererAwake();
@@ -157,8 +164,20 @@ public class YoruNotificationsPlugin extends Plugin {
 
     @PluginMethod
     public void stopReadAloud(PluginCall call) {
-        ReadAloudService.hide(getContext());
+        // With a source, only that one's player goes: an audiobook closing does not take read-aloud's.
+        ReadAloudService.hide(getContext(), call.getString("source", null));
         call.resolve();
+    }
+
+    /**
+     * What this APK's player can do. `sources` is the player shared with audiobooks; the page asks
+     * before using it, because an older APK would take the audio focus from the audiobook.
+     */
+    @PluginMethod
+    public void getPlayerInfo(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("sources", true);
+        call.resolve(result);
     }
 
     /**

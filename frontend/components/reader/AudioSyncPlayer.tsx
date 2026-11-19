@@ -19,6 +19,7 @@ import {
 import { describeServerError } from '../../utils/serverHttp';
 import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
 import { db } from '../../utils/db';
+import { useAudiobookNotification } from '../home/useAudiobookNotification';
 
 interface Props {
   book: { id: string; title: string; author?: string };
@@ -409,6 +410,28 @@ export default function AudioSyncPlayer({
       } catch { /* ignore */ }
     };
   }, [session]); // Handlers read refs; register again only for a new session.
+
+  // Android's WebView has no media session of its own: there the player is the native one.
+  useAudiobookNotification({
+    source: 'audiobookSync',
+    active: Boolean(session),
+    id: session?.itemId || '',
+    title: session?.title || book.title,
+    subtitle: session?.author || book.author || '',
+    cover: session?.coverUrl,
+    playing,
+    time,
+    duration: session?.duration || 0,
+    rate,
+    note: '',
+    es,
+    back: 15,
+    forward: 30,
+    onPlay: () => play(),
+    onPause: () => pause(),
+    onSeek: (seconds) => seekTo(seconds),
+    onClose: () => pause(),
+  });
 
   // ── Render ────────────────────────────────────────────────────────────
 

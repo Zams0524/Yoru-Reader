@@ -11,6 +11,8 @@ import { forecastSrsDue, lastStudyDay } from './srsForecast';
 
 export type ReadAloudControl = 'play' | 'pause' | 'next' | 'previous' | 'sleep' | 'close' | 'seek';
 export type LaunchAction = 'srs' | 'updates';
+/** Who shows the system player: read-aloud, the audiobook bar, or the reader's audiobook. */
+export type PlayerSource = 'readAloud' | 'audiobook' | 'audiobookSync';
 type PermissionStatus = 'granted' | 'denied' | 'prompt';
 
 export interface ReadAloudPlayerState {
@@ -26,6 +28,17 @@ export interface ReadAloudPlayerState {
   lang: string;
   /** A data: URL; sent once per book (the player keeps it). */
   artwork?: string;
+  /** Who shows the player (APK with `getPlayerInfo`); the buttons come back with it. */
+  source?: PlayerSource;
+  /** False when the page plays the sound itself: the player must not take the audio focus. */
+  ownsAudio?: boolean;
+  /** False hides the sleep timer button. */
+  showSleep?: boolean;
+  /** What "previous" and "next" say when they are not a sentence. */
+  previousLabel?: string;
+  nextLabel?: string;
+  /** A new book without a readable cover: drop the one shown before. */
+  clearArtwork?: boolean;
 }
 
 interface SrsReminderEntry { at: number; title: string; body: string }
@@ -36,17 +49,34 @@ interface YoruNotificationsPlugin {
   openNotificationSettings(): Promise<void>;
   getLaunchAction(): Promise<{ action: LaunchAction | null }>;
   updateReadAloud(state: ReadAloudPlayerState): Promise<void>;
-  stopReadAloud(): Promise<void>;
+  /** With a source, only that one's player is removed. */
+  stopReadAloud(options?: { source?: PlayerSource }): Promise<void>;
+  getPlayerInfo(): Promise<{ sources: boolean }>;
   setSrsReminders(options: { entries: SrsReminderEntry[]; lang: string }): Promise<void>;
   clearSrsNotification(): Promise<void>;
   configureUpdates(options: { apk: boolean; ota: boolean; webVersion: string; lang: string }): Promise<void>;
-  addListener(event: 'readAloudAction', listener: (event: { action: ReadAloudControl; positionMs: number }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'readAloudAction', listener: (event: { action: ReadAloudControl; positionMs: number; source?: PlayerSource }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'launchAction', listener: (event: { action: LaunchAction }) => void): Promise<PluginListenerHandle>;
 }
 
 export const YoruNotifications = registerPlugin<YoruNotificationsPlugin>('YoruNotifications');
 
 export const hasYoruNotifications = () => Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('YoruNotifications');
+
+let playerSources: Promise<boolean> | null = null;
+
+/**
+ * Whether this APK's player can be shared with audiobooks. Older APKs only know read-aloud: they
+ * would take the audio focus from the audiobook and hand its buttons to the voice, so there the
+ * audiobook goes without a notification, as before.
+ */
+export function supportsPlayerSources(): Promise<boolean> {
+  if (!hasYoruNotifications()) return Promise.resolve(false);
+  if (!playerSources) {
+    playerSources = YoruNotifications.getPlayerInfo().then((info) => info?.sources === true).catch(() => false);
+  }
+  return playerSources;
+}
 
 // ---- Settings (profile settings; Android only) ----
 
@@ -56,7 +86,9 @@ export const notificationSettings = (settings: any) => ({
   srsDaily: settings?.notifySrsDaily !== false,
   srsHour: Number.isFinite(Number(settings?.notifySrsHour)) ? Math.min(23, Math.max(0, Math.floor(Number(settings.notifySrsHour)))) : 9,
   appUpdates: settings?.notifyAppUpdates !== false,
-  otaUpdates: settings?.notifyOtaUpdates === true,
+  // On unless turned off: nearly every update is one of these, and with the notice off by
+  // default nobody heard about any of them (zams, 19 Nov 2026).
+  otaUpdates: settings?.notifyOtaUpdates !== false,
 });
 
 // ---- Permission ----
