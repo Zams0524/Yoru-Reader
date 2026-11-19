@@ -59,8 +59,8 @@ export default function UpdateSettings({
   const versionCard = (title: string, current?: string, latestVersion?: string, outdated = false, needsApk = false) => (
     <div style={{
       background: 'var(--bg-card)',
-      border: `1px solid ${outdated ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-light)'}`,
-      borderRadius: '10px',
+      border: `1px solid ${outdated ? 'var(--primary)' : 'var(--border-light)'}`,
+      borderRadius: 'var(--radius-md)',
       padding: '14px',
       display: 'flex',
       justifyContent: 'space-between',
@@ -75,7 +75,7 @@ export default function UpdateSettings({
           {lang === 'es' ? 'Última: ' : 'Latest: '}{latestVersion || '—'}
         </div>
       </div>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: needsApk ? '#f59e0b' : outdated ? '#10b981' : '#3b82f6', textAlign: 'right' }}>
+      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: needsApk ? 'var(--primary)' : outdated ? 'var(--yoru-ok, #5fae7b)' : 'var(--text-dark)', textAlign: 'right' }}>
         {needsApk
           ? (lang === 'es' ? 'Llega con la próxima app' : 'Comes with the next app')
           : outdated
@@ -110,26 +110,20 @@ export default function UpdateSettings({
     </h3>
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-      {/* Auto Update Checkbox */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-        <span>{lang === 'es' ? 'Actualización automática:' : 'Automatic updates:'}</span>
-        <input
-          type="checkbox"
-          checked={settings.autoUpdate || false}
-          onChange={(e) => onSaveSettings({ ...settings, autoUpdate: e.target.checked })}
-          style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-        />
-      </div>
-
-      {/* Beta Updates Checkbox */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-        <span>{lang === 'es' ? 'Actualizaciones beta:' : 'Beta updates:'}</span>
-        <input
-          type="checkbox"
-          checked={settings.betaUpdates || false}
-          onChange={(e) => onSaveSettings({ ...settings, betaUpdates: e.target.checked })}
-          style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-        />
+      {/*
+        «Actualizaciones beta» estaba aquí: guardaba `betaUpdates` y nadie lo leía; no
+        hay canal beta. Se ha quitado en vez de dejar una casilla que no hace nada.
+      */}
+      <div className="settings-row-control">
+        <span className="settings-label-text">{lang === 'es' ? 'Actualizar sola' : 'Update automatically'}</span>
+        <label className="migaku-switch">
+          <input
+            type="checkbox"
+            checked={settings.autoUpdate || false}
+            onChange={(e) => onSaveSettings({ ...settings, autoUpdate: e.target.checked })}
+          />
+          <span className="migaku-switch-slider"></span>
+        </label>
       </div>
 
       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 4px 0', lineHeight: 1.4 }}>
@@ -174,7 +168,7 @@ export default function UpdateSettings({
             <div style={{
               width: `${updateProgress >= 0 ? updateProgress : 0}%`,
               height: '100%',
-              background: ready || updaterState.status === 'installing' ? '#10b981' : 'var(--primary)',
+              background: 'var(--primary)',
               transition: 'width 0.2s ease-out'
             }} />
           </div>
@@ -182,7 +176,7 @@ export default function UpdateSettings({
       )}
 
       {updateErrorMessage && (
-        <div style={{ fontSize: '0.82rem', color: '#f87171', lineHeight: 1.4 }}>
+        <div style={{ fontSize: '0.82rem', color: 'var(--shu)', lineHeight: 1.4 }}>
           {updateErrorMessage}
           {updaterState.status === 'error' && (
             <>
@@ -190,7 +184,7 @@ export default function UpdateSettings({
               <button
                 type="button"
                 onClick={() => openUpdateFallback()}
-                style={{ background: 'none', border: 'none', padding: 0, color: '#3b82f6', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit' }}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit' }}
               >
                 {lang === 'es' ? 'Descargar manualmente' : 'Download manually'}
               </button>
@@ -200,50 +194,11 @@ export default function UpdateSettings({
       )}
 
       {/* Buttons */}
-      <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-        <button
-          type="button"
-          onClick={handleCheckUpdates}
-          disabled={checkingUpdates || updating}
-          style={{
-            flex: 1,
-            padding: '10px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            cursor: (checkingUpdates || updating) ? 'not-allowed' : 'pointer',
-            background: 'rgba(37, 99, 235, 0.1)',
-            border: '1px solid #2563eb',
-            color: '#3b82f6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.2s'
-          }}
-        >
+      <div className="settings-actions">
+        <button type="button" onClick={handleCheckUpdates} disabled={checkingUpdates || updating} className="settings-btn">
           {checkingUpdates ? (lang === 'es' ? 'Buscando...' : 'Checking...') : (lang === 'es' ? 'Buscar actualizaciones' : 'Check for updates')}
         </button>
-
-        <button
-          type="button"
-          onClick={handleUpdateNow}
-          disabled={!canUpdate}
-          style={{
-            flex: 1,
-            padding: '10px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            background: canUpdate ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)',
-            border: canUpdate ? '1px solid #10b981' : '1px solid var(--border-light)',
-            color: canUpdate ? '#10b981' : 'var(--text-muted)',
-            cursor: canUpdate ? 'pointer' : 'not-allowed',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.2s'
-          }}
-        >
+        <button type="button" onClick={handleUpdateNow} disabled={!canUpdate} className="settings-btn is-primary">
           {updateButtonLabel}
         </button>
       </div>

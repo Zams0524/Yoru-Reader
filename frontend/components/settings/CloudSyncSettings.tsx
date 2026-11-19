@@ -1,20 +1,21 @@
 import React from 'react';
-import { Download, Settings, Upload } from 'lucide-react';
+import { Download, LogIn, Upload } from 'lucide-react';
 
 /**
- * Google Drive: subir la biblioteca, bajarla, y qué hacer cuando chocan.
+ * Google Drive: una copia de la biblioteca en la cuenta de cada uno.
  *
- * Lo de «combinar o reemplazar» no es un capricho de configuración: si lees en el
- * teléfono y en el ordenador, las estadísticas de los dos se encuentran, y hay que
- * decidir de antemano si se suman o si una pisa a la otra. Equivocarse ahí borra
- * horas de lectura, así que se pregunta antes y no después.
+ * Es opcional. El progreso ya viaja solo por el servidor de Yoru; esto es para quien
+ * quiere además su copia en su propio Drive.
  *
- * Movido tal cual desde `Library.tsx`.
+ * Aquí había dos filas de «destino de sincronización» que solo repetían si estabas
+ * conectado, y dos desplegables —«Combinar (Merge)» o «Reemplazar (Replace)» para
+ * estadísticas y objetivos— que guardaban `statsMergeOption` y `goalsMergeOption` sin
+ * que nadie los leyera: las dos sincronizaciones combinan siempre, con
+ * `mergeDatabaseExports`. Se han quitado; un ajuste que no hace nada es peor que no
+ * tenerlo, porque elegir «Reemplazar» hacía creer que algo iba a pisarse.
  */
 export default function CloudSyncSettings({
   lang,
-  settings,
-  onSaveSettings,
   gDriveTokens,
   syncStatus,
   lastSyncTime,
@@ -24,8 +25,6 @@ export default function CloudSyncSettings({
   onDownload,
 }: {
   lang: string;
-  settings: Record<string, any>;
-  onSaveSettings: (next: Record<string, any>) => void;
   gDriveTokens: unknown;
   syncStatus: string;
   lastSyncTime: unknown;
@@ -34,96 +33,46 @@ export default function CloudSyncSettings({
   onUpload: () => void;
   onDownload: () => void;
 }) {
+  const es = lang === 'es';
   const sincronizando = syncStatus === 'syncing';
 
   return (
     <>
       <p className="settings-card-desc">
-        {lang === 'es'
-          ? 'Configura la sincronización con almacenamiento en la nube y cómo se resuelven los conflictos.'
-          : 'Configure cloud storage synchronization and how metadata conflicts are resolved.'}
+        {es
+          ? 'Opcional. Guarda una copia de tu biblioteca y tu progreso en tu propio Google Drive. Al bajarla se combina con lo que ya tienes; no borra nada.'
+          : 'Optional. Keeps a copy of your library and progress in your own Google Drive. Downloading merges it with what you already have; nothing is erased.'}
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-          <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de almacenamiento' : 'Storage Sync Target'}</span>
-          <span style={{ color: gDriveTokens ? '#34d399' : 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
-            {gDriveTokens ? 'Google Drive' : (lang === 'es' ? 'Ninguno' : 'None')}
-          </span>
+      <div className="settings-status-list">
+        <div className="settings-status-row">
+          <span>{es ? 'Estado' : 'Status'}</span>
+          <strong className={gDriveTokens ? 'is-ok' : undefined}>
+            {gDriveTokens ? (es ? 'Conectado' : 'Connected') : (es ? 'Sin conectar' : 'Not connected')}
+          </strong>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
-          <span style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'es' ? 'Destino de sincronización de ajustes' : 'Settings Sync Target'}</span>
-          <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-            {lang === 'es' ? 'Perfil local' : 'Local Profile'}
-          </span>
-        </div>
-      </div>
-
-      <div className="settings-row-control">
-        <span className="settings-label-text">{lang === 'es' ? 'Combinación de estadísticas' : 'Statistics Merge'}</span>
-        <select
-          value={settings.statsMergeOption || 'merge'}
-          onChange={(e) => onSaveSettings({ ...settings, statsMergeOption: e.target.value })}
-          className="migaku-select"
-        >
-          <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-          <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-        </select>
-      </div>
-
-      <div className="settings-row-control">
-        <span className="settings-label-text">{lang === 'es' ? 'Combinación de objetivos de lectura' : 'Reading Goals Merge'}</span>
-        <select
-          value={settings.goalsMergeOption || 'merge'}
-          onChange={(e) => onSaveSettings({ ...settings, goalsMergeOption: e.target.value })}
-          className="migaku-select"
-        >
-          <option value="merge">{lang === 'es' ? 'Combinar (Merge)' : 'Merge'}</option>
-          <option value="replace">{lang === 'es' ? 'Reemplazar (Replace)' : 'Replace'}</option>
-        </select>
-      </div>
-
-      {/* Botón e inputs de Google Drive */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '14px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <button
-          type="button"
-          onClick={onConnect}
-          disabled={sincronizando}
-          className="reset-filter-btn"
-          style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <Settings size={14} /> <span>{gDriveTokens ? (lang === 'es' ? 'Volver a iniciar sesión' : 'Sign in again') : (lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google')}</span>
-        </button>
-
-        {gDriveTokens && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={onUpload}
-                disabled={sincronizando}
-                className="reset-filter-btn"
-                style={{ flex: 1, justifyContent: 'center', background: 'rgba(52, 211, 153, 0.05)', borderColor: '#34d399', color: '#34d399', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <Upload size={14} /> <span>{lang === 'es' ? 'Subir copia completa' : 'Upload backup'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={onDownload}
-                disabled={sincronizando}
-                className="reset-filter-btn"
-                style={{ flex: 1, justifyContent: 'center', background: 'rgba(251, 191, 36, 0.05)', borderColor: '#fbbf24', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <Download size={14} /> <span>{lang === 'es' ? 'Descargar' : 'Download'}</span>
-              </button>
-            </div>
-            {lastSyncTime && (
-              <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-                {lang === 'es' ? 'Última sincronización:' : 'Last sync:'} {formatSyncTime(lastSyncTime)}
-              </span>
-            )}
+        {Boolean(gDriveTokens) && Boolean(lastSyncTime) && (
+          <div className="settings-status-row">
+            <span>{es ? 'Última copia' : 'Last copy'}</span>
+            <strong>{formatSyncTime(lastSyncTime)}</strong>
           </div>
         )}
+      </div>
+
+      <div className="settings-actions">
+        {Boolean(gDriveTokens) && (
+          <>
+            <button type="button" onClick={onUpload} disabled={sincronizando} className="settings-btn is-primary">
+              <Upload size={15} /> <span>{es ? 'Subir copia' : 'Upload copy'}</span>
+            </button>
+            <button type="button" onClick={onDownload} disabled={sincronizando} className="settings-btn">
+              <Download size={15} /> <span>{es ? 'Bajar y combinar' : 'Download and merge'}</span>
+            </button>
+          </>
+        )}
+        <button type="button" onClick={onConnect} disabled={sincronizando} className={`settings-btn${gDriveTokens ? ' is-quiet' : ' is-primary'}`}>
+          <LogIn size={15} /> <span>{gDriveTokens ? (es ? 'Cambiar de cuenta' : 'Switch account') : (es ? 'Conectar Google Drive' : 'Connect Google Drive')}</span>
+        </button>
       </div>
     </>
   );

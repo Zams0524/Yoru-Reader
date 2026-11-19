@@ -18,7 +18,6 @@ export default function YoruSyncSettings({
   estado,
   detalle,
   ultima,
-  servidor,
   settings,
   onSaveSettings,
   onSincronizar,
@@ -27,7 +26,6 @@ export default function YoruSyncSettings({
   estado: 'apagado' | 'sincronizando' | 'al-dia' | 'fallo';
   detalle: string;
   ultima: number;
-  servidor: string;
   settings: Record<string, any>;
   onSaveSettings: (next: Record<string, any>) => void;
   onSincronizar: () => void;
@@ -35,7 +33,7 @@ export default function YoruSyncSettings({
   const es = lang === 'es';
   const sincronizando = estado === 'sincronizando';
 
-  const color = estado === 'fallo' ? '#fbbf24' : estado === 'al-dia' ? '#34d399' : 'rgba(255,255,255,0.45)';
+  const tono = estado === 'fallo' ? 'is-warn' : estado === 'al-dia' ? 'is-ok' : undefined;
   const texto = (() => {
     if (estado === 'apagado') return es ? 'Desactivada' : 'Off';
     if (estado === 'sincronizando') return es ? 'Sincronizando…' : 'Syncing…';
@@ -51,23 +49,16 @@ export default function YoruSyncSettings({
           : 'Your progress is saved to the Yoru server as soon as you sign in with Discord: books, where you left off, bookmarks, words and cards. Nothing to configure.'}
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', gap: '12px' }}>
-          <span style={{ color: 'rgba(255,255,255,0.4)' }}>{es ? 'Estado' : 'Status'}</span>
-          <span style={{ color, fontWeight: 600, textAlign: 'right' }}>{texto}</span>
+      {/* La dirección del servidor estaba aquí; a quien lee no le dice nada y no se puede cambiar. */}
+      <div className="settings-status-list">
+        <div className="settings-status-row">
+          <span>{es ? 'Estado' : 'Status'}</span>
+          <strong className={tono}>{texto}</strong>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
-          <span style={{ color: 'rgba(255,255,255,0.4)' }}>{es ? 'Última sincronización' : 'Last sync'}</span>
-          <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-            {ultima ? new Date(ultima).toLocaleString(es ? 'es-ES' : 'en-GB') : (es ? 'Todavía ninguna' : 'None yet')}
-          </span>
+        <div className="settings-status-row">
+          <span>{es ? 'Última sincronización' : 'Last sync'}</span>
+          <strong>{ultima ? new Date(ultima).toLocaleString(es ? 'es-ES' : 'en-GB') : (es ? 'Todavía ninguna' : 'None yet')}</strong>
         </div>
-        {servidor && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
-            <span style={{ color: 'rgba(255,255,255,0.3)' }}>{es ? 'Servidor' : 'Server'}</span>
-            <span style={{ color: 'rgba(255,255,255,0.3)', wordBreak: 'break-all', textAlign: 'right' }}>{servidor}</span>
-          </div>
-        )}
       </div>
 
       {/*
@@ -101,10 +92,10 @@ export default function YoruSyncSettings({
         type="button"
         onClick={onSincronizar}
         disabled={sincronizando || estado === 'apagado'}
-        className="reset-filter-btn"
-        style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}
+        className="settings-btn"
+        style={{ marginTop: '14px' }}
       >
-        <RefreshCw size={14} className={sincronizando ? 'spin' : undefined} />
+        <RefreshCw size={15} className={sincronizando ? 'spin' : undefined} />
         <span>{es ? 'Sincronizar ahora' : 'Sync now'}</span>
       </button>
     </>

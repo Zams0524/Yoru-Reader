@@ -4,7 +4,6 @@ import { Plus, Info, Trash2, Check, BarChart3, Pencil, X, ArrowUpDown, Settings,
 import TutorialGuide from './onboarding/TutorialGuide';
 import DictionarySettings from './settings/DictionarySettings';
 import ProfileSettings from './settings/ProfileSettings';
-import ReadingDaySettings from './settings/ReadingDaySettings';
 import VocabularySettings from './settings/VocabularySettings';
 import BackupSettings from './settings/BackupSettings';
 import StatisticsSettings from './settings/StatisticsSettings';
@@ -14,7 +13,6 @@ import CloudSyncSettings from './settings/CloudSyncSettings';
 import DiscordSettings from './settings/DiscordSettings';
 import DangerZoneSettings from './settings/DangerZoneSettings';
 import UpdateSettings from './settings/UpdateSettings';
-import TextStyleSettings from './settings/TextStyleSettings';
 import AppearanceSettings from './settings/AppearanceSettings';
 import { isKavitaConfigured, OPEN_KAVITA_BROWSER } from '../utils/kavitaService';
 import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
@@ -28,7 +26,7 @@ import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, 
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import YoruSyncSettings from './settings/YoruSyncSettings';
-import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, urlServidorSync, type ModoSync } from '../utils/yoruSyncService';
+import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, type ModoSync } from '../utils/yoruSyncService';
 import { asegurarCredencialesMedios } from '../utils/credencialesMedios';
 import { describirEstado as describirEstadoSync, INTERVALO_SUBIDA_MS as YORU_SYNC_INTERVALO_MS } from '../utils/yoruSyncNucleo';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
@@ -1555,10 +1553,8 @@ const Library = React.memo(function Library({
       'sec-general': ['Apariencia e idioma', 'Appearance & Language'],
       'sec-dicts': ['Diccionarios y vocabulario', 'Dictionaries and vocabulary'],
       'sec-keybindings': ['Atajos de teclado', 'Keyboard Shortcuts'],
-      'sec-text-style': ['Estilo de texto', 'Text Style'],
       'sec-stats': ['Historial de lectura', 'Reading history'],
-      'sec-cloud-sync': ['Sincronización', 'Cloud Sync'],
-      'sec-yoru-sync': ['Sincronización de Yoru', 'Yoru Sync'],
+      'sec-cloud-sync': ['Sincronización', 'Sync'],
       'sec-discord': ['Discord', 'Discord'],
       'sec-backup': ['Copias de seguridad', 'Backups'],
       'sec-updates': ['Actualizaciones', 'Updates'],
@@ -2896,6 +2892,16 @@ const Library = React.memo(function Library({
       `!important`, y eso es tapar el problema, no arreglarlo.
     */
     const settingsNarrow = isMobile || isNarrowSettings;
+    // En escritorio el nombre de la sección ya va arriba, en grande; la tarjeta que
+    // lo repetía justo debajo («Apariencia e idioma» dos veces) se queda sin el suyo.
+    // Se compara por texto para no tocar las tarjetas con título propio.
+    const ocultarTituloRepetido = (pane: HTMLDivElement | null) => {
+      if (!pane) return;
+      const titulo = pane.querySelector('.settings-pane-title')?.textContent?.trim();
+      pane.querySelectorAll<HTMLElement>('.settings-card-title').forEach((h) => {
+        h.classList.toggle('is-repetido', Boolean(titulo) && h.textContent?.trim() === titulo);
+      });
+    };
 
     // About / Diagnostics is a developer tool: only on Android and only for the "Zams" profile.
     const showDiagnostics = Capacitor.getPlatform() === 'android'
@@ -3023,14 +3029,12 @@ const Library = React.memo(function Library({
               */}
               {renderNavGroup(lang === 'es' ? 'Cuenta' : 'Account', [
                 renderSidebarBtn('sec-profile', lang === 'es' ? 'Perfil' : 'Profile', User, 'perfil profile nombre name foto photo avatar imagen picture usuario', activeProfile?.name || (lang === 'es' ? 'Tu perfil' : 'Your profile')),
-                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Cloud Sync', Cloud, 'sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync', gDriveTokens ? (lang === 'es' ? 'Conectado a Google Drive' : 'Connected to Google Drive') : (lang === 'es' ? 'Sin conectar' : 'Not connected')),
-                renderSidebarBtn('sec-yoru-sync', lang === 'es' ? 'Sincronización de Yoru' : 'Yoru Sync', Server, 'yoru sync sincronizacion sincronización servidor discord tailscale progreso', yoruSyncEstado === 'al-dia' ? (lang === 'es' ? 'Al día' : 'Up to date') : yoruSyncEstado === 'fallo' ? (yoruSyncDetalle || (lang === 'es' ? 'No se pudo sincronizar' : 'Could not sync')) : yoruSyncEstado === 'apagado' ? (lang === 'es' ? 'Desactivada' : 'Off') : (lang === 'es' ? 'Sincronizando…' : 'Syncing…')),
+                renderSidebarBtn('sec-cloud-sync', lang === 'es' ? 'Sincronización' : 'Sync', Cloud, 'sync sincronizar sincronizacion sincronización yoru servidor discord progreso miembros gdrive google drive cloud nube copia', yoruSyncEstado === 'al-dia' ? (lang === 'es' ? 'Al día' : 'Up to date') : yoruSyncEstado === 'sincronizando' ? (lang === 'es' ? 'Sincronizando…' : 'Syncing…') : yoruSyncEstado === 'fallo' ? (lang === 'es' ? 'El servidor de Yoru no responde ahora mismo' : 'The Yoru server is not responding right now') : (lang === 'es' ? 'Tu progreso, en todos tus aparatos' : 'Your progress, on all your devices')),
                 renderSidebarBtn('sec-backup', lang === 'es' ? 'Copias de seguridad' : 'Backups', FolderOpen, 'backup import export catalogo perfil copia seguridad', lang === 'es' ? 'Guardar o restaurar tu biblioteca' : 'Save or restore your library'),
               ])}
 
               {renderNavGroup(lang === 'es' ? 'Preferencias' : 'Preferences', [
                 renderSidebarBtn('sec-general', lang === 'es' ? 'Apariencia e idioma' : 'Appearance & Language', Palette, 'tema theme idioma lang interface language tutorial guia atajos general', lang === 'es' ? 'Tema, idioma y guía' : 'Theme, language and guide'),
-                renderSidebarBtn('sec-text-style', lang === 'es' ? 'Estilo de texto' : 'Text Style', Type, 'size texto text style font voz audio speed velocidad genero furigana traduccion translation learning status display highlight oracion cursor hover highlights', lang === 'es' ? 'Tamaño, vertical, furigana y voz' : 'Size, vertical text, furigana and voice'),
                 showKeyboardShortcuts && renderSidebarBtn('sec-keybindings', lang === 'es' ? 'Atajos de teclado' : 'Keyboard Shortcuts', Keyboard, 'keybins keybindings atajos teclado shortcuts keys full screen pantalla completa', lang === 'es' ? 'Teclas del lector' : 'Reader keys'),
                 hasYoruNotifications() && renderSidebarBtn('sec-notifications', lang === 'es' ? 'Notificaciones' : 'Notifications', Bell, 'notificaciones notifications avisos aviso repaso review recordatorio reminder voz alta read aloud segundo plano background actualizaciones updates', lang === 'es' ? 'Lectura en segundo plano, repaso y versiones' : 'Background reading, reviews and versions'),
                 showDesktopIntegrations && renderSidebarBtn('sec-discord', 'Discord', MessageSquare, 'discord rpc presence enabled timer icon stats blacklist', lang === 'es' ? 'Estado en Discord' : 'Discord presence'),
@@ -3038,7 +3042,7 @@ const Library = React.memo(function Library({
 
               {renderNavGroup(lang === 'es' ? 'Biblioteca' : 'Library', [
                 renderSidebarBtn('sec-dicts', lang === 'es' ? 'Diccionarios y vocabulario' : 'Dictionaries and vocabulary', BookOpen, 'diccionario dictionary offline jmdict frecuencia meta meta_bank zip vocabulario vocabulary import export jpdb anki file frequency', lang === 'es' ? `${installedDicts.length} ${installedDicts.length === 1 ? 'diccionario' : 'diccionarios'} · Anki` : `${installedDicts.length} ${installedDicts.length === 1 ? 'dictionary' : 'dictionaries'} · Anki`),
-                renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda y cuándo empieza tu día' : 'What is kept and when your day starts'),
+                renderSidebarBtn('sec-stats', lang === 'es' ? 'Historial de lectura' : 'Reading history', BarChart3, 'stats config estadisticas tracking delete books annotations enabled reading day dia lectura start hours limites horas nocturno historial', lang === 'es' ? 'Qué se guarda de lo que lees' : 'What is kept of your reading'),
               ])}
 
               {renderNavGroup('Yoru', [
@@ -3077,7 +3081,7 @@ const Library = React.memo(function Library({
             lo justo para que una sección que cabía deje de caber y aparezca una
             barra de scroll por ocho píxeles. El aire lo pone ahora la hoja.
           */
-          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
+          <div className="yomitan-settings-pane" ref={ocultarTituloRepetido} style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
 
           {/*
             El nombre de la sección, grande y arriba, con una línea debajo. En el
@@ -3146,21 +3150,24 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Text Style */}
-          {matchesSearch('size texto text style font voz audio speed velocidad genero viewmode writingmode margins vertical layout justify vpal indent') && (settingsSearchQuery || activeSettingsSection === 'sec-text-style') && (
-            <div id="sec-text-style" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Type size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Estilo de texto' : 'Text Style'}</span>
-              </h3>
-              <TextStyleSettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
-            </div>
-          )}
-
-
+          {/*
+            Aquí estaba «Estilo de texto»: trece controles (zoom, modo, dirección,
+            interlineado, sangría, márgenes, VPAL, sesión de lectura…) que no leía
+            nadie. El lector guarda lo suyo aparte (`reader:*`, ver
+            `useReaderSettings`) y se cambia dentro del libro, en el botón «Aa», que
+            es donde se ve el efecto. Tener además una pantalla que parecía hacer lo
+            mismo y no hacía nada era la forma más segura de que alguien pensara que
+            la app estaba rota.
+          */}
 
           {/* Card: Estadísticas */}
           {/*
-            Historial de lectura: cuándo empieza tu día y qué se guarda de lo leído.
+            Historial de lectura: qué se guarda de lo leído.
+
+            «Hora de inicio del día» estaba aquí y se ha quitado: el deslizador
+            guardaba `startDayHour` y ningún cálculo lo leía, ni ahora ni en el primer
+            commit. Para que vuelva hay que llevar esa hora a los sitios donde se
+            decide en qué día cae una sesión, que hoy son unos cuarenta repartidos.
 
             Eran dos secciones de un control cada una —«Día de lectura» con su
             deslizador y «Estadísticas» con su interruptor— y cada una ocupaba un
@@ -3183,9 +3190,6 @@ const Library = React.memo(function Library({
                 showConfirm={showConfirm}
                 showToast={showToast}
               />
-              <div id="sec-reading-day" style={{ borderTop: '1px solid var(--border-light)', marginTop: '18px', paddingTop: '18px' }}>
-                <ReadingDaySettings lang={lang} settings={settings} onSaveSettings={onSaveSettings} />
-              </div>
             </div>
           )}
 
@@ -3208,30 +3212,16 @@ const Library = React.memo(function Library({
 
           {/* Card: Día de lectura */}
 
-          {/* Card: Sincronización Cloud */}
-          {matchesSearch('sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync') && (settingsSearchQuery || activeSettingsSection === 'sec-cloud-sync') && (
-            <div id="sec-cloud-sync" className="settings-section-card">
-              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Cloud size={18} style={{ color: 'var(--primary)' }} />
-                <span>{lang === 'es' ? 'Sincronización Cloud' : 'Cloud Sync'}</span>
-              </h3>
-              <CloudSyncSettings
-                lang={lang}
-                settings={settings}
-                onSaveSettings={onSaveSettings}
-                gDriveTokens={gDriveTokens}
-                syncStatus={gDriveSyncStatus}
-                lastSyncTime={lastSyncTime}
-                formatSyncTime={formatSyncTime}
-                onConnect={handleConnectGDrive}
-                onUpload={handleUploadGDrive}
-                onDownload={handleDownloadGDrive}
-              />
-            </div>
-          )}
+          {/*
+            Sincronización: una sola entrada en la lista, dos tarjetas.
 
+            Había «Sincronización» y «Sincronización de Yoru» una debajo de la otra, y
+            nadie que abra la app por primera vez sabe cuál de las dos es la suya.
+            Primero va la de Yoru, que funciona sola desde que entras con Discord;
+            debajo Google Drive, que es opcional y hay que conectarla.
+          */}
           {/* Card: Sincronización con el servidor de Yoru (Discord + Tailscale) */}
-          {matchesSearch('yoru sync sincronizacion sincronización servidor discord tailscale progreso') && (settingsSearchQuery || activeSettingsSection === 'sec-yoru-sync') && (
+          {matchesSearch('yoru sync sincronizacion sincronización servidor discord tailscale progreso') && (settingsSearchQuery || activeSettingsSection === 'sec-cloud-sync' || activeSettingsSection === 'sec-yoru-sync') && (
             <div id="sec-yoru-sync" className="settings-section-card">
               <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Server size={18} style={{ color: 'var(--primary)' }} />
@@ -3242,10 +3232,29 @@ const Library = React.memo(function Library({
                 estado={yoruSyncEstado}
                 detalle={yoruSyncDetalle}
                 ultima={yoruSyncUltima}
-                servidor={urlServidorSync()}
                 settings={settings}
                 onSaveSettings={onSaveSettings}
                 onSincronizar={() => { void sincronizarConYoru('bidireccional', true); }}
+              />
+            </div>
+          )}
+
+          {/* Card: Sincronización Cloud */}
+          {matchesSearch('sync merge sincronizar combinar conflicto storage sync settings gdrive drive cloud cloud-sync') && (settingsSearchQuery || activeSettingsSection === 'sec-cloud-sync') && (
+            <div id="sec-cloud-sync" className="settings-section-card">
+              <h3 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Cloud size={18} style={{ color: 'var(--primary)' }} />
+                <span>Google Drive</span>
+              </h3>
+              <CloudSyncSettings
+                lang={lang}
+                gDriveTokens={gDriveTokens}
+                syncStatus={gDriveSyncStatus}
+                lastSyncTime={lastSyncTime}
+                formatSyncTime={formatSyncTime}
+                onConnect={handleConnectGDrive}
+                onUpload={handleUploadGDrive}
+                onDownload={handleDownloadGDrive}
               />
             </div>
           )}
@@ -5842,34 +5851,28 @@ const Library = React.memo(function Library({
               </button>
             ) : books.length === 0 ? (
               <div className="library-empty-hero">
-                {/* Left: decorative book cover stack */}
-                <div className="empty-hero-covers">
-                  <div className="empty-cover-card empty-cover-card--back" />
-                  <div className="empty-cover-card empty-cover-card--mid" />
-                  <div className="empty-cover-card empty-cover-card--front">
-                    <span className="empty-cover-icon">📖</span>
-                  </div>
-                </div>
-
-                {/* Right: info + actions */}
-                <div className="empty-hero-right">
-                  <div className="empty-info-panel">
-                    <p><strong>{lang === 'es' ? 'Formatos compatibles:' : 'Supported formats:'}</strong><br />epub, pdf, html, txt, rtf, {lang === 'es' ? 'subtítulos' : 'subtitles'}</p>
-                    <p><strong>{lang === 'es' ? 'Formatos de subtítulos:' : 'Subtitle formats:'}</strong><br />srt, vtt, ass, ssa</p>
-                  </div>
-
-                  <div className="empty-hero-actions">
-                    <button className="empty-add-btn" onClick={triggerFileInput}>
-                      <span style={{ marginRight: '8px' }}>📄</span>
-                      {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
+                {/*
+                  Sin pila de portadas ni emojis: una estantería vacía se dice con una
+                  frase y con lo único que se puede hacer aquí, que es añadir un libro.
+                */}
+                <p className="empty-hero-kicker" lang="ja">本棚</p>
+                <h2 className="empty-hero-title">{lang === 'es' ? 'Tu estantería está vacía' : 'Your shelf is empty'}</h2>
+                <p className="empty-hero-sub">
+                  {lang === 'es'
+                    ? 'Yoru abre epub, pdf, html, txt y rtf, y también subtítulos (srt, vtt, ass, ssa).'
+                    : 'Yoru opens epub, pdf, html, txt and rtf, as well as subtitles (srt, vtt, ass, ssa).'}
+                </p>
+                <div className="empty-hero-actions">
+                  <button type="button" className="empty-add-btn" onClick={triggerFileInput}>
+                    <Plus size={17} />
+                    {lang === 'es' ? 'Añadir desde archivo' : 'Add from file'}
+                  </button>
+                  {kavitaReady && (
+                    <button type="button" className="empty-add-btn empty-add-btn--quiet" onClick={() => setIsKavitaBrowserOpen(true)}>
+                      <Server size={16} />
+                      {lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'}
                     </button>
-                    {kavitaReady && (
-                      <button className="empty-add-btn" onClick={() => setIsKavitaBrowserOpen(true)}>
-                        <Server size={16} style={{ marginRight: '8px' }} />
-                        {lang === 'es' ? 'Explorar Kavita' : 'Explore Kavita'}
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             ) : (

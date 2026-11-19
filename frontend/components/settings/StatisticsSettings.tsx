@@ -30,13 +30,16 @@ export default function StatisticsSettings({
     <>
       <p className="settings-card-desc">
         {lang === 'es'
-          ? 'Configura el almacenamiento del historial de lectura y las acciones de limpieza.'
-          : 'Configure the storage of reading history and cleanup actions.'}
+          ? 'Lo que Yoru apunta de tus lecturas: tiempo, caracteres y rachas.'
+          : 'What Yoru records about your reading: time, characters and streaks.'}
       </p>
 
       <div className="settings-row-control">
-        <span className="settings-label-text">
-          {lang === 'es' ? 'Conservar estadísticas al eliminar libro' : 'Keep stats on book deletion'}
+        <span className="settings-label-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span>{lang === 'es' ? 'Conservar lo leído al borrar un libro' : 'Keep reading history when a book is deleted'}</span>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>
+            {lang === 'es' ? 'Tus horas y rachas no bajan aunque quites la novela.' : 'Your hours and streaks stay even if you remove the novel.'}
+          </span>
         </span>
         <label className="migaku-switch">
           <input
@@ -53,8 +56,8 @@ export default function StatisticsSettings({
           type="button"
           onClick={async () => {
             const ok = await showConfirm({
-              title: lang === 'es' ? '¿Limpiar estadísticas?' : 'Clear statistics?',
-              message: lang === 'es' ? '¿Limpiar estadísticas de libros ya eliminados?' : 'Clear stats for already deleted books?',
+              title: lang === 'es' ? '¿Borrar ese historial?' : 'Erase that history?',
+              message: lang === 'es' ? 'Se borra lo leído en libros que ya no están en tu biblioteca. Tus horas totales y rachas bajarán. No se puede deshacer.' : 'Reading recorded for books no longer in your library is erased. Your totals and streaks will drop. This cannot be undone.',
               type: 'warning',
               confirmText: lang === 'es' ? 'Limpiar' : 'Clear',
             });
@@ -63,9 +66,9 @@ export default function StatisticsSettings({
               showToast(lang === 'es' ? 'Limpieza completada.' : 'Cleanup done.', 'success');
             }
           }}
-          style={{ width: '100%', padding: '8px 10px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          className="settings-btn is-quiet"
         >
-          <Trash2 size={14} /> <span>{lang === 'es' ? 'Estadísticas de libros eliminados' : 'Deleted-book statistics'}</span>
+          <Trash2 size={14} /> <span>{lang === 'es' ? 'Borrar el historial de libros ya eliminados' : 'Erase history of already deleted books'}</span>
         </button>
       </div>
     </>

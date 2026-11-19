@@ -49,6 +49,7 @@ import { descartar } from '../../utils/recomendaciones';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
 import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
+import yoruMark from '../../assets/yoru-mark.png';
 import {
   authorGroups,
   collectionGroups,
@@ -911,9 +912,7 @@ export default function YoruShell({
         )}
 
         <button type="button" className="yoru-shell-brand" onClick={() => go('home')}>
-          <span className="yoru-shell-logo">
-            <BookOpen size={20} />
-          </span>
+          <img className="yoru-shell-logo" src={yoruMark} alt="" width={36} height={36} draggable={false} />
           <span className="yoru-shell-brand-text">
             <span className="yoru-shell-brand-title">Yoru</span>
             <span className="yoru-shell-brand-sub">Reader</span>
@@ -930,16 +929,11 @@ export default function YoruShell({
         )}
 
         <div className="yoru-shell-actions">
-          {isMobile && (
-            <button
-              type="button"
-              className="yoru-shell-icon-btn"
-              onClick={() => setIsSearchOpen(true)}
-              aria-label={es ? 'Buscar' : 'Search'}
-            >
-              <Search size={20} />
-            </button>
-          )}
+          {/*
+            En el teléfono la lupa no va aquí: «Buscar» ya está en la barra de abajo, al
+            alcance del pulgar. Repetida arriba, la cabecera juntaba siete iconos en
+            360 px y ninguno respiraba.
+          */}
           <button
             type="button"
             className="yoru-shell-icon-btn"
