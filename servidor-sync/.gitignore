@@ -3,3 +3,6 @@ datos/
 *.db
 *.db-wal
 *.db-shm
+
+# Las claves de Kavita y de Audiobookshelf. No suben: por eso existe el fichero.
+.env

@@ -29,6 +29,7 @@ import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
 import YoruSyncSettings from './settings/YoruSyncSettings';
 import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, urlServidorSync, type ModoSync } from '../utils/yoruSyncService';
+import { asegurarCredencialesMedios } from '../utils/credencialesMedios';
 import { describirEstado as describirEstadoSync, INTERVALO_SUBIDA_MS as YORU_SYNC_INTERVALO_MS } from '../utils/yoruSyncNucleo';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
@@ -1175,6 +1176,19 @@ const Library = React.memo(function Library({
       setYoruSyncDetalle('');
     }
     recargarSiHizoFalta(resultado);
+  }, []);
+
+  /*
+    Las claves de Kavita y de Audiobookshelf, que ya no viajan dentro de la app: las
+    reparte el servidor de sincronización a quien sea miembro del Discord. Ver
+    `utils/credencialesMedios.ts`.
+
+    Sin espera, al contrario que la sincronización de abajo: cuanto antes lleguen,
+    menos rato pasa la pantalla de servidores diciendo que no hay nada configurado.
+    No se espera el resultado porque nada de la biblioteca local depende de esto.
+  */
+  useEffect(() => {
+    void asegurarCredencialesMedios();
   }, []);
 
   useEffect(() => {

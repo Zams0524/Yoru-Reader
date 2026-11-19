@@ -115,6 +115,58 @@ Discord no recibe la ráfaga. Con Funnel, la dirección de quien llama se lee de
 entra Tailscale); de cualquier otro sitio esa cabecera se ignora, porque la escribe
 quien llama.
 
+## Las claves de Kavita y de Audiobookshelf
+
+Este servidor también guarda las claves de los dos servidores de medios y se las da
+a los miembros. No es un añadido caprichoso: hasta el 18 de noviembre de 2026 esas
+dos claves venían escritas en el código de la app, en
+`frontend/config/serverDefaults.ts`, y como el repositorio es público eso era
+publicarlas. Mientras Kavita y Audiobookshelf solo escuchaban en `localhost` el daño
+era limitado, porque no había dirección a la que ir; al publicarlos con Funnel
+pasaron a ser dirección y clave, las dos publicadas.
+
+Ahora viven en `servidor-sync/.env`, que git ignora. Hay una plantilla en
+`.env.example`: cópiala a `.env`, pon los valores y **reinicia el servidor**, que lo
+lee una sola vez al arrancar. Al arrancar dice por cada servidor si lo reparte o si
+le falta la clave, porque un `.env` que falta se nota tarde y mal: la app dice «no
+responde» y a nadie se le ocurre mirar aquí.
+
+| Variable | Para qué |
+| --- | --- |
+| `YORU_SYNC_KAVITA_API_KEY` | La clave de Kavita. Sin ella, Kavita no se reparte |
+| `YORU_SYNC_KAVITA_URL` | Por dónde llega este proceso. `http://localhost:5000` |
+| `YORU_SYNC_KAVITA_URL_PUBLICA` | Por dónde llega el teléfono de un miembro: la salida de Funnel |
+| `YORU_SYNC_ABS_TOKEN` | El testigo de Audiobookshelf |
+| `YORU_SYNC_ABS_URL` | `http://localhost:13378` |
+| `YORU_SYNC_ABS_URL_PUBLICA` | La salida de Funnel de ABS |
+
+Son dos direcciones por servidor porque no son la misma: una es por dónde llega este
+proceso, que está en el mismo PC, y la otra por dónde llega el móvil de un miembro.
+Si falta la pública se manda la interna.
+
+Sin `.env` el servidor arranca igual y la sincronización funciona. Lo único que queda
+apagado es `/api/medios`, y entonces cada uno configura sus servidores a mano, como
+antes de que existiera nada de esto.
+
+### Lo que esto arregla y lo que no
+
+Arregla lo gordo: la puerta pasa de «saber leer GitHub» a «ser miembro del Discord de
+Yoru». Y hace que rotar una clave sirva de algo, porque ya no hay copias publicadas
+en el historial de git: se cambia el `.env`, se reinicia, y los aparatos recogen la
+nueva dentro de medio día.
+
+No arregla esto: la clave acaba en el aparato del miembro, porque es su propia app la
+que habla con Kavita. Quien abra las herramientas del navegador la verá, y con ella
+puede entrar en Kavita por su cuenta.
+
+El siguiente paso, si algún día hace falta, es que el tráfico de los medios pase por
+aquí en vez de ir directo: una ruta `/api/kavita/*` y otra `/api/abs/*` que repitan la
+petición contra `localhost` poniendo la clave aquí, y que la app use su propio testigo
+de sesión de Yoru. Así la clave no saldría nunca de este PC. Tiene trabajo de verdad:
+hay que pasar el `Range` para que el audio se pueda mover, y las portadas y las pistas
+van por `?token=` en la dirección porque un `<img>` o un `<audio>` no mandan cabeceras.
+No está hecho.
+
 ## Ajustes
 
 Todo por variables de entorno, y todas tienen un valor por defecto que ya sirve:
@@ -157,6 +209,7 @@ los que está: solo su ID, su nombre y su progreso.
 | `PUT` | `/api/progreso` | `{ baseVersion, datos }` → `{ version, actualizadoEn }`, o **409** |
 | `GET` | `/api/progreso/<id>` | **De cualquiera, reducido**: `{ usuarioId, nombre, comparte, leyendo }` |
 | `GET` | `/api/miembros` | Lo mismo para todos: `{ miembros: [...] }` |
+| `GET` | `/api/medios` | Las claves de Kavita y de ABS: `{ kavita, audiobookshelf }`, cada una `null` si no hay |
 
 Las dos últimas son para la tarjeta de Miembros, y la diferencia con `/api/progreso`
 a secas es toda su seguridad: **`/api/progreso` devuelve lo tuyo entero y va por tu
