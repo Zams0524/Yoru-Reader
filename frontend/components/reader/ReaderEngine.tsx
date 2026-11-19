@@ -360,6 +360,16 @@ function ReaderEngineComponent({
   onPageTurnRef.current = onPageTurn;
   // Touch input is handled in touchend; the click the browser emulates afterwards must not act again.
   const lastTouchEndRef = useRef(0);
+  /*
+    Si el toque que acaba de terminar cayó sobre una palabra.
+
+    Tras un toque el navegador fabrica un clic, y ese clic se resuelve contra lo que haya
+    bajo el dedo **en ese momento**. Si el toque pasó de página, lo que hay debajo ya es
+    la página nueva: el clic caía sobre una palabra que el lector no había tocado y le
+    abría el diccionario encima de la hoja recién pasada. El clic solo debe abrir una
+    palabra cuando el toque también empezó en una.
+  */
+  const touchOnWordRef = useRef(false);
 
   // Height of the page box (the content element; its height is fixed at 100%, the container may
   // add padding): a vertical-text page is exactly this tall (see contentStyle).
@@ -1112,6 +1122,7 @@ function ReaderEngineComponent({
     const handleTouchEnd = (e: TouchEvent) => {
       if (e.changedTouches.length === 0) return;
       lastTouchEndRef.current = Date.now();
+      touchOnWordRef.current = false;
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
       const deltaX = touchEndX - touchStartX;
@@ -1180,6 +1191,7 @@ function ReaderEngineComponent({
         if (revealSpoiler(target)) return;
         // Don't trigger page turn if tapping a word, ruby or interactive element
         if (target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button, .dict-popup')) {
+          touchOnWordRef.current = true;
           return;
         }
         // An open dictionary popup is dismissed by this tap; don't also turn the page
@@ -1245,12 +1257,22 @@ function ReaderEngineComponent({
     return () => container.removeEventListener('wheel', handleWheel);
   }, [paginated, vertical, flipPage]);
 
-  // Resize handling
+  /*
+    Las medidas de la ventana, como variables CSS del contenedor.
+
+    Va en su propio efecto, que solo depende de los márgenes. Antes compartía efecto con
+    la recolocación de la página, que depende de `pageIndex`: en cada paso de página la
+    limpieza quitaba las cuatro variables y el efecto las volvía a poner con el mismo
+    valor. Ocho escrituras de estilo en el contenedor, y cada una invalida el estilo de
+    todo el capítulo, porque una propiedad personalizada la heredan todos sus hijos; la
+    lectura de `clientWidth` de justo después obligaba a recalcularlo en el acto. Unos
+    70 ms por página en un PC para dejarlo todo como estaba.
+  */
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handleResize = () => {
+    const applyViewportVars = () => {
       container.style.setProperty('--reader-height', `${window.innerHeight}px`);
       container.style.setProperty('--reader-width', `${window.innerWidth}px`);
       container.style.setProperty(
@@ -1261,7 +1283,23 @@ function ReaderEngineComponent({
         '--reader-image-width',
         `${window.innerWidth - 2 * window.innerWidth * (horizontalPadding / 100) - 60}px`
       );
+    };
 
+    window.addEventListener('resize', applyViewportVars);
+    applyViewportVars();
+
+    return () => {
+      window.removeEventListener('resize', applyViewportVars);
+      container.style.removeProperty('--reader-height');
+      container.style.removeProperty('--reader-width');
+      container.style.removeProperty('--reader-image-height');
+      container.style.removeProperty('--reader-image-width');
+    };
+  }, [verticalPadding, horizontalPadding]);
+
+  // Keep the page in place when the window changes size (and when the page index does).
+  useEffect(() => {
+    const handleResize = () => {
       // A page-turn slide is already taking the content to this page; let it finish.
       if (paginated && slideAnimationRef.current === null) {
         applyPagePosition(pageIndex);
@@ -1271,13 +1309,7 @@ function ReaderEngineComponent({
     window.addEventListener('resize', handleResize);
     handleResize();
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      container.style.removeProperty('--reader-height');
-      container.style.removeProperty('--reader-width');
-      container.style.removeProperty('--reader-image-height');
-      container.style.removeProperty('--reader-image-width');
-    };
+    return () => window.removeEventListener('resize', handleResize);
   }, [verticalPadding, horizontalPadding, paginated, pageIndex, applyPagePosition]);
 
   // Jiten parser (when the user saved a Jiten API key and there is no reader extension).
@@ -1419,7 +1451,7 @@ function ReaderEngineComponent({
     const onWord = !!target?.closest?.('[data-word], [wordId], .jiten-word, .yoru-word, ruby, a, button');
     // After a touch, touchend already turned the page or toggled the bars: the emulated click only opens words.
     if (Date.now() - lastTouchEndRef.current < 800) {
-      if (onWord && onClick) onClick(e);
+      if (onWord && touchOnWordRef.current && onClick) onClick(e);
       return;
     }
     if (onWord || !paginated) {
@@ -1445,6 +1477,23 @@ function ReaderEngineComponent({
       onClick(e);
     }
   }, [onClick, paginated, vertical, flipPage, readerSettings.tapZoneMode, readerSettings.invertTapZones]);
+
+  /*
+    El objeto de `dangerouslySetInnerHTML`, con identidad estable.
+
+    React 19 ya no compara el texto de `__html`: si el objeto es otro, vuelve a asignar
+    `innerHTML`, aunque diga lo mismo. Escrito en línea (`{{ __html: currentHtml }}`)
+    el objeto era nuevo en cada render, y este componente se pinta en cada paso de
+    página, así que **cada página reconstruía el capítulo entero**: 160 KB de HTML y
+    casi dos mil palabras vueltas a analizar y a maquetar para acabar igual. Medido con
+    el procesador frenado cinco veces, entre 0,7 y 0,9 s de bloqueo por página.
+
+    Y no era solo lentitud. Al tirar el DOM se perdía todo lo que se le había puesto
+    después de pintar: los párrafos que Jiten ya había devuelto analizados (el efecto
+    que los pide depende de `currentHtml`, que no cambia, así que no se repetía y la
+    página se quedaba con el análisis local), las imágenes ya destapadas y la selección.
+  */
+  const htmlDelCapitulo = useMemo(() => ({ __html: currentHtml }), [currentHtml]);
 
   const maxWidthStyle = readerSettings.readerMaxWidth && readerSettings.readerMaxWidth !== 'none'
     ? { maxWidth: readerSettings.readerMaxWidth, margin: '0 auto' }
@@ -1476,7 +1525,7 @@ function ReaderEngineComponent({
         style={contentStyle}
         className="reader-engine-content book-content-container"
         data-align={textAlign !== 'original' ? textAlign : undefined}
-        dangerouslySetInnerHTML={{ __html: currentHtml }}
+        dangerouslySetInnerHTML={htmlDelCapitulo}
       />
       {children}
     </div>
