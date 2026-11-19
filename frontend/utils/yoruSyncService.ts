@@ -30,6 +30,7 @@ import { YORU_SYNC_DEFAULTS } from '../config/serverDefaults';
 import {
   clasificarFallo,
   decidirSincronizacion,
+  reconciliarPerfiles,
   sesionServidorValida,
   urlSync,
   type EstadoSync,
@@ -234,11 +235,18 @@ export async function sincronizarConServidorYoru(
         return { estado: 'adelante', cambioLocal: false, subido: true };
       }
 
-      const { merged, localChanged, cloudChanged } = mergeDatabaseExports(
-        local,
-        remoto.datos,
+      // Antes de combinar, fuera los perfiles vacíos que son esta misma cuenta con
+      // otro identificador (app recién instalada o con los datos borrados): sin esto
+      // el progreso del servidor llega a un perfil aparte y el activo se queda vacío.
+      const perfiles = reconciliarPerfiles(local, remoto.datos);
+      const combinado = mergeDatabaseExports(
+        perfiles.local,
+        perfiles.remoto,
         remoto.actualizadoEn > ultimaSincronizacion(),
       );
+      const merged = combinado.merged;
+      const localChanged = combinado.localChanged || perfiles.cambioLocal;
+      const cloudChanged = combinado.cloudChanged || perfiles.cambioRemoto;
 
       if (localChanged && modo === 'bidireccional') {
         // La copia de antes de tocar nada, igual que con Drive: si la combinación

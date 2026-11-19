@@ -126,3 +126,124 @@ export function describirEstado(estado: EstadoSync | 'sincronizando' | 'al-dia' 
     default: return 'No se pudo sincronizar';
   }
 }
+
+/* ------------------------------------------------------------------ los perfiles */
+
+/** Lo que hace falta mirar de una exportación para decidir sobre sus perfiles. */
+export interface ExportacionConPerfiles {
+  activeProfileId?: string | null;
+  profiles?: { id: string; name?: string; [clave: string]: any }[];
+  profileData?: Record<string, any>;
+  [clave: string]: any;
+}
+
+/**
+ * Si un perfil no guarda nada que se pueda perder: ni un libro (los borrados cuentan,
+ * que llevan estadísticas), ni una palabra marcada, ni una tarjeta del SRS.
+ */
+export function perfilSinNada(datos: any): boolean {
+  if (!datos) return true;
+  if ((datos.books || []).length > 0) return false;
+  if (Object.keys(datos.wordStatuses || {}).length > 0) return false;
+  // Las claves `_deck_…` son mazos, no tarjetas: un mazo vacío no es progreso.
+  return !Object.keys(datos.srsData || {}).some((clave) => !clave.startsWith('_deck_'));
+}
+
+export interface PerfilesReconciliados<T> {
+  local: T;
+  remoto: T;
+  /** Hubo que quitar un perfil o cambiar el activo en este aparato. */
+  cambioLocal: boolean;
+  /** Lo mismo en la copia del servidor. */
+  cambioRemoto: boolean;
+}
+
+/**
+ * Quita los perfiles vacíos que son la misma persona que otro, antes de combinar.
+ *
+ * El perfil se crea solo al entrar con Discord, con un identificador nuevo en cada
+ * instalación (`profile-<fecha>`), y el combinador junta los perfiles **por
+ * identificador**. Así que quien borraba los datos de la app, o la instalaba en otro
+ * aparato, recibía su progreso del servidor… en un perfil aparte, mientras el activo
+ * seguía siendo el recién creado y vacío: Inicio en blanco con todo guardado al lado
+ * (zams, 19 nov 2026).
+ *
+ * La cuenta de Discord es una, así que un perfil vacío con el mismo nombre que otro
+ * es ese otro. Se quita el vacío y, si era el activo, pasa a serlo el que tiene los
+ * datos. Solo se quitan perfiles **sin nada dentro**: dos perfiles con datos no se
+ * funden aquí, porque eso no tiene vuelta atrás y puede que estén separados aposta.
+ *
+ * Se limpia en los dos lados a la vez; si no, el combinador volvería a traer del
+ * servidor el perfil que se acaba de quitar aquí.
+ */
+export function reconciliarPerfiles<T extends ExportacionConPerfiles>(local: T, remoto: T): PerfilesReconciliados<T> {
+  const perfilesLocal = local.profiles || [];
+  const perfilesRemoto = remoto.profiles || [];
+  const enLocal = new Set(perfilesLocal.map((p) => p.id));
+  const enRemoto = new Set(perfilesRemoto.map((p) => p.id));
+  const todos = [...perfilesRemoto, ...perfilesLocal.filter((p) => !enRemoto.has(p.id))];
+
+  const vacio = (id: string) => perfilSinNada(local.profileData?.[id]) && perfilSinNada(remoto.profileData?.[id]);
+  const nombre = (perfil: { name?: string }) => String(perfil.name || '').trim().toLowerCase();
+
+  /** De varios candidatos, el que se queda. El mismo en todos los aparatos. */
+  const elegir = (candidatos: string[]): string => {
+    const activoRemoto = remoto.activeProfileId || '';
+    if (candidatos.includes(activoRemoto)) return activoRemoto;
+    const delServidor = candidatos.filter((id) => enRemoto.has(id)).sort();
+    return delServidor[0] ?? [...candidatos].sort()[0];
+  };
+
+  /** Perfil que sobra → perfil que se queda en su lugar. */
+  const destino = new Map<string, string>();
+
+  const porNombre = new Map<string, string[]>();
+  for (const perfil of todos) {
+    const clave = nombre(perfil);
+    if (!clave) continue;
+    porNombre.set(clave, [...(porNombre.get(clave) || []), perfil.id]);
+  }
+  for (const ids of porNombre.values()) {
+    if (ids.length < 2) continue;
+    const llenos = ids.filter((id) => !vacio(id));
+    const queda = elegir(llenos.length > 0 ? llenos : ids);
+    for (const id of ids) {
+      if (id !== queda && vacio(id)) destino.set(id, queda);
+    }
+  }
+
+  /*
+    Aparato recién estrenado cuyo perfil no se llama igual que el del servidor (el
+    nombre de Discord cambió entre medias): su único perfil, vacío y desconocido para
+    el servidor, sigue siendo el de la misma cuenta.
+  */
+  if (perfilesLocal.length === 1 && perfilesRemoto.length > 0) {
+    const unico = perfilesLocal[0].id;
+    if (!enRemoto.has(unico) && !destino.has(unico) && vacio(unico)) {
+      destino.set(unico, elegir(perfilesRemoto.map((p) => p.id)));
+    }
+  }
+
+  if (destino.size === 0) return { local, remoto, cambioLocal: false, cambioRemoto: false };
+
+  const limpiar = (lado: T, presentes: Set<string>): { lado: T; cambio: boolean } => {
+    const activo = lado.activeProfileId || '';
+    const cambio = [...destino.keys()].some((id) => presentes.has(id)) || destino.has(activo);
+    if (!cambio) return { lado, cambio };
+    const profileData = { ...(lado.profileData || {}) };
+    for (const id of destino.keys()) delete profileData[id];
+    return {
+      cambio,
+      lado: {
+        ...lado,
+        activeProfileId: destino.get(activo) ?? lado.activeProfileId,
+        profiles: (lado.profiles || []).filter((p) => !destino.has(p.id)),
+        profileData,
+      },
+    };
+  };
+
+  const l = limpiar(local, enLocal);
+  const r = limpiar(remoto, enRemoto);
+  return { local: l.lado, remoto: r.lado, cambioLocal: l.cambio, cambioRemoto: r.cambio };
+}

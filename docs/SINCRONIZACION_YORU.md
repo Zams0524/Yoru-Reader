@@ -64,6 +64,19 @@ entre que la app lee y escribe ha escrito otro aparato, contesta **409**, y la a
 vuelve a empezar con lo que haya. Eso es lo que impide que, leyendo en el PC y en el
 móvil a la vez, el segundo en llegar borre lo del primero.
 
+### Un perfil por cuenta, aunque cambie el identificador
+
+El perfil se crea solo al entrar con Discord, con un identificador nuevo en cada
+instalación (`profile-<fecha>`), y el combinador junta los perfiles por identificador.
+Sin más, quien borra los datos de la app o la instala en otro aparato recibe su
+progreso en un perfil aparte y se queda con el recién creado, vacío, como activo:
+Inicio en blanco con todo guardado al lado.
+
+Por eso, antes de combinar, `reconciliarPerfiles()` (`yoruSyncNucleo.ts`) quita los
+perfiles **vacíos** que se llaman igual que otro —o el único perfil vacío de un aparato
+recién estrenado— y deja como activo el que tiene los datos. Dos perfiles con datos no
+se funden nunca: eso no tiene vuelta atrás.
+
 Esto **no sustituye a Google Drive**: son dos sitios donde dejar lo mismo, y quien
 tenga Drive configurado lo sigue teniendo igual.
 

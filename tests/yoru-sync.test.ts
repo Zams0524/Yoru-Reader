@@ -7,6 +7,8 @@ import {
   describirEstado,
   INTERVALO_SUBIDA_MS,
   MARGEN_TOKEN_MS,
+  perfilSinNada,
+  reconciliarPerfiles,
   sesionServidorValida,
   urlSync,
   type SesionServidor,
@@ -139,7 +141,79 @@ function textoTests() {
   check(describirEstado('apagado') === 'Desactivada', 'apagada se dice apagada');
 }
 
+function perfilesTests() {
+  console.log('\nLos perfiles repetidos de una misma cuenta');
+
+  const libro = { id: 'b1', title: 'よつばと!' };
+  const lleno = { books: [libro], wordStatuses: { 猫: 'known' }, srsData: null };
+  const vacioDatos = { books: [], wordStatuses: null, srsData: { _deck_Yoru: { name: 'Yoru' } } };
+  const viejo = { id: 'profile-100', name: 'zams' };
+  const nuevo = { id: 'profile-200', name: 'zams' };
+
+  check(perfilSinNada(vacioDatos) && perfilSinNada(undefined), 'un perfil con solo un mazo vacío no guarda nada');
+  check(!perfilSinNada(lleno), 'con un libro ya guarda algo');
+  check(!perfilSinNada({ books: [{ ...libro, isDeleted: true }] }), 'un libro borrado cuenta: lleva estadísticas');
+  check(!perfilSinNada({ srsData: { 猫: { due: 1 } } }), 'una tarjeta del SRS cuenta');
+
+  // Datos borrados o app recién instalada: perfil nuevo y vacío aquí, el de siempre en el servidor.
+  {
+    const local = { activeProfileId: nuevo.id, profiles: [nuevo], profileData: { [nuevo.id]: vacioDatos } };
+    const remoto = { activeProfileId: viejo.id, profiles: [viejo], profileData: { [viejo.id]: lleno } };
+    const r = reconciliarPerfiles(local, remoto);
+    check(r.cambioLocal && !r.cambioRemoto, 'recién instalada: cambia este aparato, no el servidor');
+    check(r.local.activeProfileId === viejo.id, 'el perfil activo pasa a ser el que tiene el progreso');
+    check(r.local.profiles.length === 0 && !(nuevo.id in r.local.profileData), 'y el vacío recién creado se quita');
+    check(local.profiles.length === 1 && local.activeProfileId === nuevo.id, 'sin tocar lo que se le pasó');
+  }
+
+  // Lo que dejó el fallo: los dos perfiles ya están en los dos lados y el activo es el vacío.
+  {
+    const lado = () => ({
+      activeProfileId: nuevo.id,
+      profiles: [nuevo, viejo],
+      profileData: { [nuevo.id]: vacioDatos, [viejo.id]: lleno },
+    });
+    const r = reconciliarPerfiles(lado(), lado());
+    check(r.cambioLocal && r.cambioRemoto, 'ya duplicado: se limpia en los dos lados');
+    check(r.local.profiles.length === 1 && r.local.profiles[0].id === viejo.id, 'queda solo el que tiene datos');
+    check(r.local.activeProfileId === viejo.id && r.remoto.activeProfileId === viejo.id, 'y es el activo en los dos');
+  }
+
+  // El nombre de Discord cambió entre medias: sigue siendo la misma cuenta.
+  {
+    const otroNombre = { id: 'profile-300', name: 'zams2' };
+    const local = { activeProfileId: otroNombre.id, profiles: [otroNombre], profileData: {} };
+    const remoto = { activeProfileId: viejo.id, profiles: [viejo], profileData: { [viejo.id]: lleno } };
+    const r = reconciliarPerfiles(local, remoto);
+    check(r.local.activeProfileId === viejo.id && r.local.profiles.length === 0, 'único perfil vacío y desconocido: se adopta el del servidor');
+  }
+
+  // Lo que no se toca.
+  {
+    const local = { activeProfileId: nuevo.id, profiles: [nuevo], profileData: { [nuevo.id]: lleno } };
+    const remoto = { activeProfileId: viejo.id, profiles: [viejo], profileData: { [viejo.id]: lleno } };
+    const r = reconciliarPerfiles(local, remoto);
+    check(!r.cambioLocal && !r.cambioRemoto && r.local === local, 'dos perfiles con datos no se funden, aunque se llamen igual');
+  }
+  {
+    const hermano = { id: 'profile-400', name: 'hermano' };
+    const lado = () => ({
+      activeProfileId: viejo.id,
+      profiles: [viejo, hermano],
+      profileData: { [viejo.id]: lleno, [hermano.id]: vacioDatos },
+    });
+    const r = reconciliarPerfiles(lado(), lado());
+    check(!r.cambioLocal && !r.cambioRemoto, 'un perfil vacío con otro nombre se queda: es de otra persona');
+  }
+  {
+    const local = { activeProfileId: viejo.id, profiles: [viejo], profileData: { [viejo.id]: lleno } };
+    const r = reconciliarPerfiles(local, { ...local });
+    check(!r.cambioLocal && !r.cambioRemoto, 'el caso normal, un perfil igual en los dos lados, ni se mira');
+  }
+}
+
 decisionTests();
+perfilesTests();
 sesionTests();
 falloTests();
 urlTests();
