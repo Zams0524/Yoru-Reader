@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-19-perfil-unico-sync',
+    es: 'Si borras los datos o instalas la app en otro aparato, tu progreso vuelve a tu perfil y ya no a uno aparte; y lo que borras deja de esconder su serie en Inicio.',
+    en: 'After clearing data or installing on another device, your progress comes back to your profile instead of a separate one; and deleted books no longer hide their series on Home.',
+  },
+  {
     id: '2026-11-19-inicio-novedades',
     es: 'La app abre siempre en Inicio, y aquí te contamos en una línea lo que cambió en cada versión.',
     en: 'The app always opens on Home, and tells you here in one line what changed in each version.',

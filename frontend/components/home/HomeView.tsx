@@ -19,6 +19,7 @@ import {
   recentlyAdded,
   seriesGroups,
   suggestionsWithReason,
+  visibleBooks,
   type EntityGroup,
   type ShelfBook,
 } from './libraryIndex';
@@ -90,7 +91,15 @@ export default function HomeView({
     return () => window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
   }, [books]);
 
-  const localTitles = useMemo(() => new Set(books.map((book) => book.title)), [books]);
+  /*
+    Un libro borrado sigue en la lista (se guarda marcado, para no perder sus
+    estadísticas), pero ya no está en la biblioteca. Contarlo aquí hacía dos cosas
+    raras al borrar: su título seguía tapando la serie del servidor —así que lo
+    borrado desaparecía de Inicio del todo, también de las filas de Kavita— y, borrado
+    el último libro, Inicio no se daba por vacío.
+  */
+  const propios = useMemo(() => visibleBooks(books), [books]);
+  const localTitles = useMemo(() => new Set(propios.map((book) => book.title)), [propios]);
   /*
     Lo que ya sale en «Continuar», para que las filas del servidor no lo repitan:
     las series de Kavita y los audiolibros a medias de este perfil. Sin esto, el
@@ -166,7 +175,7 @@ export default function HomeView({
     audiolibros esperando. Eso es decirle a alguien que no tiene nada mientras lo
     tiene todo, y encima tapando lo que sí hay.
   */
-  const sinLibrosPropios = books.length === 0 && serverContinue.length === 0;
+  const sinLibrosPropios = propios.length === 0 && serverContinue.length === 0;
   const sinServidores = Object.keys(serverRails).length === 0;
   if (sinLibrosPropios && sinServidores) {
     return (
