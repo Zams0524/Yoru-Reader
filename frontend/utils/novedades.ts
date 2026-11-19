@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-19-notificaciones-audiolibros',
+    es: 'En Android, el audiolibro que escuchas sale en las notificaciones y en la pantalla de bloqueo, con sus mandos; y los avisos de actualización y de repaso ahora sí llegan.',
+    en: 'On Android, the audiobook you are listening to shows in the notifications and on the lock screen, with its controls; and update and review notices now do arrive.',
+  },
+  {
     id: '2026-11-19-perfil-unico-sync',
     es: 'Si borras los datos o instalas la app en otro aparato, tu progreso vuelve a tu perfil y ya no a uno aparte; y lo que borras deja de esconder su serie en Inicio.',
     en: 'After clearing data or installing on another device, your progress comes back to your profile instead of a separate one; and deleted books no longer hide their series on Home.',
