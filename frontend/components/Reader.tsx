@@ -2513,7 +2513,7 @@ export default function Reader({
         textMain: '#1c1b19',
         textMuted: '#7c7a75',
         cardBg: '#eae7e0',
-        accent: '#5c35db',
+        accent: '#8f5f0a',
         popoverBg: '#f4f2ed',
       },
       sepia: {
@@ -2533,7 +2533,7 @@ export default function Reader({
         textMain: '#ffffff',
         textMuted: 'rgba(255, 255, 255, 0.45)',
         cardBg: 'rgba(255, 255, 255, 0.05)',
-        accent: '#f2c866',
+        accent: '#e0b040',
         popoverBg: '#050507',
       },
       'night-contrast': {
@@ -2543,7 +2543,7 @@ export default function Reader({
         textMain: '#ffffff',
         textMuted: 'rgba(255, 255, 255, 0.6)',
         cardBg: 'rgba(255, 255, 255, 0.06)',
-        accent: '#f2c866',
+        accent: '#e0b040',
         popoverBg: '#000000',
       },
       'sepia-contrast': {
@@ -2583,7 +2583,7 @@ export default function Reader({
       textMain: themeName === 'custom' ? (localStorage.getItem('reader:customText') || '#ffffff') : '#ffffff',
       textMuted: 'rgba(255, 255, 255, 0.45)',
       cardBg: 'rgba(255, 255, 255, 0.05)',
-      accent: '#f2c866',
+      accent: '#e0b040',
       popoverBg: '#050507',
     };
   }, [readerSettings.theme]);
@@ -3516,8 +3516,8 @@ export default function Reader({
             const action = (active: boolean, tint: string): React.CSSProperties => ({
               flex: 1, minWidth: 0, padding: '7px 4px', borderRadius: '10px', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'all 0.15s',
-              background: active ? `${tint}26` : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${active ? `${tint}99` : 'rgba(255,255,255,0.1)'}`,
+              background: active ? `${tint}26` : colors.cardBg,
+              border: `1px solid ${active ? `${tint}99` : colors.border}`,
               color: active ? tint : colors.textMuted
             });
             let previousDictionary = '';
@@ -3546,7 +3546,7 @@ export default function Reader({
               (new/young/… frente a nueva/aprendiendo/…) y el color de acento: ámbar es Yoru,
               azul es Jiten.
             */
-            const acento = popupJiten ? '#60a5fa' : '#f2c866';
+            const acento = popupJiten ? '#60a5fa' : colors.accent;
             const nombres = popupJiten
               ? { saber: 'Never forget', ignorar: 'Blacklist', olvidar: 'Forget', mazo: 'Deck ＋' }
               : es
@@ -3560,13 +3560,19 @@ export default function Reader({
             const botonJiten = (activo: boolean, tinte: string): React.CSSProperties => ({
               flex: 1, minWidth: 0, padding: '6px 4px', borderRadius: '8px', cursor: 'pointer',
               fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              background: activo ? `${tinte}26` : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${activo ? `${tinte}99` : 'rgba(255,255,255,0.1)'}`,
+              background: activo ? `${tinte}26` : colors.cardBg,
+              border: `1px solid ${activo ? `${tinte}99` : colors.border}`,
               color: activo ? tinte : colors.textMuted
             });
+            // Los tintes de las notas están pensados para fondo oscuro; sobre papel claro o
+            // sepia se quedaban en pastel ilegible, así que ahí se oscurecen hacia la tinta.
+            const papelClaro = baseReaderTheme(readerSettings.theme || 'dark') !== 'dark';
             const botonGrado = (tinte: string, fondo: string): React.CSSProperties => ({
               flex: 1, padding: '5px 4px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.72rem',
-              fontWeight: 700, whiteSpace: 'nowrap', background: fondo, border: `1px solid ${tinte}40`, color: tinte
+              fontWeight: 700, whiteSpace: 'nowrap',
+              background: papelClaro ? `${tinte}24` : fondo,
+              border: `1px solid ${tinte}${papelClaro ? '99' : '40'}`,
+              color: papelClaro ? `color-mix(in srgb, ${tinte} 50%, ${colors.textMain})` : tinte
             });
             /** Jiten olvida la tarjeta y la palabra vuelve a estar sin ver, aquí y allí. */
             const olvidarPalabra = () => {
@@ -3687,7 +3693,7 @@ export default function Reader({
                       style={{
                         ...chip,
                         color: isKnown ? '#8fd19e' : isIgnored ? '#9ca3af' : isLearning ? acento : colors.textMuted,
-                        borderColor: 'rgba(255,255,255,0.14)'
+                        borderColor: colors.border
                       }}
                     >
                       {estadoJiten}
@@ -3701,7 +3707,7 @@ export default function Reader({
                         style={{
                           ...chip,
                           cursor: badges.length > 1 ? 'pointer' : 'default',
-                          ...(index === 0 ? { color: '#f2c866', borderColor: 'rgba(242,200,102,0.35)', background: 'rgba(242,200,102,0.1)' } : {})
+                          ...(index === 0 ? { color: colors.accent, borderColor: `color-mix(in srgb, ${colors.accent} 35%, transparent)`, background: `color-mix(in srgb, ${colors.accent} 10%, transparent)` } : {})
                         }}
                       >
                         <span style={{ letterSpacing: '1px' }}>{'★'.repeat(badge.stars)}<span style={{ opacity: 0.3 }}>{'★'.repeat(5 - badge.stars)}</span></span>
@@ -3739,7 +3745,7 @@ export default function Reader({
                     return (
                       <React.Fragment key={idx}>
                         {showDictionary && (
-                          <div style={{ fontSize: '0.66rem', color: '#f2c866', opacity: 0.85, marginTop: idx > 0 ? '4px' : 0 }}>
+                          <div style={{ fontSize: '0.66rem', color: colors.accent, opacity: 0.85, marginTop: idx > 0 ? '4px' : 0 }}>
                             {dictionary.replace(/\s*\[[^\]]*\]$/, '')}
                           </div>
                         )}
@@ -3758,7 +3764,7 @@ export default function Reader({
                     <button
                       type="button"
                       onClick={() => setShowAllSenses(value => !value)}
-                      style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#f2c866', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
+                      style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: colors.accent, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
                     >
                       {showAllSenses ? (es ? 'Ver menos' : 'Show less') : (es ? `Ver más (${senses.length - senseLimit})` : `Show more (${senses.length - senseLimit})`)}
                     </button>
@@ -3775,7 +3781,7 @@ export default function Reader({
                         type="button"
                         onClick={() => void lookupAlternative(alt.term, alt.reading)}
                         title={`${alt.term}【${alt.reading}】 ${alt.glossary}`}
-                        style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '6px', padding: '2px 8px', color: colors.textMain, fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
+                        style={{ background: colors.cardBg, border: 'none', borderRadius: '6px', padding: '2px 8px', color: colors.textMain, fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
                       >
                         {alt.term === headword ? alt.reading : alt.term}
                       </button>
@@ -3787,8 +3793,8 @@ export default function Reader({
                   <div style={{
                     fontSize: '0.68rem',
                     color: colors.textMuted,
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.06)',
+                    background: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
                     borderRadius: '4px',
                     padding: '3px 6px',
                     display: 'flex',
@@ -3879,7 +3885,7 @@ export default function Reader({
                           background: 'rgba(20, 20, 24, 0.98)',
                           backdropFilter: 'blur(12px)',
                           WebkitBackdropFilter: 'blur(12px)',
-                          border: '1px solid rgba(255,255,255,0.12)',
+                          border: `1px solid ${colors.border}`,
                           borderRadius: '10px',
                           padding: '12px',
                           zIndex: 100,
@@ -3892,7 +3898,7 @@ export default function Reader({
                           
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto', marginBottom: '8px' }}>
                             {allDecks.length === 0 ? (
-                              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', padding: '6px 4px', fontStyle: 'italic' }}>
+                              <div style={{ fontSize: '0.72rem', color: colors.textMuted, padding: '6px 4px', fontStyle: 'italic' }}>
                                 {lang === 'es' ? 'No hay mazos creados aún.' : 'No custom decks created yet.'}
                               </div>
                             ) : (
@@ -3905,8 +3911,8 @@ export default function Reader({
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'space-between',
-                                      background: isSelected ? 'rgba(139, 92, 246, 0.18)' : 'rgba(255,255,255,0.03)',
-                                      border: isSelected ? '1px solid rgba(139, 92, 246, 0.45)' : '1px solid transparent',
+                                      background: isSelected ? `color-mix(in srgb, ${colors.accent} 18%, transparent)` : colors.cardBg,
+                                      border: isSelected ? `1px solid color-mix(in srgb, ${colors.accent} 45%, transparent)` : '1px solid transparent',
                                       borderRadius: '6px',
                                       padding: '5px 8px',
                                       transition: 'all 0.15s'
@@ -3918,7 +3924,7 @@ export default function Reader({
                                       style={{
                                         background: 'transparent',
                                         border: 'none',
-                                        color: isSelected ? '#a78bfa' : 'var(--text-main)',
+                                        color: isSelected ? colors.accent : colors.textMain,
                                         fontSize: '0.75rem',
                                         fontWeight: 700,
                                         cursor: 'pointer',
@@ -3938,14 +3944,14 @@ export default function Reader({
                                       style={{
                                         background: 'transparent',
                                         border: 'none',
-                                        color: 'rgba(255,255,255,0.3)',
+                                        color: colors.textMuted,
                                         cursor: 'pointer',
                                         fontSize: '0.7rem',
                                         padding: '2px 4px',
                                         borderRadius: '3px'
                                       }}
                                       onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.color = colors.textMuted; }}
                                     >
                                       ✕
                                     </button>
@@ -3959,7 +3965,7 @@ export default function Reader({
                           <div style={{
                             display: 'flex',
                             gap: '4px',
-                            borderTop: '1px solid rgba(255,255,255,0.08)',
+                            borderTop: `1px solid ${colors.border}`,
                             paddingTop: '8px',
                             marginTop: '4px'
                           }}>
@@ -3979,8 +3985,8 @@ export default function Reader({
                               placeholder={lang === 'es' ? 'Nuevo mazo...' : 'New deck...'}
                               style={{
                                 flex: 1,
-                                background: 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.12)',
+                                background: colors.cardBg,
+                                border: `1px solid ${colors.border}`,
                                 borderRadius: '5px',
                                 padding: '4px 8px',
                                 fontSize: '0.72rem',
@@ -3992,11 +3998,11 @@ export default function Reader({
                               type="button"
                               onClick={() => handleCreateAndAssignDeck(newDeckInput)}
                               style={{
-                                background: '#8b5cf6',
+                                background: colors.accent,
                                 border: 'none',
                                 borderRadius: '5px',
                                 padding: '4px 10px',
-                                color: '#fff',
+                                color: colors.bg,
                                 fontSize: '0.75rem',
                                 fontWeight: 700,
                                 cursor: 'pointer'
