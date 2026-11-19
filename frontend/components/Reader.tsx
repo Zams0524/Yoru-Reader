@@ -3441,6 +3441,7 @@ export default function Reader({
           highlights={highlights}
           onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
           onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
+          onDeleteHighlight={handleDeleteHighlight}
           onExportHighlights={handleExportHighlights}
           readingSession={session}
           onToggleSession={handleToggleSession}
