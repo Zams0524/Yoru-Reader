@@ -25,10 +25,8 @@ import { tokenizeText } from '../utils/japanese';
 import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
 import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import { sincronizarConYoru, useEstadoYoruSync } from '../hooks/useYoruSync';
 import YoruSyncSettings from './settings/YoruSyncSettings';
-import { sincronizarConServidorYoru, sincronizacionDisponible, ultimaSincronizacion, recargarSiHizoFalta, type ModoSync } from '../utils/yoruSyncService';
-import { asegurarCredencialesMedios } from '../utils/credencialesMedios';
-import { describirEstado as describirEstadoSync, INTERVALO_SUBIDA_MS as YORU_SYNC_INTERVALO_MS } from '../utils/yoruSyncNucleo';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
 import { Capacitor } from '@capacitor/core';
 import { useConfirm } from './ConfirmModal';
@@ -1155,61 +1153,9 @@ const Library = React.memo(function Library({
     volver a traer al frente en dos segundos: cambiársela por debajo mientras no mira
     parece un fallo aunque sea correcto.
   */
-  const [yoruSyncEstado, setYoruSyncEstado] = useState<'apagado' | 'sincronizando' | 'al-dia' | 'fallo'>(
-    sincronizacionDisponible() ? 'sincronizando' : 'apagado'
-  );
-  const [yoruSyncDetalle, setYoruSyncDetalle] = useState('');
-  const [yoruSyncUltima, setYoruSyncUltima] = useState(() => ultimaSincronizacion());
-
-  const sincronizarConYoru = useCallback(async (modo: ModoSync, forzada = false) => {
-    if (!sincronizacionDisponible()) { setYoruSyncEstado('apagado'); return; }
-    setYoruSyncEstado('sincronizando');
-    const resultado = await sincronizarConServidorYoru(modo, { forzada });
-    setYoruSyncUltima(ultimaSincronizacion());
-    if (resultado.fallo || resultado.estado === 'sin-red' || resultado.estado === 'sin-discord') {
-      setYoruSyncEstado('fallo');
-      setYoruSyncDetalle(describirEstadoSync(resultado.fallo || resultado.estado));
-    } else {
-      setYoruSyncEstado('al-dia');
-      setYoruSyncDetalle('');
-    }
-    recargarSiHizoFalta(resultado);
-  }, []);
-
-  /*
-    Las claves de Kavita y de Audiobookshelf, que ya no viajan dentro de la app: las
-    reparte el servidor de sincronización a quien sea miembro del Discord. Ver
-    `utils/credencialesMedios.ts`.
-
-    Sin espera, al contrario que la sincronización de abajo: cuanto antes lleguen,
-    menos rato pasa la pantalla de servidores diciendo que no hay nada configurado.
-    No se espera el resultado porque nada de la biblioteca local depende de esto.
-  */
-  useEffect(() => {
-    void asegurarCredencialesMedios();
-  }, []);
-
-  useEffect(() => {
-    if (!sincronizacionDisponible()) return;
-    // Igual que con Drive: la biblioteca se vuelve a montar al cerrar un libro, así
-    // que se le da un momento al lector para que guarde su última posición.
-    const espera = window.setTimeout(() => { void sincronizarConYoru('bidireccional', true); }, 2000);
-    return () => window.clearTimeout(espera);
-  }, [sincronizarConYoru]);
-
-  useEffect(() => {
-    if (!sincronizacionDisponible()) return;
-    const subir = () => { void sincronizarConYoru('solo-subir'); };
-    const alOcultarse = () => { if (document.visibilityState === 'hidden') subir(); };
-    const reloj = window.setInterval(() => {
-      if (document.visibilityState === 'visible') subir();
-    }, YORU_SYNC_INTERVALO_MS);
-    document.addEventListener('visibilitychange', alOcultarse);
-    return () => {
-      window.clearInterval(reloj);
-      document.removeEventListener('visibilitychange', alOcultarse);
-    };
-  }, [sincronizarConYoru]);
+  // La pone en marcha la concha (`hooks/useYoruSync.ts`), no esta pantalla: `Library`
+  // solo se monta en Catálogo, SRS y Ajustes, y la app abre en Inicio.
+  const { estado: yoruSyncEstado, detalle: yoruSyncDetalle, ultima: yoruSyncUltima } = useEstadoYoruSync();
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
