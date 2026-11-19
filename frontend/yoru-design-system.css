@@ -1920,6 +1920,58 @@ html:where(.yoru-compact) .reader-gallery-image {
   cursor: pointer;
 }
 
+/* Añadir nota a la izquierda, borrar a la derecha: separados, para no borrar queriendo editar. */
+.reader-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.reader-note-delete {
+  margin-top: 4px;
+  margin-left: auto;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.reader-note-delete:hover {
+  opacity: 1;
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171 !important;
+}
+
+.reader-note-confirm {
+  margin-top: 4px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reader-note-confirm-yes,
+.reader-note-confirm-no {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reader-note-confirm-yes {
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+}
+
 .highlight-note-overlay {
   position: fixed;
   inset: 0;
