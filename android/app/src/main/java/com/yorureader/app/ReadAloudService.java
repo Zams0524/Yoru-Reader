@@ -40,9 +40,15 @@ public class ReadAloudService extends Service {
     /** A paused player that nobody touches goes away after this long. */
     private static final long PAUSED_TIMEOUT_MS = 15 * 60_000L;
 
-    /** Receives the player's buttons: play, pause, next, previous, sleep, close, seek. */
+    /** The player that read-aloud (the voice) shows. Audiobooks use their own sources. */
+    static final String SOURCE_READ_ALOUD = "readAloud";
+
+    /**
+     * Receives the player's buttons: play, pause, next, previous, sleep, close, seek.
+     * `source` is who put the player there, so each one only answers for its own.
+     */
     interface Listener {
-        void onReadAloudAction(String action, long positionMs);
+        void onReadAloudAction(String action, long positionMs, String source);
     }
 
     /** What the player shows. Filled by YoruNotificationsPlugin from the reader. */
@@ -59,6 +65,21 @@ public class ReadAloudService extends Service {
         float rate = 1f;
         boolean spanish = true;
         Bitmap artwork;
+        /** Who shows the player: read-aloud, or an audiobook playing in the page. */
+        String source = SOURCE_READ_ALOUD;
+        /**
+         * False when the page plays the sound itself (an audiobook in an audio element): the
+         * WebView already holds the audio focus then, and asking for it here too would take it
+         * from the WebView and pause the audiobook.
+         */
+        boolean ownsAudio = true;
+        /** The sleep timer button; off for a player that has no timer. */
+        boolean showSleep = true;
+        /** What "previous" and "next" do, when it is not a sentence (an audiobook jumps seconds). */
+        String previousLabel = "";
+        String nextLabel = "";
+        /** A new book whose cover could not be read: do not keep the one before. */
+        boolean clearArtwork = false;
 
         ReadAloudState copy() {
             ReadAloudState c = new ReadAloudState();
@@ -73,6 +94,11 @@ public class ReadAloudService extends Service {
             c.rate = rate;
             c.spanish = spanish;
             c.artwork = artwork;
+            c.source = source;
+            c.ownsAudio = ownsAudio;
+            c.showSleep = showSleep;
+            c.previousLabel = previousLabel;
+            c.nextLabel = nextLabel;
             return c;
         }
     }
@@ -128,7 +154,7 @@ public class ReadAloudService extends Service {
 
     /** Shows or refreshes the player. Starts the service the first time (the app is in front then). */
     static void show(Context context, ReadAloudState next) {
-        if (next.artwork == null) next.artwork = state.artwork;
+        if (next.artwork == null && !next.clearArtwork && next.source.equals(state.source)) next.artwork = state.artwork;
         state = next;
         ReadAloudService running = instance;
         if (running != null) {
@@ -148,6 +174,8 @@ public class ReadAloudService extends Service {
     /** The voice started a sentence (YoruTtsPlugin's queue): shows it without waiting for the page. */
     static void advance(String sentence, long positionMs, long durationMs) {
         ReadAloudState current = state;
+        // The player belongs to an audiobook now: the voice's queue has nothing to say in it.
+        if (!SOURCE_READ_ALOUD.equals(current.source)) return;
         ReadAloudState next = current.copy();
         next.sentence = sentence == null ? "" : sentence;
         next.positionMs = positionMs;
@@ -160,6 +188,7 @@ public class ReadAloudService extends Service {
 
     /** The sleep timer ended read-aloud (YoruTtsPlugin's queue). */
     static void pausedBySleep() {
+        if (!SOURCE_READ_ALOUD.equals(state.source)) return;
         ReadAloudState next = state.copy();
         next.playing = false;
         next.note = "";
@@ -170,6 +199,12 @@ public class ReadAloudService extends Service {
 
     /** Removes the player (read-aloud stopped or closed in the app). */
     static void hide(Context context) {
+        hide(context, null);
+    }
+
+    /** Removes the player only if `source` is the one showing it (null: whoever it is). */
+    static void hide(Context context, String source) {
+        if (source != null && !source.equals(state.source)) return;
         state = new ReadAloudState();
         ReadAloudService running = instance;
         if (running != null) running.handler.post(running::stopSelf);
@@ -240,7 +275,7 @@ public class ReadAloudService extends Service {
         if ("close".equals(action)) state.playing = false;
         Listener current = listener;
         if (current != null) {
-            current.onReadAloudAction(action, positionMs);
+            current.onReadAloudAction(action, positionMs, state.source);
         } else if (!"pause".equals(action)) {
             // Nobody left to read: the web reader is gone.
             stopSelf();
@@ -264,7 +299,8 @@ public class ReadAloudService extends Service {
             return;
         }
         if (s.playing) {
-            requestFocus();
+            if (s.ownsAudio) requestFocus();
+            else abandonFocus();
             setNoisyReceiver(true);
             handler.removeCallbacks(pausedTimeout);
         } else {
@@ -319,9 +355,11 @@ public class ReadAloudService extends Service {
             .setActions(actions)
             // The bar moves on its own between sentences at the estimated speed of the voice.
             .setState(s.playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                Math.max(0, s.positionMs), s.playing ? Math.max(0.25f, s.rate) : 0f)
-            .addCustomAction(new PlaybackState.CustomAction.Builder("sleep", label(s, "sleep"), R.drawable.ic_ra_sleep).build())
-            .addCustomAction(new PlaybackState.CustomAction.Builder("close", label(s, "close"), R.drawable.ic_ra_close).build());
+                Math.max(0, s.positionMs), s.playing ? Math.max(0.25f, s.rate) : 0f);
+        if (s.showSleep) {
+            playback.addCustomAction(new PlaybackState.CustomAction.Builder("sleep", label(s, "sleep"), R.drawable.ic_ra_sleep).build());
+        }
+        playback.addCustomAction(new PlaybackState.CustomAction.Builder("close", label(s, "close"), R.drawable.ic_ra_close).build());
         session.setPlaybackState(playback.build());
     }
 
@@ -338,15 +376,20 @@ public class ReadAloudService extends Service {
             .setOnlyAlertOnce(true)
             .setOngoing(s.playing)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setCategory(Notification.CATEGORY_TRANSPORT)
-            .addAction(action(s, "sleep", R.drawable.ic_ra_sleep))
-            .addAction(action(s, "previous", R.drawable.ic_ra_prev))
+            .setCategory(Notification.CATEGORY_TRANSPORT);
+        // Previous, play/pause and next are the three of the folded player, wherever they land.
+        int first = 0;
+        if (s.showSleep) {
+            builder.addAction(action(s, "sleep", R.drawable.ic_ra_sleep));
+            first = 1;
+        }
+        builder.addAction(action(s, "previous", R.drawable.ic_ra_prev))
             .addAction(s.playing ? action(s, "pause", R.drawable.ic_ra_pause) : action(s, "play", R.drawable.ic_ra_play))
             .addAction(action(s, "next", R.drawable.ic_ra_next))
             .addAction(action(s, "close", R.drawable.ic_ra_close))
             .setStyle(new Notification.MediaStyle()
                 .setMediaSession(session.getSessionToken())
-                .setShowActionsInCompactView(1, 2, 3));
+                .setShowActionsInCompactView(first, first + 1, first + 2));
         PendingIntent open = openAppIntent();
         if (open != null) builder.setContentIntent(open);
         builder.setDeleteIntent(controlIntent("close"));
@@ -363,6 +406,8 @@ public class ReadAloudService extends Service {
 
     private static String label(ReadAloudState s, String control) {
         boolean es = s.spanish;
+        if ("previous".equals(control) && !s.previousLabel.isEmpty()) return s.previousLabel;
+        if ("next".equals(control) && !s.nextLabel.isEmpty()) return s.nextLabel;
         switch (control) {
             case "sleep": return es ? "Temporizador" : "Sleep timer";
             case "previous": return es ? "Oración anterior" : "Previous sentence";

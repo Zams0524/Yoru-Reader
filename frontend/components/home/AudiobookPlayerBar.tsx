@@ -24,6 +24,7 @@ import {
 import type { AudiobookItem } from '../../types/integrations';
 import { absCoverUrl } from '../../utils/audiobookshelfService';
 import { useAudiobookPlayback, type AudiobookPlayback } from './useAudiobookPlayback';
+import { useAudiobookNotification } from './useAudiobookNotification';
 import {
   AUDIO_PREFS_EVENT,
   getMarcadores,
@@ -258,6 +259,45 @@ function PlayerBar({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [sleep.kind, objetivo]);
+
+  /*
+    Android: lo que suena, en la notificación y en la pantalla de bloqueo. El botón del
+    temporizador de ahí no tiene sitio para un menú, así que da vueltas: 15, 30, 60
+    minutos y apagado. Para «al acabar el capítulo» está el reproductor ampliado.
+  */
+  const sleepNote = sleep.kind === 'at'
+    ? (() => {
+        const minutes = Math.max(1, Math.ceil((sleep.at - Date.now()) / 60_000));
+        return es ? `Se apaga en ${minutes} min` : `Stops in ${minutes} min`;
+      })()
+    : sleep.kind === 'chapter'
+      ? (es ? 'Se apaga al acabar el capítulo' : 'Stops at the end of the chapter')
+      : '';
+  useAudiobookNotification({
+    source: 'audiobook',
+    active: Boolean(session),
+    id: item.id,
+    title: item.title,
+    subtitle,
+    cover: absCoverUrl(item.id),
+    playing: playback.playing,
+    time: position,
+    duration,
+    rate: playback.rate,
+    note: sleepNote,
+    es,
+    back: saltos.back,
+    forward: saltos.forward,
+    onPlay: playback.play,
+    onPause: playback.pause,
+    onSeek: playback.seekTo,
+    onSleep: () => setSleep((previous) => {
+      const steps = [15, 30, 60];
+      const next = steps[(previous.kind === 'at' ? steps.indexOf(previous.minutes) : -1) + 1];
+      return next ? { kind: 'at', at: Date.now() + next * 60_000, minutes: next } : { kind: 'off' };
+    }),
+    onClose,
+  });
 
   return (
     <div

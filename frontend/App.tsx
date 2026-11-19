@@ -26,7 +26,7 @@ export const isTemporaryBookId = (id: string) => typeof id === 'string' && id.st
 export const temporaryBookId = (volumeId: number) => TEMPORARY_ID_PREFIX + 'kavita:' + volumeId;
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
-import { YoruNotifications, configureUpdateNotices, hasYoruNotifications, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
+import { YoruNotifications, configureUpdateNotices, ensureNotificationPermission, hasYoruNotifications, notificationSettings, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
 
 const isNewerAppVersion = (remoteVersion: string, localVersion: string) => {
   if (!remoteVersion || !localVersion) return false;
@@ -169,6 +169,17 @@ export default function App() {
     const timer = window.setTimeout(() => { void refreshSrsReminders(notificationSettingsRef.current); }, 2000);
     return () => window.clearTimeout(timer);
   }, [settings]);
+  // Android 13+ shows nothing until the permission is given, and it was only asked for when
+  // read-aloud started or a switch was flipped in the settings: whoever did neither never got an
+  // update notice or a review reminder, with every switch on. Asked once, a moment after opening.
+  useEffect(() => {
+    if (!hasYoruNotifications()) return;
+    const timer = window.setTimeout(() => {
+      const options = notificationSettings(notificationSettingsRef.current);
+      if (options.srsDaily || options.appUpdates || options.otaUpdates) void ensureNotificationPermission();
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, []);
   useEffect(() => {
     if (!hasYoruNotifications()) return;
     const onVisibility = () => { void refreshSrsReminders(notificationSettingsRef.current); };
