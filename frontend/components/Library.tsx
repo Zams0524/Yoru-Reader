@@ -2892,6 +2892,16 @@ const Library = React.memo(function Library({
       `!important`, y eso es tapar el problema, no arreglarlo.
     */
     const settingsNarrow = isMobile || isNarrowSettings;
+    // En escritorio el nombre de la sección ya va arriba, en grande; la tarjeta que
+    // lo repetía justo debajo («Apariencia e idioma» dos veces) se queda sin el suyo.
+    // Se compara por texto para no tocar las tarjetas con título propio.
+    const ocultarTituloRepetido = (pane: HTMLDivElement | null) => {
+      if (!pane) return;
+      const titulo = pane.querySelector('.settings-pane-title')?.textContent?.trim();
+      pane.querySelectorAll<HTMLElement>('.settings-card-title').forEach((h) => {
+        h.classList.toggle('is-repetido', Boolean(titulo) && h.textContent?.trim() === titulo);
+      });
+    };
 
     // About / Diagnostics is a developer tool: only on Android and only for the "Zams" profile.
     const showDiagnostics = Capacitor.getPlatform() === 'android'
@@ -3071,7 +3081,7 @@ const Library = React.memo(function Library({
             lo justo para que una sección que cabía deje de caber y aparezca una
             barra de scroll por ocho píxeles. El aire lo pone ahora la hoja.
           */
-          <div className="yomitan-settings-pane" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
+          <div className="yomitan-settings-pane" ref={ocultarTituloRepetido} style={{ flex: 1, overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth', height: '100%', paddingBottom: onExitSettings ? undefined : '100px' }}>
 
           {/*
             El nombre de la sección, grande y arriba, con una línea debajo. En el

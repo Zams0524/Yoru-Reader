@@ -23,11 +23,11 @@ function railBtn(disabled: boolean): React.CSSProperties {
 }
 
 const ACCENTS = [
-  { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#f2c866' },
-  { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#f0888f' },
-  { id: 'jade', es: 'Jade', en: 'Jade', swatch: '#6fd1a6' },
-  { id: 'indigo', es: 'Índigo', en: 'Indigo', swatch: '#8fa8f0' },
-  { id: 'violet', es: 'Violeta', en: 'Violet', swatch: '#c197ef' },
+  { id: 'gold', es: 'Dorado de Yoru', en: 'Yoru gold', swatch: '#e0b040' },
+  { id: 'crimson', es: 'Carmesí', en: 'Crimson', swatch: '#d9705f' },
+  { id: 'jade', es: 'Jade', en: 'Jade', swatch: '#7fb59a' },
+  { id: 'indigo', es: 'Índigo', en: 'Indigo', swatch: '#7f9cc4' },
+  { id: 'violet', es: 'Violeta', en: 'Violet', swatch: '#a995c9' },
 ];
 
 function HomeRailsEditor({ lang }: { lang: string }) {

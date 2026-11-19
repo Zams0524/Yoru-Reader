@@ -3298,16 +3298,21 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .settings-nav
 /* Las secciones, sin caja: el título de la tarjeta pasa a ser un subtítulo de la página. */
 html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane { max-width: 860px; }
 html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card {
+  /* !important porque index.css pinta la caja con !important: sin esto quedaba
+     el borde y el fondo pero no el relleno, con el texto pegado al borde. */
   padding: 0;
-  border: none;
+  border: none !important;
   border-radius: 0;
-  background: none;
+  background: none !important;
   box-shadow: none;
 }
 html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-section-card + .settings-section-card {
   padding-top: 24px;
-  border-top: 1px solid var(--border-light);
+  border-top: 1px solid var(--border-light) !important;
 }
+.settings-card-title.is-repetido { display: none !important; }
+/* Un botón de acción no ocupa toda la fila en escritorio. */
+html:where(:not(.yoru-compact)) .settings-actions > .settings-btn { flex: 0 0 auto; }
 html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-settings-pane .settings-card-title { font-size: 1.12rem; }
 
 /* ==========================================================================

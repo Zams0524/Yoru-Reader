@@ -126,23 +126,23 @@
   `[data-theme]`, que vive en el mismo elemento.
 */
 [data-accent='crimson'] {
-  --primary: #f0888f;
-  --primary-hover: #ffa3a9;
+  --primary: #d9705f;
+  --primary-hover: #e58b7b;
   --border-focus: rgba(240, 136, 143, 0.62);
 }
 [data-accent='jade'] {
-  --primary: #6fd1a6;
-  --primary-hover: #8fe6bf;
+  --primary: #7fb59a;
+  --primary-hover: #9bcab1;
   --border-focus: rgba(111, 209, 166, 0.62);
 }
 [data-accent='indigo'] {
-  --primary: #8fa8f0;
-  --primary-hover: #adbdff;
+  --primary: #7f9cc4;
+  --primary-hover: #9bb3d6;
   --border-focus: rgba(143, 168, 240, 0.62);
 }
 [data-accent='violet'] {
-  --primary: #c197ef;
-  --primary-hover: #d6b4ff;
+  --primary: #a995c9;
+  --primary-hover: #beadd9;
   --border-focus: rgba(193, 151, 239, 0.62);
 }
 
