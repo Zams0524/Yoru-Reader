@@ -105,16 +105,24 @@ final class EraEngine {
         }
     }
 
-    private Process process;
+    /** Read from other threads by kill(). */
+    private volatile Process process;
     private DataInputStream in;
     private BufferedOutputStream out;
     private final ArrayDeque<String> logTail = new ArrayDeque<>();
     /** Page pixels are width*height*4 bytes per render: reuse the buffer instead of allocating it each time. */
     private byte[] pixelBuffer;
 
+    /** Names its FIFOs apart: two engines can run side by side (one prepares a book while the other shows one). */
+    private final String suffix;
+
+    EraEngine(String suffix) {
+        this.suffix = suffix;
+    }
+
     void start(File engineBinary, File workDir) throws IOException {
-        File toEngine = new File(workDir, "ore-in");
-        File fromEngine = new File(workDir, "ore-out");
+        File toEngine = new File(workDir, "ore-in" + suffix);
+        File fromEngine = new File(workDir, "ore-out" + suffix);
         toEngine.delete();
         fromEngine.delete();
         try {
@@ -237,6 +245,22 @@ final class EraEngine {
         synchronized (logTail) {
             return String.join("\n", logTail);
         }
+    }
+
+    /** While true, kill() may end the process (the engine is laying out a book nobody may want any more). */
+    private boolean killable;
+
+    synchronized void setKillable(boolean killable) {
+        this.killable = killable;
+    }
+
+    /**
+     * Ends the engine process from any thread, if it is marked killable: the request its own
+     * thread is waiting on fails with an IOException, and that thread then calls stop().
+     */
+    synchronized void kill() {
+        Process running = process;
+        if (killable && running != null) running.destroy();
     }
 
     boolean isRunning() {

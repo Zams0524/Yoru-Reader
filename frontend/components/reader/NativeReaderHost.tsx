@@ -75,7 +75,8 @@ interface Props {
   /** The dictionary popup is open: taps on the page close it. */
   popupOpen?: boolean;
   wordStatuses?: Record<string, string>;
-  onPageTurn?: () => void;
+  /** byHand: the reader turned the page (APK 1.4.9+ tells it apart from a jump or a new layout). */
+  onPageTurn?: (byHand?: boolean) => void;
   /** Chapter index (table of contents). */
   targetSection?: number | null;
   targetParagraphId?: number | null;
@@ -156,19 +157,22 @@ function collectHoles(root: HTMLElement, placeholder: HTMLElement | null): numbe
 
 /**
  * Whether the next export differs from the open one in what the reader sees now: the page CSS
- * (word styles, furigana), the blocks, or the markup of a block of this section.
+ * (word styles, furigana), the blocks, or the markup of a block of this section (up to the end
+ * of the section "through", when the reload is worth doing ahead of the reader).
  */
 function changesSection(
   opened: NativeBookExport,
   next: NativeBookExport,
   section: { startParagraphId: number; lastIndex: number } | undefined,
+  through: { lastIndex: number } | undefined = section,
 ): boolean {
   if (!section || opened.blocks.length !== next.blocks.length) return true;
+  const last = Math.max(section.lastIndex, through?.lastIndex ?? 0);
   const head = (html: string) => html.slice(0, html.indexOf('<body>'));
   if (head(opened.html) !== head(next.html)) return true;
   for (let ordinal = 0; ordinal < next.blocks.length; ordinal++) {
     const paragraph = next.blockParagraph[ordinal];
-    if (paragraph < section.startParagraphId || paragraph > section.lastIndex) continue;
+    if (paragraph < section.startParagraphId || paragraph > last) continue;
     if (opened.blocks[ordinal] !== next.blocks[ordinal]) return true;
   }
   return false;
@@ -329,6 +333,8 @@ export default function NativeReaderHost({
   /** The export the engine has open: positions and taps refer to it until a reload replaces it. */
   const openedExportRef = useRef<typeof exported | null>(null);
   const sectionRef = useRef(0);
+  /** The APK has NativeReader.prepare (its first open says so). */
+  const canPrepareRef = useRef(false);
   const [currentSection, setCurrentSection] = useState(0);
   // The export to open. Each reload costs the engine a full layout of the book, so once the book
   // is open a new export (word states, Jiten parses, the rest of the book analysed) replaces it
@@ -346,7 +352,11 @@ export default function NativeReaderHost({
       setTarget((pending) => (pending.key === exported.key ? pending : exported));
       return undefined;
     }
-    if (!changesSection(opened, exported, sections[currentSection])) return undefined;
+    // A reload laid out behind the page (APK 1.4.9+) does not interrupt the reading, so the next
+    // section is brought up to date too: its words (Jiten's, or the rest of the analysis) are
+    // already there when the reader gets to it, instead of changing in front of them.
+    const through = canPrepareRef.current ? sections[Math.min(sections.length - 1, currentSection + 1)] : undefined;
+    if (!changesSection(opened, exported, sections[currentSection], through)) return undefined;
     // A moment's wait gathers what changes together (a Jiten parse in several requests).
     const timer = window.setTimeout(() => setTarget(exported), 300);
     return () => window.clearTimeout(timer);
@@ -561,7 +571,7 @@ export default function NativeReaderHost({
     const handles: Promise<{ remove: () => Promise<void> }>[] = [
       NativeReader.addListener('pageChanged', (position) => {
         reportRef.current(position);
-        callbacks.current.onPageTurn?.();
+        callbacks.current.onPageTurn?.(position.turned === true);
       }),
       NativeReader.addListener('tap', ({ closePopup }) => callbacks.current.onTap?.(!!closePopup)),
       NativeReader.addListener('word', (hit) => { void findWordRef.current(hit); }),
@@ -575,6 +585,14 @@ export default function NativeReaderHost({
         await ensureNativeBook(toOpen, () => cancelled);
         if (cancelled) return;
         markOpen('written');
+        // A reload of the open book (word states, Jiten's words): the plugin lays the new export
+        // out behind the page, which goes on answering taps and turns meanwhile (it used to stay
+        // frozen for the seconds the layout takes). The place to open at is read afterwards, so
+        // pages turned while waiting are kept.
+        if (openedExportRef.current && canPrepareRef.current) {
+          await NativeReader.prepare({ key: toOpen.key, settings: settingsRef.current }).catch(() => undefined);
+          if (cancelled) return;
+        }
         const paragraph = Number(book.progress?.currentPage) || 0;
         const saved = loadNativePosition(String(book.id));
         // Reloaded here (word states, furigana): the character at the top of the page on screen,
@@ -598,6 +616,8 @@ export default function NativeReaderHost({
           place = { ordinal: blockOfParagraph(toOpen, paragraph) };
         }
         const position = await NativeReader.open({ key: toOpen.key, settings: settingsRef.current, marks: marksRef.current, ...place });
+        canPrepareRef.current = !!position.prepare;
+        if (position.timing) markOpen(`engine [${position.timing}]`);
         sentMarksRef.current = JSON.stringify(marksRef.current);
         openedExportRef.current = toOpen;
         if (cancelled) return;

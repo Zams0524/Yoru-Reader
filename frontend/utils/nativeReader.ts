@@ -88,6 +88,12 @@ export interface NativePosition {
   ordinal: number;
   /** goTo takes innerPath (APK 1.4.4+). */
   goToInnerPath?: boolean;
+  /** The plugin has prepare() (APK 1.4.9+): a reload is laid out behind the page on screen. */
+  prepare?: boolean;
+  /** Steps of the last whole-book open, for the timing line (APK 1.4.9+). */
+  timing?: string;
+  /** In pageChanged: the reader turned the page by hand, it is not a jump or a new layout (APK 1.4.9+). */
+  turned?: boolean;
 }
 
 interface NativeReaderPlugin {
@@ -103,6 +109,13 @@ interface NativeReaderPlugin {
   /** innerPath (with ordinal): a place inside that block, see textOffsetToInnerPath. */
   /** marks (APK 1.4.7+): the saved highlights, painted from the first page on. */
   open(options: { key: string; settings: NativeReaderSettings; xpath?: string; ordinal?: number; innerPath?: string; marks?: NativeMark[] }): Promise<NativePosition>;
+  /**
+   * APK 1.4.9+. Lays the export out in a second engine while the open book stays on screen and
+   * answers taps and turns; resolves when it is ready. The open() that follows with the same key
+   * and settings shows it at once. Rejects when there is nothing to wait for (no book on screen,
+   * a newer prepare, an APK without it): open() then does the whole work, as before.
+   */
+  prepare(options: { key: string; settings: NativeReaderSettings }): Promise<void>;
   setSettings(options: { settings: Partial<NativeReaderSettings> }): Promise<void>;
   /** innerPath (with ordinal, APK 1.4.4+): a place inside that block; already on its page, nothing happens. */
   goTo(options: { ordinal?: number; page?: number; innerPath?: string }): Promise<void>;
