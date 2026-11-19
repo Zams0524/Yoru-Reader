@@ -231,7 +231,7 @@ jobs:
     name: Build macOS installers
     needs: prepare
     if: needs.prepare.outputs.native-changed == 'true'
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
