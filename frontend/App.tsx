@@ -128,7 +128,13 @@ export default function App() {
     const timer = window.setTimeout(preload, 2500);
     return () => window.clearTimeout(timer);
   }, []);
-  const [libraryTab, setLibraryTab] = useState('library');
+  /*
+    Con qué sección se abre la app. `home` no es una pestaña de `Library`: el shell no
+    la encuentra en sus pestañas embebidas y se queda en Inicio, que es lo que se quiere
+    al entrar. Lo pidió zams (19 nov 2026): hasta ahora arrancaba en el Catálogo.
+    Volver de un libro sí trae su pestaña ('library', 'srs'…), y eso no cambia.
+  */
+  const [libraryTab, setLibraryTab] = useState('home');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
     window.__yoruTheme = resolveTheme(s.theme);

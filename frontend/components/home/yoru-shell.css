@@ -434,6 +434,44 @@
 }
 .yoru-chip-link:hover { background: var(--surface-soft); }
 
+/* El aviso de «esto se actualizó», arriba de Inicio. Una línea y una cruz. */
+.yoru-novedad {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base, 12px);
+  background: var(--surface-raised, var(--surface, transparent));
+}
+.yoru-novedad-icon {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--primary);
+}
+.yoru-novedad-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.yoru-novedad-text strong { font-size: 14.5px; color: var(--text-main); }
+.yoru-novedad-text span { font-size: 13px; color: var(--text-muted); }
+.yoru-novedad-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.yoru-novedad-close:hover { background: var(--border-light); color: var(--text-main); }
+
 /* La nota de «importa una novela» cuando lo que se está viendo es de los servidores. */
 .yoru-home-hint {
   margin: -8px 0 24px;
