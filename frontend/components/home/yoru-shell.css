@@ -2714,6 +2714,10 @@ body:has(.yoru-player-bar) { --yoru-player-h: 86px; }
   margin: 26px 0 16px;
   border-bottom: 1px solid var(--border-light);
 }
+/* En el teléfono, el mismo recorte de aire que el resto de la ficha. */
+@media (max-width: 900px) {
+  .yoru-detail-tabs { margin: 14px 0 12px; }
+}
 .yoru-detail-tab {
   background: none;
   border: none;

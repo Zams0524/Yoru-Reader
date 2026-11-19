@@ -128,7 +128,13 @@ export default function App() {
     const timer = window.setTimeout(preload, 2500);
     return () => window.clearTimeout(timer);
   }, []);
-  const [libraryTab, setLibraryTab] = useState('library');
+  /*
+    Al abrir, Inicio. Arrancaba en 'library', que el shell traduce a Catálogo: se
+    entraba a una cuadrícula de portadas en vez de a Continuar, Para ti y Novedades,
+    que es lo que esta pantalla viene a enseñar. Lo pidió zams (19 nov 2026), para el
+    teléfono y para el escritorio.
+  */
+  const [libraryTab, setLibraryTab] = useState('home');
   const [settings, setSettings] = useState<any>(() => {
     const s = db.getSettings();
     window.__yoruTheme = resolveTheme(s.theme);
