@@ -1006,6 +1006,16 @@ export default function App() {
   // responden (fuera de casa, modo avión) se queda lo que hubiera en la caché.
   useEffect(() => {
     void refreshServerCatalog();
+    /*
+      Y otra vez cuando llegan las claves de los servidores. Recién instalada la app, o
+      tras «Eliminar todos los datos», al arrancar todavía no hay claves —las reparte
+      el servidor de sincronización después de entrar con Discord—, así que la primera
+      petición no pide nada. Sin repetirla, Inicio se quedaba en «Tu biblioteca está
+      vacía» hasta cerrar y volver a abrir la app (zams, 19 nov 2026).
+    */
+    const alCambiarServidores = () => { void refreshServerCatalog(); };
+    window.addEventListener('yoru-media-servers-changed', alCambiarServidores);
+    return () => window.removeEventListener('yoru-media-servers-changed', alCambiarServidores);
   }, []);
 
   useEffect(() => {

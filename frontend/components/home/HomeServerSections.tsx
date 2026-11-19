@@ -117,6 +117,9 @@ export function useServerRails({
 
   useEffect(() => {
     const onUpdate = () => setCatalog(getCachedServerCatalog());
+    // Se vuelve a leer al suscribirse: el catálogo puede haberse guardado entre el
+    // primer pintado y este efecto, y ese aviso ya no lo oye nadie.
+    onUpdate();
     window.addEventListener('yoru-server-catalog-updated', onUpdate);
     // «Seguir escuchando» sale de lo apuntado en este perfil cuando no comparte el
     // progreso de la cuenta, así que cambia al escuchar, sin pasar por el servidor.

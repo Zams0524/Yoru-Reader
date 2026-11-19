@@ -16,6 +16,7 @@ tailnet, así que quien no esté dentro no llega ni a la puerta.
 | `servidor-sync/README.md` | Cómo arrancarlo, dejarlo arrancado y el cortafuegos |
 | `frontend/utils/yoruSyncNucleo.ts` | Las decisiones (cuándo, qué significa cada fallo). Puro |
 | `frontend/utils/yoruSyncService.ts` | El trato con el servidor: bajar, combinar, subir |
+| `frontend/hooks/useYoruSync.ts` | Quién la arranca y cuándo. Lo monta `YoruShell`, no `Library`, que solo existe en Catálogo, SRS y Ajustes |
 | `frontend/components/settings/YoruSyncSettings.tsx` | La tarjeta de Ajustes |
 | `frontend/config/serverDefaults.ts` | La dirección del servidor |
 | `tests/yoru-sync.test.ts` | Pruebas de las decisiones |
