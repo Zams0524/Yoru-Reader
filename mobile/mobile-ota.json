@@ -1,8 +1,8 @@
 {
-  "webVersion": "1.2.8.74",
+  "webVersion": "1.2.8.75",
   "nativeVersionCode": 160,
   "url": "https://github.com/Zams0524/Yoru-Reader/releases/download/latest/dist.zip",
-  "sha256": "5c24cd1bf962e1cc52a81f0c9e55f3c25a7b77bb0e1aaf7e1d5cae56a62dc7d8",
-  "size": 38227774,
-  "description": "Yoru Reader interface v1.2.8.74"
+  "sha256": "f93b8ae66eb8ead71cf36128e1806a7d596dc7a0a6a2b218db6010415e370479",
+  "size": 38228206,
+  "description": "Yoru Reader interface v1.2.8.75"
 }
