@@ -221,7 +221,12 @@ function AudiobookDetail({
       </button>
 
       <div className="yoru-detail-head">
-        <div className="yoru-detail-cover">
+        {/*
+          `is-free`: la portada de un audiolibro manda sobre su forma. Audiobookshelf
+          las sirve como vienen —muchas son cuadradas— y el marco de libro las
+          recortaba por los lados.
+        */}
+        <div className="yoru-detail-cover is-free">
           <img src={absCoverUrl(full.id)} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
         </div>
         <div className="yoru-detail-info">

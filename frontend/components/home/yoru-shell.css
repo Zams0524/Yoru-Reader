@@ -8,12 +8,31 @@
  * tocar la biblioteca antigua ni el lector.
  */
 
+/*
+  Los dos altos que todo el mundo necesita —la barra de abajo y la del reproductor—
+  se declaran en `body`, no en `.yoru-shell`.
+
+  La barra del reproductor se monta FUERA del shell (es hermana suya, para que el
+  audio sobreviva al cambio de pantalla), así que desde ella `var(--yoru-bottom-nav-h)`
+  no heredaba nada: `bottom: var(--yoru-bottom-nav-h)` quedaba inválido y la barra
+  se iba a `bottom: auto`, o sea a su sitio en el flujo, encima de la barra de estado
+  del teléfono. Y `.yoru-shell:has(.yoru-player-bar)` tampoco casaba nunca, así que el
+  lienzo no reservaba hueco y el final de cada ficha quedaba debajo de la barra.
+
+  Declarándolos en el ancestro común los ven los dos y el cálculo vuelve a cuadrar.
+*/
+body {
+  /* Cero en el ordenador; en compacto lo fija la regla de la barra de abajo. */
+  --yoru-bottom-nav-h: 0px;
+  --yoru-player-h: 0px;
+}
+/* En Ajustes a pantalla completa no hay barra de abajo: tampoco su hueco. */
+body:has(.yoru-shell.is-settings-fullscreen) { --yoru-bottom-nav-h: 0px; }
+
 .yoru-shell {
   --shell-header-h: 64px;
   --shell-sidebar-w: 212px;
   --shell-radius: 12px;
-  /* Cero en el ordenador; en compacto lo fija la regla de la barra de abajo. */
-  --yoru-bottom-nav-h: 0px;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -1030,6 +1049,15 @@
   box-shadow: var(--shadow-panel);
 }
 .yoru-detail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/*
+  Las portadas de los audiolibros no son de libro: las hay cuadradas. Imponerles la
+  proporción 1/1.45 y recortar con `cover` se comía los lados —en la ficha se perdían
+  el sello de la editorial y media ilustración, y el mismo audiolibro se veía entero
+  en el reproductor ampliado—. Con `is-free` la portada conserva su forma, que es lo
+  que ya hace `.yoru-player-full-art`.
+*/
+.yoru-detail-cover.is-free { aspect-ratio: auto; }
+.yoru-detail-cover.is-free img { height: auto; object-fit: contain; }
 .yoru-detail-info { min-width: 0; flex: 1; }
 .yoru-detail-title {
   font-family: var(--font-japanese);
@@ -1041,6 +1069,8 @@
 }
 .yoru-detail-author { font-size: 15px; color: var(--text-muted); margin-bottom: 18px; }
 .yoru-detail-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+/* Sin etiquetas no hay fila: vacía solo dejaba su margen, un hueco sin explicación. */
+.yoru-detail-badges:empty { display: none; }
 .yoru-badge {
   padding: 4px 10px;
   border-radius: 6px;
@@ -1269,7 +1299,8 @@
     de navegación (48 px de zona segura) la barra mide más de cien: el reproductor
     quedaba escondido detrás y el final de cada pantalla, debajo de la barra.
   */
-  .yoru-shell { --yoru-bottom-nav-h: calc(58px + var(--yoru-safe-bottom, 0px)); }
+  body { --yoru-bottom-nav-h: calc(58px + var(--yoru-safe-bottom, 0px)); }
+  body:has(.yoru-shell.is-settings-fullscreen) { --yoru-bottom-nav-h: 0px; }
   .yoru-shell-canvas {
     --yoru-canvas-pad: 16px;
     padding: 16px 16px calc(24px + var(--yoru-player-h) + var(--yoru-bottom-nav-h));
@@ -1312,8 +1343,18 @@
   }
   .yoru-shell-bottom-btn.active { color: var(--primary); }
 
-  .yoru-detail-head { flex-direction: column; gap: 20px; }
-  .yoru-detail-cover { width: 160px; }
+  /*
+    En el teléfono la ficha respiraba de más: portada, título y los dos botones
+    llenaban la pantalla entera y las pestañas —Resumen, Técnico, Capítulos,
+    Historial— caían fuera, debajo de la barra de abajo. Lo que se veía era un hueco
+    negro con los botones al fondo. Los mismos elementos con menos aire: las pestañas
+    vuelven a entrar en la primera pantalla.
+  */
+  .yoru-detail-head { flex-direction: column; gap: 14px; margin-bottom: 18px; }
+  .yoru-detail-cover { width: 136px; }
+  .yoru-detail-author { margin-bottom: 8px; }
+  .yoru-detail-badges { margin-bottom: 12px; }
+  .yoru-detail-actions { margin-bottom: 0; }
   .yoru-detail-title { font-size: 22px; }
   .yoru-view-title { font-size: 22px; }
   .yoru-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 14px; }
@@ -2446,8 +2487,15 @@
   box-shadow: var(--shadow-panel);
   padding: 0 16px 10px;
 }
-.yoru-shell { --yoru-player-h: 0px; }
-.yoru-shell:has(.yoru-player-bar) { --yoru-player-h: 86px; }
+/*
+  Desplegado, la barra sube por encima de la navegación de abajo (z-index 150).
+  El reproductor ampliado cuelga de ella, y una barra con `z-index: 60` ya es un
+  contexto de apilado: el `z-index: 200` del ampliado se resolvía dentro de ese
+  contexto, no contra la página, así que la navegación le pintaba encima y la fila
+  de herramientas —velocidad, temporizador, marcadores— quedaba cortada.
+*/
+.yoru-player-bar.is-expanded { z-index: 210; }
+body:has(.yoru-player-bar) { --yoru-player-h: 86px; }
 /*
   El hueco lo reservan los dos que llegan hasta abajo. Sin esto, la barra tapaba el
   final de la lateral —«Crea tu primera coleccion» quedaba debajo— y la ultima fila
@@ -2634,7 +2682,7 @@
 }
 
 @media (max-width: 600px) {
-  .yoru-shell:has(.yoru-player-bar) { --yoru-player-h: 76px; }
+  body:has(.yoru-player-bar) { --yoru-player-h: 76px; }
   .yoru-player-bar { padding: 0 10px 8px; }
   .yoru-player-row { gap: 8px; }
   .yoru-player-controls .yoru-player-btn:first-child,
@@ -2704,6 +2752,10 @@
   margin: 26px 0 16px;
   border-bottom: 1px solid var(--border-light);
 }
+/* En el teléfono, el mismo recorte de aire que el resto de la ficha. */
+@media (max-width: 900px) {
+  .yoru-detail-tabs { margin: 14px 0 12px; }
+}
 .yoru-detail-tab {
   background: none;
   border: none;
@@ -2736,7 +2788,13 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px 26px;
+  /*
+    Ocupa la ventana entera, barra de estado y botones del sistema incluidos, así que
+    el relleno tiene que contar las zonas seguras: sin esto, arriba el botón de plegar
+    se metía debajo del reloj y abajo las herramientas quedaban bajo la barra del
+    teléfono.
+  */
+  padding: calc(14px + var(--yoru-safe-top, 0px)) 20px calc(26px + var(--yoru-safe-bottom, 0px));
   overflow-y: auto;
   background:
     linear-gradient(to bottom, color-mix(in srgb, var(--yoru-tint, var(--surface-raised)) 55%, var(--bg-app)) 0%, var(--bg-app) 62%);
