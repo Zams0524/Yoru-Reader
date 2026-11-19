@@ -1,4 +1,5 @@
 import { AUDIOBOOKSHELF_DEFAULTS } from '../config/serverDefaults';
+import { leerCredencialesMedios } from './credencialesMedios';
 import type {
   AudiobookItem,
   AudiobookshelfConfig,
@@ -31,8 +32,15 @@ export const AUDIOBOOKSHELF_DEFAULT_URL = 'http://localhost:13378';
  * está listo es `isAudiobookshelfConfigured()`, que exige el token.
  */
 export function getAudiobookshelfConfig(): AudiobookshelfConfig {
-  // Igual que en Kavita: lo de fábrica solo entra cuando el usuario no tiene nada.
-  const fallback = { serverUrl: AUDIOBOOKSHELF_DEFAULTS.serverUrl, token: AUDIOBOOKSHELF_DEFAULTS.token } as AudiobookshelfConfig;
+  // Igual que en Kavita: lo de fábrica solo entra cuando el usuario no tiene nada, y
+  // el testigo ya no está escrito en el código. Manda `.env.local`; si no hay, lo que
+  // el servidor de sincronización le haya dado a este aparato por ser miembro. El
+  // porqué de todo esto, en `utils/credencialesMedios.ts`.
+  const deFabrica = leerCredencialesMedios().audiobookshelf;
+  const fallback = (AUDIOBOOKSHELF_DEFAULTS.token
+    ? { serverUrl: AUDIOBOOKSHELF_DEFAULTS.serverUrl, token: AUDIOBOOKSHELF_DEFAULTS.token }
+    : { serverUrl: deFabrica?.serverUrl || AUDIOBOOKSHELF_DEFAULTS.serverUrl, token: deFabrica?.token || '' }
+  ) as AudiobookshelfConfig;
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return fallback;
