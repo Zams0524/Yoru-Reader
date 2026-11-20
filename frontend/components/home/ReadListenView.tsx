@@ -3,6 +3,8 @@ import { BookOpen, Headphones, Plus, Search, Server as ServerIcon } from 'lucide
 import { Cover, EmptyState } from './primitives';
 import type { ShelfBook } from './libraryIndex';
 import { absCoverUrl, getAudiobookLink } from '../../utils/audiobookshelfService';
+import { kavitaSeriesCoverUrl } from '../../utils/kavitaService';
+import { KAVITA_PARA_AUDIOS_EVENT, getKavitaParaAudios, refrescarKavitaParaAudios } from '../../utils/kavitaParaAudios';
 import { getCachedServerCatalog, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import { getLocalAudiobookProgress } from '../../utils/serverProgress';
 import {
@@ -11,6 +13,7 @@ import {
   type AudioDePareja,
   type ParejaBiblioteca,
   type ParejaKavita,
+  type SerieDePareja,
 } from '../../utils/paresLecturaAudio';
 
 /**
@@ -21,12 +24,22 @@ import {
  * fila es la pareja —las dos portadas, los dos avances— y desde ella se hace
  * cualquiera de las tres cosas: leer escuchando, solo leer o solo escuchar.
  *
- * Debajo van las series de Kavita que ya tienen su audiolibro en Audiobookshelf pero
- * todavía no se han traído al aparato: son las siguientes candidatas, y hasta ahora
- * no había forma de saber cuáles eran sin ir comparando los dos servidores a ojo.
+ * Debajo van las novelas de Kavita que ya tienen su audiolibro en Audiobookshelf pero
+ * todavía no se han traído al aparato, obra por obra y con sus tomos: son las
+ * siguientes candidatas, y hasta ahora no había forma de saber cuáles eran sin ir
+ * comparando los dos servidores a ojo.
  */
 
-type SerieKavita = { serieId: string; title: string; item: ServerItem };
+/** Lo que `openServerItem` necesita para abrir una entrada de Kavita. */
+function kavitaItem(serie: SerieDePareja): ServerItem {
+  return {
+    id: `kavita-${serie.serieId}`,
+    serverId: serie.serieId,
+    title: serie.title,
+    cover: kavitaSeriesCoverUrl(Number(serie.serieId)),
+    source: 'kavita',
+  };
+}
 
 function audioPercent(itemId: string, continueAudio: ServerItem[]): number {
   const local = getLocalAudiobookProgress(itemId);
@@ -86,7 +99,11 @@ export default function ReadListenView({
   useEffect(() => {
     const refresh = () => setCatalogVersion((value) => value + 1);
     window.addEventListener('yoru-server-catalog-updated', refresh);
-    return () => window.removeEventListener('yoru-server-catalog-updated', refresh);
+    window.addEventListener(KAVITA_PARA_AUDIOS_EVENT, refresh);
+    return () => {
+      window.removeEventListener('yoru-server-catalog-updated', refresh);
+      window.removeEventListener(KAVITA_PARA_AUDIOS_EVENT, refresh);
+    };
   }, []);
 
   const { parejas, deKavita, continueAudio } = useMemo(() => {
@@ -96,14 +113,22 @@ export default function ReadListenView({
       title: item.title,
       author: item.author,
     }));
-    const series: SerieKavita[] = catalog.kavita.map((item) => ({ serieId: serverItemId(item), title: item.title, item }));
     return {
       parejas: parejasDeBiblioteca(library, audiolibros, getAudiobookLink),
-      deKavita: parejasDeKavita(series, audiolibros, library.map((book) => book.title)),
+      deKavita: parejasDeKavita(audiolibros, getKavitaParaAudios(), library.map((book) => book.title)),
       continueAudio: catalog.continueAudio,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [library, catalogVersion]);
+
+  // Lo guardado se pinta ya; si toca, se vuelve a preguntar a Kavita por detrás.
+  useEffect(() => {
+    void refrescarKavitaParaAudios(getCachedServerCatalog().audiobooks.map((item) => ({
+      itemId: serverItemId(item),
+      title: item.title,
+      author: item.author,
+    })));
+  }, [catalogVersion]);
 
   const needle = query.trim().toLowerCase();
   const visibles = useMemo<ParejaBiblioteca<ShelfBook>[]>(() => {
@@ -111,10 +136,10 @@ export default function ReadListenView({
     return parejas.filter(({ libro, audio }) =>
       [libro.title, libro.author, libro.series, audio.title].filter(Boolean).join(' ').toLowerCase().includes(needle));
   }, [parejas, needle]);
-  const kavitaVisibles = useMemo<ParejaKavita<SerieKavita>[]>(() => {
+  const kavitaVisibles = useMemo<ParejaKavita[]>(() => {
     if (!needle) return deKavita;
-    return deKavita.filter(({ serie, audios }) =>
-      [serie.title, ...audios.map((audio) => audio.title)].join(' ').toLowerCase().includes(needle));
+    return deKavita.filter(({ obra, tomos }) =>
+      [obra, ...tomos.map((tomo) => tomo.audio.title)].join(' ').toLowerCase().includes(needle));
   }, [deKavita, needle]);
 
   const total = parejas.length;
@@ -234,48 +259,73 @@ export default function ReadListenView({
               : 'These novels on the server already have their audiobook. Bring them in to read along.'}
           </p>
           <div className="yoru-pair-list">
-            {kavitaVisibles.map(({ serie, audios }) => (
-              <article key={serie.serieId} className="yoru-pair">
-                <div className="yoru-pair-covers">
-                  <button
-                    type="button"
-                    className="yoru-pair-cover is-book"
-                    onClick={() => onOpenKavitaSeries(serie.item)}
-                    title={serie.title}
-                  >
-                    {serie.item.cover
-                      ? <img src={serie.item.cover} alt="" loading="lazy" />
-                      : <span className="yoru-pair-audio-fallback"><BookOpen size={22} aria-hidden="true" /></span>}
-                  </button>
-                  <button
-                    type="button"
-                    className="yoru-pair-cover is-audio"
-                    onClick={() => onOpenAudiobook(audios[0].itemId)}
-                    title={es ? `Audiolibro: ${audios[0].title}` : `Audiobook: ${audios[0].title}`}
-                  >
-                    <AudioCover itemId={audios[0].itemId} />
-                  </button>
-                </div>
-                <div className="yoru-pair-body">
-                  <h2 className="yoru-pair-title">{serie.title}</h2>
-                  <div className="yoru-pair-audio-title">
-                    <Headphones size={13} aria-hidden="true" />
-                    {audios.length === 1
-                      ? audios[0].title
-                      : (es ? `${audios.length} audiolibros de esta serie` : `${audios.length} audiobooks in this series`)}
-                  </div>
-                  <div className="yoru-pair-actions">
-                    <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => onOpenKavitaSeries(serie.item)}>
-                      <ServerIcon size={15} />
-                      {es ? 'Traer de Kavita' : 'Get from Kavita'}
+            {kavitaVisibles.map(({ obra, tomos }) => {
+              const primero = tomos[0];
+              const portada = kavitaSeriesCoverUrl(Number(primero.serie.serieId));
+              return (
+                <article key={obra} className="yoru-pair">
+                  <div className="yoru-pair-covers">
+                    <button
+                      type="button"
+                      className="yoru-pair-cover is-book"
+                      onClick={() => onOpenKavitaSeries(kavitaItem(primero.serie))}
+                      title={primero.serie.title}
+                    >
+                      {portada
+                        ? <img src={portada} alt="" loading="lazy" />
+                        : <span className="yoru-pair-audio-fallback"><BookOpen size={22} aria-hidden="true" /></span>}
                     </button>
-                    <button type="button" className="yoru-btn" onClick={() => onOpenAudiobook(audios[0].itemId)}>
-                      {es ? 'Solo escuchar' : 'Listen only'}
+                    <button
+                      type="button"
+                      className="yoru-pair-cover is-audio"
+                      onClick={() => onOpenAudiobook(primero.audio.itemId)}
+                      title={es ? `Audiolibro: ${primero.audio.title}` : `Audiobook: ${primero.audio.title}`}
+                    >
+                      <AudioCover itemId={primero.audio.itemId} />
                     </button>
                   </div>
-                </div>
-              </article>
-            ))}
+                  <div className="yoru-pair-body">
+                    <h2 className="yoru-pair-title">{obra}</h2>
+                    <div className="yoru-pair-audio-title">
+                      <Headphones size={13} aria-hidden="true" />
+                      {tomos.length === 1
+                        ? (es ? 'Tiene su audiolibro' : 'Has its audiobook')
+                        : (es ? `${tomos.length} tomos con su audiolibro` : `${tomos.length} volumes with their audiobook`)}
+                    </div>
+                    {/*
+                      Con varios tomos, cada uno es un botón que abre ese tomo en Kavita:
+                      «tráete la serie» no sirve cuando en el servidor cada tomo va aparte.
+                    */}
+                    {tomos.length > 1 && (
+                      <div className="yoru-pair-volumes">
+                        {tomos.map((tomo) => (
+                          <button
+                            key={tomo.serie.serieId}
+                            type="button"
+                            className="yoru-pair-volume"
+                            onClick={() => onOpenKavitaSeries(kavitaItem(tomo.serie))}
+                            title={tomo.serie.title}
+                          >
+                            {tomo.tomo ?? '·'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="yoru-pair-actions">
+                      <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => onOpenKavitaSeries(kavitaItem(primero.serie))}>
+                        <ServerIcon size={15} />
+                        {tomos.length === 1 || primero.tomo === null
+                          ? (es ? 'Traer de Kavita' : 'Get from Kavita')
+                          : (es ? `Traer el tomo ${primero.tomo}` : `Get volume ${primero.tomo}`)}
+                      </button>
+                      <button type="button" className="yoru-btn" onClick={() => onOpenAudiobook(primero.audio.itemId)}>
+                        {es ? 'Solo escuchar' : 'Listen only'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}
