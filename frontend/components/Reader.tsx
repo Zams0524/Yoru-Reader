@@ -49,7 +49,6 @@ import { useReadAloudPlayer } from './reader/useReadAloudPlayer';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
 import { activeTocEntry, buildTocEntries } from '../utils/toc';
-import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from '../utils/platform';
@@ -361,7 +360,7 @@ export default function Reader({
       }
     }
   }, [rawSetReaderSetting, settings, onSaveSettings]);
-  const [sidebarMode, setSidebarMode] = useState<'toc' | 'bookmarks' | 'notes' | 'session' | 'settings' | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<'toc' | 'bookmarks' | 'notes' | 'session' | null>(null);
   const sidebarModeRef = useRef(sidebarMode);
   sidebarModeRef.current = sidebarMode;
   const [bookmarks, setBookmarks] = useState<any[]>(book.bookmarks || []);
@@ -2834,10 +2833,6 @@ export default function Reader({
           settings={readerSettings}
           onSettingChange={setReaderSetting}
           onClose={() => setShowSettingsPopover(false)}
-          onOpenFullSettings={() => {
-            setShowSettingsPopover(false);
-            setSidebarMode('settings');
-          }}
           onOpenExtensionSettings={handleOpenExtensionSettings}
           lang={lang}
         />
@@ -3366,104 +3361,35 @@ export default function Reader({
         </div>
       )}
 
-      {sidebarMode === 'settings' ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: colors.bg || '#121214',
-            zIndex: 10001,
-            display: 'flex',
-            flexDirection: 'column',
-            animation: 'fadeIn 0.2s ease-out',
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: 'calc(12px + var(--yoru-safe-top, 0px)) 20px 12px',
-            borderBottom: `1px solid ${colors.border || 'rgba(255,255,255,0.08)'}`,
-            background: colors.popoverBg || '#1c1c1e',
-            flexShrink: 0,
-          }}>
-            <button
-              onClick={() => setSidebarMode(null)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: colors.accent || '#f2c866',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              ← {lang === 'es' ? 'Volver al Lector' : 'Back to Reader'}
-            </button>
-            <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: colors.textMain || '#fff' }}>
-              {lang === 'es' ? 'Ajustes del Lector' : 'Reader Settings'}
-            </span>
-            <div style={{ width: '80px' }} /> {/* Spacer */}
-          </div>
-          <div
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '24px 16px 40px 16px',
-              display: 'flex',
-              justifyContent: 'center',
-              background: colors.bg || '#08080a',
-            }}
-          >
-            <div style={{ width: '100%', maxWidth: '560px' }}>
-              <ReaderSettings
-                settings={readerSettings}
-                onSettingChange={setReaderSetting}
-                onOpenExtensionSettings={handleOpenExtensionSettings}
-                colors={colors}
-                lang={lang}
-              />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <ReaderSidebar
-          mode={sidebarMode}
-          onClose={() => setSidebarMode(null)}
-          sections={tocEntries}
-          currSection={activeTocEntry(
-            tocEntries,
-            // The reader counts sections (a chapter is cut into several); the index, chapters.
-            engineApiRef.current?.getSections()?.[currentProgress.currSection]?.chapterIndex ?? currentProgress.currSection,
-          )}
-          onGoToSection={(idx: number) => {
-            skipNextReadingPositionRef.current = true;
-            setNavTargetSection(idx);
-            requestAnimationFrame(() => setNavTargetSection(null));
-          }}
-          bookmarks={bookmarks}
-          onGoToBookmark={(bm: any) => goToParagraphAnywhere(bm.paragraphId)}
-          onToggleBookmark={handleRemoveBookmark}
-          describeBookmark={describeBookmark}
-          onModeChange={setSidebarMode}
-          highlights={highlights}
-          onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
-          onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
-          onDeleteHighlight={handleDeleteHighlight}
-          onExportHighlights={handleExportHighlights}
-          readingSession={session}
-          onToggleSession={handleToggleSession}
-          colors={colors}
-          lang={lang}
-        />
-      )}
+      <ReaderSidebar
+        mode={sidebarMode}
+        onClose={() => setSidebarMode(null)}
+        sections={tocEntries}
+        currSection={activeTocEntry(
+          tocEntries,
+          // The reader counts sections (a chapter is cut into several); the index, chapters.
+          engineApiRef.current?.getSections()?.[currentProgress.currSection]?.chapterIndex ?? currentProgress.currSection,
+        )}
+        onGoToSection={(idx: number) => {
+          skipNextReadingPositionRef.current = true;
+          setNavTargetSection(idx);
+          requestAnimationFrame(() => setNavTargetSection(null));
+        }}
+        bookmarks={bookmarks}
+        onGoToBookmark={(bm: any) => goToParagraphAnywhere(bm.paragraphId)}
+        onToggleBookmark={handleRemoveBookmark}
+        describeBookmark={describeBookmark}
+        onModeChange={setSidebarMode}
+        highlights={highlights}
+        onGoToHighlight={(item) => goToParagraphAnywhere(item.paragraphId, item)}
+        onEditHighlight={(item) => setNoteDraft({ highlight: item, isNew: false })}
+        onDeleteHighlight={handleDeleteHighlight}
+        onExportHighlights={handleExportHighlights}
+        readingSession={session}
+        onToggleSession={handleToggleSession}
+        colors={colors}
+        lang={lang}
+      />
 
       {selectedWord && (
         <div 

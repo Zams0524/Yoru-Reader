@@ -2732,19 +2732,6 @@ html:where(.yoru-compact) .reader-gallery-image {
   cursor: pointer;
 }
 
-.readera-settings-footer {
-  flex-shrink: 0;
-  padding: 16px;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: none;
-  color: rgba(236, 236, 242, 0.8);
-  font-size: 0.88rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
 /* ==========================================================================
    Reader page bar: "X of N" and a seek slider with chapter ticks (ReadEra-style, v1.3.10)
    ========================================================================== */

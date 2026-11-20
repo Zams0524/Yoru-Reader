@@ -7,7 +7,6 @@ interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
   onSettingChange: <K extends keyof ReaderSettingsState>(key: K, value: ReaderSettingsState[K]) => void;
   onClose: () => void;
-  onOpenFullSettings: () => void;
   onOpenExtensionSettings?: () => void;
   lang: string;
 }
@@ -19,7 +18,6 @@ interface ReaderSettingsPopoverProps {
 export default function ReaderSettingsPopover({
   settings,
   onClose,
-  onOpenFullSettings,
   onOpenExtensionSettings,
   lang,
   onSettingChange,
@@ -206,10 +204,6 @@ export default function ReaderSettingsPopover({
             </button>
           )}
         </div>
-
-        <button type="button" className="readera-settings-footer" onClick={onOpenFullSettings}>
-          {es ? 'AJUSTES GENERALES' : 'GENERAL SETTINGS'}
-        </button>
       </div>
     </>
   );
