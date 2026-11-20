@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Headphones, ImagePlus, Pencil, Play, Settings, Trash2, User } from 'lucide-react';
 import { BookPoster, EmptyState } from './primitives';
 import { isCssGradient, shelfBooks, visibleBooks, type ShelfBook, type ShelfId } from './libraryIndex';
+import { LOCAL_PROGRESS_EVENT } from '../../utils/serverProgress';
 import { audiobookList } from '../../utils/audiobookList';
 import {
   getCachedServerCatalog,
-  localAudioContinueItems,
+  localKavitaReadingItems,
   serverItemId,
   type ServerItem,
 } from '../../utils/serverCatalog';
@@ -26,6 +27,19 @@ type Tab = 'overview' | 'books' | 'audio';
 type BookFilter = 'all' | ShelfId;
 type AudioFilter = 'all' | 'listening' | 'list';
 
+/**
+ * Un libro de la lista del perfil: uno importado, o una serie que se lee en Kavita
+ * sin descargarla. Para quien lee del servidor esos son sus libros igual que los otros.
+ */
+type ListedBook =
+  | { kind: 'local'; key: string; book: ShelfBook }
+  | { kind: 'server'; key: string; item: ServerItem };
+
+const localEntry = (book: ShelfBook): ListedBook => ({ kind: 'local', key: `local-${book.id}`, book });
+const serverEntry = (item: ServerItem): ListedBook => ({ kind: 'server', key: `server-${serverItemId(item)}`, item });
+/** El mismo corte que usa la Biblioteca para decir «Terminado» en una tarjeta del servidor. */
+const serverFinished = (item: ServerItem) => (item.percent || 0) >= 99;
+
 interface ProfileLike {
   id: string;
   name: string;
@@ -42,6 +56,7 @@ export default function ProfileView({
   onOpenDetail,
   onOpenServerItem,
   onOpenSettings,
+  onEditProfile,
   onUpdateProfile,
 }: {
   books: ShelfBook[];
@@ -50,6 +65,8 @@ export default function ProfileView({
   onOpenDetail: (book: ShelfBook) => void;
   onOpenServerItem: (item: ServerItem) => void;
   onOpenSettings: () => void;
+  /** Abre Ajustes ya en la sección del perfil (nombre y foto). */
+  onEditProfile: () => void;
   onUpdateProfile: (profileId: string, changes: Record<string, unknown>) => void;
 }) {
   const [tab, setTab] = useState<Tab>('overview');
@@ -58,46 +75,72 @@ export default function ProfileView({
   const [bannerError, setBannerError] = useState('');
   /** Sube cuando cambia la lista de audiolibros, para volver a leerla. */
   const [audioVersion, setAudioVersion] = useState(0);
+  /** Lo que este perfil lee en Kavita sin importarlo. Vive en localStorage, no en props. */
+  const [serverBooks, setServerBooks] = useState(() => localKavitaReadingItems());
   const bannerInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const refresh = () => setAudioVersion((value) => value + 1);
-    window.addEventListener('yoru-audiobook-list-updated', refresh);
-    return () => window.removeEventListener('yoru-audiobook-list-updated', refresh);
+    /*
+      Lo escuchado y lo leído en el servidor se apuntan en el aparato y el catálogo
+      llega más tarde que el primer pintado, así que las dos listas se vuelven a leer
+      con cualquiera de los tres avisos. Antes solo se oía el de «Tu lista», y un
+      audiolibro recién empezado no salía en el perfil hasta volver a entrar.
+    */
+    const refresh = () => {
+      setAudioVersion((value) => value + 1);
+      setServerBooks(localKavitaReadingItems());
+    };
+    const events = ['yoru-audiobook-list-updated', 'yoru-server-catalog-updated', LOCAL_PROGRESS_EVENT];
+    events.forEach((name) => window.addEventListener(name, refresh));
+    return () => events.forEach((name) => window.removeEventListener(name, refresh));
   }, []);
 
   const shelves = useMemo(
     () => ({
-      reading: shelfBooks(books, 'reading'),
-      completed: shelfBooks(books, 'completed'),
-      backlog: shelfBooks(books, 'backlog'),
-      want: shelfBooks(books, 'want'),
+      // Lo del servidor va delante: viene ya ordenado por lo último que se abrió.
+      reading: [
+        ...serverBooks.filter((item) => !serverFinished(item)).map(serverEntry),
+        ...shelfBooks(books, 'reading').map(localEntry),
+      ],
+      completed: [
+        ...shelfBooks(books, 'completed').map(localEntry),
+        ...serverBooks.filter(serverFinished).map(serverEntry),
+      ],
+      backlog: shelfBooks(books, 'backlog').map(localEntry),
+      want: shelfBooks(books, 'want').map(localEntry),
     }),
-    [books]
+    [books, serverBooks]
   );
 
   /**
-   * La lista de libros del perfil: los que están en algún estante. Un libro recién
-   * importado y sin abrir cae en «Por empezar», así que en la práctica son todos,
-   * pero se arma desde los estantes para que el total cuadre con los filtros.
+   * La lista de libros del perfil: todos los suyos, con los de los estantes delante.
+   *
+   * Antes eran solo los que caían en algún estante, y había libros que no caían en
+   * ninguno: uno abierto y cerrado sin pasar página sigue «sin leer» pero ya tiene
+   * fecha de lectura, así que no es ni «Leyendo» ni «Por empezar». Esos se quedaban
+   * fuera de la lista mientras la cabecera los contaba. Ahora van al final de «Todos».
    */
   const listed = useMemo(() => {
     const seen = new Set<string>();
-    const out: ShelfBook[] = [];
-    for (const book of [...shelves.reading, ...shelves.backlog, ...shelves.want, ...shelves.completed]) {
-      if (seen.has(book.id)) continue;
-      seen.add(book.id);
-      out.push(book);
+    const out: ListedBook[] = [];
+    const rest = visibleBooks(books).map(localEntry);
+    for (const entry of [...shelves.reading, ...shelves.backlog, ...shelves.want, ...shelves.completed, ...rest]) {
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      out.push(entry);
     }
     return out;
-  }, [shelves]);
+  }, [shelves, books]);
 
   const shownBooks = bookFilter === 'all' ? listed : shelves[bookFilter];
 
   /** Audiolibros: los que se están escuchando en este perfil y los apartados en «Tu lista». */
   const audio = useMemo(() => {
-    const listening = localAudioContinueItems();
     const catalog = getCachedServerCatalog();
+    // El catálogo ya resuelve de dónde sale: de la cuenta si este perfil comparte su
+    // progreso con el servidor, y de lo apuntado en el aparato si no. Leyendo solo lo
+    // del aparato, a quien comparte le salía vacío lo que escuchó en otro dispositivo.
+    const listening = catalog.continueAudio;
     const ids = audiobookList();
     const byId = new Map(catalog.audiobooks.map((item) => [serverItemId(item), item]));
     const list = ids.map((id) => byId.get(id)).filter((item): item is ServerItem => Boolean(item));
@@ -113,6 +156,10 @@ export default function ProfileView({
     // `audioVersion` entra a propósito: la lista vive en localStorage, no en props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioVersion]);
+
+  const renderBook = (entry: ListedBook) => (entry.kind === 'local'
+    ? <BookPoster key={entry.key} book={entry.book} onOpen={onOpenDetail} />
+    : <ServerBookPoster key={entry.key} item={entry.item} es={es} onOpen={onOpenServerItem} />);
 
   const shownAudio = audioFilter === 'all' ? audio.all : audio[audioFilter];
 
@@ -196,12 +243,12 @@ export default function ProfileView({
         <div className="yoru-profile-id">
           <h1 className="yoru-profile-name">{profile.name}</h1>
           <div className="yoru-profile-sub">
-            {count(visibleBooks(books).length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
+            {count(listed.length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
             {audio.all.length > 0 && ` · ${count(audio.all.length, es ? 'audiolibro' : 'audiobook', es ? 'audiolibros' : 'audiobooks')}`}
           </div>
         </div>
         <div className="yoru-profile-actions">
-          <button type="button" className="yoru-btn" onClick={onOpenSettings}>
+          <button type="button" className="yoru-btn" onClick={onEditProfile}>
             <Pencil size={15} />
             {es ? 'Editar perfil' : 'Edit profile'}
           </button>
@@ -258,9 +305,7 @@ export default function ProfileView({
               <p className="yoru-profile-empty">{es ? 'Este estante está vacío.' : 'This shelf is empty.'}</p>
             ) : (
               <div className="yoru-grid is-covers">
-                {listed.slice(0, 6).map((book) => (
-                  <BookPoster key={book.id} book={book} onOpen={onOpenDetail} />
-                ))}
+                {listed.slice(0, 6).map(renderBook)}
               </div>
             )}
           </section>
@@ -310,9 +355,7 @@ export default function ProfileView({
             />
           ) : (
             <div className="yoru-grid is-covers">
-              {shownBooks.map((book) => (
-                <BookPoster key={book.id} book={book} onOpen={onOpenDetail} />
-              ))}
+              {shownBooks.map(renderBook)}
             </div>
           )}
         </div>
@@ -352,6 +395,33 @@ export default function ProfileView({
         </div>
       )}
     </div>
+  );
+}
+
+/** Portada de una serie que se lee en Kavita, con lo que se lleva leído. Abre su ficha. */
+function ServerBookPoster({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpen: (item: ServerItem) => void }) {
+  const percent = Math.min(100, Math.max(0, Math.round(item.percent || 0)));
+  return (
+    <button type="button" className="yoru-poster" title={item.title} onClick={() => onOpen(item)}>
+      <span className="yoru-poster-frame">
+        {item.cover
+          ? <img src={item.cover} alt="" loading="lazy" />
+          : <span className="yoru-poster-fallback">{item.title}</span>}
+        {percent > 0 && (
+          <span className="yoru-poster-progress" aria-hidden="true">
+            <span style={{ width: `${percent}%` }} />
+          </span>
+        )}
+      </span>
+      <span className="yoru-poster-title">{item.title}</span>
+      <span className="yoru-poster-meta">
+        {percent >= 99
+          ? (es ? 'Terminado' : 'Finished')
+          // Los mismos textos que en la Biblioteca: abierto sin llegar al 1 % no es «0 %».
+          : percent < 1 ? (es ? 'Recién empezado' : 'Just started')
+            : `${percent} % ${es ? 'leído' : 'read'}`}
+      </span>
+    </button>
   );
 }
 

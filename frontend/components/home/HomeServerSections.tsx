@@ -4,6 +4,7 @@ import { Rail } from './primitives';
 import {
   audiobookSeriesOf,
   getCachedServerCatalog,
+  localKavitaReadingItems,
   sample,
   serverItemId,
   type ServerItem,
@@ -11,8 +12,7 @@ import {
 } from '../../utils/serverCatalog';
 import type { RailId } from '../../utils/homeRails';
 import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
-import { LOCAL_PROGRESS_EVENT, forgetKavitaSeries, localKavitaSeriesRead } from '../../utils/serverProgress';
-import { kavitaVolumeCoverUrl } from '../../utils/kavitaService';
+import { LOCAL_PROGRESS_EVENT, forgetKavitaSeries } from '../../utils/serverProgress';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -488,35 +488,16 @@ export function ServerLibrarySection({
   /** Lleva a «Explorar Kavita», para ver el servidor entero. */
   onExplore?: () => void;
 }) {
-  const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
-  const [leidas, setLeidas] = useState(() => localKavitaSeriesRead());
+  const [items, setItems] = useState(() => localKavitaReadingItems());
   useEffect(() => {
-    const onCatalog = () => setCatalog(getCachedServerCatalog());
-    const onProgress = () => setLeidas(localKavitaSeriesRead());
-    window.addEventListener('yoru-server-catalog-updated', onCatalog);
-    window.addEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+    const refresh = () => setItems(localKavitaReadingItems());
+    window.addEventListener('yoru-server-catalog-updated', refresh);
+    window.addEventListener(LOCAL_PROGRESS_EVENT, refresh);
     return () => {
-      window.removeEventListener('yoru-server-catalog-updated', onCatalog);
-      window.removeEventListener(LOCAL_PROGRESS_EVENT, onProgress);
+      window.removeEventListener('yoru-server-catalog-updated', refresh);
+      window.removeEventListener(LOCAL_PROGRESS_EVENT, refresh);
     };
   }, []);
-
-  const items = useMemo(() => {
-    const delServidor = new Map(catalog.kavita.map((item) => [serverItemId(item), item]));
-    return leidas.map((serie) => {
-      const conocida = delServidor.get(String(serie.seriesId));
-      return {
-        id: `kavita-${serie.seriesId}`,
-        serverId: String(serie.seriesId),
-        title: conocida?.title || serie.title,
-        // La portada es la del tomo por el que vas, no la de la serie.
-        cover: kavitaVolumeCoverUrl(serie.volumeId) || conocida?.cover || '',
-        source: 'kavita' as const,
-        author: conocida?.author,
-        percent: serie.percent,
-      };
-    });
-  }, [leidas, catalog.kavita]);
 
   if (items.length === 0) return null;
   return (
