@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-20-colecciones-agregar-novelas-y-ajustes-lector',
+    es: 'Al crear una colección con el «+» ya puedes agregar novelas del teléfono o del PC ahí mismo. Y el panel de ajustes del lector es más pequeño y deja ver la página: se quitó el botón «Ajustes generales».',
+    en: 'When you create a collection with “+” you can now add novels from your phone or PC right there. And the reader settings panel is smaller and lets the page show through: the “General settings” button is gone.',
+  },
+  {
     id: '2026-11-19-lector-android-sin-congelarse',
     es: 'En Android, marcar una palabra ya no congela la página unos segundos: los colores se actualizan por detrás mientras sigues leyendo. El libro abre más rápido y tocar una palabra justo después de pasar página abre el diccionario.',
     en: 'On Android, marking a word no longer freezes the page for a few seconds: the colours update in the background while you keep reading. Books open faster, and tapping a word right after turning the page opens the dictionary.',
