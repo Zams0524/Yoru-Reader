@@ -101,6 +101,26 @@ export function saveLocalKavitaProgress(entry: Omit<LocalKavitaProgress, 'at'>):
   writeMap(KAVITA_KEY, map);
 }
 
+/**
+ * Apunta que este perfil abrió un tomo, antes de que haya leído nada.
+ *
+ * El lector no avisa de progreso hasta que se pasa de página, y su porcentaje va en
+ * enteros: en una novela, el primer 1 % son varias páginas. Hasta entonces el tomo no
+ * estaba apuntado en ningún sitio y la Biblioteca no lo enseñaba, aunque ya se
+ * estuviera leyendo. Abrirlo ya es empezarlo, así que se apunta al abrir.
+ *
+ * Nunca baja lo que ya hubiera: reabrir un tomo a medias solo refresca la fecha.
+ */
+export function markKavitaOpened(entry: Omit<LocalKavitaProgress, 'at' | 'percent'> & { percent?: number }): void {
+  if (!entry.chapterId) return;
+  const previous = getLocalKavitaProgress(entry.chapterId);
+  saveLocalKavitaProgress({
+    ...entry,
+    pages: entry.pages || previous?.pages || 0,
+    percent: Math.max(Number(entry.percent) || 0, previous?.percent || 0),
+  });
+}
+
 /** Páginas leídas de un tomo, según el progreso local. */
 export function localKavitaPagesRead(chapterId: number, pages: number): number {
   const entry = getLocalKavitaProgress(chapterId);
@@ -146,7 +166,8 @@ export interface LocalKavitaSeries {
 export function localKavitaSeriesRead(limit = 60): LocalKavitaSeries[] {
   const bySeries = new Map<number, LocalKavitaProgress>();
   for (const entry of Object.values(readMap<LocalKavitaProgress>(KAVITA_KEY))) {
-    if (!(entry.percent > 0) || !entry.seriesId) continue;
+    // Sin mirar el porcentaje: un tomo recién abierto va al 0 % y ya es de este perfil.
+    if (!entry.seriesId) continue;
     const current = bySeries.get(entry.seriesId);
     if (!current || entry.at > current.at) bySeries.set(entry.seriesId, entry);
   }
@@ -230,7 +251,8 @@ export function localContinueEntries(limit = 20): LocalContinueEntry[] {
 
   const bySeries = new Map<number, LocalKavitaProgress>();
   for (const entry of Object.values(readMap<LocalKavitaProgress>(KAVITA_KEY))) {
-    if (!started(entry.percent)) continue;
+    // Un tomo apuntado es un tomo abierto (`markKavitaOpened`): al 0 % también está a medias.
+    if (!(entry.percent < 99.5)) continue;
     const current = bySeries.get(entry.seriesId);
     if (!current || entry.at > current.at) bySeries.set(entry.seriesId, entry);
   }

@@ -596,7 +596,11 @@ function ServerLibraryCard({
         </span>
         <span className="yoru-serverlib-name">{item.title}</span>
         <span className="yoru-serverlib-meta">
-          {percent >= 99 ? (es ? 'Terminado' : 'Finished') : `${percent} % ${es ? 'leído' : 'read'}`}
+          {percent >= 99
+            ? (es ? 'Terminado' : 'Finished')
+            // Abierto pero sin llegar al 1 %: «0 % leído» parecía un libro sin tocar.
+            : percent < 1 ? (es ? 'Recién empezado' : 'Just started')
+              : `${percent} % ${es ? 'leído' : 'read'}`}
         </span>
       </button>
       <div className="card-menu-wrapper yoru-serverlib-menu">
