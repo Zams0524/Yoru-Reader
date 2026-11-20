@@ -657,7 +657,7 @@ export default function StatsView({ books, es }: { books: ShelfBook[]; es: boole
                   <strong>{dayPart(hours.peak, es)}</strong>
                 </>
               ) : (
-                es ? 'Tus horas aparecerán cuando registres sesiones' : 'Your hours will appear once you record sessions'
+                es ? 'Tus horas aparecerán en cuanto leas o escuches algo' : 'Your hours will appear as soon as you read or listen'
               )}
             </p>
             <div className="yoru-stats-hours" role="img" aria-label={es ? 'Tiempo por hora del día' : 'Time by hour of day'}>
