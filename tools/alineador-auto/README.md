@@ -21,7 +21,12 @@ Corre en el PC donde están los EPUB y los audios. No va dentro de la app.
 ## Configurar
 
 Copia `config.example.json` a `config.json` (git lo ignora) y pon las rutas de este PC.
-La dirección y el token de Audiobookshelf se leen de `servidor-sync/.env`.
+La dirección y el token de Audiobookshelf se leen de `servidor-sync/.env`; si el generador
+corre desde otra copia del repo, `envServidor` dice dónde está ese fichero y `salida`
+dónde dejar los `.srt` (la carpeta `datos/alineaciones` del servidor que está en marcha).
+
+Medido en el PC de zams (i5-8365U, sin gráfica): un tomo de 7,4 horas en 8 minutos, con
+el 99 % del libro alineado y 5.618 de 5.619 frases colocadas en el texto del lector.
 
 ## Usar
 

@@ -51,7 +51,8 @@ export function cargarConfig(args = process.argv.slice(2)) {
   let fichero = {};
   try { fichero = JSON.parse(readFileSync(join(AQUI, 'config.json'), 'utf8')); } catch { /* sin fichero valen los valores por omisión */ }
   // Las claves de Audiobookshelf ya viven en el .env del servidor de sync: no se repiten.
-  const env = { ...leerEnv(join(RAIZ, 'servidor-sync', '.env')), ...process.env };
+  // `envServidor` sirve cuando esto corre desde otra copia del repo que la del servidor.
+  const env = { ...leerEnv(fichero.envServidor || join(RAIZ, 'servidor-sync', '.env')), ...process.env };
   const opcion = (nombre) => {
     const i = args.indexOf(`--${nombre}`);
     return i >= 0 ? args[i + 1] : undefined;
