@@ -1,5 +1,5 @@
 import { getLocalParserSetting, modoAnalizador } from './parserSettingsStore';
-import { furiganaPairsFromAnnotated } from './yoruParserNative';
+import { kanaDeAnotado, rubiesDeAnotado, type RubyJiten } from './furiganaJiten';
 
 /**
  * jiten.moe integration:
@@ -48,7 +48,7 @@ export interface JitenWordInfo {
   spelling: string;
   reading: string; // kana
   states: string[];
-  furigana?: [string, string][]; // kanji run → kana, for furigana on new words
+  furigana?: RubyJiten[]; // readings of the dictionary form, for furigana on new words
 }
 
 class JitenAuthError extends Error {}
@@ -212,14 +212,6 @@ const words = new Map<string, JitenWordInfo>();
 const stateOverrides = new Map<string, string>();
 const inFlight = new Set<string>();
 
-function kanaFromAnnotated(reading: string): string {
-  return (reading || '').replace(/([^\[\]]+?)\[([^\]]+)\]/g, (_match, base: string, ruby: string) => {
-    // Keep any kana that precedes the annotated kanji in the same chunk.
-    const kanaPrefix = base.replace(/[㐀-鿿豈-﫿々〆ヵヶ]+$/, '');
-    return kanaPrefix + ruby;
-  });
-}
-
 export function getCachedJitenTokens(text: string): JitenToken[] | undefined {
   return parseCache.get(text);
 }
@@ -304,9 +296,9 @@ export async function parseWithJiten(texts: string[], alLlegarLote?: (textos: st
       const info: JitenWordInfo = {
         key,
         spelling: vocab.spelling || '',
-        reading: kanaFromAnnotated(vocab.reading || ''),
+        reading: kanaDeAnotado(vocab.reading || ''),
         states: states.length ? states : ['new'],
-        furigana: furiganaPairsFromAnnotated(vocab.reading || ''),
+        furigana: rubiesDeAnotado(vocab.reading || ''),
       };
       words.set(key, info);
       rememberWordKey(info.spelling, info.reading, key);

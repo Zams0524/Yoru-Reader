@@ -1,5 +1,6 @@
 import { getTokenizerInstance, initTokenizer, katakanaToHiragana } from './japanese';
 import { juntarOkurigana } from './okurigana';
+import { colocarRubies, type RubyJiten } from './furiganaJiten';
 import { getLocalParserSetting } from './parserSettingsStore';
 
 export function getStatusClass(status?: string): string {
@@ -62,36 +63,21 @@ export function furiganaFromReading(surface: string, reading: string): string | 
   return parts.map((part) => (KANJI_CHAR.test(part[0]) ? rubyHtml(part, match[group++]) : escapeHtmlText(part))).join('');
 }
 
-/** Kanji run → kana pairs from Jiten's annotated reading, e.g. "食[た]べる" → [["食", "た"]]. */
-export function furiganaPairsFromAnnotated(annotated: string): [string, string][] {
-  const pairs: [string, string][] = [];
-  for (const match of (annotated || '').matchAll(/([^[\]]+?)\[([^\]]+)\]/g)) {
-    const run = match[1].match(new RegExp(`[${KANJI_CLASS}]+$`));
-    if (run) pairs.push([run[0], match[2]]);
-  }
-  return pairs;
-}
-
-/** Furigana for a surface (which may be conjugated) from the dictionary form's kanji readings. */
-function furiganaFromPairs(surface: string, pairs: [string, string][]): string | null {
-  if (!pairs.length || !KANJI_CHAR.test(surface)) return null;
-  const parts = surface.match(KANJI_OR_KANA_RUNS) || [];
+/**
+ * Furigana for a surface (which may be conjugated) from the dictionary form's readings, each
+ * placed by its position in the word (see furiganaJiten.ts).
+ */
+function furiganaFromRubies(surface: string, rubies: readonly RubyJiten[]): string | null {
+  const colocados = colocarRubies(surface, rubies);
+  if (!colocados.length) return null;
   let html = '';
-  for (const part of parts) {
-    if (!KANJI_CHAR.test(part[0])) {
-      html += escapeHtmlText(part);
-      continue;
-    }
-    // A run may span several annotated pieces (日本[にほん]語[ご]); consume them in order.
-    let rest = part;
-    while (rest) {
-      const pair = pairs.find(([base]) => rest.startsWith(base));
-      if (!pair) return null;
-      html += rubyHtml(pair[0], pair[1]);
-      rest = rest.slice(pair[0].length);
-    }
+  let at = 0;
+  for (const ruby of colocados) {
+    if (ruby.inicio < at) continue;
+    html += escapeHtmlText(surface.slice(at, ruby.inicio)) + rubyHtml(surface.slice(ruby.inicio, ruby.fin), ruby.lectura);
+    at = ruby.fin;
   }
-  return html;
+  return html + escapeHtmlText(surface.slice(at));
 }
 
 // Status changes should only repaint spans; they should not make Kuromoji parse every
@@ -332,7 +318,7 @@ export interface JitenRenderWord {
   spelling: string;
   reading: string;
   states: string[];
-  furigana?: [string, string][];
+  furigana?: RubyJiten[];
 }
 
 interface ParagraphUnit {
@@ -394,7 +380,7 @@ export function renderJitenParagraph(
   let wordText = '';
   const closeWord = () => {
     if (furiganaWord) {
-      const ruby = furiganaFromPairs(wordText, furiganaWord.furigana || []);
+      const ruby = furiganaFromRubies(wordText, furiganaWord.furigana || []);
       if (ruby) html = html.slice(0, wordStart) + ruby;
     }
     html += '</span>';
