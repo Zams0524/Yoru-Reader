@@ -1196,11 +1196,11 @@ export default function App() {
             onBack={(targetTab) => {
               setActiveBook(null);
               /*
-                Sin destino pedido, salir del libro vuelve a Inicio. Antes volvía al
-                Catálogo, que casi nunca es de donde se abrió: se lee desde «Continuar»,
-                en Inicio, y atrás tiene que devolver ahí.
+                Sin destino pedido, salir del libro vuelve al sitio del que se abrió:
+                Inicio, el Catálogo, una serie, una ficha. Antes volvía siempre al
+                Catálogo. El sitio lo recuerda el shell (ver `RESTORE_TAB`).
               */
-              setLibraryTab(targetTab || 'home');
+              setLibraryTab(targetTab || 'restore');
             }}
             onUpdateProgress={handleUpdateProgress}
             onIncrementReadingStats={handleIncrementReadingStats}

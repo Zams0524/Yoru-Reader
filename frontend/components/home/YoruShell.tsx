@@ -120,6 +120,30 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
+/** `initialTab` con el que `App` pide volver a donde se estaba al abrir el libro. */
+export const RESTORE_TAB = 'restore';
+
+type GroupRef = { kind: 'series' | 'author' | 'collection'; name: string };
+type ServerTarget = { kind: 'kavita' | 'audiobook'; id: string };
+
+/*
+  Dónde estaba el shell la última vez que se vio.
+
+  Abrir un libro desmonta el shell entero y cerrarlo lo monta de cero, así que su
+  estado no sobrevive al lector. Se apunta aquí, fuera del componente, para que al
+  salir del libro se vuelva al sitio exacto del que se abrió —la serie, la ficha, el
+  estante— y no a Inicio o al Catálogo por defecto. Vive en memoria a propósito: al
+  arrancar la app se empieza en Inicio.
+*/
+let lastPlace: {
+  view: View;
+  detailId: string | null;
+  group: GroupRef | null;
+  shelf: ShelfId;
+  serverTarget: ServerTarget | null;
+  audioSeries: string | null;
+} | null = null;
+
 interface Props {
   books: ShelfBook[];
   settings: any;
@@ -150,18 +174,22 @@ export default function YoruShell({
   const es = (settings?.appLanguage ?? 'en') === 'es';
   const isMobile = useIsMobile();
 
+  /** El sitio al que volver, solo si `App` lo pide: se lee una vez, al montar. */
+  const [restored] = useState(() => (initialTab === RESTORE_TAB ? lastPlace : null));
   const [view, setView] = useState<View>(() => {
+    // De Ajustes no se abre ningún libro; si quedó apuntado, no es un sitio al que volver.
+    if (restored && restored.view !== 'settings') return restored.view;
     const entry = Object.entries(EMBEDDED_TABS).find(([, tab]) => tab === initialTab);
     return (entry?.[0] as View) || 'home';
   });
   // La sincronización con el servidor de Yoru arranca aquí, que es lo que está montado
   // se abra la app en la pantalla que se abra. Ver `hooks/useYoruSync.ts`.
   useYoruSyncAutomatica();
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(restored?.detailId ?? null);
   // Aviso corto de las vistas de servidor (importaciones de Kavita, sobre todo).
   const [serverToast, setServerToast] = useState('');
-  const [group, setGroup] = useState<{ kind: 'series' | 'author' | 'collection'; name: string } | null>(null);
-  const [shelf, setShelf] = useState<ShelfId>('reading');
+  const [group, setGroup] = useState<GroupRef | null>(restored?.group ?? null);
+  const [shelf, setShelf] = useState<ShelfId>(restored?.shelf ?? 'reading');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   /** Avisos sin ver, para el punto de la campana. */
@@ -289,9 +317,14 @@ export default function YoruShell({
    * volver a «Audiolibros» por la barra lateral enseñe el catálogo y no la última
    * ficha que se miró.
    */
-  const [serverTarget, setServerTarget] = useState<{ kind: 'kavita' | 'audiobook'; id: string } | null>(null);
+  const [serverTarget, setServerTarget] = useState<ServerTarget | null>(restored?.serverTarget ?? null);
   /** La serie de audiolibros que se está mirando, por su nombre, que es su clave. */
-  const [audioSeries, setAudioSeries] = useState<string | null>(null);
+  const [audioSeries, setAudioSeries] = useState<string | null>(restored?.audioSeries ?? null);
+
+  // Se apunta en cada cambio y no al desmontar: así no depende de quién desmonte ni cuándo.
+  useEffect(() => {
+    lastPlace = { view, detailId, group, shelf, serverTarget, audioSeries };
+  }, [view, detailId, group, shelf, serverTarget, audioSeries]);
 
   /*
     De dónde se venía al entrar en Ajustes.
