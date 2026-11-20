@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-20-leer-y-escuchar-sincronizado',
+    es: '«Leer y escuchar» ya va sincronizado: al abrir una novela con su audiolibro, el audio arranca solo y el texto resalta la frase que suena y la sigue. Funciona en los audiolibros que el servidor ya tiene alineados; los demás suenan igual, sin resaltado, hasta que les toque.',
+    en: '“Read and listen” is now in sync: open a novel with its audiobook and the audio starts on its own while the text highlights the sentence being read and follows it. It works for the audiobooks the server has already aligned; the rest still play, without highlighting, until their turn comes.',
+  },
+  {
     id: '2026-11-20-estadisticas-solas-y-leer-y-escuchar',
     es: 'Las estadísticas se llenan solas: lo que lees cuenta desde que abres un libro, y lo que escuchas, desde cualquier reproductor. Y «Leer y escuchar» enseña cada novela con su audiolibro, más las de Kavita que ya tienen el suyo, tomo a tomo.',
     en: 'Statistics now fill in on their own: reading counts from the moment you open a book, and listening from any player. And “Read and listen” shows each novel with its audiobook, plus the Kavita novels that already have theirs, volume by volume.',
