@@ -64,6 +64,8 @@ import { sitioEnVertical } from '../frontend/utils/posicionPopupVertical';
 import {
   getLocalAudiobookProgress,
   localContinueEntries,
+  localKavitaSeriesRead,
+  markKavitaOpened,
   saveLocalKavitaProgress,
   sharesServerProgress,
 } from '../frontend/utils/serverProgress';
@@ -713,6 +715,17 @@ async function localProgressTests() {
   check(continuing.length === 2 && continuing.some((e) => e.kind === 'kavita' && e.percent === 25)
     && continuing.some((e) => e.kind === 'audiobook' && e.percent === 17),
     'Local: «Continuar» tiene el tomo y el audiolibro a medias del perfil');
+
+  // Abrir un tomo ya lo mete en la Biblioteca, al 0 %: el lector no avisa de progreso
+  // hasta pasar de página y redondea hacia abajo, así que el primer 1 % no llegaba nunca.
+  markKavitaOpened({ chapterId: 600, volumeId: 60, seriesId: 6, pages: 300, seriesName: 'Recién abierta' });
+  const leidas = localKavitaSeriesRead();
+  check(leidas.length === 2 && leidas[0].seriesId === 6 && leidas[0].percent === 0 && leidas[0].title === 'Recién abierta',
+    'Local: un tomo recién abierto entra en la Biblioteca al 0 %');
+  check(localContinueEntries().some((e) => e.kind === 'kavita' && e.seriesId === 6 && e.percent === 0),
+    'Local: un tomo recién abierto entra en «Continuar»');
+  markKavitaOpened({ chapterId: 500, volumeId: 50, seriesId: 5, pages: 100, percent: 0 });
+  check(await getKavitaProgressPercent(500, 100) === 25, 'Local: reabrir un tomo no le quita lo leído');
 
   shareProgress('p2', false);
   check(await getAudiobookProgress('li1') === null && await getKavitaProgressPercent(500, 100) === 0

@@ -675,7 +675,14 @@ export default function App() {
     // Bandera de apertura, solo en memoria: no se guarda con el libro.
     const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
     setActiveBook(target);
-    await db.updateBookDetails(book.id, { lastRead: new Date().toISOString() });
+    /*
+      Abrir un libro ya es empezarlo. El lector no guarda progreso hasta que se pasa de
+      página y su porcentaje va en enteros, así que durante las primeras páginas el
+      libro seguía en «Sin iniciar» aunque se estuviera leyendo. Uno terminado no
+      vuelve a «Leyendo» por abrirlo: eso solo lo decide quien lo lee.
+    */
+    const empezado = !book.status || book.status === 'unread' ? { status: 'reading' as const } : {};
+    await db.updateBookDetails(book.id, { lastRead: new Date().toISOString(), ...empezado });
     const loadedBooks = await db.getBooks();
     setBooks(loadedBooks);
   };
@@ -720,6 +727,17 @@ export default function App() {
     markOpenTiming('progreso del servidor');
     const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
     const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
+    // Entra en la Biblioteca al abrirlo, no cuando el lector llegue al 1 %.
+    const { markKavitaOpened } = await import('./utils/serverProgress');
+    markKavitaOpened({
+      chapterId: kavitaBook.chapterId,
+      volumeId: kavitaBook.volumeId,
+      seriesId: kavitaBook.seriesId,
+      pages: kavitaBook.pages,
+      percent,
+      seriesName: kavitaBook.seriesName,
+      volumeTitle: first.title || kavitaBook.title,
+    });
     setActiveBook({
       ...first,
       id: temporaryBookId(kavitaBook.volumeId),
