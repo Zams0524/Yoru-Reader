@@ -117,9 +117,6 @@ export default function App() {
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
   // El libro abierto, accesible desde callbacks memorizados sin dependencias.
   const activeBookRef = useRef<any>(null);
-  // La sincronización con el servidor de Yoru vive aquí, que es lo único montado
-  // siempre: también con un libro abierto. Ver `hooks/useYoruSync.ts`.
-  useYoruSyncAutomatica(Boolean(activeBook));
   // The reader's code loads while the library sits idle, so opening the first book does not wait
   // for it ("Loading reader..." before the book's own loading screen).
   useEffect(() => {
@@ -1178,6 +1175,9 @@ export default function App() {
     `WelcomeScreen`, que ya solo se monta después.
   */
   const pantalla = pantallaQueToca({ acceso, tutorialVisto });
+  // La sincronización con el servidor de Yoru vive aquí, que es lo único montado
+  // siempre: también con un libro abierto. Ver `hooks/useYoruSync.ts`.
+  useYoruSyncAutomatica(pantalla === 'app', Boolean(activeBook));
 
   if (pantalla === 'entrada') {
     return (

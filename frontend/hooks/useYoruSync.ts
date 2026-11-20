@@ -99,11 +99,17 @@ function bajarYSubir(): void {
  *  - al cerrar un libro. Ahí no se trae nada: cambiarle la biblioteca a alguien que
  *    acaba de salir de su libro parece un fallo aunque no lo sea.
  *
+ * @param dentro si ya se pasó la puerta de Discord y la guía. `App` está montada desde
+ *   antes de entrar, y ahí todavía no hay con qué identificarse: la sincronización «de
+ *   abrir la app» espera a este momento. Si no, quien borraba los datos y volvía a
+ *   entrar se quedaba sin su progreso hasta cerrar y abrir la app.
  * @param leyendo si hay un libro abierto.
  */
-export function useYoruSyncAutomatica(leyendo: boolean): void {
+export function useYoruSyncAutomatica(dentro: boolean, leyendo: boolean): void {
   const leyendoRef = useRef(leyendo);
   const leyendoAntes = useRef(leyendo);
+  const dentroRef = useRef(dentro);
+  dentroRef.current = dentro;
 
   /*
     Las claves de Kavita y de Audiobookshelf las reparte el servidor de sincronización
@@ -111,22 +117,22 @@ export function useYoruSyncAutomatica(leyendo: boolean): void {
     lleguen, menos rato dice Inicio que no hay servidores.
   */
   useEffect(() => {
-    void asegurarCredencialesMedios();
-  }, []);
+    if (dentro) void asegurarCredencialesMedios();
+  }, [dentro]);
 
   useEffect(() => {
-    if (!sincronizacionDisponible()) return undefined;
+    if (!dentro || !sincronizacionDisponible()) return undefined;
     // Igual que con Drive: se le da un momento a la app para terminar de arrancar.
     const espera = window.setTimeout(bajarYSubir, 2000);
     return () => window.clearTimeout(espera);
-  }, []);
+  }, [dentro]);
 
   useEffect(() => {
     leyendoRef.current = leyendo;
     leyendoAhora = leyendo;
     const acabaDeCerrar = leyendoAntes.current && !leyendo;
     leyendoAntes.current = leyendo;
-    if (!acabaDeCerrar || !sincronizacionDisponible()) return undefined;
+    if (!acabaDeCerrar || !dentroRef.current || !sincronizacionDisponible()) return undefined;
     // Un momento para que el lector guarde su última posición al cerrar el libro.
     const espera = window.setTimeout(() => { void sincronizarConYoru('solo-subir', true); }, 2000);
     return () => window.clearTimeout(espera);
@@ -135,18 +141,19 @@ export function useYoruSyncAutomatica(leyendo: boolean): void {
   useEffect(() => {
     if (!sincronizacionDisponible()) return undefined;
     const alVolver = () => {
-      if (document.visibilityState !== 'visible' || leyendoRef.current) return;
+      if (!dentroRef.current || document.visibilityState !== 'visible' || leyendoRef.current) return;
       if (!tocaBajarAlVolver(Date.now(), ultimaBajada)) return;
       bajarYSubir();
     };
     const alCambiarVisibilidad = () => {
       // Al fondo se sube siempre y sin esperar turno: es justo cuando se suelta este
       // aparato para coger el otro.
+      if (!dentroRef.current) return;
       if (document.visibilityState === 'hidden') void sincronizarConYoru('solo-subir', true);
       else alVolver();
     };
     const reloj = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void sincronizarConYoru('solo-subir');
+      if (dentroRef.current && document.visibilityState === 'visible') void sincronizarConYoru('solo-subir');
     }, INTERVALO_SUBIDA_MS);
     document.addEventListener('visibilitychange', alCambiarVisibilidad);
     // En el PC la ventana no se «oculta» al cambiar a otra: lo que hay es el foco.
