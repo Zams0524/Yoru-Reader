@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useYoruSyncAutomatica } from '../../hooks/useYoruSync';
 import {
   BarChart3,
@@ -195,6 +195,56 @@ export default function YoruShell({
   /** El menú del avatar de la cabecera: Perfil y Ajustes. */
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  /*
+    El selector de archivos de «Agregar novelas» vive aquí y no en la ventana de
+    colecciones: la ventana se cierra al elegir, y un `<input>` desmontado no entrega
+    los archivos. Tampoco se usa el de `Library`, que solo existe mientras el Catálogo
+    está montado.
+  */
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const onAddBooks = libraryProps.onAddBooks as ((books: any[]) => any) | undefined;
+
+  const importLocalFiles = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const files = Array.from(input.files || []);
+    if (files.length === 0 || !onAddBooks) return;
+    setIsImporting(true);
+    setServerToast(es ? 'Importando…' : 'Importing…');
+    const parsed: any[] = [];
+    let failed = 0;
+    try {
+      const { importBookFile } = await import('../../utils/fileImport');
+      for (const file of files) {
+        try {
+          parsed.push(await importBookFile(file));
+        } catch (error) {
+          console.error(`Error importing file "${file.name}":`, error);
+          failed += 1;
+        }
+      }
+      if (parsed.length > 0) await onAddBooks(parsed);
+      if (parsed.length === 0) {
+        setServerToast(es ? 'No se pudo importar ningún archivo.' : 'No files could be imported.');
+      } else if (failed > 0) {
+        setServerToast(es
+          ? `${parsed.length} de ${files.length} importados; ${failed} con error.`
+          : `${parsed.length} of ${files.length} imported; ${failed} failed.`);
+      } else {
+        setServerToast(es
+          ? (parsed.length === 1 ? 'Novela agregada.' : `${parsed.length} novelas agregadas.`)
+          : (parsed.length === 1 ? 'Novel added.' : `${parsed.length} novels added.`));
+        // Se lleva al Catálogo, que es donde aparecen: si no, no se ve que entraron.
+        setView('catalog');
+      }
+    } catch (error) {
+      console.error('Error saving imported books:', error);
+      setServerToast(es ? 'No se pudo guardar la importación.' : 'Could not save the import.');
+    } finally {
+      setIsImporting(false);
+      input.value = '';
+    }
+  }, [es, onAddBooks]);
   /** La colección dinámica cuyas reglas se están cambiando, si hay alguna. */
   const [editingCollection, setEditingCollection] = useState<DynamicCollection | null>(null);
   /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
@@ -390,10 +440,12 @@ export default function YoruShell({
 
   // El aviso se va solo: es informativo (p. ej. «Importado»), no un dialogo.
   useEffect(() => {
-    if (!serverToast) return undefined;
+    // Mientras se importa no: un EPUB grande tarda más de cuatro segundos, y el
+    // «Importando…» es lo único que dice que la app sigue en ello.
+    if (!serverToast || isImporting) return undefined;
     const timer = window.setTimeout(() => setServerToast(''), 4000);
     return () => window.clearTimeout(timer);
-  }, [serverToast]);
+  }, [serverToast, isImporting]);
 
   const renderCanvas = () => {
     if (embeddedTab) {
@@ -861,7 +913,12 @@ export default function YoruShell({
           );
         })}
 
-        <button type="button" className="yoru-shell-shelf-item is-new" onClick={() => setIsCreatingCollection(true)}>
+        <button
+          type="button"
+          className="yoru-shell-shelf-item is-new"
+          // En el teléfono se cierra el cajón: si no, la ventana se abría detrás de él.
+          onClick={() => { setIsDrawerOpen(false); setIsCreatingCollection(true); }}
+        >
           <span className="yoru-shell-shelf-icon">
             <Plus size={18} />
           </span>
@@ -1079,8 +1136,22 @@ export default function YoruShell({
           onClose={() => { setIsCreatingCollection(false); setEditingCollection(null); }}
           // Recién creada se abre: así se ve que existe, aunque esté vacía.
           onCreated={(name) => openGroup('collection', name)}
+          onImportBooks={onAddBooks && !isImporting ? () => importInputRef.current?.click() : undefined}
         />
       )}
+
+      {/* Mismo filtro de formatos que el «Importar» del Catálogo (`Library`). */}
+      <input
+        type="file"
+        accept=".epub,.pdf,.html,.htm,.txt,.rtf,.srt,.vtt,.ass,.ssa,application/epub+zip,application/pdf,text/html,text/plain"
+        multiple
+        className="hidden-file-input"
+        ref={importInputRef}
+        onChange={importLocalFiles}
+        tabIndex={-1}
+        aria-hidden="true"
+        aria-label={es ? 'Agregar novelas' : 'Add novels'}
+      />
     </div>
     </AudiobookPlayerProvider>
   );

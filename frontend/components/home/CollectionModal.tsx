@@ -1,5 +1,6 @@
 import React from 'react';
-import { ArrowLeft, FolderPlus, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { ArrowLeft, FolderPlus, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import {
   addDynamicCollection,
   addManualCollection,
@@ -31,6 +32,11 @@ import type { ShelfBook } from './libraryIndex';
  * una sola igualdad —«el autor es X»— una colección dinámica no pasaba de recoger lo
  * que ya estaba clasificado, y lo que se quiere pedir es «sin empezar, de menos de
  * diez capítulos y añadido este año».
+ *
+ * Y un tercero que no crea colección ninguna: agregar novelas del propio aparato. Está
+ * aquí porque el «+» es donde se va a buscar «meter algo nuevo», y hasta ahora traer un
+ * libro obligaba a saber que eso vivía en el Catálogo. No se ofrece al editar reglas ni
+ * si quien abre la ventana no sabe importar (`onImportBooks` ausente).
  *
  * No lleva público/privado. Eso exige cuentas y Yoru guarda todo en el dispositivo:
  * sería un interruptor que no hace nada.
@@ -86,6 +92,7 @@ export default function CollectionModal({
   es,
   onClose,
   onCreated,
+  onImportBooks,
   editing,
 }: {
   books: ShelfBook[];
@@ -93,6 +100,11 @@ export default function CollectionModal({
   onClose: () => void;
   /** Avisa de que hay una colección nueva (o recién cambiada), para ir a verla. */
   onCreated: (name: string) => void;
+  /**
+   * Abre el selector de archivos del aparato para agregar novelas. Se llama dentro del
+   * mismo clic, antes de cerrar: Android solo abre el selector con un gesto del usuario.
+   */
+  onImportBooks?: () => void;
   /** Si se abre para cambiar las reglas de una dinámica que ya existe. */
   editing?: DynamicCollection;
 }) {
@@ -159,6 +171,8 @@ export default function CollectionModal({
     onClose();
   };
 
+  const enTelefono = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+
   const titulo = editing
     ? (es ? 'Editar reglas' : 'Edit rules')
     : (es ? 'Crear colección' : 'Create collection');
@@ -183,9 +197,13 @@ export default function CollectionModal({
             <h2 className="yoru-modal-title">{titulo}</h2>
             <p className="yoru-modal-sub">
               {page === 'choose'
-                ? es
-                  ? 'Crea una colección manual o una que se llene sola con unas reglas.'
-                  : 'Create a manual collection, or one that fills itself from rules.'
+                ? onImportBooks
+                  ? es
+                    ? 'Crea una colección manual, una que se llene sola con unas reglas, o agrega novelas desde este dispositivo.'
+                    : 'Create a manual collection, one that fills itself from rules, or add novels from this device.'
+                  : es
+                    ? 'Crea una colección manual o una que se llene sola con unas reglas.'
+                    : 'Create a manual collection, or one that fills itself from rules.'
                 : page === 'manual'
                   ? es
                     ? 'Tú eliges qué libros entran, uno a uno.'
@@ -210,6 +228,20 @@ export default function CollectionModal({
               <SlidersHorizontal size={18} />
               <span>{es ? 'Crear colección dinámica' : 'Create dynamic collection'}</span>
             </button>
+            {onImportBooks && (
+              <button
+                type="button"
+                className="yoru-choice"
+                onClick={() => { onImportBooks(); onClose(); }}
+              >
+                <Upload size={18} />
+                <span>
+                  {enTelefono
+                    ? (es ? 'Agregar novelas del teléfono' : 'Add novels from this phone')
+                    : (es ? 'Agregar novelas del PC' : 'Add novels from this computer')}
+                </span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="yoru-modal-body">
