@@ -471,6 +471,21 @@ export function crearMonitor({ config = leerConfig(), entorno = entornoDeVerdad(
   return { config, servicios, comprobar, encender, loQueFalta };
 }
 
+/**
+ * Dónde vive el servidor de sincronización que está corriendo de verdad.
+ *
+ * Lo normal es la carpeta de al lado. Pero el `.env` con las claves no está en git,
+ * así que en otra copia del repositorio (un worktree, una carpeta de pruebas) la de al
+ * lado existe y está vacía de claves. Ahí la que dice la verdad es la tarea
+ * programada de Windows, que apunta a la carpeta desde la que arranca el servidor.
+ */
+export async function resolverCarpetaSync(config, entorno, env = process.env) {
+  if (env.YORU_MONITOR_SYNC_DIR || entorno.existe(join(config.carpetaSync, '.env'))) return config.carpetaSync;
+  const tarea = await entorno.ejecutar('schtasks', ['/Query', '/TN', config.tareaSync, '/XML']);
+  const carpeta = tarea.salida.match(/<WorkingDirectory>([^<]+)<\/WorkingDirectory>/)?.[1]?.trim();
+  return carpeta && entorno.existe(join(carpeta, 'servidor.mjs')) ? carpeta : config.carpetaSync;
+}
+
 /* ── El programa: vigilar, recordar y servir el panel ──────────────────────── */
 
 const NOMBRE_ARRANQUE = 'Yoru monitor de servidores.vbs';
@@ -627,6 +642,7 @@ function pintarEnConsola(estado) {
 async function principal(argumentos) {
   const config = leerConfig();
   const entorno = entornoDeVerdad();
+  config.carpetaSync = await resolverCarpetaSync(config, entorno);
   const monitor = crearMonitor({ config, entorno });
 
   if (argumentos.includes('--estado')) {

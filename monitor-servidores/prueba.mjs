@@ -10,7 +10,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { crearMonitor, crearVigilante, crearPanel, leerConfig, leerClaves, procesosDe, funnelDe, definirServicios, motivoDeRed } from './monitor.mjs';
+import { crearMonitor, crearVigilante, crearPanel, leerConfig, leerClaves, procesosDe, funnelDe, definirServicios, motivoDeRed, resolverCarpetaSync } from './monitor.mjs';
 
 const HOST = 'pc.ejemplo.ts.net';
 const config = { ...leerConfig({ YORU_MONITOR_HOST: HOST, YORU_MONITOR_SYNC_DIR: '/sync', YORU_MONITOR_DATOS: '/datos' }), esperaArranqueMs: 10_000 };
@@ -315,6 +315,16 @@ await prueba('el panel solo obedece a su propia página', async () => {
   } finally {
     panel.close();
   }
+});
+
+await prueba('en otra copia del repositorio, las claves se buscan donde corre el servidor de verdad', async () => {
+  const xml = '<Task><Actions><Exec><Command>node</Command><WorkingDirectory>C:\\repo\\servidor-sync</WorkingDirectory></Exec></Actions></Task>';
+  const entorno = (hay) => ({ existe: (ruta) => hay.some((h) => ruta.includes(h)), ejecutar: async () => ({ codigo: 0, salida: xml, error: '' }) });
+  const cfg = { carpetaSync: '/copia/servidor-sync', tareaSync: 'Yoru sync' };
+  assert.equal(await resolverCarpetaSync(cfg, entorno(['/copia/servidor-sync']), {}), '/copia/servidor-sync');
+  assert.equal(await resolverCarpetaSync(cfg, entorno(['C:\\repo']), {}), 'C:\\repo\\servidor-sync');
+  assert.equal(await resolverCarpetaSync(cfg, entorno([]), {}), '/copia/servidor-sync');
+  assert.equal(await resolverCarpetaSync(cfg, entorno(['C:\\repo']), { YORU_MONITOR_SYNC_DIR: 'x' }), '/copia/servidor-sync');
 });
 
 console.log(`\n${hechas} pruebas, todas bien.`);
