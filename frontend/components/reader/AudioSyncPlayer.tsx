@@ -37,6 +37,9 @@ interface Props {
   // El reproductor no sabe nada del texto: el lector es quien tiene los párrafos. Aquí
   // solo entran y salen segundos, y el lector decide qué hacer con ellos.
 
+  /** Empezar a sonar en cuanto cargue, sin esperar al botón. */
+  autoPlay?: boolean;
+
   /** La alineación cargada para este libro, si la hay. */
   alignment?: { name: string; notice: string } | null;
   /** El usuario eligió un `.srt`. El lector lo carga y lo guarda. */
@@ -95,6 +98,7 @@ type Phase =
  */
 export default function AudioSyncPlayer({
   book, lang, accent, onClose, raised = false, autoHide = false, onReach,
+  autoPlay = false,
   alignment = null, onImportSrt, onTimeMs, seekRef, followText = false, onFollowTextChange,
   followSuspended = false, onResumeFollow,
 }: Props) {
@@ -216,11 +220,13 @@ export default function AudioSyncPlayer({
     }
   }, [es]);
 
-  // Once the <audio> element is there, load where the user left off (paused).
+  // Once the <audio> element is there, load where the user left off: paused, unless the
+  // reader was opened to listen («Leer y escuchar»), where the audio starts on its own.
+  // If the platform refuses to play without a touch, it simply stays paused.
   useEffect(() => {
     if (phase.kind !== 'ready' || !session || audioRef.current?.src) return;
-    loadTrack(session, timeRef.current, false);
-  }, [phase.kind, session, loadTrack]);
+    loadTrack(session, timeRef.current, autoPlay);
+  }, [phase.kind, session, loadTrack, autoPlay]);
 
   const chooseItem = useCallback((item: AudiobookItem) => {
     setAudiobookLink(book.id, { itemId: item.id, title: item.title, chapters: item.chapters?.length });

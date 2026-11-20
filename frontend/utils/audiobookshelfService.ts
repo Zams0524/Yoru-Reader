@@ -543,7 +543,12 @@ export function setAudiobookLink(bookId: string, link: AudiobookLink | null): vo
   if (link) links[bookId] = link;
   else delete links[bookId];
   localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+  // El lector espera este aviso para pedir la alineación del audiolibro recién vinculado.
+  try { window.dispatchEvent(new CustomEvent(AUDIOBOOK_LINK_EVENT, { detail: { bookId } })); } catch { /* fuera del navegador */ }
 }
+
+/** Se lanza cada vez que un libro gana, cambia o pierde su audiolibro. */
+export const AUDIOBOOK_LINK_EVENT = 'yoru-audiobook-link-changed';
 
 /**
  * Quita del final las notas entre paréntesis o corchetes que no son el tomo.

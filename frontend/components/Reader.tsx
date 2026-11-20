@@ -25,9 +25,10 @@ import NativeReaderHost, { type NativeTextSelection } from './reader/NativeReade
 import { NativeReader, bookParagraphChars, bookParagraphText, isNativeReaderAvailable } from '../utils/nativeReader';
 import ReadAloudBar from './reader/ReadAloudBar';
 import AudioSyncPlayer from './reader/AudioSyncPlayer';
-import { isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
+import { AUDIOBOOK_LINK_EVENT, getAudiobookLink, isAudiobookshelfConfigured } from '../utils/audiobookshelfService';
 import { buildFromSrt, prepareAlignment, saveAlignmentSrt, type LoadedAlignment } from '../utils/alignmentStore';
 import { paragraphAtTime, timeOfParagraph } from '../utils/readAlongAlignment';
+import { descargarAlineacion } from '../utils/alineacionRemota';
 import { decidirSeguimiento } from '../utils/seguimientoAudio';
 import { pintarFrase, rangoDeFrase } from '../utils/anclajeFrase';
 import { capituloVecino } from '../utils/capitulos';
@@ -501,6 +502,8 @@ export default function Reader({
   // above): opening one closes the other.
   // `__openAudiobook` lo pone la ficha del shell al pulsar «Escuchar audiolibro».
   const [isAudiobookOpen, setIsAudiobookOpen] = useState(() => Boolean((book as any).__openAudiobook));
+  // Quien entra por «Leer y escuchar» viene a escuchar: el audio arranca sin otro toque.
+  const abrioEscuchando = Boolean((book as any).__openAudiobook);
   const audiobookAvailable = useMemo(() => isAudiobookshelfConfigured(), []);
   useEffect(() => {
     if (isReadAloudOpen) setIsAudiobookOpen(false);
@@ -520,6 +523,8 @@ export default function Reader({
     alineación crearía una función nueva y el reproductor volvería a engancharse.
   */
   const alignmentRef = useRef<LoadedAlignment | null>(null);
+  /** El audiolibro cuya alineación ya se pidió al servidor en esta apertura. */
+  const alineacionPedidaRef = useRef<string | null>(null);
   alignmentRef.current = alignment;
   const [followsAudio, setFollowsAudio] = useState(false);
   /*
@@ -1224,20 +1229,66 @@ export default function Reader({
     const sections = engineApiRef.current?.getSections();
     if (!sections?.length) return;
     const resultado = await prepareAlignment(book.id, book.chapters || [], sections, lang);
-    if (!resultado) { setAlignment(null); return; }
-    if ('error' in resultado) {
+    if (resultado && 'ok' in resultado) {
+      setAlignment(resultado.ok);
+      // Con alineación, lo esperado es que el texto vaya detrás del audio sin tocar nada.
+      setFollowsAudio(true);
+      if (resultado.ok.notice) showToast(resultado.ok.notice, 'info');
+      return;
+    }
+    if (resultado && 'error' in resultado) {
       setAlignment(null);
       showToast(resultado.error, 'error');
       return;
     }
-    setAlignment(resultado.ok);
-    if (resultado.ok.notice) showToast(resultado.ok.notice, 'info');
+
+    /*
+      No hay nada guardado: se le pide al servidor de Yoru la de este audiolibro.
+
+      Es lo que hace que «Leer y escuchar» funcione solo. La alineación va por
+      audiolibro, así que hace falta saber cuál es el de este libro; si el reproductor
+      todavía lo está buscando, el aviso de `AUDIOBOOK_LINK_EVENT` vuelve a llamar aquí
+      cuando lo encuentre. Se pregunta una vez por audiolibro y apertura: un servidor
+      que no la tiene no la va a tener dentro de dos segundos.
+    */
+    setAlignment(null);
+    const itemId = getAudiobookLink(book.id)?.itemId;
+    if (!itemId || alineacionPedidaRef.current === itemId) return;
+    alineacionPedidaRef.current = itemId;
+    const remota = await descargarAlineacion(itemId);
+    if (remota.tipo === 'sin-respuesta') {
+      alineacionPedidaRef.current = null; // que se pueda volver a intentar
+      return;
+    }
+    if (remota.tipo === 'no-hay') {
+      showToast(lang === 'es'
+        ? 'Este audiolibro todavía no tiene el texto sincronizado. Suena igual, pero sin resaltado.'
+        : 'This audiobook has no synced text yet. It plays, but nothing is highlighted.', 'info');
+      return;
+    }
+    const construida = buildFromSrt(remota.srt, remota.nombre, book.chapters || [], sections, lang);
+    if ('error' in construida) {
+      // El audiolibro está alineado, pero contra otra edición del texto.
+      showToast(construida.error, 'info');
+      return;
+    }
+    await saveAlignmentSrt(book.id, remota.srt, remota.nombre);
+    setAlignment(construida.ok);
+    setFollowsAudio(true);
+    if (construida.ok.notice) showToast(construida.ok.notice, 'info');
   }, [book.id, book.chapters, lang, showToast]);
 
   useEffect(() => {
     if (!isAudiobookOpen || alignment) return;
     void loadAlignment();
-  }, [isAudiobookOpen, alignment, loadAlignment]);
+    // El reproductor vincula el audiolibro por su cuenta la primera vez; cuando lo haga,
+    // ya se puede pedir su alineación.
+    const alVincular = (e: Event) => {
+      if ((e as CustomEvent).detail?.bookId === book.id) void loadAlignment();
+    };
+    window.addEventListener(AUDIOBOOK_LINK_EVENT, alVincular);
+    return () => window.removeEventListener(AUDIOBOOK_LINK_EVENT, alVincular);
+  }, [isAudiobookOpen, alignment, loadAlignment, book.id]);
 
   /** El usuario eligió el `.srt` que dejó el alineador. */
   const handleImportSrt = useCallback(async (file: File) => {
@@ -2941,6 +2992,7 @@ export default function Reader({
           autoHide={!isHeaderVisible}
           onReach={setReadAloudReach}
           onClose={() => setIsAudiobookOpen(false)}
+          autoPlay={abrioEscuchando}
           alignment={alignment ? { name: alignment.name, notice: alignment.notice } : null}
           onImportSrt={(file) => { void handleImportSrt(file); }}
           onTimeMs={handleAudioTime}

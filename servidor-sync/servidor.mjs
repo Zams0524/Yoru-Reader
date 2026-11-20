@@ -30,7 +30,7 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -155,6 +155,58 @@ export function credencialesMedios(medios = MEDIOS) {
       : null;
   }
   return salida;
+}
+
+/* -------------------------------------------------------------- las alineaciones */
+
+/**
+ * Dónde deja el generador la alineación de cada audiolibro: un `.srt` por audiolibro,
+ * con el id que le da Audiobookshelf como nombre (`<id>.srt`).
+ *
+ * Esto es lo que hace que «Leer y escuchar» funcione sin que nadie importe nada: la
+ * app conoce el id del audiolibro que va con la novela, pide su alineación aquí y el
+ * texto se resalta solo. El generador (`tools/alineador-auto`) corre en este mismo PC,
+ * que es donde están los EPUB y los audios, y escribe en esta carpeta.
+ *
+ * Son ficheros y no filas de la base a propósito: un tomo ronda el megabyte, se
+ * escriben una vez y se leen enteros, y así el generador no tiene que abrir la base
+ * del progreso de la gente para nada.
+ */
+export function carpetaAlineaciones() {
+  return process.env.YORU_SYNC_ALINEACIONES || join(AQUI, 'datos', 'alineaciones');
+}
+
+/** Un id de Audiobookshelf: letras, cifras, guion y guion bajo. Nada que sirva de ruta. */
+const ID_ALINEACION = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Los audiolibros que ya tienen alineación, con su tamaño y su fecha. */
+export function listarAlineaciones(carpeta = carpetaAlineaciones()) {
+  let nombres = [];
+  try { nombres = readdirSync(carpeta); } catch { return []; }
+  const fuera = [];
+  for (const nombre of nombres) {
+    if (!nombre.endsWith('.srt')) continue;
+    const id = nombre.slice(0, -4);
+    if (!ID_ALINEACION.test(id)) continue;
+    try {
+      const datos = statSync(join(carpeta, nombre));
+      if (datos.isFile()) fuera.push({ id, bytes: datos.size, actualizado: Math.round(datos.mtimeMs) });
+    } catch { /* se borró entre el listado y la consulta */ }
+  }
+  return fuera;
+}
+
+/** La alineación de un audiolibro, o `null` si todavía no se ha generado. */
+export function leerAlineacion(id, carpeta = carpetaAlineaciones()) {
+  if (!ID_ALINEACION.test(String(id))) return null;
+  const ruta = join(carpeta, `${id}.srt`);
+  try {
+    const datos = statSync(ruta);
+    if (!datos.isFile()) return null;
+    return { id: String(id), actualizado: Math.round(datos.mtimeMs), srt: readFileSync(ruta, 'utf8') };
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ base de datos */
@@ -754,6 +806,23 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
       */
       if (ruta === '/api/medios' && req.method === 'GET') {
         responder(res, 200, credencialesMedios());
+        return;
+      }
+
+      /*
+        Las alineaciones texto↔audio. Con sesión, como las claves de los medios: quien
+        puede escuchar el audiolibro puede saber qué frase suena en cada momento.
+      */
+      if (ruta === '/api/alineaciones' && req.method === 'GET') {
+        responder(res, 200, { alineaciones: listarAlineaciones() });
+        return;
+      }
+
+      const unaAlineacion = ruta.match(/^\/api\/alineacion\/([A-Za-z0-9_-]{1,64})$/);
+      if (unaAlineacion && req.method === 'GET') {
+        const alineacion = leerAlineacion(unaAlineacion[1]);
+        if (!alineacion) { responder(res, 404, { error: 'sin-alineacion' }); return; }
+        responder(res, 200, alineacion);
         return;
       }
 
