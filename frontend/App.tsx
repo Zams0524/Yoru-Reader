@@ -16,6 +16,7 @@ import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
 import { refreshServerCatalog } from './utils/serverCatalog';
 import { markOpenTiming, startOpenTiming } from './utils/openTiming';
+import { useYoruSyncAutomatica } from './hooks/useYoruSync';
 
 /**
  * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
@@ -1174,6 +1175,9 @@ export default function App() {
     `WelcomeScreen`, que ya solo se monta después.
   */
   const pantalla = pantallaQueToca({ acceso, tutorialVisto });
+  // La sincronización con el servidor de Yoru vive aquí, que es lo único montado
+  // siempre: también con un libro abierto. Ver `hooks/useYoruSync.ts`.
+  useYoruSyncAutomatica(pantalla === 'app', Boolean(activeBook));
 
   if (pantalla === 'entrada') {
     return (

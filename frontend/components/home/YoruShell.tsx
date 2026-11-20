@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useYoruSyncAutomatica } from '../../hooks/useYoruSync';
 import {
   BarChart3,
   BookMarked,
@@ -154,9 +153,6 @@ export default function YoruShell({
     const entry = Object.entries(EMBEDDED_TABS).find(([, tab]) => tab === initialTab);
     return (entry?.[0] as View) || 'home';
   });
-  // La sincronización con el servidor de Yoru arranca aquí, que es lo que está montado
-  // se abra la app en la pantalla que se abra. Ver `hooks/useYoruSync.ts`.
-  useYoruSyncAutomatica();
   const [detailId, setDetailId] = useState<string | null>(null);
   // Aviso corto de las vistas de servidor (importaciones de Kavita, sobre todo).
   const [serverToast, setServerToast] = useState('');

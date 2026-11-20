@@ -17,12 +17,11 @@
  * nuevo es lo que solo vivía en el servidor: los tomos leídos sin importar y los
  * audiolibros.
  */
-import { db } from './db';
+import { db, ABS_LOCAL_PROGRESS_KEY, KAVITA_LOCAL_PROGRESS_KEY, LOCAL_PROGRESS_EVENT } from './db';
 
-const KAVITA_KEY = 'yoru_kavita_local_progress';
-const ABS_KEY = 'yoru_abs_local_progress';
-/** Avisa a Inicio de que «Continuar» puede haber cambiado. */
-export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
+const KAVITA_KEY = KAVITA_LOCAL_PROGRESS_KEY;
+const ABS_KEY = ABS_LOCAL_PROGRESS_KEY;
+export { LOCAL_PROGRESS_EVENT };
 
 /**
  * Si el perfil activo comparte el progreso con la cuenta del servidor.
@@ -47,13 +46,28 @@ function profileKey(base: string): string {
   return `${base}_${profileId || 'profile-default'}`;
 }
 
-function readMap<T>(base: string): Record<string, T> {
+/** Todo lo guardado, también las marcas de lo que se olvidó (`borrado`). */
+function readRaw<T>(base: string): Record<string, T> {
   try {
     const parsed = JSON.parse(localStorage.getItem(profileKey(base)) || '{}');
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
   }
+}
+
+/**
+ * Lo guardado que sigue en pie. Lo olvidado no se borra del mapa: se queda como una
+ * marca con fecha, porque este mapa viaja a los demás aparatos con la sincronización
+ * y, sin la marca, el otro aparato devolvería lo que aquí se quitó.
+ */
+function readMap<T>(base: string): Record<string, T> {
+  const raw = readRaw<T>(base);
+  const vivos: Record<string, T> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (entry && !(entry as any).borrado) vivos[key] = entry;
+  }
+  return vivos;
 }
 
 function writeMap<T>(base: string, map: Record<string, T>): void {
@@ -88,7 +102,7 @@ export function getLocalKavitaProgress(chapterId: number): LocalKavitaProgress |
 
 export function saveLocalKavitaProgress(entry: Omit<LocalKavitaProgress, 'at'>): void {
   if (!entry.chapterId) return;
-  const map = readMap<LocalKavitaProgress>(KAVITA_KEY);
+  const map = readRaw<LocalKavitaProgress>(KAVITA_KEY);
   const percent = Math.min(100, Math.max(0, Number(entry.percent) || 0));
   const previous = map[String(entry.chapterId)];
   map[String(entry.chapterId)] = {
@@ -192,10 +206,14 @@ export function localKavitaSeriesRead(limit = 60): LocalKavitaSeries[] {
  * «Leyendo» y de «Continuar». Si se vuelve a abrir, vuelve a aparecer.
  */
 export function forgetKavitaSeries(seriesId: number): void {
-  const map = readMap<LocalKavitaProgress>(KAVITA_KEY);
+  const map = readRaw<LocalKavitaProgress & { borrado?: boolean }>(KAVITA_KEY);
+  const ahora = new Date().toISOString();
   let cambiado = false;
   for (const [key, entry] of Object.entries(map)) {
-    if (entry.seriesId === seriesId) { delete map[key]; cambiado = true; }
+    if (entry.seriesId !== seriesId || entry.borrado) continue;
+    // Queda la marca con su fecha, para que el olvido llegue a los otros aparatos.
+    map[key] = { ...entry, percent: 0, borrado: true, at: ahora };
+    cambiado = true;
   }
   if (cambiado) writeMap(KAVITA_KEY, map);
 }
@@ -222,7 +240,7 @@ export function saveLocalAudiobookProgress(
   meta: { title?: string; author?: string } = {},
 ): void {
   if (!itemId || !Number.isFinite(currentTime)) return;
-  const map = readMap<LocalAudiobookProgress>(ABS_KEY);
+  const map = readRaw<LocalAudiobookProgress>(ABS_KEY);
   const previous = map[itemId];
   map[itemId] = {
     currentTime: Math.max(0, currentTime),

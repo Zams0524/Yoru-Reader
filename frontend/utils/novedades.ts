@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-20-progreso-entre-telefono-y-pc',
+    es: 'Ya puedes seguir en el PC lo que leías en el teléfono, y al revés: el progreso de los tomos y audiolibros del servidor viaja con tu cuenta de Discord, se guarda también con un libro abierto y se pone al día al volver a la app.',
+    en: 'You can now pick up on your PC what you were reading on your phone, and the other way round: progress in server volumes and audiobooks travels with your Discord account, is saved even with a book open, and catches up when you come back to the app.',
+  },
+  {
     id: '2026-11-20-boton-mas-coleccion-y-atras-ajustes',
     es: 'El «+» de arriba abre directamente la ventana para crear una colección. Y al volver atrás desde Ajustes regresas a donde estabas, no a una estantería sin cabecera.',
     en: 'The “+” at the top now opens the create-collection window directly. And going back from Settings returns you to where you were, not to a shelf without a header.',

@@ -16,7 +16,7 @@ tailnet, así que quien no esté dentro no llega ni a la puerta.
 | `servidor-sync/README.md` | Cómo arrancarlo, dejarlo arrancado y el cortafuegos |
 | `frontend/utils/yoruSyncNucleo.ts` | Las decisiones (cuándo, qué significa cada fallo). Puro |
 | `frontend/utils/yoruSyncService.ts` | El trato con el servidor: bajar, combinar, subir |
-| `frontend/hooks/useYoruSync.ts` | Quién la arranca y cuándo. Lo monta `YoruShell`, no `Library`, que solo existe en Catálogo, SRS y Ajustes |
+| `frontend/hooks/useYoruSync.ts` | Quién la arranca y cuándo. Lo monta `App`, que es lo único que está siempre: `YoruShell` no existe con un libro abierto, y `Library` solo en Catálogo, SRS y Ajustes |
 | `frontend/components/settings/YoruSyncSettings.tsx` | La tarjeta de Ajustes |
 | `frontend/config/serverDefaults.ts` | La dirección del servidor |
 | `tests/yoru-sync.test.ts` | Pruebas de las decisiones |
@@ -81,14 +81,34 @@ se funden nunca: eso no tiene vuelta atrás.
 Esto **no sustituye a Google Drive**: son dos sitios donde dejar lo mismo, y quien
 tenga Drive configurado lo sigue teniendo igual.
 
+### El progreso de Kavita y de Audiobookshelf también va
+
+Un tomo abierto directamente del servidor no es un libro de la biblioteca: su progreso
+se apunta por perfil en `localStorage` (`utils/serverProgress.ts`), y lo mismo el de
+los audiolibros. Hasta el 20 nov 2026 eso no entraba en `exportFullDatabase()`, así
+que **no salía nunca del aparato**: como casi todo se lee ya desde el servidor, el
+progreso no pasaba del teléfono al PC por mucho que la sincronización dijera «Al día».
+
+Ahora va en cada perfil como `serverProgress: { kavita, audiobooks }`, y el combinador
+lo junta entrada por entrada: gana la que se tocó más tarde (`at`). «Eliminar» una
+serie de la Biblioteca no borra su entrada, la deja marcada (`borrado`) con su fecha,
+para que el otro aparato no la devuelva. Cuando lo único que llega es esto, la pantalla
+no se recarga: Inicio se repinta con `LOCAL_PROGRESS_EVENT`.
+
 ## Cuándo se sincroniza
 
-- **Al abrir la app**: en los dos sentidos. Dos segundos de espera primero, para que
-  el lector guarde su última posición al cerrar un libro (lo mismo que hace Drive).
-- **Cada 5 minutos con la app abierta, y al irse al fondo**: solo se sube. No se le
-  cambia la biblioteca por debajo a una app que el usuario puede traer al frente en
-  dos segundos; eso parece un fallo aunque sea correcto.
+- **Al abrir la app**: en los dos sentidos, tras dos segundos de espera.
+- **Al volver a la app** (del fondo en el teléfono, al foco de la ventana en el PC), si
+  no hay un libro abierto: en los dos sentidos, como mucho cada dos minutos. Es el
+  momento en que se cambia de aparato; sin esto, una app que se quedó abierta no se
+  enteraba nunca de lo leído en el otro.
+- **Al irse al fondo**: se sube siempre y sin esperar turno, haya o no un libro abierto.
+- **Cada 5 minutos con la app abierta, también leyendo, y al cerrar un libro**: solo se
+  sube. No se le cambia la biblioteca por debajo a quien acaba de salir de su libro;
+  eso parece un fallo aunque sea correcto.
 - **A mano**: botón «Sincronizar ahora» en Ajustes → Sincronización de Yoru.
+
+Con un libro abierto nunca se recarga la pantalla.
 
 Si la combinación trae cosas de otro aparato, la pantalla se recarga, como mucho una
 vez por minuto: sin ese tope, una combinación mal hecha dejaría la app recargándose
