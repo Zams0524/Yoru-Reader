@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-20-estadisticas-solas-y-leer-y-escuchar',
+    es: 'Las estadísticas se llenan solas: lo que lees cuenta desde que abres un libro, y lo que escuchas, desde cualquier reproductor. Y «Leer y escuchar» enseña cada novela con su audiolibro, más las de Kavita que ya tienen el suyo, tomo a tomo.',
+    en: 'Statistics now fill in on their own: reading counts from the moment you open a book, and listening from any player. And “Read and listen” shows each novel with its audiobook, plus the Kavita novels that already have theirs, volume by volume.',
+  },
+  {
     id: '2026-11-20-progreso-entre-telefono-y-pc',
     es: 'Ya puedes seguir en el PC lo que leías en el teléfono, y al revés: el progreso de los tomos y audiolibros del servidor viaja con tu cuenta de Discord, se guarda también con un libro abierto y se pone al día al volver a la app.',
     en: 'You can now pick up on your PC what you were reading on your phone, and the other way round: progress in server volumes and audiobooks travels with your Discord account, is saved even with a book open, and catches up when you come back to the app.',
