@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-19-lector-android-sin-congelarse',
+    es: 'En Android, marcar una palabra ya no congela la página unos segundos: los colores se actualizan por detrás mientras sigues leyendo. El libro abre más rápido y tocar una palabra justo después de pasar página abre el diccionario.',
+    en: 'On Android, marking a word no longer freezes the page for a few seconds: the colours update in the background while you keep reading. Books open faster, and tapping a word right after turning the page opens the dictionary.',
+  },
+  {
     id: '2026-11-19-notificaciones-audiolibros',
     es: 'En Android, el audiolibro que escuchas sale en las notificaciones y en la pantalla de bloqueo, con sus mandos; y los avisos de actualización y de repaso ahora sí llegan.',
     en: 'On Android, the audiobook you are listening to shows in the notifications and on the lock screen, with its controls; and update and review notices now do arrive.',

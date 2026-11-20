@@ -48,6 +48,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32;
@@ -94,7 +96,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     private volatile int turnSeq = 0;
 
     // Engine thread.
-    private final EraEngine engine = new EraEngine();
+    private EraEngine engine = new EraEngine("");
     private final Map<Integer, Bitmap> cache = new HashMap<>();
     private Config config;
     private int enginePages = 0;
@@ -109,6 +111,23 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engine.stop();
         engineBook = null;
     };
+
+    // A second engine lays out the next version of the open book (new word states, Jiten's words)
+    // on its own thread while the first keeps showing pages: the reader never waits for a reload.
+    // prepare() fills it; the open() that follows for the same book and layout swaps the two.
+    private HandlerThread prepareThread;
+    private Handler prepareHandler;
+    /** Held by the prepare thread while it works on `spare`; the engine thread only tries it. */
+    private final ReentrantLock prepareLock = new ReentrantLock();
+    private volatile EraEngine spare = new EraEngine("-2");
+    /** Bumped by every prepare and close (main thread): an older prepare is dropped. */
+    private volatile int prepareSeq = 0;
+    /** What `spare` has open and laid out, or null (under prepareLock). */
+    private File preparedBook;
+    private String preparedLayout;
+    private int preparedPages;
+    /** A prepared book nobody opened is let go after this long. */
+    private static final long PREPARED_IDLE_MS = 20 * 1000;
     /** Blocks that are only a picture (ordinal -> image file): their pages are drawn here, not by the engine. */
     private Map<Integer, File> pictures = new HashMap<>();
     private static List<String[]> japaneseFonts;  // [path, face], found once per process
@@ -228,6 +247,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         engineThread = new HandlerThread("native-reader");
         engineThread.start();
         engineHandler = new Handler(engineThread.getLooper());
+        prepareThread = new HandlerThread("native-reader-prepare");
+        prepareThread.start();
+        prepareHandler = new Handler(prepareThread.getLooper());
     }
 
     @Override
@@ -239,6 +261,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             pageLetters.clear();
         });
         engineThread.quitSafely();
+        dropPrepared();
+        prepareThread.quitSafely();
     }
 
     private File booksDir() {
@@ -626,34 +650,24 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             pictures = loadPictures(book.getParentFile());
             config = c;
             String layout = layoutKey(c);
-            if (engine.isRunning() && book.equals(engineBook) && layout.equals(engineLayout)) {
+            String how;
+            if (takePrepared(book, layout)) {
+                // prepare() already laid this export out in the second engine: the two change places.
+                how = "prepared";
+            } else if (engine.isRunning() && book.equals(engineBook) && layout.equals(engineLayout)) {
                 // The same export with the same layout is still open in the engine (the reader was
                 // left and entered again): no OPEN, no layout of the whole book.
-                Log.i(TAG, "timing: reused the open book");
+                how = "reused";
             } else {
                 engine.stop();
                 engineBook = null;
                 bodyPrefix = null;
-                engine.start(binary, getContext().getFilesDir());
-                registerFonts();
-                engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, false));
-                List<EraEngine.Item> open = new ArrayList<>();
-                open.add(EraEngine.Item.str(""));            // no socket: open by path
-                open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
-                open.add(EraEngine.Item.str(book.getAbsolutePath()));
-                open.add(new EraEngine.Item(0));             // not an archive
-                long tOpen = SystemClock.elapsedRealtime();
-                EraEngine.Response opened = engine.request(EraEngine.CMD_REQ_OPEN, open);
-                long tConfig = SystemClock.elapsedRealtime();
-                if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
-                // Settings that need the document (text alignment, indents, the book's own CSS).
-                // Sending them before OPEN does not save time: the styled layout costs the same.
-                EraEngine.Response configured = engine.request(EraEngine.CMD_REQ_SET_CONFIG, layoutConfig(c, true));
-                enginePages = configured.intAt(0, opened.intAt(0, 0));
+                enginePages = openBook(engine, binary, book, c);
                 engineBook = book;
                 engineLayout = layout;
-                Log.i(TAG, "timing: start+fonts " + (tOpen - t0) + " ms, open " + (tConfig - tOpen) + " ms, relayout " + (SystemClock.elapsedRealtime() - tConfig) + " ms");
+                how = "opened";
             }
+            Log.i(TAG, "timing: " + how + " the book in " + (SystemClock.elapsedRealtime() - t0) + " ms");
             String firstXPath = pageXPath(0);
             int slash = firstXPath.lastIndexOf("/body");
             bodyPrefix = slash >= 0 ? firstXPath.substring(0, slash + 5) : null;
@@ -696,6 +710,143 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         }
     }
 
+    /**
+     * Starts an engine on the book and lays it out with the settings; returns its page count. The
+     * engine must be stopped. Used on the engine thread (open) and on the prepare thread.
+     */
+    private int openBook(EraEngine target, File binary, File book, Config c) throws IOException {
+        long t0 = SystemClock.elapsedRealtime();
+        target.start(binary, getContext().getFilesDir());
+        registerFonts(target);
+        // Everything goes before OPEN, so the book is laid out once. The text styles are sent
+        // without the indent: each of alignment and indent adds the engine's whole base
+        // stylesheet again, which costs a fifth of the open, and the book's own CSS already
+        // sets text-indent on every paragraph.
+        List<EraEngine.Item> config = layoutConfig(c, false);
+        addDocumentConfig(config, c, false);
+        target.request(EraEngine.CMD_REQ_SET_CONFIG, config);
+        List<EraEngine.Item> open = new ArrayList<>();
+        open.add(EraEngine.Item.str(""));            // no socket: open by path
+        open.add(new EraEngine.Item(EraEngine.DOC_FORMAT_EPUB));
+        open.add(EraEngine.Item.str(book.getAbsolutePath()));
+        open.add(new EraEngine.Item(0));             // not an archive
+        long tOpen = SystemClock.elapsedRealtime();
+        EraEngine.Response opened = target.request(EraEngine.CMD_REQ_OPEN, open);
+        if (opened.result != 0 || opened.items.isEmpty()) throw new IOException("open result " + opened.result);
+        lastOpenTiming = "start+fonts " + (tOpen - t0) + " ms, open " + (SystemClock.elapsedRealtime() - tOpen) + " ms";
+        Log.i(TAG, "timing: " + lastOpenTiming);
+        return opened.intAt(0, 0);
+    }
+
+    /** How long the last whole-book open took, step by step (shown in the open timing line). */
+    private volatile String lastOpenTiming = "";
+
+    /**
+     * Lays out a book in the second engine while the open one stays on screen. Options: key,
+     * settings (as open takes them). Resolves once it is ready; the open() that follows for the
+     * same key and settings then shows it at once. Rejects when no book is on screen (open does
+     * the work then) or when a newer prepare or a close came first.
+     */
+    @PluginMethod
+    public void prepare(PluginCall call) {
+        String key = call.getString("key", "");
+        File book = new File(bookDir(key), BOOK_FILE);
+        if (!SAFE_NAME.matcher(key).matches() || !book.isFile()) {
+            call.reject("NO_BOOK");
+            return;
+        }
+        File binary = new File(getContext().getApplicationInfo().nativeLibraryDir, ENGINE_BINARY);
+        if (!binary.isFile()) {
+            call.reject("NO_ENGINE");
+            return;
+        }
+        JSObject settings = call.getObject("settings", new JSObject());
+        main.post(() -> {
+            if (view == null || view.getVisibility() != View.VISIBLE || pageCount <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+                call.reject("NOT_OPEN");
+                return;
+            }
+            Config c = withScreen(Config.from(settings, null));
+            final int seq = ++prepareSeq;
+            // A prepare still at work is for an export nobody wants any more.
+            spare.kill();
+            prepareHandler.post(() -> prepareOnSpare(seq, call, binary, book, c));
+        });
+    }
+
+    private void prepareOnSpare(int seq, PluginCall call, File binary, File book, Config c) {
+        prepareLock.lock();
+        try {
+            preparedBook = null;
+            spare.stop();
+            if (seq != prepareSeq) {
+                call.reject("CANCELLED");
+                return;
+            }
+            // Only while it lays the book out may a newer prepare or a close end it (kill).
+            spare.setKillable(true);
+            int pages;
+            try {
+                pages = openBook(spare, binary, book, c);
+            } finally {
+                spare.setKillable(false);
+            }
+            if (seq != prepareSeq) {
+                spare.stop();
+                call.reject("CANCELLED");
+                return;
+            }
+            preparedBook = book;
+            preparedLayout = layoutKey(c);
+            preparedPages = pages;
+            prepareHandler.postDelayed(() -> { if (seq == prepareSeq) dropPrepared(); }, PREPARED_IDLE_MS);
+            call.resolve();
+        } catch (Throwable e) {
+            spare.stop();
+            call.reject(seq != prepareSeq ? "CANCELLED" : "PREPARE_FAILED: " + e.getMessage());
+        } finally {
+            prepareLock.unlock();
+        }
+    }
+
+    /**
+     * The second engine takes the place of the first if it has this book laid out this way
+     * (engine thread). False while a prepare is still at work: open then does it all itself.
+     */
+    private boolean takePrepared(File book, String layout) {
+        if (!prepareLock.tryLock()) return false;
+        try {
+            if (preparedBook == null || !book.equals(preparedBook) || !layout.equals(preparedLayout) || !spare.isRunning()) return false;
+            EraEngine old = engine;
+            engine = spare;
+            spare = old;
+            old.stop();
+            preparedBook = null;
+            enginePages = preparedPages;
+            engineBook = book;
+            engineLayout = layout;
+            bodyPrefix = null;
+            return true;
+        } finally {
+            prepareLock.unlock();
+        }
+    }
+
+    /** Stops the second engine, whatever it is doing (any thread). */
+    private void dropPrepared() {
+        prepareSeq++;
+        spare.kill();
+        prepareHandler.post(() -> {
+            prepareLock.lock();
+            try {
+                preparedBook = null;
+                spare.stop();
+            } finally {
+                prepareLock.unlock();
+            }
+        });
+    }
+
     private JSObject positionResult(int page, int pages, String xpath) {
         JSObject result = new JSObject();
         result.put("page", page);
@@ -704,6 +855,9 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         result.put("ordinal", ordinalOf(xpath));
         // goTo takes innerPath (APKs before 1.4.4 ignore it and go to the block's first page).
         result.put("goToInnerPath", true);
+        // prepare() exists: a reload can be laid out behind the page on screen.
+        result.put("prepare", true);
+        result.put("timing", lastOpenTiming);
         return result;
     }
 
@@ -733,13 +887,19 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int page = r.result == 0 ? r.intAt(0, fallback) : fallback;
         // The engine can place the first letter of a page on the page before (seen with the saved
         // start of a page, text().4 inside a ruby span: a cold start reopened one page back and
-        // saved that). The next page starting exactly there is the right one.
-        if (page >= 0 && page + 1 < enginePages && xpath.equals(pageXPath(page + 1))) page++;
+        // saved that). The next page starting exactly there is the right one. The path can come
+        // from the engine ("span/text().0") or from the app after a reload ("span[1]/text()[1].0").
+        if (page >= 0 && page + 1 < enginePages && samePlace(xpath, pageXPath(page + 1))) page++;
         return page;
     }
 
+    /** Whether two xpaths are the same place: a first sibling may or may not carry its "[1]". */
+    static boolean samePlace(String a, String b) {
+        return a != null && b != null && a.replace("[1]", "").equals(b.replace("[1]", ""));
+    }
+
     /** System Japanese fonts (Noto Serif/Sans CJK JP on most phones). The scan is done once. */
-    private void registerFonts() throws IOException {
+    private static synchronized void registerFonts(EraEngine engine) throws IOException {
         if (japaneseFonts == null) {
             List<String[]> found = new ArrayList<>();
             List<EraEngine.Item> dir = new ArrayList<>();
@@ -820,21 +980,24 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         addConfig(config, EraEngine.CONFIG_MARGIN_BOTTOM, String.valueOf(c.vertical ? left : bottom));
         addConfig(config, EraEngine.CONFIG_MARGIN_LEFT, String.valueOf(c.vertical ? top : left));
         addConfig(config, EraEngine.CONFIG_MARGIN_RIGHT, String.valueOf(c.vertical ? bottom : right));
-        if (withDocument) {
-            addConfig(config, EraEngine.CONFIG_EMBEDDED_STYLES, "1");
-            int align;
-            switch (c.textAlign == null ? "" : c.textAlign) {
-                case "justify": align = 0; break;
-                case "center": align = 2; break;
-                case "right": align = 3; break;
-                default: align = 1;
-            }
-            addConfig(config, EraEngine.CONFIG_TEXT_ALIGN, String.valueOf(align));
-            addConfig(config, EraEngine.CONFIG_TEXT_INDENT, "0");
-            addConfig(config, EraEngine.CONFIG_PARAGRAPH_MARGIN, "0");
-            addConfig(config, EraEngine.CONFIG_HYPHENATION, "0");
-        }
+        if (withDocument) addDocumentConfig(config, c, true);
         return config;
+    }
+
+    /** The settings about the text's styles: the book's own CSS, alignment, indent, hyphenation. */
+    private static void addDocumentConfig(List<EraEngine.Item> config, Config c, boolean withIndent) {
+        addConfig(config, EraEngine.CONFIG_EMBEDDED_STYLES, "1");
+        int align;
+        switch (c.textAlign == null ? "" : c.textAlign) {
+            case "justify": align = 0; break;
+            case "center": align = 2; break;
+            case "right": align = 3; break;
+            default: align = 1;
+        }
+        addConfig(config, EraEngine.CONFIG_TEXT_ALIGN, String.valueOf(align));
+        if (withIndent) addConfig(config, EraEngine.CONFIG_TEXT_INDENT, "0");
+        addConfig(config, EraEngine.CONFIG_PARAGRAPH_MARGIN, "0");
+        addConfig(config, EraEngine.CONFIG_HYPHENATION, "0");
     }
 
     /** Everything layoutConfig depends on: the same key gives the same layout of the book. */
@@ -1127,15 +1290,30 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     /** After a turn or jump: renders around the page and reports the new position. */
     private void showPage(int gen, int page) {
-        renderAround(gen, page);
+        showPage(gen, page, false);
+    }
+
+    /** A word was tapped since the last turn by hand (its popup must outlive the turn's report). */
+    private volatile boolean wordSinceTurn;
+
+    /** turned: the reader turned the page by hand (tap, key or drag), not a jump or a new layout. */
+    private void showPage(int gen, int page, boolean turned) {
+        // The page on screen, its letters (word taps) and its position first; the neighbours,
+        // which take the longest, afterwards.
+        renderPages(gen, page, new int[] { page });
         try {
             loadLetters(gen, page);
             String xpath = pageXPath(page);
             if (gen != generation) return;
-            notifyListeners("pageChanged", positionResult(page, enginePages, xpath));
+            JSObject position = positionResult(page, enginePages, xpath);
+            // A word tapped on the new page before this report has its popup open already.
+            position.put("turned", turned && !wordSinceTurn);
+            notifyListeners("pageChanged", position);
         } catch (IOException e) {
             engineFailed(gen, e);
+            return;
         }
+        renderAround(gen, page);
     }
 
     @Override
@@ -1164,13 +1342,17 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     @Override
     public void onTurned(int direction) {
         current = Math.max(0, Math.min(pageCount - 1, current + direction));
+        // The letters of a page drawn with underlines are already known: its words answer taps at once.
+        PageLetters known = pageLetters.get(current);
+        if (known != null) letters = known;
         view.setHighlight(new ArrayList<>(), 0);
         clearSelectionAndNotify();
         publish();
+        wordSinceTurn = false;
         final int gen = generation, page = current, seq = ++turnSeq;
         engineHandler.post(() -> {
             // Skipped when another turn came before the engine got here.
-            if (seq == turnSeq) showPage(gen, page);
+            if (seq == turnSeq) showPage(gen, page, true);
         });
     }
 
@@ -1189,7 +1371,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
     }
 
     /** Letters of each rendered page, for its underlines and the letter taps (engine thread). */
-    private final Map<Integer, PageLetters> pageLetters = new HashMap<>();
+    private final Map<Integer, PageLetters> pageLetters = new ConcurrentHashMap<>();
 
     /** The page's letter boxes, asked once per page and kept with its bitmap. */
     private PageLetters lettersOf(int page) throws IOException {
@@ -1456,6 +1638,27 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     @Override
     public void onTap(float x, float y, int edgeDirection) {
+        // Just after a turn the page's letters may still be on their way: the tap waits for them
+        // instead of being taken for a tap on empty space (which turned another page).
+        PageLetters known = letters;
+        if (!popupOpen && selStart < 0 && pageCount > 0 && config != null && (known == null || known.page != current)) {
+            final int gen = generation, page = current;
+            engineHandler.postAtFrontOfQueue(() -> {
+                if (gen != generation) return;
+                try {
+                    loadLetters(gen, page);
+                } catch (IOException e) {
+                    engineFailed(gen, e);
+                    return;
+                }
+                main.post(() -> { if (gen == generation && page == current) handleTap(x, y, edgeDirection); });
+            });
+            return;
+        }
+        handleTap(x, y, edgeDirection);
+    }
+
+    private void handleTap(float x, float y, int edgeDirection) {
         float density = getContext().getResources().getDisplayMetrics().density;
         if (popupOpen) {
             JSObject event = new JSObject();
@@ -1491,7 +1694,8 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         PageLetters page = letters;
         float density = getContext().getResources().getDisplayMetrics().density;
         final int gen = generation;
-        engineHandler.post(() -> {
+        // Ahead of the pages being drawn for later: the dictionary does not wait for them.
+        engineHandler.postAtFrontOfQueue(() -> {
             if (gen != generation) return;
             try {
                 List<EraEngine.Item> req = new ArrayList<>();
@@ -1509,6 +1713,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
                 event.put("top", page.boxes[index * 4 + 1] / density);
                 event.put("right", page.boxes[index * 4 + 2] / density);
                 event.put("bottom", page.boxes[index * 4 + 3] / density);
+                wordSinceTurn = true;
                 notifyListeners("word", event);
             } catch (IOException e) {
                 engineFailed(gen, e);
@@ -2105,6 +2310,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             pendingOpen = null;
             popupOpen = false;
             dropSelection();
+            dropPrepared();
             letters = null;
             pageCount = 0;
             current = 0;

@@ -2676,10 +2676,12 @@ export default function Reader({
 
   const hideBarsOnPageTurnRef = useRef(true);
   hideBarsOnPageTurnRef.current = !showSettingsPopover && !sidebarMode && !isSearchOpen;
-  const handlePageTurn = useCallback(() => {
+  const handlePageTurn = useCallback((byHand?: boolean) => {
     if (hideBarsOnPageTurnRef.current) setIsHeaderVisible(false);
     // Pasar página a mano es irse por tu cuenta: el audio deja de arrastrar el texto.
     suspenderSeguimiento();
+    // La palabra del popup se quedó en la página anterior (lector nativo, APK 1.4.9+).
+    if (byHand) setSelectedWord(null);
   }, [suspenderSeguimiento]);
 
   const handleEngineClick = useCallback((event: React.MouseEvent) => {
