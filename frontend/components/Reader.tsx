@@ -52,6 +52,7 @@ import { activeTocEntry, buildTocEntries } from '../utils/toc';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
 import { isPhoneUI } from '../utils/platform';
+import { useAutoReadingStats } from './reader/useAutoReadingStats';
 import { componiendoConIME, esCampoDeTexto, escribiendoEnAlgo } from '../utils/escrituraIME';
 import YoruParserSettings from './reader/YoruParserSettings';
 import CharacterCounter from './reader/CharacterCounter';
@@ -324,15 +325,28 @@ export default function Reader({
 }: ReaderProps) {
   const lang = settings.appLanguage || 'en';
   const finalizeReadingSessionRef = useRef<() => void>(() => {});
+  /*
+    Lo leído se cuenta solo, desde que se abre el libro: es lo que llena Estadísticas.
+    La «sesión de lectura» de más abajo sigue existiendo, pero ya solo es un cronómetro
+    para medir la velocidad de un rato; no escribe en las estadísticas, o lo mismo se
+    contaría dos veces.
+  */
+  const { onPosition: countReadingPosition, finalize: finalizeAutoStats } = useAutoReadingStats({
+    bookId: book.id,
+    title: book.title || '',
+    onSave: onSaveReadingStats,
+    onIncrement: onIncrementReadingStats,
+  });
 
   const handleBack = useCallback(() => {
     flushProgressRef.current();
     finalizeReadingSessionRef.current();
+    finalizeAutoStats();
     const updatedSettings = db.getSettings();
     db.saveSettings(updatedSettings);
     onSaveSettings(updatedSettings);
     onBack();
-  }, [onSaveSettings, onBack]);
+  }, [onSaveSettings, onBack, finalizeAutoStats]);
 
   const [readerSettings, rawSetReaderSetting] = useReaderSettings();
   /** El esquema de la app ya traducido: «Sistema» no es un tema que se pueda pintar. */
@@ -1525,14 +1539,10 @@ export default function Reader({
     const chars = tracker.pendingChars;
     const seconds = tracker.pendingSeconds;
     if (chars === 0 && seconds === 0 && sessionsToAdd === 0) return;
+    // Solo se vacía: guardar es cosa de la cuenta automática (`useAutoReadingStats`).
     tracker.pendingChars = 0;
     tracker.pendingSeconds = 0;
-    if (onSaveReadingStats) {
-      void onSaveReadingStats(book.title || '', chars, seconds, sessionsToAdd).catch((error) => {
-        console.error('Could not save reading session statistics:', error);
-      });
-    }
-  }, [book.title, onSaveReadingStats]);
+  }, []);
 
   const finalizeReadingSession = useCallback(() => {
     const tracker = readingTrackerRef.current;
@@ -1546,11 +1556,6 @@ export default function Reader({
     const hasReading = sessionChars > 0 || sessionSeconds > 0;
 
     flushPendingReadingStats(hasReading ? 1 : 0);
-    if (hasReading) {
-      void Promise.resolve(onIncrementReadingStats(book.id, sessionChars, sessionSeconds)).catch((error) => {
-        console.error('Could not save book reading totals:', error);
-      });
-    }
 
     setSession((previous) => ({
       ...previous,
@@ -1560,7 +1565,7 @@ export default function Reader({
       readingTime: sessionSeconds,
       speed: sessionSeconds >= 10 ? Math.round((sessionChars * 3600) / sessionSeconds) : 0,
     }));
-  }, [book.id, flushPendingReadingStats, onIncrementReadingStats]);
+  }, [flushPendingReadingStats]);
   finalizeReadingSessionRef.current = finalizeReadingSession;
 
   useEffect(() => {
@@ -2646,6 +2651,7 @@ export default function Reader({
     setCurrentProgress(payload);
     const tracker = readingTrackerRef.current;
     const position = Math.max(0, Number(payload.currChars) || 0);
+    countReadingPosition(position, skipNextReadingPositionRef.current);
     if (skipNextReadingPositionRef.current) {
       skipNextReadingPositionRef.current = false;
       tracker.lastPosition = position;
@@ -2674,7 +2680,7 @@ export default function Reader({
     pendingProgressRef.current = [payload.currSection, payload.lastIndex, percentage];
     if (progressTimerRef.current !== null) window.clearTimeout(progressTimerRef.current);
     progressTimerRef.current = window.setTimeout(() => flushProgressRef.current(), 1500);
-  }, []);
+  }, [countReadingPosition]);
 
   const handleNavbarMouseLeave = useCallback(() => {
     if (!sidebarMode && !showSettingsPopover && !isJumpModalOpen && !isGalleryOpen) {

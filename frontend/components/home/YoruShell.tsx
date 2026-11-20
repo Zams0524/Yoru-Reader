@@ -31,6 +31,7 @@ import BookDetailView from './BookDetailView';
 import { BookGridView, EntityListView } from './ListViews';
 import { Cover, PosterTitlesContext } from './primitives';
 import StatsView from './StatsView';
+import ReadListenView from './ReadListenView';
 import ProfileView from './ProfileView';
 import MembersView from './MembersView';
 import NotificationsView from './NotificationsView';
@@ -41,7 +42,6 @@ import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './Ser
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { ServerLibrarySection } from './HomeServerSections';
 import {
-  audiobookLinkState,
   audiobookMatchScore,
   getAudiobookLink,
   unambiguousAudiobook,
@@ -679,101 +679,24 @@ export default function YoruShell({
 
     if (view === 'listen') {
       /*
-        Siempre la biblioteca, nunca una pantalla de bienvenida.
-
-        Antes, sin ningún libro vinculado, esta sección era un texto largo explicando
-        qué hacer y dos botones para irse a otro sitio: una pantalla entera para decir
-        que no había nada. Ahora se ve la biblioteca, con los que ya tienen audiolibro
-        delante, y lo que falta por hacer cabe en una línea encima.
+        Cada novela con su audiolibro al lado, y debajo las de Kavita que ya tienen
+        el suyo. La vista decide sola qué enseñar cuando no hay ninguna pareja: nunca
+        una pantalla de bienvenida, siempre un camino corto para conseguir la primera.
       */
-      /*
-        Con la biblioteca entera vacía no vale enseñar la rejilla: salía «Nada por
-        aquí» y un buscador que no puede buscar en nada, que es un callejón sin
-        salida. Aquí hace falta una línea corta y un camino, no un diagnóstico.
-      */
-      if (library.length === 0) {
-        return (
-          <div>
-            <div className="yoru-view-head">
-              <div>
-                <h1 className="yoru-view-title">{es ? 'Leer y escuchar' : 'Read and listen'}</h1>
-                <div className="yoru-view-sub">
-                  {es
-                    ? 'Primero trae un libro; después le vinculas su audiolibro.'
-                    : 'Bring in a book first; then link its audiobook.'}
-                </div>
-              </div>
-            </div>
-            <div className="yoru-detail-actions">
-              <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => go('catalog')}>
-                <Plus size={16} />
-                {es ? 'Importar un libro' : 'Import a book'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => go('kavita')}>
-                <ServerIcon size={16} />
-                {es ? 'Traerlo de Kavita' : 'Get one from Kavita'}
-              </button>
-              <button type="button" className="yoru-btn" onClick={() => go('audiobooks')}>
-                <Headphones size={16} />
-                {es ? 'Ver mis audiolibros' : 'See my audiobooks'}
-              </button>
-            </div>
-          </div>
-        );
-      }
-
-      const withChapters = listenable.filter((book) => audiobookLinkState(book.id) === 'chapters').length;
-      const total = listenable.length;
-      const subtitle = total === 0
-        ? (es
-            ? 'Ningún libro tiene audiolibro todavía. Abre uno y elige su audiolibro en el reproductor, o vincúlalo desde Audiolibros.'
-            : 'No book has an audiobook yet. Open one and pick its audiobook in the player, or link it from Audiobooks.')
-        : (() => {
-            const base = es
-              ? `${total} ${total === 1 ? 'libro listo para leer y escuchar' : 'libros listos para leer y escuchar'}`
-              : `${total} ${total === 1 ? 'book ready to read along' : 'books ready to read along'}`;
-            if (!withChapters) return base;
-            return es ? `${base} · ${withChapters} con capítulos` : `${base} · ${withChapters} with chapters`;
-          })();
       return (
-        <BookGridView
-          title={es ? 'Leer y escuchar' : 'Read and listen'}
-          subtitle={subtitle}
-          /*
-            Solo los libros que tienen las dos mitades: la novela y su audiolibro.
-
-            Antes esta vista pintaba `[...listenable, ...sinVincular]`, o sea los que
-            se pueden leer escuchando y, detrás, toda la biblioteca. Una sección que
-            se llama «Leer y escuchar» y enseña libros con los que no puedes hacer ni
-            una cosa ni la otra a la vez no es una sección: es el catálogo otra vez,
-            con otro nombre.
-          */
-          books={listenable}
+        <ReadListenView
+          library={library}
           es={es}
+          onReadAndListen={(book) => {
+            const local = books.find((entry) => entry.id === book.id);
+            if (local) onSelectBook(local, undefined, true);
+          }}
           onOpenDetail={openDetail}
-          /*
-            «Listos» son los que tienen los capítulos del audio casados con los del
-            libro: los únicos en los que el texto sigue a la voz capítulo a capítulo.
-            Solo se ofrece el filtro si hay de los dos tipos; con uno solo no filtra nada.
-          */
-          filter={withChapters > 0 && withChapters < total
-            ? {
-                label: es ? 'Alineación' : 'Alignment',
-                options: [
-                  { id: 'all', label: es ? 'Todos' : 'All', test: () => true },
-                  {
-                    id: 'ready',
-                    label: es ? 'Listos (con capítulos)' : 'Ready (with chapters)',
-                    test: (book) => audiobookLinkState(book.id) === 'chapters',
-                  },
-                  {
-                    id: 'pending',
-                    label: es ? 'Sin capítulos' : 'Without chapters',
-                    test: (book) => audiobookLinkState(book.id) !== 'chapters',
-                  },
-                ],
-              }
-            : undefined}
+          onOpenAudiobook={(itemId) => go('audiobooks', { kind: 'audiobook', id: itemId })}
+          onOpenKavitaSeries={openServerItem}
+          onImport={() => go('catalog')}
+          onBrowseKavita={() => go('kavita')}
+          onBrowseAudiobooks={() => go('audiobooks')}
         />
       );
     }

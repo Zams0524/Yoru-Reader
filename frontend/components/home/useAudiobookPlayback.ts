@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
+  bookIdForAudiobook,
   closeAudiobookSession,
   locateTrack,
   probeMediaAuth,
@@ -10,6 +11,8 @@ import {
 } from '../../utils/audiobookshelfService';
 import { describeServerError } from '../../utils/serverHttp';
 import { saveLocalAudiobookProgress } from '../../utils/serverProgress';
+import { db } from '../../utils/db';
+import { tituloParaEscucha } from '../../utils/paresLecturaAudio';
 import { finishOpenTiming, markOpenTiming, startOpenTiming } from '../../utils/openTiming';
 
 /**
@@ -152,6 +155,25 @@ export function useAudiobookPlayback(itemId: string, es: boolean): AudiobookPlay
     listenedRef.current = 0;
     // Lo local primero: no depende de que el servidor conteste.
     saveLocalAudiobookProgress(current.itemId, update.currentTime, current.duration);
+    /*
+      Lo escuchado cuenta en las estadísticas, en su campo y sin esperar al servidor.
+
+      Hasta ahora solo lo apuntaba el reproductor del lector (`AudioSyncPlayer`), así
+      que escuchar un audiolibro desde su ficha —que es como más se escucha— no dejaba
+      ni un minuto en Estadísticas. Va bajo el título de la novela cuando el audiolibro
+      es su otra mitad, para que el libro no salga partido en dos.
+    */
+    if (update.timeListened > 0) {
+      const escuchado = update.timeListened;
+      const audio = { itemId: current.itemId, title: current.title };
+      void db.getBooks()
+        .catch(() => [])
+        .then((books) => db.saveReadingStatsEntry(
+          tituloParaEscucha(audio, books as { id: string; title: string }[], bookIdForAudiobook),
+          0, 0, 0, escuchado,
+        ))
+        .catch((error) => console.warn('[Audiobookshelf] No se pudo apuntar la escucha:', error));
+    }
     try {
       if (close) await closeAudiobookSession(current.id, update);
       else await syncAudiobookSession(current.id, update);
