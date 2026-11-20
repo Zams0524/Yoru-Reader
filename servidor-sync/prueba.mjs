@@ -411,6 +411,33 @@ await prueba('el freno aguanta unos cuantos fallos y luego corta', async () => {
   assert.equal(frenado(mapa, '5.6.7.8', ahora), false, 'frenar a uno no frena a los demás');
 });
 
+await prueba('las alineaciones no salen sin sesión', async () => {
+  assert.equal((await pedir('/api/alineaciones')).status, 401);
+  assert.equal((await pedir('/api/alineacion/abc')).status, 401);
+});
+
+await prueba('con sesión sale la alineación del audiolibro, y solo la que existe', async () => {
+  const carpeta = mkdtempSync(join(tmpdir(), 'yoru-alineaciones-'));
+  process.env.YORU_SYNC_ALINEACIONES = carpeta;
+  const srt = 'YORU-ALINEACION v1 {"verdict":"bueno"}\n\n1\n00:00:01,000 --> 00:00:02,000\n吾輩は猫である。\n';
+  escribir(join(carpeta, 'li_abc-123.srt'), srt);
+  escribir(join(carpeta, 'notas.txt'), 'esto no es una alineación');
+  const { token } = await (await entrar('tok-zams')).json();
+  const auth = { Authorization: `Bearer ${token}` };
+
+  const lista = await (await pedir('/api/alineaciones', { headers: auth })).json();
+  assert.deepEqual(lista.alineaciones.map((a) => a.id), ['li_abc-123']);
+
+  const una = await pedir('/api/alineacion/li_abc-123', { headers: auth });
+  assert.equal(una.status, 200);
+  assert.equal((await una.json()).srt, srt);
+
+  assert.equal((await pedir('/api/alineacion/no-esta', { headers: auth })).status, 404);
+  // Un id con forma de ruta no llega a tocar el disco.
+  assert.equal((await pedir('/api/alineacion/..%2F..%2Fyoru-sync', { headers: auth })).status, 404);
+  delete process.env.YORU_SYNC_ALINEACIONES;
+});
+
 await prueba('el freno se suelta cuando pasa la ventana', async () => {
   const mapa = new Map();
   const ahora = 1_000_000;
