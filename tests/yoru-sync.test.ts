@@ -192,10 +192,65 @@ function perfilesTests() {
 
   // Lo que no se toca.
   {
-    const local = { activeProfileId: nuevo.id, profiles: [nuevo], profileData: { [nuevo.id]: lleno } };
+    const otro = { id: 'profile-500', name: 'hermana' };
+    const local = { activeProfileId: otro.id, profiles: [otro], profileData: { [otro.id]: lleno } };
     const remoto = { activeProfileId: viejo.id, profiles: [viejo], profileData: { [viejo.id]: lleno } };
     const r = reconciliarPerfiles(local, remoto);
-    check(!r.cambioLocal && !r.cambioRemoto && r.local === local, 'dos perfiles con datos no se funden, aunque se llamen igual');
+    check(!r.cambioLocal && !r.cambioRemoto && r.local === local, 'dos perfiles con datos y distinto nombre no se funden');
+  }
+
+  // Quien ya leía en el PC y en el teléfono antes de la sincronización: un perfil con
+  // datos en cada aparato, los dos con el nombre de Discord. Es el fallo del 20 nov 2026:
+  // el progreso del teléfono llegaba al PC en un perfil aparte y no se veía.
+  {
+    const pc = { id: 'profile-100', name: 'Zams' };
+    const movil = { id: 'profile-200', name: 'zams' };
+    const datosPc = {
+      books: [], settings: { fontSize: 30 },
+      wordStatuses: { 犬: 'known' }, wordStatusTimes: { 犬: '2026-11-01T00:00:00.000Z' }, srsData: null,
+      serverProgress: { kavita: { 's1': { page: 3, at: '2026-11-10T00:00:00.000Z' } }, audiobooks: {} },
+    };
+    const datosMovil = {
+      books: [], settings: { fontSize: 18 },
+      wordStatuses: { 猫: 'known', 鳥: 'known' }, wordStatusTimes: { 猫: '2026-11-02T00:00:00.000Z', 鳥: '2026-11-03T00:00:00.000Z' }, srsData: null,
+      serverProgress: {
+        kavita: { 's1': { page: 40, at: '2026-11-20T00:00:00.000Z' }, 's2': { page: 7, at: '2026-11-19T00:00:00.000Z' } },
+        audiobooks: { 'a1': { currentTime: 90, at: '2026-11-18T00:00:00.000Z' } },
+      },
+    };
+    // El servidor ya tiene los dos perfiles, y el activo es el del último que subió (el PC).
+    const servidor = () => ({
+      activeProfileId: pc.id, profiles: [movil, pc],
+      profileData: { [pc.id]: datosPc, [movil.id]: datosMovil },
+    });
+    const enPc = { activeProfileId: pc.id, profiles: [pc, movil], profileData: { [pc.id]: datosPc, [movil.id]: datosMovil } };
+    const r = reconciliarPerfiles(enPc, servidor());
+    check(r.cambioLocal && r.cambioRemoto, 'dos perfiles con datos y el mismo nombre: se funden en los dos lados');
+    check(r.local.profiles.length === 1 && r.remoto.profiles.length === 1, 'queda un solo perfil');
+    check(r.local.activeProfileId === movil.id && r.remoto.activeProfileId === movil.id, 'el que más guarda en el servidor, y es el activo');
+    const fundido = r.local.profileData[movil.id];
+    check(fundido.serverProgress.kavita.s1.page === 40 && fundido.serverProgress.kavita.s2.page === 7
+      && fundido.serverProgress.audiobooks.a1.currentTime === 90, 'el PC ve por dónde iba el teléfono');
+    check(fundido.wordStatuses.犬 === 'known' && fundido.wordStatuses.猫 === 'known' && fundido.wordStatuses.鳥 === 'known', 'con las palabras de los dos');
+    check(fundido.settings.fontSize === 30, 'y el PC conserva sus ajustes de lector');
+    check(enPc.profiles.length === 2 && enPc.profileData[pc.id] === datosPc, 'sin tocar lo que se le pasó');
+
+    // Después de que el PC suba, el teléfono llega con su copia de antes.
+    const subido = mergeDatabaseExports(r.local, r.remoto, false).merged;
+    const enMovil = { activeProfileId: movil.id, profiles: [movil, pc], profileData: { [movil.id]: datosMovil, [pc.id]: datosPc } };
+    const r2 = reconciliarPerfiles(enMovil, subido);
+    check(r2.cambioLocal && !r2.cambioRemoto, 'el otro aparato se limpia y ya no cambia el servidor');
+    check(r2.local.activeProfileId === movil.id && r2.local.profiles.length === 1, 'se queda con el mismo perfil');
+    check(r2.local.profileData[movil.id].settings.fontSize === 18, 'con sus propios ajustes');
+    const final = mergeDatabaseExports(r2.local, r2.remoto, false);
+    check(!final.cloudChanged, 'y no hay nada nuevo que subir');
+
+    // Un tercer aparato que solo conocía su perfil, con lo leído sin subir.
+    const solo = { activeProfileId: pc.id, profiles: [pc], profileData: { [pc.id]: { ...datosPc, serverProgress: { kavita: { 's3': { page: 1, at: '2026-11-20T10:00:00.000Z' } }, audiobooks: {} } } } };
+    const r3 = reconciliarPerfiles(solo, subido);
+    const m3 = mergeDatabaseExports(r3.local, r3.remoto, false).merged;
+    check(m3.activeProfileId === movil.id && m3.profiles.length === 1, 'un aparato que solo tenía el suyo adopta el perfil que quedó');
+    check(m3.profileData[movil.id].serverProgress.kavita.s3.page === 1 && m3.profileData[movil.id].serverProgress.kavita.s1.page === 40, 'y lo suyo sin subir entra en él');
   }
   {
     const hermano = { id: 'profile-400', name: 'hermano' };

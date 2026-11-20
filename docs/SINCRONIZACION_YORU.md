@@ -73,10 +73,28 @@ Sin más, quien borra los datos de la app o la instala en otro aparato recibe su
 progreso en un perfil aparte y se queda con el recién creado, vacío, como activo:
 Inicio en blanco con todo guardado al lado.
 
-Por eso, antes de combinar, `reconciliarPerfiles()` (`yoruSyncNucleo.ts`) quita los
-perfiles **vacíos** que se llaman igual que otro —o el único perfil vacío de un aparato
-recién estrenado— y deja como activo el que tiene los datos. Dos perfiles con datos no
-se funden nunca: eso no tiene vuelta atrás.
+Por eso, antes de combinar, `reconciliarPerfiles()` (`yoruSyncNucleo.ts`) deja **un
+solo perfil por cuenta**: junta los que se llaman igual —al entrar, la app le pone al
+perfil activo el nombre de Discord, así que dos con el mismo nombre dentro de una cuenta
+son la misma persona en dos aparatos— y el único perfil vacío de un aparato recién
+estrenado.
+
+Hasta el 20 nov 2026 solo se quitaban los perfiles vacíos, y dos con datos no se fundían.
+Ese era justo el caso de quien ya leía en el PC y en el teléfono antes de que existiera
+esta sincronización: cada aparato siguió leyendo en su perfil, el servidor guardaba los
+dos y decía «Al día», y lo leído en el teléfono no aparecía nunca en el PC. Ahora se
+funden con las mismas reglas que usa el combinador entre aparatos (`mergeProfileData`,
+en `cloudMerge.ts`): no se pierde nada de ninguno, y donde los dos tienen lo mismo gana
+lo más reciente.
+
+- **Cuál queda**: el que más guarda en el servidor, que es el mismo se mire desde el
+  aparato que se mire. El otro aparato lo adopta en su siguiente sincronización.
+- **Los ajustes del lector no viajan**: cada aparato conserva los del perfil que tenía
+  activo.
+- **Lo que no se sube** (historial de repasos, rachas, orden de Inicio) se copia en el
+  aparato al perfil que queda, sin pisar nada (`adoptarClavesDePerfil`).
+- **Perfiles con otro nombre no se tocan**: son otra persona, o están separados aposta.
+- En el aparato queda la copia de antes de fundir (`db.saveSyncBackup`).
 
 Esto **no sustituye a Google Drive**: son dos sitios donde dejar lo mismo, y quien
 tenga Drive configurado lo sigue teniendo igual.

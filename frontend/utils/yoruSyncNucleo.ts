@@ -11,6 +11,8 @@
  * la lleva `discordAccess.ts`.
  */
 
+import { mergeProfileData } from './cloudMerge';
+
 /** Cada cuánto se sube el progreso estando la app abierta. */
 export const INTERVALO_SUBIDA_MS = 5 * 60 * 1000;
 
@@ -175,8 +177,18 @@ export interface PerfilesReconciliados<T> {
   cambioRemoto: boolean;
 }
 
+/** Cuánto guarda un perfil, para elegir cuál se queda cuando hay varios con datos. */
+function pesoPerfil(datos: any): number {
+  if (!datos) return 0;
+  return (datos.books || []).length
+    + Object.keys(datos.wordStatuses || {}).length
+    + Object.keys(datos.srsData || {}).filter((clave) => !clave.startsWith('_deck_')).length
+    + Object.keys(datos.serverProgress?.kavita || {}).length
+    + Object.keys(datos.serverProgress?.audiobooks || {}).length;
+}
+
 /**
- * Quita los perfiles vacíos que son la misma persona que otro, antes de combinar.
+ * Deja un solo perfil por cuenta antes de combinar: junta los que son la misma persona.
  *
  * El perfil se crea solo al entrar con Discord, con un identificador nuevo en cada
  * instalación (`profile-<fecha>`), y el combinador junta los perfiles **por
@@ -185,10 +197,25 @@ export interface PerfilesReconciliados<T> {
  * seguía siendo el recién creado y vacío: Inicio en blanco con todo guardado al lado
  * (zams, 19 nov 2026).
  *
- * La cuenta de Discord es una, así que un perfil vacío con el mismo nombre que otro
- * es ese otro. Se quita el vacío y, si era el activo, pasa a serlo el que tiene los
- * datos. Solo se quitan perfiles **sin nada dentro**: dos perfiles con datos no se
- * funden aquí, porque eso no tiene vuelta atrás y puede que estén separados aposta.
+ * La cuenta de Discord es una, y al entrar la app le pone al perfil activo el nombre de
+ * Discord (`App.tsx`). Así que dos perfiles con el mismo nombre dentro de una cuenta
+ * son la misma persona en dos aparatos, y se quedan en uno.
+ *
+ * Hasta el 20 nov 2026 solo se quitaban los perfiles **vacíos**; dos con datos no se
+ * fundían, por prudencia. Pero ese es justo el caso de quien ya leía en el PC y en el
+ * teléfono antes de que existiera esta sincronización: cada aparato tenía su perfil,
+ * los dos con datos, y cada uno siguió leyendo en el suyo. El servidor guardaba los dos
+ * y decía «Al día», y el progreso del teléfono no aparecía nunca en el PC (zams, 20 nov
+ * 2026). Ahora se funden, con las mismas reglas que usa el combinador entre aparatos
+ * (`mergeProfileData`): no se pierde nada de ninguno, y donde los dos tienen lo mismo
+ * gana lo más reciente. En este aparato queda además la copia de antes
+ * (`db.saveSyncBackup`).
+ *
+ * Se queda el perfil que más guarda en el servidor, que es el mismo se mire desde el
+ * aparato que se mire; el otro aparato lo adopta en su siguiente sincronización. Los
+ * ajustes del lector no viajan: cada aparato conserva los del perfil que tenía activo.
+ *
+ * Perfiles con otro nombre no se tocan: son otra persona, o están separados aposta.
  *
  * Se limpia en los dos lados a la vez; si no, el combinador volvería a traer del
  * servidor el perfil que se acaba de quitar aquí.
@@ -220,12 +247,21 @@ export function reconciliarPerfiles<T extends ExportacionConPerfiles>(local: T, 
     if (!clave) continue;
     porNombre.set(clave, [...(porNombre.get(clave) || []), perfil.id]);
   }
+  /** De varios perfiles con datos, el que más guarda; primero según el servidor. */
+  const elMasLleno = (candidatos: string[]): string => {
+    const delServidor = candidatos.filter((id) => enRemoto.has(id));
+    const lado = delServidor.length > 0 ? remoto : local;
+    const grupo = delServidor.length > 0 ? delServidor : candidatos;
+    return [...grupo].sort((a, b) =>
+      pesoPerfil(lado.profileData?.[b]) - pesoPerfil(lado.profileData?.[a]) || (a < b ? -1 : 1))[0];
+  };
+
   for (const ids of porNombre.values()) {
     if (ids.length < 2) continue;
     const llenos = ids.filter((id) => !vacio(id));
-    const queda = elegir(llenos.length > 0 ? llenos : ids);
+    const queda = llenos.length > 1 ? elMasLleno(llenos) : elegir(llenos.length > 0 ? llenos : ids);
     for (const id of ids) {
-      if (id !== queda && vacio(id)) destino.set(id, queda);
+      if (id !== queda) destino.set(id, queda);
     }
   }
 
@@ -248,7 +284,23 @@ export function reconciliarPerfiles<T extends ExportacionConPerfiles>(local: T, 
     const cambio = [...destino.keys()].some((id) => presentes.has(id)) || destino.has(activo);
     if (!cambio) return { lado, cambio };
     const profileData = { ...(lado.profileData || {}) };
-    for (const id of destino.keys()) delete profileData[id];
+    // Los ajustes del lector son de cada aparato: se queda con los del perfil que
+    // tenía activo, aunque el perfil pase a ser otro.
+    const ajustesDelActivo = destino.has(activo) && !perfilSinNada(profileData[activo])
+      ? profileData[activo]?.settings
+      : null;
+    // En orden fijo, para que el resultado no dependa de cómo venga la lista.
+    for (const id of [...destino.keys()].sort()) {
+      const sobra = profileData[id];
+      delete profileData[id];
+      if (perfilSinNada(sobra)) continue;
+      const queda = destino.get(id) as string;
+      profileData[queda] = mergeProfileData(profileData[queda] || {}, sobra, false);
+    }
+    const quedaActivo = destino.get(activo);
+    if (ajustesDelActivo && quedaActivo && profileData[quedaActivo]) {
+      profileData[quedaActivo] = { ...profileData[quedaActivo], settings: ajustesDelActivo };
+    }
     return {
       cambio,
       lado: {

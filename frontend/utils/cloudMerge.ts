@@ -210,6 +210,23 @@ function sameJson(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * One profile's data from two copies, item by item. It is what mergeDatabaseExports does for
+ * each profile, on its own so the Yoru sync can also fold two profiles of the same account
+ * into one (reconciliarPerfiles in yoruSyncNucleo.ts) with the very same rules.
+ */
+export function mergeProfileData(l: ProfileData, c: ProfileData, preferCloud: boolean): ProfileData {
+  const result: ProfileData = {
+    books: mergeBooks(l.books, c.books),
+    settings: l.settings ?? c.settings ?? null,
+    ...mergeStatuses(l, c, preferCloud),
+    ...mergeSrs(l, c, preferCloud),
+  };
+  const serverProgress = mergeServerProgress(l, c);
+  if (serverProgress) result.serverProgress = serverProgress;
+  return result;
+}
+
+/**
  * @param preferCloud true when another device synced after this one last did, so the Drive copy
  *   holds the most recent changes for items that carry no date of their own (word statuses).
  */
@@ -221,16 +238,7 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
 
   const profileData: Record<string, ProfileData> = {};
   for (const { id } of profiles) {
-    const l = local.profileData?.[id] || {};
-    const c = cloud.profileData?.[id] || {};
-    profileData[id] = {
-      books: mergeBooks(l.books, c.books),
-      settings: l.settings ?? c.settings ?? null,
-      ...mergeStatuses(l, c, preferCloud),
-      ...mergeSrs(l, c, preferCloud),
-    };
-    const serverProgress = mergeServerProgress(l, c);
-    if (serverProgress) profileData[id].serverProgress = serverProgress;
+    profileData[id] = mergeProfileData(local.profileData?.[id] || {}, cloud.profileData?.[id] || {}, preferCloud);
   }
 
   const merged: DbExport = {
