@@ -368,6 +368,8 @@ export default function YoruShell({
     [view === 'group', () => go(groupBackView(group))],
     // La serie de audiolibros se abre desde Inicio, así que atrás vuelve a Inicio.
     [view === 'audioseries', () => go('home')],
+    // Ajustes sale por atrás igual que por su flecha: al sitio del que se venía.
+    [view === 'settings', exitSettings],
     [view !== 'home', () => go('home')],
   ];
   useBackHandler(
