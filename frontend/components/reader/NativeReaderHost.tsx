@@ -137,6 +137,7 @@ function collectHoles(root: HTMLElement, placeholder: HTMLElement | null): numbe
     rects.push([r.left, r.top, r.right, r.bottom].map((v) => Math.round(v * 10) / 10));
     // Menus and popovers can stick out of the bar they belong to: add what lies outside it.
     for (const inner of Array.from(element.querySelectorAll('*'))) {
+      if (inner instanceof HTMLElement && inner.dataset.nativeIgnore !== undefined) continue;
       const c = inner.getBoundingClientRect();
       if (c.width <= 0 || c.height <= 0) continue;
       if (c.left >= r.left - 1 && c.top >= r.top - 1 && c.right <= r.right + 1 && c.bottom <= r.bottom + 1) continue;

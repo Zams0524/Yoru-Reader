@@ -7,7 +7,6 @@ interface ReaderSettingsPopoverProps {
   settings: ReaderSettingsState;
   onSettingChange: <K extends keyof ReaderSettingsState>(key: K, value: ReaderSettingsState[K]) => void;
   onClose: () => void;
-  onOpenFullSettings: () => void;
   onOpenExtensionSettings?: () => void;
   lang: string;
 }
@@ -19,7 +18,6 @@ interface ReaderSettingsPopoverProps {
 export default function ReaderSettingsPopover({
   settings,
   onClose,
-  onOpenFullSettings,
   onOpenExtensionSettings,
   lang,
   onSettingChange,
@@ -58,7 +56,8 @@ export default function ReaderSettingsPopover({
 
   return (
     <>
-      <div className="readera-settings-backdrop" onClick={onClose} />
+      {/* Not a hole of the native reader: the page stays visible around the card (a tap on it closes the card). */}
+      <div className="readera-settings-backdrop" data-native-ignore onClick={onClose} />
       <div className="readera-settings" role="dialog" aria-label={es ? 'Ajustes del libro' : 'Book settings'}>
         <div className="readera-settings-title">{es ? 'AJUSTES DEL LIBRO · EPUB, TXT, HTML' : 'BOOK SETTINGS · EPUB, TXT, HTML'}</div>
 
@@ -206,10 +205,6 @@ export default function ReaderSettingsPopover({
             </button>
           )}
         </div>
-
-        <button type="button" className="readera-settings-footer" onClick={onOpenFullSettings}>
-          {es ? 'AJUSTES GENERALES' : 'GENERAL SETTINGS'}
-        </button>
       </div>
     </>
   );
@@ -258,7 +253,7 @@ function PickerRow({ label, value, options, onChange, display, header }: {
       </button>
       {open && (
         <>
-          <div className="readera-dropdown-backdrop" onClick={() => setOpen(false)} />
+          <div className="readera-dropdown-backdrop" data-native-ignore onClick={() => setOpen(false)} />
           <div
             ref={listRef}
             className="readera-dropdown"
