@@ -21,6 +21,16 @@ type ProfileData = {
   srsData?: Record<string, any> | null;
   /** When each removed SRS card was removed, by key (db.getSrsRemovals). */
   srsRemovals?: Record<string, string> | null;
+  /**
+   * What this profile has read and listened to straight from Kavita and Audiobookshelf
+   * (utils/serverProgress.ts). Each entry carries `at`, the ISO time it was last touched.
+   */
+  serverProgress?: ServerProgress | null;
+};
+
+type ServerProgress = {
+  kavita?: Record<string, any> | null;
+  audiobooks?: Record<string, any> | null;
 };
 
 export interface MergeResult {
@@ -29,6 +39,12 @@ export interface MergeResult {
   localChanged: boolean;
   // The merge has something the Drive copy does not have yet.
   cloudChanged: boolean;
+  /**
+   * The part of localChanged that screens cannot pick up by themselves (books, words, cards,
+   * profiles). False when all this device got was server progress, which announces itself
+   * with an event, so there is no need to reload the page for it.
+   */
+  localNeedsReload: boolean;
 }
 
 function time(value: unknown): number {
@@ -154,6 +170,32 @@ function mergeStatuses(local: ProfileData, cloud: ProfileData, preferCloud: bool
   return { wordStatuses: statuses, wordStatusTimes: Object.keys(times).length ? times : null };
 }
 
+// Entry by entry, the side that touched it last wins. A removed entry stays as a dated marker
+// (`borrado`), so "forget this series" on one device is not undone by the other.
+function mergeProgressMap(local?: Record<string, any> | null, cloud?: Record<string, any> | null): Record<string, any> {
+  const result: Record<string, any> = { ...(cloud || {}), ...(local || {}) };
+  for (const [key, entry] of Object.entries(cloud || {})) {
+    if (local && key in local && time(entry?.at) > time(local[key]?.at)) result[key] = entry;
+  }
+  return result;
+}
+
+function mergeServerProgress(local: ProfileData, cloud: ProfileData): ServerProgress | null {
+  const l = local.serverProgress;
+  const c = cloud.serverProgress;
+  // Neither side knows about it (exports from before this existed): leave it out, so the
+  // merge does not look different from both copies just for carrying an empty field.
+  if (!l && !c) return null;
+  return {
+    kavita: mergeProgressMap(l?.kavita, c?.kavita),
+    audiobooks: mergeProgressMap(l?.audiobooks, c?.audiobooks),
+  };
+}
+
+function normalProgress(progress?: ServerProgress | null) {
+  return { kavita: progress?.kavita || {}, audiobooks: progress?.audiobooks || {} };
+}
+
 // Key order does not matter: a merged book spreads both copies and may list keys differently.
 function stableJson(value: unknown): string {
   return JSON.stringify(value ?? null, (_key, v) =>
@@ -187,6 +229,8 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
       ...mergeStatuses(l, c, preferCloud),
       ...mergeSrs(l, c, preferCloud),
     };
+    const serverProgress = mergeServerProgress(l, c);
+    if (serverProgress) profileData[id].serverProgress = serverProgress;
   }
 
   const merged: DbExport = {
@@ -206,8 +250,17 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
         || !sameJson(s.wordStatusTimes, m.wordStatusTimes) || !sameJson(s.srsData, m.srsData)
         || !sameJson(s.srsRemovals, m.srsRemovals);
     });
+  const progressDiffers = (side: DbExport) =>
+    profiles.some(({ id }) =>
+      !sameJson(normalProgress(side.profileData?.[id]?.serverProgress), normalProgress(profileData[id].serverProgress)));
 
-  return { merged, localChanged: differs(local), cloudChanged: differs(cloud) };
+  const localNeedsReload = differs(local);
+  return {
+    merged,
+    localChanged: localNeedsReload || progressDiffers(local),
+    cloudChanged: differs(cloud) || progressDiffers(cloud),
+    localNeedsReload,
+  };
 }
 
 /** Books not marked deleted, across all profiles: used to refuse an upload that would lose some. */

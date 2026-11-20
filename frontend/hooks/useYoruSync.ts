@@ -8,12 +8,17 @@
  * quedaba mirando un Inicio vacío con su progreso esperando en el servidor, y luego,
  * al entrar en Catálogo, la pantalla se recargaba sola (zams, 19 nov 2026).
  *
- * Ahora quien la arranca es `useYoruSyncAutomatica()`, que monta `YoruShell`, y el
- * estado vive aquí, fuera de React, para que la tarjeta de Ajustes lo lea esté o no
- * montada cuando ocurre.
+ * Después pasó a montarla `YoruShell`, pero la concha tampoco está cuando hay un libro
+ * abierto: mientras se leía no subía nada, ni cada cinco minutos ni al mandar la app al
+ * fondo. Quien leía en el teléfono, lo dejaba con el libro abierto y seguía en el PC
+ * encontraba el progreso de antes (zams, 20 nov 2026).
+ *
+ * Ahora quien la arranca es `useYoruSyncAutomatica()`, que monta `App`, lo único que
+ * está siempre, y el estado vive aquí, fuera de React, para que la tarjeta de Ajustes
+ * lo lea esté o no montada cuando ocurre.
  */
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { asegurarCredencialesMedios } from '../utils/credencialesMedios';
 import {
   recargarSiHizoFalta,
@@ -22,7 +27,7 @@ import {
   ultimaSincronizacion,
   type ModoSync,
 } from '../utils/yoruSyncService';
-import { describirEstado, INTERVALO_SUBIDA_MS } from '../utils/yoruSyncNucleo';
+import { describirEstado, INTERVALO_SUBIDA_MS, tocaBajarAlVolver } from '../utils/yoruSyncNucleo';
 
 export interface EstadoYoruSync {
   estado: 'apagado' | 'sincronizando' | 'al-dia' | 'fallo';
@@ -48,6 +53,9 @@ function suscribir(avisar: () => void): () => void {
   return () => { oyentes.delete(avisar); };
 }
 
+/** Si hay un libro abierto ahora mismo. Con un libro abierto no se recarga la pantalla. */
+let leyendoAhora = false;
+
 /** Sincroniza y deja el resultado donde lo lee Ajustes. Recarga si llegó algo de otro aparato. */
 export async function sincronizarConYoru(modo: ModoSync, forzada = false): Promise<void> {
   if (!sincronizacionDisponible()) { poner({ estado: 'apagado' }); return; }
@@ -58,7 +66,9 @@ export async function sincronizarConYoru(modo: ModoSync, forzada = false): Promi
   } else {
     poner({ estado: 'al-dia', detalle: '', ultima: ultimaSincronizacion() });
   }
-  recargarSiHizoFalta(resultado);
+  // Recargar con un libro abierto echaría al lector de su página. Lo combinado ya está
+  // guardado; la pantalla lo enseña la próxima vez que se cargue.
+  if (!leyendoAhora) recargarSiHizoFalta(resultado);
 }
 
 /** El estado de la sincronización, para pintarlo. */
@@ -66,15 +76,35 @@ export function useEstadoYoruSync(): EstadoYoruSync {
   return useSyncExternalStore(suscribir, () => actual);
 }
 
-/**
- * La de «abrir la app» se hace una vez por carga de la página. La concha se vuelve a
- * montar al cerrar un libro, y ahí solo se sube: cambiarle la biblioteca a alguien que
- * acaba de salir de su libro, y recargarle la pantalla, parece un fallo aunque no lo sea.
- */
-let yaSeCombinoAlAbrir = false;
+/** Cuándo se trajo por última vez lo del servidor en esta carga de la página. */
+let ultimaBajada = 0;
 
-/** Arranca la sincronización automática. Se monta una sola vez, en la concha. */
-export function useYoruSyncAutomatica(): void {
+function bajarYSubir(): void {
+  ultimaBajada = Date.now();
+  void sincronizarConYoru('bidireccional', true);
+}
+
+/**
+ * Arranca la sincronización automática. Se monta una sola vez, en `App`.
+ *
+ * Cuándo se **trae** lo del servidor (y se sube lo de aquí):
+ *  - al abrir la app;
+ *  - al volver a ella —del fondo en el teléfono, a la ventana en el PC— si no hay un
+ *    libro abierto. Es el momento en que se cambia de aparato: sin esto, una app que
+ *    se quedó abierta no se enteraba nunca de lo leído en el otro.
+ *
+ * Cuándo **solo se sube**:
+ *  - al irse la app al fondo, haya o no un libro abierto, y sin esperar turno;
+ *  - cada cinco minutos, también leyendo;
+ *  - al cerrar un libro. Ahí no se trae nada: cambiarle la biblioteca a alguien que
+ *    acaba de salir de su libro parece un fallo aunque no lo sea.
+ *
+ * @param leyendo si hay un libro abierto.
+ */
+export function useYoruSyncAutomatica(leyendo: boolean): void {
+  const leyendoRef = useRef(leyendo);
+  const leyendoAntes = useRef(leyendo);
+
   /*
     Las claves de Kavita y de Audiobookshelf las reparte el servidor de sincronización
     a quien sea miembro (`utils/credencialesMedios.ts`). Sin espera: cuanto antes
@@ -86,27 +116,45 @@ export function useYoruSyncAutomatica(): void {
 
   useEffect(() => {
     if (!sincronizacionDisponible()) return undefined;
-    // Igual que con Drive: se le da un momento al lector para que guarde su última
-    // posición al cerrar un libro.
-    const espera = window.setTimeout(() => {
-      const modo: ModoSync = yaSeCombinoAlAbrir ? 'solo-subir' : 'bidireccional';
-      yaSeCombinoAlAbrir = true;
-      void sincronizarConYoru(modo, true);
-    }, 2000);
+    // Igual que con Drive: se le da un momento a la app para terminar de arrancar.
+    const espera = window.setTimeout(bajarYSubir, 2000);
     return () => window.clearTimeout(espera);
   }, []);
 
   useEffect(() => {
+    leyendoRef.current = leyendo;
+    leyendoAhora = leyendo;
+    const acabaDeCerrar = leyendoAntes.current && !leyendo;
+    leyendoAntes.current = leyendo;
+    if (!acabaDeCerrar || !sincronizacionDisponible()) return undefined;
+    // Un momento para que el lector guarde su última posición al cerrar el libro.
+    const espera = window.setTimeout(() => { void sincronizarConYoru('solo-subir', true); }, 2000);
+    return () => window.clearTimeout(espera);
+  }, [leyendo]);
+
+  useEffect(() => {
     if (!sincronizacionDisponible()) return undefined;
-    const subir = () => { void sincronizarConYoru('solo-subir'); };
-    const alOcultarse = () => { if (document.visibilityState === 'hidden') subir(); };
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible' || leyendoRef.current) return;
+      if (!tocaBajarAlVolver(Date.now(), ultimaBajada)) return;
+      bajarYSubir();
+    };
+    const alCambiarVisibilidad = () => {
+      // Al fondo se sube siempre y sin esperar turno: es justo cuando se suelta este
+      // aparato para coger el otro.
+      if (document.visibilityState === 'hidden') void sincronizarConYoru('solo-subir', true);
+      else alVolver();
+    };
     const reloj = window.setInterval(() => {
-      if (document.visibilityState === 'visible') subir();
+      if (document.visibilityState === 'visible') void sincronizarConYoru('solo-subir');
     }, INTERVALO_SUBIDA_MS);
-    document.addEventListener('visibilitychange', alOcultarse);
+    document.addEventListener('visibilitychange', alCambiarVisibilidad);
+    // En el PC la ventana no se «oculta» al cambiar a otra: lo que hay es el foco.
+    window.addEventListener('focus', alVolver);
     return () => {
       window.clearInterval(reloj);
-      document.removeEventListener('visibilitychange', alOcultarse);
+      document.removeEventListener('visibilitychange', alCambiarVisibilidad);
+      window.removeEventListener('focus', alVolver);
     };
   }, []);
 }

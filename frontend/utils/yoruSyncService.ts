@@ -180,7 +180,10 @@ export type ModoSync =
 export interface ResultadoSync {
   /** `adelante` cuando se llegó a hablar con el servidor; si no, por qué no. */
   estado: EstadoSync;
-  /** Si lo que hay en el aparato cambió y conviene recargar la pantalla. */
+  /**
+   * Si lo que hay en el aparato cambió de una forma que pide recargar la pantalla
+   * (libros, palabras, tarjetas o perfiles; el progreso del servidor se pinta solo).
+   */
   cambioLocal: boolean;
   /** Si se escribió algo nuevo en el servidor. */
   subido: boolean;
@@ -253,7 +256,9 @@ export async function sincronizarConServidorYoru(
         // saliera mal, lo de este aparato sigue estando entero en alguna parte.
         await db.saveSyncBackup(local);
         await db.importFullDatabase(merged);
-        cambioLocal = true;
+        // Si lo único que llegó es progreso de Kavita o de audiolibros, Inicio se
+        // repinta solo con su aviso y no hace falta recargar la pantalla.
+        if (combinado.localNeedsReload || perfiles.cambioLocal) cambioLocal = true;
       }
 
       if (cloudChanged) {

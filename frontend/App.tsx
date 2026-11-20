@@ -16,6 +16,7 @@ import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
 import { refreshServerCatalog } from './utils/serverCatalog';
 import { markOpenTiming, startOpenTiming } from './utils/openTiming';
+import { useYoruSyncAutomatica } from './hooks/useYoruSync';
 
 /**
  * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
@@ -116,6 +117,9 @@ export default function App() {
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
   // El libro abierto, accesible desde callbacks memorizados sin dependencias.
   const activeBookRef = useRef<any>(null);
+  // La sincronización con el servidor de Yoru vive aquí, que es lo único montado
+  // siempre: también con un libro abierto. Ver `hooks/useYoruSync.ts`.
+  useYoruSyncAutomatica(Boolean(activeBook));
   // The reader's code loads while the library sits idle, so opening the first book does not wait
   // for it ("Loading reader..." before the book's own loading screen).
   useEffect(() => {

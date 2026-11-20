@@ -102,6 +102,23 @@ export interface Profile {
 
 const WORD_STATUS_TIMES_KEY = 'yoru_word_status_times';
 const SRS_REMOVALS_KEY = 'yoru_srs_removals';
+/**
+ * Dónde guarda `serverProgress.ts` lo leído de Kavita y lo escuchado de Audiobookshelf,
+ * por perfil. Viven aquí porque la exportación de la base las lleva consigo.
+ */
+export const KAVITA_LOCAL_PROGRESS_KEY = 'yoru_kavita_local_progress';
+export const ABS_LOCAL_PROGRESS_KEY = 'yoru_abs_local_progress';
+/** Avisa a Inicio de que «Continuar» puede haber cambiado. */
+export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
+
+function readJsonObject(key: string): Record<string, any> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 const STORAGE_KEYS = {
   BOOKS: 'migaku_reader_books',
@@ -1048,13 +1065,21 @@ export const db = {
       const removalsRaw = localStorage.getItem(`${SRS_REMOVALS_KEY}_${p.id}`);
       const srsRemovals = removalsRaw ? JSON.parse(removalsRaw) : null;
 
+      // 5. Lo leído y escuchado directamente de Kavita y Audiobookshelf. Sin esto, el
+      // progreso de un tomo abierto desde el servidor no salía nunca de este aparato.
+      const serverProgress = {
+        kavita: readJsonObject(`${KAVITA_LOCAL_PROGRESS_KEY}_${p.id}`),
+        audiobooks: readJsonObject(`${ABS_LOCAL_PROGRESS_KEY}_${p.id}`),
+      };
+
       dbExport.profileData[p.id] = {
         books,
         settings,
         wordStatuses,
         wordStatusTimes,
         srsData,
-        srsRemovals
+        srsRemovals,
+        serverProgress
       };
     }
 
@@ -1068,6 +1093,7 @@ export const db = {
 
     // Save profiles list
     this.saveProfiles(dbExport.profiles);
+    let progresoServidorCambiado = false;
     
     // Save data for each profile
     for (const p of dbExport.profiles) {
@@ -1100,12 +1126,22 @@ export const db = {
         if (pData.srsRemovals) {
           localStorage.setItem(`${SRS_REMOVALS_KEY}_${p.id}`, JSON.stringify(pData.srsRemovals));
         }
+        // 5. Progreso de Kavita y Audiobookshelf
+        if (pData.serverProgress) {
+          localStorage.setItem(`${KAVITA_LOCAL_PROGRESS_KEY}_${p.id}`, JSON.stringify(pData.serverProgress.kavita || {}));
+          localStorage.setItem(`${ABS_LOCAL_PROGRESS_KEY}_${p.id}`, JSON.stringify(pData.serverProgress.audiobooks || {}));
+          progresoServidorCambiado = true;
+        }
       }
     }
 
     // Restore active profile
     if (dbExport.activeProfileId) {
       this.setActiveProfileId(dbExport.activeProfileId);
+    }
+    // «Continuar» y la Biblioteca se repintan solos con este aviso.
+    if (progresoServidorCambiado && typeof window !== 'undefined') {
+      try { window.dispatchEvent(new Event(LOCAL_PROGRESS_EVENT)); } catch { /* sin ventana */ }
     }
   },
 

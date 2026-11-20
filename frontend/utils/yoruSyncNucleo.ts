@@ -14,6 +14,19 @@
 /** Cada cuánto se sube el progreso estando la app abierta. */
 export const INTERVALO_SUBIDA_MS = 5 * 60 * 1000;
 
+/** Cada cuánto, como mucho, se trae lo del servidor al volver a la app. */
+export const INTERVALO_BAJADA_AL_VOLVER_MS = 2 * 60 * 1000;
+
+/**
+ * Si al volver a la app toca traer lo del servidor.
+ *
+ * Volver a la app es cambiar de ventana en el PC, y eso pasa decenas de veces en una
+ * tarde: cada bajada es la biblioteca entera, así que no se repite antes de dos minutos.
+ */
+export function tocaBajarAlVolver(ahora: number, ultimaBajada: number): boolean {
+  return ahora - ultimaBajada >= INTERVALO_BAJADA_AL_VOLVER_MS;
+}
+
 /** Margen con el que se da por caducado el token del servidor, para no apurar. */
 export const MARGEN_TOKEN_MS = 60 * 1000;
 
@@ -139,12 +152,16 @@ export interface ExportacionConPerfiles {
 
 /**
  * Si un perfil no guarda nada que se pueda perder: ni un libro (los borrados cuentan,
- * que llevan estadísticas), ni una palabra marcada, ni una tarjeta del SRS.
+ * que llevan estadísticas), ni una palabra marcada, ni una tarjeta del SRS, ni un tomo
+ * o audiolibro empezado en el servidor.
  */
 export function perfilSinNada(datos: any): boolean {
   if (!datos) return true;
   if ((datos.books || []).length > 0) return false;
   if (Object.keys(datos.wordStatuses || {}).length > 0) return false;
+  // Lo leído o escuchado directamente del servidor también es progreso.
+  if (Object.keys(datos.serverProgress?.kavita || {}).length > 0) return false;
+  if (Object.keys(datos.serverProgress?.audiobooks || {}).length > 0) return false;
   // Las claves `_deck_…` son mazos, no tarjetas: un mazo vacío no es progreso.
   return !Object.keys(datos.srsData || {}).some((clave) => !clave.startsWith('_deck_'));
 }

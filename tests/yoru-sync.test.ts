@@ -10,9 +10,11 @@ import {
   perfilSinNada,
   reconciliarPerfiles,
   sesionServidorValida,
+  tocaBajarAlVolver,
   urlSync,
   type SesionServidor,
 } from '../frontend/utils/yoruSyncNucleo';
+import { mergeDatabaseExports } from '../frontend/utils/cloudMerge';
 
 let failures = 0;
 function check(condicion: boolean, nombre: string) {
@@ -212,7 +214,60 @@ function perfilesTests() {
   }
 }
 
+/* Lo leído de Kavita y lo escuchado de Audiobookshelf viaja con la sincronización. */
+function progresoServidorTests(): void {
+  const perfil = { id: 'profile-1', name: 'zams' };
+  const lado = (serverProgress?: any) => ({
+    activeProfileId: perfil.id,
+    profiles: [perfil],
+    profileData: { [perfil.id]: { books: [], settings: null, wordStatuses: null, srsData: null, ...(serverProgress ? { serverProgress } : {}) } },
+  });
+  const tomo = (percent: number, at: string, extra: any = {}) => ({ chapterId: 7, volumeId: 70, seriesId: 3, pages: 200, percent, at, ...extra });
+
+  {
+    // El teléfono leyó hasta el 40 %; el PC no ha abierto ese tomo nunca.
+    const telefono = lado({ kavita: { '7': tomo(40, '2026-11-20T10:00:00.000Z') }, audiobooks: {} });
+    const pc = lado({ kavita: {}, audiobooks: {} });
+    const r = mergeDatabaseExports(pc as any, telefono as any, true);
+    check(r.merged.profileData[perfil.id].serverProgress?.kavita?.['7']?.percent === 40, 'el tomo leído en el teléfono llega al PC');
+    check(r.localChanged && !r.cloudChanged, 'llega algo nuevo a este aparato y el servidor ya lo tenía');
+    check(!r.localNeedsReload, 'por progreso del servidor solo, no se recarga la pantalla');
+  }
+  {
+    const viejo = lado({ kavita: { '7': tomo(10, '2026-11-19T10:00:00.000Z') }, audiobooks: { a1: { currentTime: 60, duration: 600, at: '2026-11-20T09:00:00.000Z' } } });
+    const nuevo = lado({ kavita: { '7': tomo(55, '2026-11-20T10:00:00.000Z') }, audiobooks: { a1: { currentTime: 30, duration: 600, at: '2026-11-18T09:00:00.000Z' } } });
+    const r = mergeDatabaseExports(viejo as any, nuevo as any, false);
+    const sp = r.merged.profileData[perfil.id].serverProgress!;
+    check(sp.kavita!['7'].percent === 55, 'del mismo tomo gana lo leído más tarde');
+    check(sp.audiobooks!.a1.currentTime === 60, 'y del mismo audiolibro, lo escuchado más tarde, esté en el lado que esté');
+    check(r.localChanged && r.cloudChanged, 'cada lado recibe lo que le faltaba');
+    const otraVez = mergeDatabaseExports(r.merged as any, r.merged as any, false);
+    check(!otraVez.localChanged && !otraVez.cloudChanged, 'combinar lo ya combinado no cambia nada');
+  }
+  {
+    // Se olvidó la serie en el PC después de leerla en el teléfono: se queda olvidada.
+    const pc = lado({ kavita: { '7': tomo(0, '2026-11-20T12:00:00.000Z', { borrado: true }) }, audiobooks: {} });
+    const telefono = lado({ kavita: { '7': tomo(40, '2026-11-20T10:00:00.000Z') }, audiobooks: {} });
+    const r = mergeDatabaseExports(telefono as any, pc as any, false);
+    check(r.merged.profileData[perfil.id].serverProgress?.kavita?.['7']?.borrado === true, 'una serie olvidada en un aparato no vuelve por el otro');
+  }
+  {
+    // Un aparato sin actualizar no manda el campo: no se pierde lo de este.
+    const r = mergeDatabaseExports(lado({ kavita: { '7': tomo(40, '2026-11-20T10:00:00.000Z') }, audiobooks: {} }) as any, lado() as any, true);
+    check(r.merged.profileData[perfil.id].serverProgress?.kavita?.['7']?.percent === 40 && r.cloudChanged, 'una copia antigua sin el campo no borra el progreso');
+    const vacios = mergeDatabaseExports(lado({ kavita: {}, audiobooks: {} }) as any, lado() as any, true);
+    check(!vacios.localChanged && !vacios.cloudChanged, 'un campo vacío frente a ninguno no cuenta como cambio');
+  }
+  check(!perfilSinNada({ books: [], serverProgress: { kavita: { '7': tomo(5, '2026-11-20T10:00:00.000Z') } } }), 'un perfil con un tomo empezado en el servidor no está vacío');
+  check(perfilSinNada({ books: [], serverProgress: { kavita: {}, audiobooks: {} } }), 'sin tomos ni audiolibros sigue vacío');
+
+  check(!tocaBajarAlVolver(1_000_000, 1_000_000 - 30_000), 'volver a la app a los 30 segundos no baja otra vez');
+  check(tocaBajarAlVolver(1_000_000, 1_000_000 - 3 * 60_000), 'volver a los tres minutos sí');
+  check(tocaBajarAlVolver(Date.now(), 0), 'y la primera vez también');
+}
+
 decisionTests();
+progresoServidorTests();
 perfilesTests();
 sesionTests();
 falloTests();
