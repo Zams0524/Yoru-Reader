@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Bookmark as BookmarkIcon, StickyNote, Copy, Trash2 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, type BookHighlight } from '../../utils/highlights';
 import { isPhoneUI } from '../../utils/platform';
@@ -17,6 +17,10 @@ interface SectionItem {
   id: string;
   title: string;
   isFromToc?: boolean;
+  /** Depth in the book's index: a section inside a chapter is drawn indented. */
+  level?: number;
+  /** The chapter the entry opens; without it, its place in the list. */
+  chapterIndex?: number;
 }
 
 interface BookmarkItem {
@@ -48,7 +52,9 @@ interface ReaderSidebarProps {
   onExportHighlights?: () => void;
   onClose: () => void;
   sections: SectionItem[];
+  /** The entry of `sections` the reader is in (its place in the list). */
   currSection: number;
+  /** Receives the entry's chapter (`chapterIndex`). */
   onGoToSection: (idx: number) => void;
   bookmarks: BookmarkItem[];
   onToggleBookmark?: (bm: BookmarkItem) => void;
@@ -232,17 +238,25 @@ interface TocContentProps {
 
 function TocContent({ sections, currSection, onGoToSection, onClose, colors, lang }: TocContentProps) {
   const isEs = !lang || lang === 'es';
+  const currentRef = useRef<HTMLDivElement | null>(null);
+  // A long index opens on the chapter being read, not on the cover.
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: 'center' });
+  }, []);
   return (
     <div>
       {sections.map((section, idx) => (
         <div
           key={section.id}
+          ref={idx === currSection ? currentRef : undefined}
           onClick={() => {
-            onGoToSection(idx);
+            onGoToSection(section.chapterIndex ?? idx);
             onClose();
           }}
           style={{
             padding: '10px 12px',
+            paddingLeft: `${12 + Math.min(section.level || 0, 4) * 16}px`,
+            opacity: (section.level || 0) > 0 && idx !== currSection ? 0.8 : 1,
             cursor: 'pointer',
             borderRadius: '6px',
             background: idx === currSection ? `${colors.accent}18` : 'transparent',

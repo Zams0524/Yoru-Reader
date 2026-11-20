@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { planChapters, type SpineDoc, type TocParent, type TocRef } from './toc';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -10,6 +11,12 @@ export interface BookChapter {
   title: string;
   content: string;
   isFromToc?: boolean;
+  /** Depth in the book's index (EPUB): 0 for a chapter, 1 for a section inside it. */
+  tocLevel?: number;
+  /** More of the chapter before it (a file the EPUB's index does not name): not listed. */
+  continuation?: boolean;
+  /** Index entries that start where this chapter does (a part and its first chapter). */
+  tocParents?: TocParent[];
 }
 
 export interface ParsedBook {
@@ -458,7 +465,22 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
   const lastSlashIndex = opfPath.lastIndexOf('/');
   const baseDir = lastSlashIndex !== -1 ? opfPath.substring(0, lastSlashIndex + 1) : '';
 
-  const tocMap: Record<string, string> = {};
+  // The book's own index, in its order and with its nesting: EPUB 3 nav first, EPUB 2 NCX if not.
+  const tocRefs: TocRef[] = [];
+  const decodeHref = (value: string) => {
+    try { return decodeURIComponent(value); } catch { return value; }
+  };
+  const addTocRef = (basePath: string, href: string | null, rawLabel: string | null | undefined, level: number) => {
+    const label = (rawLabel || '').replace(/\s+/g, ' ').trim();
+    if (!href || !label) return;
+    const [target, ...rest] = href.split('#');
+    tocRefs.push({
+      path: target ? resolveRelativePath(basePath, decodeHref(target)) : basePath,
+      fragment: decodeHref(rest.join('#')),
+      label,
+      level,
+    });
+  };
   try {
     let navHref = '';
     opfDoc.querySelectorAll('item').forEach(item => {
@@ -483,16 +505,19 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
       if (navFile) {
         const navHtml = await navFile.async('text');
         const navDoc = parser.parseFromString(navHtml, 'text/html');
-        navDoc.querySelectorAll('a').forEach(a => {
-          const href = a.getAttribute('href');
-          if (href) {
-            const cleanHref = decodeURIComponent(href.split('#')[0]);
-            const targetPath = resolveRelativePath(resolvedNavPath, cleanHref);
-            const label = a.textContent?.trim() || '';
-            if (label && !tocMap[targetPath]) {
-              tocMap[targetPath] = label;
-            }
+        // The nav file also carries the landmarks and the page list: only the index is wanted.
+        const navs = Array.from(navDoc.querySelectorAll('nav'));
+        const tocNav: Element = navs.find(nav => /\btoc\b/.test(nav.getAttribute('epub:type') || ''))
+          || navs[0]
+          || navDoc.body;
+        tocNav.querySelectorAll('a[href]').forEach(a => {
+          // One list inside another is one level down.
+          let level = -1;
+          for (let el = a.parentElement; el && el !== tocNav; el = el.parentElement) {
+            const tag = el.tagName.toLowerCase();
+            if (tag === 'ol' || tag === 'ul') level++;
           }
+          addTocRef(resolvedNavPath, a.getAttribute('href'), a.textContent, Math.max(0, level));
         });
       }
     }
@@ -500,7 +525,7 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
     console.warn("Failed to parse EPUB 3 Nav TOC:", e);
   }
 
-  if (Object.keys(tocMap).length === 0) {
+  if (tocRefs.length === 0) {
     try {
       const spineEl = opfDoc.querySelector('spine') || opfDoc.querySelector('opf\\:spine');
       const tocId = spineEl ? spineEl.getAttribute('toc') : null;
@@ -527,19 +552,15 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
           const ncxXml = await ncxFile.async('text');
           const ncxDoc = parser.parseFromString(ncxXml, 'text/html');
           ncxDoc.querySelectorAll('navpoint').forEach(point => {
+            // The first of each is the point's own: its nested points come after them.
             const contentEl = point.querySelector('content');
             const textEl = point.querySelector('navlabel text');
-            if (contentEl && textEl) {
-              const href = contentEl.getAttribute('src');
-              const label = textEl.textContent?.trim() || '';
-              if (href && label) {
-                const cleanHref = decodeURIComponent(href.split('#')[0]);
-                const targetPath = resolveRelativePath(resolvedNcxPath, cleanHref);
-                if (!tocMap[targetPath]) {
-                  tocMap[targetPath] = label;
-                }
-              }
+            if (!contentEl || !textEl) return;
+            let level = 0;
+            for (let el = point.parentElement; el; el = el.parentElement) {
+              if (el.tagName.toLowerCase() === 'navpoint') level++;
             }
+            addTocRef(resolvedNcxPath, contentEl.getAttribute('src'), textEl.textContent, level);
           });
         }
       }
@@ -608,14 +629,20 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
     }
   }
   
-  const chapters: BookChapter[] = [];
+  // Every file of the spine as paragraphs; the index then says which of them start a chapter
+  // (planChapters). A file is not a chapter by itself: a chapter is often cut into several.
+  const spineDocs: SpineDoc<any[]>[] = [];
+  const fileNameOf = (path: string) => (path.toLowerCase().replace(/\\/g, '/').split('/').pop() || '');
+  const paragraphTextLength = (paragraph: any[]) => paragraph.reduce((sum, segment) => (
+    sum + (typeof segment === 'string' ? segment.length : segment?.type === 'ruby' ? (segment.text || '').length : 0)
+  ), 0);
   
   for (let i = 0; i < spineIds.length; i++) {
     const id = spineIds[i];
     const href = manifestItems[id];
     if (!href) continue;
     
-    const decodedHref = decodeURIComponent(href);
+    const decodedHref = decodeHref(href);
     const resolvedPath = baseDir + decodedHref;
     
     const file = zip.file(resolvedPath);
@@ -624,56 +651,50 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
     const chapterHtml = await file.async('text');
     const doc = parser.parseFromString(chapterHtml, 'text/html');
     
-    let chapterTitle = '';
-    let isFromToc = false;
-    const getCleanPath = (p: string) => {
-      if (!p) return '';
-      return p.toLowerCase().replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\//, '');
-    };
-    const cleanResolved = getCleanPath(resolvedPath);
+    const headingEl = doc.querySelector('h1, h2, h3, h4');
+    const headingText = headingEl?.textContent?.replace(/\s+/g, ' ').trim() || '';
+    const titleTag = doc.querySelector('title')?.textContent?.trim() || '';
     
-    for (const k of Object.keys(tocMap)) {
-      if (getCleanPath(k) === cleanResolved) {
-        chapterTitle = tocMap[k];
-        isFromToc = true;
-        break;
-      }
-    }
-    
-    if (!chapterTitle) {
-      const resolvedFilename = cleanResolved.split('/').pop();
-      for (const k of Object.keys(tocMap)) {
-        const kClean = getCleanPath(k);
-        const kFilename = kClean.split('/').pop();
-        if (resolvedFilename && resolvedFilename === kFilename) {
-          chapterTitle = tocMap[k];
-          isFromToc = true;
-          break;
+    // Index entries that point inside this file (#anchor): a private-use mark is left where each
+    // one lands, so that the paragraph it ends up in is known after the HTML is flattened.
+    const wanted = new Set(tocRefs
+      .filter(ref => ref.fragment && fileNameOf(ref.path) === fileNameOf(resolvedPath))
+      .map(ref => ref.fragment));
+    const marks: string[] = [];
+    if (wanted.size > 0) {
+      doc.querySelectorAll('[id], a[name]').forEach(el => {
+        const key = el.getAttribute('id') || el.getAttribute('name') || '';
+        if (!wanted.has(key) || marks.includes(key)) return;
+        const mark = doc.createTextNode(`\uE000${marks.length}\uE001`);
+        marks.push(key);
+        const host = el.closest('ruby') || el;
+        const tag = host.tagName.toLowerCase();
+        if (host !== el || ['img', 'image', 'svg', 'br', 'hr'].includes(tag)) {
+          host.parentNode?.insertBefore(mark, host);
+        } else {
+          host.insertBefore(mark, host.firstChild);
         }
-      }
+      });
     }
     
-    if (!chapterTitle) {
-      const heading = doc.querySelector('h1, h2, h3, h4');
-      if (heading) chapterTitle = heading.textContent?.trim() || '';
-    }
-    
-    if (!chapterTitle) {
-      const titleTag = doc.querySelector('title');
-      if (titleTag) {
-        const titleText = titleTag.textContent?.trim() || '';
-        if (titleText && titleText !== title && titleText.toLowerCase() !== 'untitled' && titleText.toLowerCase() !== 'untitled document') {
-          chapterTitle = titleText;
+    let structuredParagraphs = htmlToStructuredParagraphs(doc);
+    const anchors: Record<string, number> = {};
+    if (marks.length > 0) {
+      const kept: any[] = [];
+      for (const p of structuredParagraphs) {
+        for (let s = p.length - 1; s >= 0; s--) {
+          if (typeof p[s] !== 'string' || !p[s].includes('\uE000')) continue;
+          p[s] = p[s].replace(/\uE000(\d+)\uE001/g, (_match: string, n: string) => {
+            const key = marks[Number(n)];
+            if (key !== undefined && anchors[key] === undefined) anchors[key] = kept.length;
+            return '';
+          });
+          if (!p[s].trim()) p.splice(s, 1);
         }
+        if (p.length > 0) kept.push(p);
       }
+      structuredParagraphs = kept;
     }
-    
-    if (!chapterTitle) {
-      chapterTitle = chapters.length === 0 ? 'Portada' : `Capítulo ${chapters.length + 1}`;
-    }
-    
-    const structuredParagraphs = htmlToStructuredParagraphs(doc);
-    if (structuredParagraphs.length === 0) continue;
     
     for (let pIdx = 0; pIdx < structuredParagraphs.length; pIdx++) {
       const p = structuredParagraphs[pIdx];
@@ -697,12 +718,20 @@ export async function parseEPUB(arrayBuffer: ArrayBuffer): Promise<any> {
       }
     }
     
-    chapters.push({
-      title: chapterTitle || 'Portada',
-      content: structuredParagraphs.map(serializeStructuredParagraph).join('\n'),
-      isFromToc: isFromToc
+    spineDocs.push({
+      path: resolvedPath,
+      paragraphs: structuredParagraphs,
+      anchors,
+      heading: headingText ? { text: headingText, tag: headingEl!.tagName.toLowerCase() } : undefined,
+      titleTag,
+      textLength: paragraphTextLength,
     });
   }
+  
+  const chapters: BookChapter[] = planChapters(spineDocs, tocRefs, title).map(({ paragraphs, ...chapter }) => ({
+    ...chapter,
+    content: paragraphs.map(serializeStructuredParagraph).join('\n'),
+  }));
   
   if (chapters.length === 0) {
     throw new Error('No se pudo extraer texto legible del archivo EPUB.');

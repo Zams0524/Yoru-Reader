@@ -4,6 +4,7 @@ import { BookRail, Cover } from './primitives';
 import BookHistoryPanel from './BookHistoryPanel';
 import { bookStatus, sameAuthor, sameSeries, similarBooks, type ShelfBook } from './libraryIndex';
 import { audiobookLinkState, getAudiobookLink } from '../../utils/audiobookshelfService';
+import { activeTocEntry, buildTocEntries } from '../../utils/toc';
 
 type Tab = 'summary' | 'chapters';
 
@@ -72,6 +73,9 @@ export default function BookDetailView({
   );
 
   const chapters = useMemo(() => (Array.isArray(book.chapters) ? book.chapters : []), [book.chapters]);
+  // The book's own index: the files a chapter is cut into are not listed one by one.
+  const tocEntries = useMemo(() => buildTocEntries(chapters, book.title), [chapters, book.title]);
+  const currentEntry = activeTocEntry(tocEntries, book.progress?.currentChapter ?? -1);
   // El audiolibro se vincula desde el lector (⋮ > Escuchar audiolibro); aquí solo se mira.
   const hasAudiobook = useMemo(() => Boolean(getAudiobookLink(book.id)), [book.id]);
   // Tres estados, los tres ciertos: sin vincular, vinculado, y vinculado con
@@ -275,16 +279,17 @@ export default function BookDetailView({
         </>
       ) : (
         <div className="yoru-chapter-list">
-          {chapters.map((chapter: any, index: number) => (
+          {tocEntries.map((entry, index) => (
             <button
               key={index}
               type="button"
-              className={`yoru-chapter-row${index === (book.progress?.currentChapter ?? -1) ? ' current' : ''}`}
-              onClick={() => onOpenChapter(book, index)}
+              className={`yoru-chapter-row${index === currentEntry ? ' current' : ''}`}
+              style={entry.level > 0 ? { paddingLeft: `${Math.min(entry.level, 4) * 20}px` } : undefined}
+              onClick={() => onOpenChapter(book, entry.chapterIndex)}
             >
               <span className="yoru-chapter-index">{index + 1}</span>
               <span className="yoru-chapter-title">
-                {chapter?.title || chapter?.name || `${es ? 'Capítulo' : 'Chapter'} ${index + 1}`}
+                {entry.title || (chapters[entry.chapterIndex] as any)?.name || `${es ? 'Capítulo' : 'Chapter'} ${index + 1}`}
               </span>
             </button>
           ))}
