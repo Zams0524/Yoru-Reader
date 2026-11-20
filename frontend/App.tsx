@@ -576,7 +576,9 @@ export default function App() {
                .replace(/\([^)]*\)/g, '')
                .replace(/（[^）]*）/g, '')
                .replace(/\{[^}]*\}/g, '');
-          const parts = s.split(/[\s\-ー:：|]/);
+          // Ni «ー» ni «-» cortan: la raya larga es parte de la palabra (テーブル), y
+          // cortar ahí dejaba «テ» y borraba la palabra de verdad.
+          const parts = s.split(/[\s:：|]/);
           s = parts[0] || '';
           return s.trim();
         };
@@ -588,12 +590,17 @@ export default function App() {
           const cleanKey = cleanWord(key);
           if (!cleanKey) continue;
 
-          const isSentence = cleanKey.length > 5 || 
-                             cleanKey.includes('。') || 
-                             cleanKey.includes('、') || 
-                             cleanKey.includes('？') || 
-                             cleanKey.includes('！') ||
-                             /[\u3040-\u309F]/.test(cleanKey) && (cleanKey.includes('は') || cleanKey.includes('が') || cleanKey.includes('を') || cleanKey.includes('に') || cleanKey.includes('で'));
+          /*
+            Solo es una frase lo que lleva puntuación de frase.
+
+            Antes también contaba todo lo de más de cinco letras y cualquier cosa en
+            hiragana con una partícula dentro, y eso troceaba palabras y expresiones
+            enteras: 気に入る, 間に合う, プラスチック. En el PC no se notaba porque su
+            vocabulario ya había pasado por aquí; al llegarle el del teléfono por la
+            sincronización, esta limpieza le quitaba más de doscientas palabras y las
+            subía borradas al servidor (20 nov 2026).
+          */
+          const isSentence = /[。、？！]/.test(cleanKey);
 
           if (isSentence && cleanKey.length > 3) {
             needsMigration = true;
