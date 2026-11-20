@@ -1195,11 +1195,12 @@ export default function App() {
             book={activeBook}
             onBack={(targetTab) => {
               setActiveBook(null);
-              if (targetTab) {
-                setLibraryTab(targetTab);
-              } else {
-                setLibraryTab('library');
-              }
+              /*
+                Sin destino pedido, salir del libro vuelve a Inicio. Antes volvía al
+                Catálogo, que casi nunca es de donde se abrió: se lee desde «Continuar»,
+                en Inicio, y atrás tiene que devolver ahí.
+              */
+              setLibraryTab(targetTab || 'home');
             }}
             onUpdateProgress={handleUpdateProgress}
             onIncrementReadingStats={handleIncrementReadingStats}
