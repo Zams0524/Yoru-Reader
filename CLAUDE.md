@@ -42,6 +42,10 @@ Al estar expuesto, `POST /api/sesion` es la única puerta sin sesión y tiene fr
 No sustituye a Google Drive, son dos sitios donde dejar lo mismo, y **comparten combinador**: los dos usan `mergeDatabaseExports` (`frontend/utils/cloudMerge.ts`). El servidor no combina nada, solo guarda y lleva un contador de versiones (409 cuando otro aparato escribió entremedias).
 Detalles en `docs/SINCRONIZACION_YORU.md`; cómo arrancar el servidor y dejarlo arrancado, en `servidor-sync/README.md`.
 
+## Monitor de servidores (programa aparte)
+`monitor-servidores/` no es parte de la app: es un panel para el PC de zams (Node a secas, sin dependencias, como `servidor-sync/`) que dice si Tailscale, el servidor de sincronización, Kavita y Audiobookshelf están encendidos y se alcanzan desde internet, y enciende lo apagado. Doble clic en `ABRIR-MONITOR.bat`; el panel queda en `http://127.0.0.1:3748/`. `node monitor-servidores/monitor.mjs --estado` lo dice en la consola, que es la forma rápida de saber por qué la app dice «no responde». Pruebas: `node monitor-servidores/prueba.mjs`. Detalles en `monitor-servidores/README.md`.
+Kavita no arranca solo con Windows (Audiobookshelf y Tailscale sí, al iniciar sesión): tras un reinicio queda apagado hasta que alguien lo abre, o hasta que lo abre el monitor.
+
 ## Firma del APK — no borrar ni regenerar
 `android/keystore/yoru-reader-debug.keystore` (SHA-1 `F5:0A:…:3E:C2`) está registrado en Google Cloud OAuth. Borrar o regenerar rompe Google Drive en Android y obliga a desinstalar.
 

@@ -158,3 +158,6 @@ qa-runs/
 # en main desde el PR 37. Siguen seguidos por git porque quitarlos es una decisión de
 # zams y merece un cambio que diga eso y nada más, no el arrastre de otro. Están
 # seguidos, así que esta carpeta ignorada no les afecta.
+
+# Monitor de servidores: el registro y los ajustes de este PC
+monitor-servidores/datos/

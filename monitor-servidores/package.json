@@ -1,0 +1,18 @@
+{
+  "name": "yoru-monitor-servidores",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Panel que vigila y enciende Tailscale, el servidor de sincronizacion, Kavita y Audiobookshelf en el PC de Yoru.",
+  "type": "module",
+  "main": "monitor.mjs",
+  "scripts": {
+    "start": "node monitor.mjs",
+    "estado": "node monitor.mjs --estado",
+    "test": "node prueba.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {},
+  "license": "GPL-2.0-or-later"
+}

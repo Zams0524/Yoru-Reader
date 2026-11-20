@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yoru · Servidores</title>
+<style>
+  :root {
+    --fondo: #0d1020; --tarjeta: #161a30; --borde: #262b4a; --texto: #e8eaf6; --tenue: #9aa0c3;
+    --acento: #8f8cf0; --bien: #4fd08a; --aviso: #f0b548; --mal: #f0666e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --fondo: #f3f4fb; --tarjeta: #ffffff; --borde: #dcdff0; --texto: #1b1e36; --tenue: #5d6288;
+      --acento: #5a55d6; --bien: #1f9d5b; --aviso: #b57a08; --mal: #cf3640; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  .general { color: var(--tenue); margin-top: 2px; }
+  .general b { color: var(--texto); font-weight: 600; }
+  button { font: inherit; border: 1px solid var(--borde); background: transparent; color: var(--texto); padding: 8px 14px; border-radius: 9px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--acento); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.principal { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600; }
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 14px; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .tarjeta[data-estado="mal"] { border-color: color-mix(in srgb, var(--mal) 55%, var(--borde)); }
+  .tarjeta[data-estado="aviso"] { border-color: color-mix(in srgb, var(--aviso) 55%, var(--borde)); }
+  .cabeza { display: flex; align-items: center; gap: 10px; }
+  .cabeza h2 { font-size: 16px; margin: 0; flex: 1; font-weight: 600; }
+  .punto { width: 12px; height: 12px; border-radius: 50%; background: var(--tenue); flex: none; }
+  [data-estado="bien"] .punto { background: var(--bien); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bien) 20%, transparent); }
+  [data-estado="aviso"] .punto { background: var(--aviso); box-shadow: 0 0 0 4px color-mix(in srgb, var(--aviso) 20%, transparent); }
+  [data-estado="mal"] .punto { background: var(--mal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mal) 20%, transparent); }
+  .etiqueta { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--tenue); }
+  [data-estado="bien"] .etiqueta { color: var(--bien); }
+  [data-estado="aviso"] .etiqueta { color: var(--aviso); }
+  [data-estado="mal"] .etiqueta { color: var(--mal); }
+  ul.pasos { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  ul.pasos li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; }
+  .marca { font-weight: 700; }
+  .ok .marca { color: var(--bien); } .no .marca { color: var(--mal); }
+  .paso-nombre { font-weight: 550; }
+  .paso-detalle { color: var(--tenue); font-size: 13px; overflow-wrap: anywhere; }
+  .no .paso-detalle { color: var(--texto); }
+  .consecuencia { font-size: 13px; color: var(--tenue); border-top: 1px solid var(--borde); padding-top: 10px; }
+  .pie { display: flex; justify-content: flex-end; margin-top: auto; }
+  section.bloque { margin-top: 26px; }
+  section.bloque h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--tenue); margin: 0 0 10px; font-weight: 600; }
+  .opciones { display: grid; gap: 10px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 14px 16px; }
+  .opciones label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .opciones input { margin-top: 4px; accent-color: var(--acento); }
+  .opciones small { display: block; color: var(--tenue); }
+  ol.registro { list-style: none; margin: 0; padding: 0; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; max-height: 320px; overflow: auto; }
+  ol.registro li { display: grid; grid-template-columns: 132px 1fr; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--borde); font-size: 13px; }
+  ol.registro li:last-child { border-bottom: 0; }
+  ol.registro time { color: var(--tenue); font-variant-numeric: tabular-nums; }
+  ol.registro li[data-tipo="mal"] span, ol.registro li[data-tipo="fallo"] span { color: var(--mal); }
+  ol.registro li[data-tipo="aviso"] span { color: var(--aviso); }
+  ol.registro li[data-tipo="bien"] span, ol.registro li[data-tipo="encendido"] span { color: var(--bien); }
+  .vacio { padding: 14px 16px; color: var(--tenue); font-size: 13px; }
+  #corte { display: none; background: color-mix(in srgb, var(--mal) 18%, var(--tarjeta)); border: 1px solid var(--mal); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="corte">El monitor no contesta. Si cerraste su ventana, vuelve a abrir <b>ABRIR-MONITOR.bat</b>.</div>
+  <header>
+    <div>
+      <h1>Servidores de Yoru</h1>
+      <div class="general" id="general">Comprobando…</div>
+    </div>
+    <div style="display:flex; gap:8px">
+      <button id="comprobar">Comprobar ahora</button>
+      <button id="todo" class="principal">Encender todo</button>
+    </div>
+  </header>
+
+  <div class="rejilla" id="rejilla"></div>
+
+  <section class="bloque">
+    <h3>Cómo se comporta</h3>
+    <div class="opciones">
+      <label><input type="checkbox" id="vigilar"><span>Reencender solo lo que se caiga
+        <small>Mientras el monitor esté abierto, si un servidor deja de contestar lo vuelve a abrir (un intento por minuto).</small></span></label>
+      <label id="fila-windows"><input type="checkbox" id="windows"><span>Abrir el monitor al iniciar sesión en Windows
+        <small>Arranca sin ventana y deja todo encendido después de un reinicio. El panel sigue en esta misma dirección.</small></span></label>
+    </div>
+  </section>
+
+  <section class="bloque">
+    <h3>Qué ha pasado</h3>
+    <ol class="registro" id="registro"></ol>
+  </section>
+</main>
+
+<script>
+const TESTIGO = '__TESTIGO__';
+const NOMBRES = { bien: 'Encendido', aviso: 'Con un problema', mal: 'Apagado' };
+const $ = (id) => document.getElementById(id);
+const texto = (etiqueta, clase, contenido) => { const e = document.createElement(etiqueta); if (clase) e.className = clase; if (contenido != null) e.textContent = contenido; return e; };
+let ocupado = new Set();
+
+async function mandar(ruta) {
+  const r = await fetch(ruta, { method: 'POST', headers: { 'X-Yoru-Monitor': TESTIGO } });
+  return r.json();
+}
+
+function pintar(foto) {
+  $('corte').style.display = 'none';
+  const servicios = foto.servicios || [];
+  const malos = servicios.filter((s) => s.estado !== 'bien');
+  const general = $('general');
+  general.textContent = '';
+  if (!servicios.length) general.textContent = 'Comprobando…';
+  else if (!malos.length) general.append(texto('b', '', 'Todo encendido y alcanzable.'), ` Última comprobación a las ${new Date(foto.cuando).toLocaleTimeString()}.`);
+  else general.append(texto('b', '', `${malos.length} de ${servicios.length} con problemas: `), malos.map((s) => s.nombre).join(', ') + '.');
+  document.title = (malos.length ? `(${malos.length}) ` : '') + 'Yoru · Servidores';
+
+  const rejilla = $('rejilla');
+  rejilla.textContent = '';
+  for (const s of servicios) {
+    const encendiendo = foto.encendiendo.includes(s.id) || ocupado.has(s.id);
+    const tarjeta = texto('article', 'tarjeta');
+    tarjeta.dataset.estado = s.estado;
+    const cabeza = texto('div', 'cabeza');
+    cabeza.append(texto('span', 'punto'), texto('h2', '', s.nombre), texto('span', 'etiqueta', encendiendo ? 'Encendiendo…' : NOMBRES[s.estado]));
+    const pasos = texto('ul', 'pasos');
+    for (const p of s.pasos) {
+      const li = texto('li', p.ok ? 'ok' : 'no');
+      const cuerpo = texto('div');
+      cuerpo.append(texto('div', 'paso-nombre', p.nombre), texto('div', 'paso-detalle', p.detalle));
+      li.append(texto('span', 'marca', p.ok ? '✓' : '✕'), cuerpo);
+      pasos.append(li);
+    }
+    tarjeta.append(cabeza, pasos);
+    if (s.estado !== 'bien') tarjeta.append(texto('div', 'consecuencia', s.siFalla));
+    const hace = s.id === 'tailscale' ? s.estado !== 'bien' : s.estado === 'mal';
+    if (hace) {
+      const pie = texto('div', 'pie');
+      const boton = texto('button', 'principal', encendiendo ? 'Encendiendo…' : (s.id === 'tailscale' && s.estado === 'aviso' ? 'Arreglar Funnel' : 'Encender'));
+      boton.disabled = encendiendo;
+      boton.onclick = () => encender(s.id);
+      pie.append(boton);
+      tarjeta.append(pie);
+    }
+    rejilla.append(tarjeta);
+  }
+
+  $('todo').disabled = !malos.length || ocupado.size > 0;
+  $('vigilar').checked = Boolean(foto.vigilar);
+  if (foto.abrirConWindows === null) $('fila-windows').style.display = 'none';
+  else $('windows').checked = Boolean(foto.abrirConWindows);
+
+  const registro = $('registro');
+  registro.textContent = '';
+  if (!foto.registro.length) registro.append(texto('div', 'vacio', 'Nada que contar todavía: aquí queda apuntado cada vez que algo se cae o se enciende.'));
+  for (const linea of foto.registro) {
+    const li = texto('li');
+    li.dataset.tipo = linea.tipo;
+    const cuando = new Date(linea.cuando);
+    li.append(texto('time', '', cuando.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + cuando.toLocaleTimeString()), texto('span', '', linea.texto));
+    registro.append(li);
+  }
+}
+
+async function refrescar() {
+  try { pintar(await (await fetch('/api/estado')).json()); }
+  catch { $('corte').style.display = 'block'; }
+}
+
+async function encender(id) {
+  ocupado.add(id);
+  refrescar();
+  try { pintar(await mandar(id ? `/api/encender/${id}` : '/api/encender')); }
+  finally { ocupado.delete(id); refrescar(); }
+}
+
+$('todo').onclick = () => encender('');
+$('comprobar').onclick = async () => { $('comprobar').disabled = true; try { pintar(await mandar('/api/comprobar')); } finally { $('comprobar').disabled = false; } };
+$('vigilar').onchange = async (e) => pintar(await mandar(`/api/vigilar/${e.target.checked ? 'si' : 'no'}`));
+$('windows').onchange = async (e) => pintar(await mandar(`/api/abrir-con-windows/${e.target.checked ? 'si' : 'no'}`));
+
+refrescar();
+setInterval(refrescar, 4000);
+</script>
+</body>
+</html>
