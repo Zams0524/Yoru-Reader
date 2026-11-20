@@ -694,6 +694,7 @@ export default function YoruShell({
           onOpenDetail={openDetail}
           onOpenAudiobook={(itemId) => go('audiobooks', { kind: 'audiobook', id: itemId })}
           onOpenKavitaSeries={openServerItem}
+          onReadAndListenKavita={libraryProps.onReadAndListenKavita}
           onImport={() => go('catalog')}
           onBrowseKavita={() => go('kavita')}
           onBrowseAudiobooks={() => go('audiobooks')}

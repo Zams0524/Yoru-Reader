@@ -77,6 +77,7 @@ export default function ReadListenView({
   onOpenDetail,
   onOpenAudiobook,
   onOpenKavitaSeries,
+  onReadAndListenKavita,
   onImport,
   onBrowseKavita,
   onBrowseAudiobooks,
@@ -89,11 +90,34 @@ export default function ReadListenView({
   /** Abre la ficha del audiolibro, para escucharlo sin el texto. */
   onOpenAudiobook: (itemId: string) => void;
   onOpenKavitaSeries: (item: ServerItem) => void;
+  /** Baja el tomo de Kavita, lo abre y pone a sonar su audiolibro. */
+  onReadAndListenKavita?: (serieId: string, audio: { itemId: string; title: string }) => Promise<void>;
   onImport: () => void;
   onBrowseKavita: () => void;
   onBrowseAudiobooks: () => void;
 }) {
   const [query, setQuery] = useState('');
+  /*
+    Abrir un tomo de Kavita tarda: hay que bajarlo y prepararlo. Mientras, su botón lo
+    dice y los demás esperan, para que un segundo toque no lance otra descarga.
+  */
+  const [abriendo, setAbriendo] = useState<string | null>(null);
+  const [falloAlAbrir, setFalloAlAbrir] = useState('');
+  const leerYEscuchar = async (tomo: ParejaKavita['tomos'][number]) => {
+    if (abriendo) return;
+    if (!onReadAndListenKavita) { onOpenKavitaSeries(kavitaItem(tomo.serie)); return; }
+    setAbriendo(tomo.serie.serieId);
+    setFalloAlAbrir('');
+    try {
+      await onReadAndListenKavita(tomo.serie.serieId, { itemId: tomo.audio.itemId, title: tomo.audio.title });
+    } catch (error) {
+      setFalloAlAbrir(error instanceof Error && error.message
+        ? error.message
+        : (es ? 'No se pudo abrir ese tomo.' : 'That volume could not be opened.'));
+    } finally {
+      setAbriendo(null);
+    }
+  };
   // La caché del catálogo se rellena en segundo plano: cuando llega, se vuelve a emparejar.
   const [catalogVersion, setCatalogVersion] = useState(0);
   useEffect(() => {
@@ -255,9 +279,10 @@ export default function ReadListenView({
           <h2 className="yoru-pair-section-title">{es ? 'En Kavita, con audiolibro' : 'On Kavita, with an audiobook'}</h2>
           <p className="yoru-view-sub">
             {es
-              ? 'Estas novelas del servidor ya tienen su audiolibro. Tráelas y podrás leerlas escuchando.'
-              : 'These novels on the server already have their audiobook. Bring them in to read along.'}
+              ? 'Estas novelas del servidor ya tienen su audiolibro. Toca un tomo y se abre con el audio sonando.'
+              : 'These novels on the server already have their audiobook. Tap a volume and it opens with the audio playing.'}
           </p>
+          {falloAlAbrir && <p className="yoru-pair-error" role="alert">{falloAlAbrir}</p>}
           <div className="yoru-pair-list">
             {kavitaVisibles.map(({ obra, tomos }) => {
               const primero = tomos[0];
@@ -293,8 +318,8 @@ export default function ReadListenView({
                         : (es ? `${tomos.length} tomos con su audiolibro` : `${tomos.length} volumes with their audiobook`)}
                     </div>
                     {/*
-                      Con varios tomos, cada uno es un botón que abre ese tomo en Kavita:
-                      «tráete la serie» no sirve cuando en el servidor cada tomo va aparte.
+                      Con varios tomos, cada uno es un botón que abre ese tomo ya sonando:
+                      un toque, y se lee escuchando. La ficha de Kavita sigue en la portada.
                     */}
                     {tomos.length > 1 && (
                       <div className="yoru-pair-volumes">
@@ -302,21 +327,31 @@ export default function ReadListenView({
                           <button
                             key={tomo.serie.serieId}
                             type="button"
-                            className="yoru-pair-volume"
-                            onClick={() => onOpenKavitaSeries(kavitaItem(tomo.serie))}
-                            title={tomo.serie.title}
+                            className={`yoru-pair-volume${abriendo === tomo.serie.serieId ? ' is-opening' : ''}`}
+                            onClick={() => { void leerYEscuchar(tomo); }}
+                            disabled={abriendo !== null}
+                            aria-busy={abriendo === tomo.serie.serieId}
+                            title={es ? `Leer y escuchar: ${tomo.serie.title}` : `Read and listen: ${tomo.serie.title}`}
                           >
-                            {tomo.tomo ?? '·'}
+                            {abriendo === tomo.serie.serieId ? '…' : (tomo.tomo ?? '·')}
                           </button>
                         ))}
                       </div>
                     )}
                     <div className="yoru-pair-actions">
-                      <button type="button" className="yoru-btn yoru-btn-primary" onClick={() => onOpenKavitaSeries(kavitaItem(primero.serie))}>
-                        <ServerIcon size={15} />
-                        {tomos.length === 1 || primero.tomo === null
-                          ? (es ? 'Traer de Kavita' : 'Get from Kavita')
-                          : (es ? `Traer el tomo ${primero.tomo}` : `Get volume ${primero.tomo}`)}
+                      <button
+                        type="button"
+                        className="yoru-btn yoru-btn-primary"
+                        onClick={() => { void leerYEscuchar(primero); }}
+                        disabled={abriendo !== null}
+                        aria-busy={abriendo === primero.serie.serieId}
+                      >
+                        <Headphones size={15} />
+                        {abriendo === primero.serie.serieId
+                          ? (es ? 'Abriendo…' : 'Opening…')
+                          : tomos.length === 1 || primero.tomo === null
+                            ? (es ? 'Leer y escuchar' : 'Read and listen')
+                            : (es ? `Leer y escuchar el tomo ${primero.tomo}` : `Read and listen to volume ${primero.tomo}`)}
                       </button>
                       <button type="button" className="yoru-btn" onClick={() => onOpenAudiobook(primero.audio.itemId)}>
                         {es ? 'Solo escuchar' : 'Listen only'}
