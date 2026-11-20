@@ -5,9 +5,9 @@
  *
  *  - **De la biblioteca**: un libro que ya está en el aparato y su audiolibro de
  *    Audiobookshelf. Se puede leer escuchando ya.
- *  - **De Kavita**: una serie que está en el servidor pero todavía no en el aparato,
- *    con los audiolibros que le corresponden. Aquí falta traer la novela; lo que la
- *    sección dice es que merece la pena, porque su audio ya existe.
+ *  - **De Kavita**: una novela que está en el servidor pero todavía no en el aparato,
+ *    con el audiolibro que le corresponde, tomo a tomo. Aquí falta traer la novela;
+ *    lo que la sección dice es que merece la pena, porque su audio ya existe.
  *
  * Kavita y Audiobookshelf no se conocen entre sí: lo único que los une es el título.
  * Por eso toda la regla de emparejar está en `audiobookshelfService.ts`
@@ -17,7 +17,9 @@
  */
 
 import {
+  AUDIOBOOK_AUTO_MATCH_SCORE,
   audiobookMatchScore,
+  audiobookSearchQuery,
   normalizeTitle,
   unambiguousAudiobook,
   volumeNumberOf,
@@ -59,10 +61,19 @@ export interface ParejaBiblioteca<L extends LibroDePareja = LibroDePareja> {
   conCapitulos: boolean;
 }
 
-export interface ParejaKavita<S extends SerieDePareja = SerieDePareja> {
+/** Un tomo de la obra: su entrada en Kavita y su audiolibro. */
+export interface TomoConAudio<S extends SerieDePareja = SerieDePareja> {
   serie: S;
-  /** Los audiolibros de la serie, por tomo. */
-  audios: AudioDePareja[];
+  audio: AudioDePareja;
+  /** El número de tomo, cuando el título lo dice. */
+  tomo: number | null;
+}
+
+/** Una obra de Kavita con los tomos que ya tienen audiolibro. */
+export interface ParejaKavita<S extends SerieDePareja = SerieDePareja> {
+  /** El título de la obra, sin tomo ni notas de editorial. */
+  obra: string;
+  tomos: TomoConAudio<S>[];
 }
 
 /**
@@ -101,57 +112,118 @@ export function parejasDeBiblioteca<L extends LibroDePareja>(
   return parejas;
 }
 
+const ROMANOS: Record<string, number> = {
+  i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10, xi: 11, xii: 12, xiii: 13, xiv: 14, xv: 15,
+};
+
 /**
- * Las series de Kavita que tienen audiolibro y todavía no están en la biblioteca.
+ * El tomo que dice un título, también cuando lo dice en números romanos.
  *
- * Kavita lista series y Audiobookshelf lista tomos, así que aquí no se busca «el»
- * audiolibro sino todos los de la serie: el título sin tomo tiene que ser el mismo.
- * Igual de verdad, no parecido: «Serie A» y «Serie A 外伝» son dos series, y juntar
- * los audiolibros de una con la novela de la otra es peor que no juntar nada.
- *
- * Las que ya están en la biblioteca no salen: esas tienen su pareja arriba, con el
- * libro de verdad, y repetirlas aquí sería enseñar lo mismo dos veces.
+ * `volumeNumberOf` entiende 第3巻, Vol. 3 o un 3 al final, que es como numera casi
+ * todo el mundo. Pero hay catálogos que numeran «兵士の娘Ⅱ», y el audiolibro del
+ * mismo tomo se llama «兵士の娘2»: sin esto, el segundo tomo no se reconocía como
+ * tal y se emparejaba con el primero. NFKC ya convierte Ⅱ y Ｉ en letras corrientes;
+ * aquí solo se leen cuando van al final, que es donde va un número de tomo.
  */
-export function parejasDeKavita<S extends SerieDePareja>(
-  series: S[],
-  audiolibros: AudioDePareja[],
-  titulosDeBiblioteca: string[],
-): ParejaKavita<S>[] {
-  if (series.length === 0 || audiolibros.length === 0) return [];
-
-  const enBiblioteca = new Set(titulosDeBiblioteca.map((title) => normalizeTitle(title)).filter(Boolean));
-  const porTitulo = new Map<string, AudioDePareja[]>();
-  for (const audio of audiolibros) {
-    const clave = normalizeTitle(audio.title);
-    if (!clave) continue;
-    const lista = porTitulo.get(clave) || [];
-    lista.push(audio);
-    porTitulo.set(clave, lista);
-  }
-
-  const parejas: ParejaKavita<S>[] = [];
-  const vistas = new Set<string>();
-  for (const serie of series) {
-    const clave = normalizeTitle(serie.title);
-    if (!clave || vistas.has(clave) || enBiblioteca.has(clave)) continue;
-    const audios = porTitulo.get(clave);
-    if (!audios?.length) continue;
-    vistas.add(clave);
-    parejas.push({ serie, audios: ordenarPorTomo(audios) });
-  }
-  return parejas;
+export function tomoDe(title: string): number | null {
+  const numero = volumeNumberOf(title);
+  if (numero !== null) return numero;
+  const texto = title.normalize('NFKC').replace(/[\s」』)\]】]+$/u, '');
+  const romano = texto.match(/(?:^|[^a-z])([ivx]{1,5})$/i);
+  return romano ? ROMANOS[romano[1].toLowerCase()] ?? null : null;
 }
 
-/** Por número de tomo; los que no lo dicen, detrás y por título. */
-function ordenarPorTomo(audios: AudioDePareja[]): AudioDePareja[] {
-  return [...audios].sort((a, b) => {
-    const tomoA = volumeNumberOf(a.title);
-    const tomoB = volumeNumberOf(b.title);
-    if (tomoA !== null && tomoB !== null && tomoA !== tomoB) return tomoA - tomoB;
-    if (tomoA !== null && tomoB === null) return -1;
-    if (tomoA === null && tomoB !== null) return 1;
-    return a.title.localeCompare(b.title, 'ja', { numeric: true });
-  });
+/** El título sin su tomo, para saber si dos entradas son de la misma obra. */
+function obraDe(title: string): string {
+  const texto = title.normalize('NFKC');
+  // El romano del final es el tomo solo si no hay otro número que lo sea.
+  const sinRomano = volumeNumberOf(title) === null
+    ? texto.replace(/([^a-z])[ivx]{1,5}[\s」』)\]】]*$/i, '$1')
+    : texto;
+  return normalizeTitle(sinRomano);
+}
+
+/**
+ * Qué entrada de Kavita es la novela de cada audiolibro, agrupado por obra.
+ *
+ * Se va del audiolibro a la novela y no al revés, por tamaño: un Audiobookshelf de
+ * casa tiene decenas de audiolibros y un Kavita, miles de entradas. Los candidatos
+ * llegan ya buscados por nombre (ver `kavitaSeriesParaAudios`), y aquí se decide.
+ *
+ * La regla, por audiolibro:
+ *  - tiene que ser la misma obra (título muy parecido una vez quitado el tomo);
+ *  - y el mismo tomo. Si el audiolibro dice «3», vale la entrada que dice «3» y
+ *    ninguna otra: «el tomo 3 se parece mucho al 4» es justo el error que hay que
+ *    evitar. Si ninguno de los dos dice tomo, basta con la obra.
+ *
+ * Un audiolibro repetido en el servidor (pasa: el mismo tomo subido dos veces) no
+ * hace dos parejas; se queda el primero. Y lo que ya está en la biblioteca no sale:
+ * esa pareja está arriba, con el libro de verdad.
+ */
+export function parejasDeKavita<S extends SerieDePareja>(
+  audiolibros: AudioDePareja[],
+  candidatos: S[],
+  titulosDeBiblioteca: string[] = [],
+): ParejaKavita<S>[] {
+  if (audiolibros.length === 0 || candidatos.length === 0) return [];
+
+  const enBiblioteca = new Set(titulosDeBiblioteca.map((title) => `${obraDe(title)}#${tomoDe(title) ?? ''}`));
+  const obras = new Map<string, ParejaKavita<S>>();
+  const usadas = new Set<string>();
+
+  for (const audio of audiolibros) {
+    const obraAudio = obraDe(audio.title);
+    if (!obraAudio) continue;
+    const tomoAudio = tomoDe(audio.title);
+    let mejor: { serie: S; score: number } | null = null;
+    for (const serie of candidatos) {
+      if (tomoDe(serie.title) !== tomoAudio) continue;
+      const score = audiobookMatchScore({ title: serie.title }, { title: audio.title, author: audio.author || '' } as never);
+      if (score < AUDIOBOOK_AUTO_MATCH_SCORE) continue;
+      // A igualdad de parecido, la entrada de título más corto: es la edición normal
+      // y no la «edición especial» o el recopilatorio que también se llama igual.
+      if (!mejor || score > mejor.score || (score === mejor.score && serie.title.length < mejor.serie.title.length)) {
+        mejor = { serie, score };
+      }
+    }
+    if (!mejor) continue;
+    const clave = `${obraAudio}#${tomoAudio ?? ''}`;
+    if (usadas.has(clave) || enBiblioteca.has(clave)) continue;
+    usadas.add(clave);
+    const pareja = obras.get(obraAudio) || { obra: tituloDeObra(audio.title), tomos: [] };
+    pareja.tomos.push({ serie: mejor.serie, audio, tomo: tomoAudio });
+    obras.set(obraAudio, pareja);
+  }
+
+  const lista = [...obras.values()];
+  for (const pareja of lista) pareja.tomos.sort((a, b) => (a.tomo ?? 0) - (b.tomo ?? 0));
+  return lista.sort((a, b) => b.tomos.length - a.tomos.length || a.obra.localeCompare(b.obra, 'ja'));
+}
+
+/** El título de la obra para enseñarlo: sin la etiqueta de tomo de delante ni el número de detrás. */
+function tituloDeObra(title: string): string {
+  const limpio = title
+    .normalize('NFKC')
+    .replace(/^\s*[[【(][^\]】)]*[\]】)]\s*/u, '')
+    .replace(/\s*(?:第\s*\d+\s*[巻卷話]|\d+\s*[巻卷]?|[「『][^」』]*[」』]?)\s*$/u, '')
+    .trim();
+  return limpio || title;
+}
+
+/**
+ * Con qué texto buscar en Kavita la obra de un audiolibro: el primer tramo del
+ * título. Corto a propósito: los dos catálogos escriben distinto los subtítulos
+ * («～司書に…» contra « 〜司書に…»), pero el arranque del título lo escriben igual.
+ */
+export function busquedaDeObra(title: string): string {
+  const base = audiobookSearchQuery(title);
+  const tramo = base.split(/[\s~～〜。、・:：？?！!\-―—]+/u).find((parte) => parte.length >= 2);
+  return (tramo || base).slice(0, 30);
+}
+
+/** Las búsquedas distintas que hacen falta para un catálogo de audiolibros. */
+export function busquedasParaAudios(audiolibros: AudioDePareja[]): string[] {
+  return [...new Set(audiolibros.map((audio) => busquedaDeObra(audio.title)).filter(Boolean))];
 }
 
 /**

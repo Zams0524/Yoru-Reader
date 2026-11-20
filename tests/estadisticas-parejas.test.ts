@@ -12,7 +12,7 @@ import {
   crearContador,
   recogerPendiente,
 } from '../frontend/utils/lecturaAutomatica';
-import { parejasDeBiblioteca, parejasDeKavita, tituloParaEscucha } from '../frontend/utils/paresLecturaAudio';
+import { busquedasParaAudios, parejasDeBiblioteca, parejasDeKavita, tituloParaEscucha, tomoDe } from '../frontend/utils/paresLecturaAudio';
 
 let failures = 0;
 function check(condicion: boolean, nombre: string) {
@@ -122,19 +122,55 @@ const AUDIOS = [
 }
 
 {
-  const series = [
-    { serieId: '10', title: '無職転生 ~異世界行ったら本気だす~' },
-    { serieId: '11', title: 'キノの旅 the Beautiful World' },
-    { serieId: '12', title: '涼宮ハルヒの憂鬱' },
-    { serieId: '13', title: '無職転生 ~異世界行ったら本気だす~ 外伝' },
+  // Títulos tal como vienen en un Kavita y un Audiobookshelf de verdad.
+  const audios = [
+    { itemId: 'm2', title: '[2巻] 無職転生 ～異世界行ったら本気だす～ 2', author: '理不尽な孫の手' },
+    { itemId: 'm2b', title: '[2巻] 無職転生 ～異世界行ったら本気だす～ 2', author: '理不尽な孫の手' },
+    { itemId: 'm10', title: '[10巻] 無職転生 ～異世界行ったら本気だす～ 10', author: '理不尽な孫の手' },
+    { itemId: 'h1', title: '本好きの下剋上～司書になるためには手段を選んでいられません～第一部「兵士の娘1」', author: '香月 美夜' },
+    { itemId: 'h2', title: '本好きの下剋上～司書になるためには手段を選んでいられません～第一部「兵士の娘2」', author: '香月 美夜' },
+    { itemId: 'h3', title: '本好きの下剋上～司書になるためには手段を選んでいられません～第一部「兵士の娘3」', author: '香月 美夜' },
+    { itemId: 'g3', title: '[3巻] ひげを剃る。そして女子高生を拾う。３', author: 'しめさば' },
+    { itemId: 'k', title: '恋する寄生虫', author: '三秋 縋' },
+    { itemId: 's1', title: '[1巻] 終末なにしてますか？　忙しいですか？　救ってもらっていいですか？　第1話', author: '枯野 瑛' },
   ];
-  const parejas = parejasDeKavita(series, AUDIOS, ['キノの旅 the Beautiful World']);
-  const mushoku = parejas.find((pareja) => pareja.serie.serieId === '10');
-  check(mushoku?.audios.map((audio) => audio.itemId).join() === 'a1,a2', 'una serie de Kavita junta sus audiolibros, por tomo');
-  check(!parejas.some((pareja) => pareja.serie.serieId === '11'), 'la que ya está en la biblioteca no se repite');
-  check(!parejas.some((pareja) => pareja.serie.serieId === '12'), 'una serie sin audiolibro no sale');
-  check(!parejas.some((pareja) => pareja.serie.serieId === '13'), 'una serie distinta de nombre parecido no hereda los audiolibros');
-  check(parejasDeKavita(series, [], []).length === 0, 'sin audiolibros no hay parejas de Kavita');
+  const kavita = [
+    '無職転生 ～異世界行ったら本気だす～ 1',
+    '無職転生 ～異世界行ったら本気だす～ 2 (MFブックス)',
+    '無職転生 ～異世界行ったら本気だす～ 10',
+    '無職転生 ～異世界行ったら本気だす～ スペシャルブック',
+    '無職転生　～蛇足編～1',
+    '本好きの下剋上 〜司書になるためには手段を選んでいられません〜 第一部　兵士の娘Ｉ',
+    '本好きの下剋上 〜司書になるためには手段を選んでいられません〜 第一部　兵士の娘Ⅱ',
+    '本好きの下剋上 〜司書になるためには手段を選んでいられません〜 第二部　神殿の巫女見習いIII',
+    'ひげを剃る。そして女子高生を拾う。【電子特別版】 (角川スニーカー文庫)',
+    'ひげを剃る。そして女子高生を拾う。（３）',
+    'ひげを剃る。そして女子高生を拾う。５ (角川スニーカー文庫)',
+    '恋する寄生虫 (メディアワークス文庫)',
+    '終末なにしてますか？　忙しいですか？　救ってもらっていいですか？＃０４',
+  ].map((title, index) => ({ serieId: String(index), title }));
+
+  check(tomoDe('本好きの下剋上 第一部　兵士の娘Ⅱ') === 2 && tomoDe('第一部「兵士の娘2」') === 2, 'el tomo se lee igual en romanos que en cifras');
+  check(tomoDe('恋する寄生虫') === null, 'un título sin tomo no se inventa uno');
+  check(busquedasParaAudios(audios).join() === '無職転生,本好きの下剋上,ひげを剃る,恋する寄生虫,終末なにしてますか',
+    'se busca una vez por obra, con el arranque del título');
+
+  const parejas = parejasDeKavita(audios, kavita, []);
+  const obra = (trozo: string) => parejas.find((pareja) => pareja.obra.includes(trozo));
+  const pares = (trozo: string) => (obra(trozo)?.tomos || []).map((tomo) => `${tomo.audio.itemId}=${tomo.serie.title}`).join(' | ');
+
+  check(pares('無職転生') === 'm2=無職転生 ～異世界行ったら本気だす～ 2 (MFブックス) | m10=無職転生 ～異世界行ったら本気だす～ 10',
+    'cada audiolibro va con su tomo, y el repetido no hace dos parejas');
+  check(pares('本好き') === `h1=${kavita[5].title} | h2=${kavita[6].title}`, 'el tomo 3 que no está en Kavita no se empareja con otro tomo');
+  check(pares('ひげを剃る') === `g3=${kavita[9].title}`, 'el tomo 3 va con el (３), no con la edición especial ni con el 5');
+  check(pares('恋する寄生虫') === `k=${kavita[11].title}`, 'una novela de un solo tomo se empareja por título');
+  check(!obra('終末'), 'si Kavita solo tiene otro tomo, no hay pareja');
+  check(parejas[0].tomos.length === 2 && parejas[parejas.length - 1].tomos.length === 1, 'las obras con más tomos van primero');
+
+  const sinElDos = parejasDeKavita(audios, kavita, ['無職転生 ～異世界行ったら本気だす～ 2 (MFブックス)']);
+  check(sinElDos.find((pareja) => pareja.obra.includes('無職転生'))?.tomos.map((tomo) => tomo.tomo).join() === '10',
+    'el tomo que ya está en la biblioteca no se repite');
+  check(parejasDeKavita([], kavita).length === 0 && parejasDeKavita(audios, []).length === 0, 'sin una de las dos mitades no hay parejas');
 }
 
 {
