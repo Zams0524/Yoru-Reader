@@ -523,6 +523,8 @@ export default function Reader({
     alineación crearía una función nueva y el reproductor volvería a engancharse.
   */
   const alignmentRef = useRef<LoadedAlignment | null>(null);
+  /** Lector nativo: la última frase que se le pidió resaltar, para no repetirla. */
+  const cueNativoRef = useRef<number | null>(null);
   /** El audiolibro cuya alineación ya se pidió al servidor en esta apertura. */
   const alineacionPedidaRef = useRef<string | null>(null);
   alignmentRef.current = alignment;
@@ -1375,6 +1377,28 @@ export default function Reader({
   const handleAudioTime = useCallback((ms: number) => {
     if (!alignment) return;
     const donde = paragraphAtTime(alignment.index, ms);
+
+    /*
+      Android: la página la dibuja el motor nativo y no es DOM, así que marcar un `<p>`
+      no pinta nada. Ahí se le pide al motor que lleve la página a la frase y la
+      resalte, que es lo que ya hace con la lectura en voz alta. Se pide una vez por
+      frase, no en cada aviso del audio. Si el usuario apagó el seguimiento o apartó la
+      página a mano, no se toca: en el nativo resaltar es ir a esa página.
+    */
+    const nativo = engineApiRef.current;
+    if (nativo?.revealParagraph) {
+      if (!followsAudio || seguimientoSuspendido) return;
+      const cue = donde ? donde.cue.index : -1;
+      if (cueNativoRef.current === cue) return;
+      cueNativoRef.current = cue;
+      if (!donde) { nativo.clearReveal?.(); return; }
+      const índice = alignment.index;
+      skipNextReadingPositionRef.current = true;
+      nativo.revealParagraph(donde.sectionIndex, donde.paragraphId, (parrafo) =>
+        rangoDeFrase(parrafo, índice.offsetInParagraph[cue], índice.lengthOfCue[cue]));
+      return;
+    }
+
     marcarParrafoSonando(donde ? donde.paragraphId : null, donde ? donde.cue.index : -1);
     if (!followsAudio) return;
     if (!donde) {
@@ -1457,6 +1481,15 @@ export default function Reader({
 
   /** Encender o apagar el seguimiento siempre parte de cero. */
   useEffect(() => { setSeguimientoSuspendido(false); }, [followsAudio]);
+
+  /*
+    Lector nativo: al apagar el seguimiento, apartar la página o cerrar el audiolibro, el
+    resaltado se quita y la próxima frase se vuelve a pedir aunque sea la misma.
+  */
+  useEffect(() => {
+    cueNativoRef.current = null;
+    if (!isAudiobookOpen || !followsAudio || seguimientoSuspendido) engineApiRef.current?.clearReveal?.();
+  }, [isAudiobookOpen, followsAudio, seguimientoSuspendido]);
 
   /** «Volver a la narración»: retomar el seguimiento y llevar el texto allí ya. */
   const volverALaNarracion = useCallback(() => {
@@ -2744,7 +2777,10 @@ export default function Reader({
   const handlePageTurn = useCallback((byHand?: boolean) => {
     if (hideBarsOnPageTurnRef.current) setIsHeaderVisible(false);
     // Pasar página a mano es irse por tu cuenta: el audio deja de arrastrar el texto.
-    suspenderSeguimiento();
+    // El motor web solo avisa de los pasos a mano (sin argumento). El nativo avisa de
+    // todos y dice cuáles lo fueron: sin mirar eso, el propio salto del seguimiento
+    // contaba como «a mano» y el seguimiento se suspendía solo en la primera frase.
+    if (byHand !== false) suspenderSeguimiento();
     // La palabra del popup se quedó en la página anterior (lector nativo, APK 1.4.9+).
     if (byHand) setSelectedWord(null);
   }, [suspenderSeguimiento]);

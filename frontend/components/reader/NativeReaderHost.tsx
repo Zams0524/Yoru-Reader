@@ -904,6 +904,40 @@ export default function NativeReaderHost({
       });
     },
   };
+  /*
+    El audiolibro: llevar la página al párrafo que suena y resaltar la frase.
+
+    Usa la misma copia fuera de pantalla y el mismo `revealRange` que la lectura en voz
+    alta, que ya sabe pasar a la página de la frase y pedirle el resaltado al motor. La
+    copia se rehace solo cuando el párrafo no está en ella (otra sección, o un párrafo
+    anterior al primero copiado): rehacerla en cada frase sería tirar un capítulo de
+    HTML varias veces por minuto.
+  */
+  const revealParagraph = (sectionIndex: number, paragraphId: number, toRange: (paragraph: Element) => Range | null): boolean => {
+    let container = readAloudContentRef.current;
+    if (!container || !sections[sectionIndex]) return false;
+    const buscar = () => container!.querySelector(`p.chapter-content[index="${paragraphId}"]`);
+    let block = readAloudRef.current.section === sectionIndex ? buscar() : null;
+    if (!block) {
+      container = buildReadAloud(sectionIndex, sections[sectionIndex].startParagraphId);
+      if (!container) return false;
+      block = buscar();
+    }
+    if (!block) return false;
+    let range = toRange(block);
+    if (!range) {
+      const nodes = baseTextNodes(block as HTMLElement);
+      if (!nodes.length) return false;
+      range = document.createRange();
+      range.setStart(nodes[0], 0);
+      range.setEnd(nodes[nodes.length - 1], nodes[nodes.length - 1].length);
+    }
+    readAloudApi.revealRange(range);
+    return true;
+  };
+  const revealParagraphRef = useRef(revealParagraph);
+  revealParagraphRef.current = revealParagraph;
+
   const readAloudApiRef = useRef(readAloudApi);
   readAloudApiRef.current = readAloudApi;
 
@@ -927,6 +961,11 @@ export default function NativeReaderHost({
         return { page: 0, pages: Math.max(0.01, position.pages * (section.charCount / exported.totalChars)) };
       },
       turnPage: (direction) => { void NativeReader.turnPage({ direction }).catch(() => {}); },
+      revealParagraph: (sectionIndex, paragraphId, toRange) => revealParagraphRef.current(sectionIndex, paragraphId, toRange),
+      clearReveal: () => {
+        readAloudRef.current.token += 1; // un resaltado que esperaba su salto ya no se pinta
+        void NativeReader.clearHighlight().catch(() => {});
+      },
     };
     return () => { apiRef.current = null; };
   }, [apiRef, sections, exported]);

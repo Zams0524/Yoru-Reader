@@ -726,12 +726,24 @@ export default function App() {
     startOpenTiming(`${kavitaBook?.seriesName || ''} ${kavitaBook?.title || ''}`.trim() || 'volumen del servidor');
     const { importKavitaBook, getKavitaProgressPercent, kavitaChapterForPercent } = await import('./utils/kavitaService');
     markOpenTiming('modulo');
-    const parsed = await importKavitaBook(kavitaBook);
-    markOpenTiming('descarga y parseo');
-    const first = parsed[0];
+    /*
+      Lo que más tarda de abrir es bajar el tomo y prepararlo. Dos atajos:
+      - un tomo que ya se abrió hace poco sale preparado del aparato, sin red;
+      - el progreso se le pregunta a Kavita a la vez que se baja, no después.
+    */
+    const { leerTomoTemporal, guardarTomoTemporal } = await import('./utils/tomoTemporalCache');
+    const progreso = getKavitaProgressPercent(kavitaBook.chapterId, kavitaBook.pages).catch(() => 0);
+    let first = await leerTomoTemporal(kavitaBook.volumeId);
+    if (first) {
+      markOpenTiming('tomo guardado');
+    } else {
+      first = (await importKavitaBook(kavitaBook))[0];
+      markOpenTiming('descarga y parseo');
+      if (first) void guardarTomoTemporal(kavitaBook.volumeId, first);
+    }
     if (!first) throw new Error('El volumen no trae ningun libro que abrir.');
     // Se retoma por donde lo dejo el servidor. Si no contesta, se empieza de cero.
-    const percent = await getKavitaProgressPercent(kavitaBook.chapterId, kavitaBook.pages);
+    const percent = await progreso;
     markOpenTiming('progreso del servidor');
     const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
     const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
@@ -774,9 +786,10 @@ export default function App() {
    */
   const handleReadAndListenKavita = useCallback(async (serieId: string, audio: { itemId: string; title: string }) => {
     const { getKavitaSeriesById, getKavitaVolumes, kavitaVolumesToBooks } = await import('./utils/kavitaService');
-    const serie = await getKavitaSeriesById(Number(serieId));
+    // Las dos preguntas a la vez: ninguna necesita la respuesta de la otra.
+    const [serie, volumenes] = await Promise.all([getKavitaSeriesById(Number(serieId)), getKavitaVolumes(Number(serieId))]);
     if (!serie) throw new Error(lang === 'es' ? 'Kavita no encuentra esa novela.' : 'Kavita cannot find that novel.');
-    const tomos = kavitaVolumesToBooks(serie, await getKavitaVolumes(Number(serieId)), lang === 'es');
+    const tomos = kavitaVolumesToBooks(serie, volumenes, lang === 'es');
     if (!tomos.length) throw new Error(lang === 'es' ? 'Esa novela no trae ningún tomo que abrir.' : 'That novel has no volume to open.');
     await handleReadTemporary(tomos[0], audio);
   }, [handleReadTemporary, lang]);
