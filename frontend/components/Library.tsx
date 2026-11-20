@@ -1530,7 +1530,13 @@ const Library = React.memo(function Library({
     [isSidebarOpen, () => setIsSidebarOpen(false)],
     [selectMode, () => { setSelectMode(false); setSelectedBookIds([]); }],
     [activeTab === 'settings' && isMobile && mobileSettingsSectionOpen, () => setMobileSettingsSectionOpen(false)],
-    [activeTab !== 'library', () => setActiveTab('library')],
+    /*
+      Embebida en el shell, salir de la sección no es cosa suya: aquí «volver a la
+      biblioteca» cambiaba la pestaña por dentro sin que el shell se enterase, y atrás
+      desde Ajustes dejaba la estantería a pantalla completa, sin cabecera ni barra,
+      en vez de volver a Inicio. Ese último paso lo da el shell, que sabe dónde está.
+    */
+    [!embedded && activeTab !== 'library', () => setActiveTab('library')],
   ];
   useBackHandler(libraryBackSteps.some(([open]) => open), () => {
     libraryBackSteps.find(([open]) => open)?.[1]();
