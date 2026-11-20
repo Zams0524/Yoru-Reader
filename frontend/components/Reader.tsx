@@ -2709,8 +2709,10 @@ export default function Reader({
   const useNativeEngine = nativeAvailable && readerSettings.nativeEngine !== false && !nativeFailed;
   const handleNativeTap = useCallback((closePopup: boolean) => {
     if (closePopup) setSelectedWord(null);
+    // The settings card leaves the page visible around it: a tap there closes the card.
+    else if (showSettingsPopover) setShowSettingsPopover(false);
     else setIsHeaderVisible(prev => !prev);
-  }, []);
+  }, [showSettingsPopover]);
   const handleNativeWordTap = useCallback((wordSpan: HTMLElement, rect: DOMRect) => {
     void triggerWordLookup(wordSpan, rect);
   }, [triggerWordLookup]);
