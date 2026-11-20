@@ -1,6 +1,7 @@
 import { renderLineWords, sanitizeJapaneseText, jitenTextOfLine, type Book } from '../components/reader/ReaderEngine';
 import { getTokenizerInstance, initTokenizer, katakanaToHiragana } from './japanese';
 import { furiganaFromReading, getStatusClass } from './yoruParserNative';
+import { juntarOkurigana, type TokenMinimo } from './okurigana';
 import { getCachedJitenTokens, isJitenParserEnabled } from './jitenSync';
 import type { WordEffect, WordStyleThemeConfig } from './parserSettingsStore';
 
@@ -21,7 +22,7 @@ type Piece = string | { s: string; b: string; r: string; ruby?: string };
 export type BookWords = Map<string, Piece[]>;
 
 /** Bumped when analyse() changes: cached analyses are redone. */
-const ANALYSIS_VERSION = 1;
+const ANALYSIS_VERSION = 2;
 const JAPANESE = /[぀-ヿ㐀-䶿一-鿿]/;
 const memoryCache = new WeakMap<Book, BookWords>();
 
@@ -32,14 +33,37 @@ function escapeText(value: string): string {
 /** Words of one text (after sanitizeJapaneseText, so book ruby is <ruby> markup), as tokenizeJapaneseText splits them. */
 function analyse(tokenizer: any, text: string): Piece[] {
   const pieces: Piece[] = [];
-  for (const part of text.split(/(<ruby\b[^>]*>[\s\S]*?<\/ruby>)/gi)) {
+  const parts = text.split(/(<ruby\b[^>]*>[\s\S]*?<\/ruby>)/gi);
+  const tokenizar = (texto: string): TokenMinimo[] => tokenizer.tokenize(texto).map((token: any) => ({
+    surface: token.surface_form || '',
+    basicForm: token.basic_form && token.basic_form !== '*' ? token.basic_form : token.surface_form || '',
+    pos: token.pos || '',
+  }));
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
     if (!part) continue;
     const ruby = /^<ruby\b[^>]*>([\s\S]*?)<\/ruby>$/i.exec(part);
     if (ruby) {
       const reading = Array.from(ruby[1].matchAll(/<rt\b[^>]*>([\s\S]*?)<\/rt>/gi)).map((m) => m[1]).join('').replace(/<[^>]*>/g, '');
       const surface = ruby[1].replace(/<rt\b[^>]*>[\s\S]*?<\/rt>|<rp\b[^>]*>[\s\S]*?<\/rp>/gi, '').replace(/<[^>]*>/g, '');
       if (!surface) continue;
-      pieces.push({ s: surface, b: surface, r: reading, ruby: reading ? `<ruby>${escapeText(surface)}<rt>${escapeText(reading)}</rt></ruby>` : undefined });
+      /*
+        El furigana del libro cubre el kanji, no la palabra: `<ruby>尊<rt>とうと</rt></ruby>き`.
+        Igual que en el lector normal (tokenizeJapaneseText), se le pregunta al analizador si el
+        kana de detrás es la terminación; si lo es, va dentro de la misma palabra, con su forma
+        de diccionario (尊い), en vez de quedar 尊 como palabra suelta y き como otra.
+        `s` sigue siendo solo el kanji: es la segunda clave con la que se busca el estado, como
+        allí.
+      */
+      const junto = juntarOkurigana(surface, parts[index + 1] || '', tokenizar);
+      if (junto) parts[index + 1] = parts[index + 1].slice(junto.okurigana.length);
+      const rubyHtml = reading ? `<ruby>${escapeText(surface)}<rt>${escapeText(reading)}</rt></ruby>` : undefined;
+      pieces.push({
+        s: surface,
+        b: junto ? junto.palabra : surface,
+        r: reading,
+        ruby: junto ? (rubyHtml || escapeText(surface)) + escapeText(junto.okurigana) : rubyHtml,
+      });
       continue;
     }
     for (const token of tokenizer.tokenize(part)) {
