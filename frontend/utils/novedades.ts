@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-20-boton-mas-coleccion-y-atras-ajustes',
+    es: 'El «+» de arriba abre directamente la ventana para crear una colección. Y al volver atrás desde Ajustes regresas a donde estabas, no a una estantería sin cabecera.',
+    en: 'The “+” at the top now opens the create-collection window directly. And going back from Settings returns you to where you were, not to a shelf without a header.',
+  },
+  {
     id: '2026-11-20-colecciones-agregar-novelas-y-ajustes-lector',
     es: 'Al crear una colección con el «+» ya puedes agregar novelas del teléfono o del PC ahí mismo. Y el panel de ajustes del lector es más pequeño y deja ver la página: se quitó el botón «Ajustes generales».',
     en: 'When you create a collection with “+” you can now add novels from your phone or PC right there. And the reader settings panel is smaller and lets the page show through: the “General settings” button is gone.',
