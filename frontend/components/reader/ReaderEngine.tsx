@@ -58,6 +58,16 @@ export interface ReaderEngineApi {
   getPageInfo: () => { page: number; pages: number };
   /** Turns one page (1 = forward, -1 = backward), moving to the next/previous section at the ends. */
   turnPage: (direction: 1 | -1) => void;
+  /**
+   * Solo el lector nativo de Android. Lleva la página a ese párrafo y resalta en él el
+   * tramo que devuelva `toRange` (o el párrafo entero si devuelve `null`).
+   *
+   * Hace falta porque en Android la página no es DOM: marcar un `<p>` no pinta nada. El
+   * motor web no lo define, y quien llama mira si existe para saber con cuál habla.
+   */
+  revealParagraph?: (sectionIndex: number, paragraphId: number, toRange: (paragraph: Element) => Range | null) => boolean;
+  /** Solo el lector nativo: quita el resaltado que dejó `revealParagraph`. */
+  clearReveal?: () => void;
 }
 
 export interface ReaderEngineProps {
