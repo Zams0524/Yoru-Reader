@@ -322,22 +322,50 @@ export function sincronizacionDisponible(): boolean {
 
 /* --------------------------------------------- qué están leyendo los demás */
 
-/** Lo que el servidor cuenta de otro miembro. Un libro y un porcentaje, nada más. */
+/** Un libro de otro miembro: uno importado, o una serie que lee en Kavita. */
+export interface LibroMiembro {
+  origen: 'local' | 'kavita';
+  titulo: string;
+  autor: string;
+  /** Solo en los importados, y solo si la portada es pequeña; si no, vacío. */
+  portada: string;
+  capitulo: string;
+  porcentaje: number;
+  estado: 'leyendo' | 'completado' | 'pendiente' | 'por-empezar';
+  /** Milisegundos desde época; 0 si no lo ha abierto nunca. */
+  ultimaLectura: number;
+  /** Solo en `kavita`: con ellos la app pide la portada al servidor de medios. */
+  seriesId?: number;
+  volumeId?: number;
+}
+
+export interface AudiolibroMiembro {
+  itemId: string;
+  titulo: string;
+  autor: string;
+  porcentaje: number;
+  ultimaEscucha: number;
+}
+
+/**
+ * Lo que el servidor cuenta de otro miembro: qué lee, qué escucha y, si se pide su
+ * perfil, sus dos listas. Nunca sus palabras, sus tarjetas ni sus ajustes.
+ */
 export interface FichaMiembro {
   usuarioId: string;
   nombre: string;
+  /** Los nombres por los que se le reconoce en la lista de Discord. */
+  alias?: string[];
   /** Cuándo subió su progreso por última vez, en milisegundos desde época. */
   actualizadoEn: number;
   /** Si comparte lo que lee. Falso también cuando el libro está en su lista negra. */
   comparte: boolean;
-  leyendo: {
-    titulo: string;
-    autor: string;
-    portada: string;
-    capitulo: string;
-    porcentaje: number;
-    ultimaLectura: number;
-  } | null;
+  leyendo: LibroMiembro | null;
+  escuchando?: AudiolibroMiembro | null;
+  /** Lo que está haciendo ahora mismo, si su última subida es de hace nada. */
+  ahora?: 'leyendo' | 'escuchando' | null;
+  /** Solo en `fichaDeMiembro`: la lista de todos no carga con el perfil de nadie. */
+  perfil?: { libros: LibroMiembro[]; audiolibros: AudiolibroMiembro[] };
 }
 
 /**

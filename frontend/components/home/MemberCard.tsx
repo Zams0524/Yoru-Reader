@@ -1,19 +1,23 @@
 import React, { useEffect, useRef } from 'react';
-import { User, X } from 'lucide-react';
+import { BookOpen, Headphones, User, X } from 'lucide-react';
 import type { DiscordMember } from '../../utils/discordWidget';
 import { estadoMiembro } from '../../utils/miembrosVivos';
+import { actividades, rotuloActividad, type ActividadMiembro } from '../../utils/miembrosFichas';
+import type { FichaMiembro } from '../../utils/yoruSyncService';
+import { portadaDeAudiolibro, portadaDeLibro } from './memberCovers';
+import MemberCoverImage from './MemberCoverImage';
 
 /**
  * La tarjeta de un miembro, al pulsarlo en «Miembros».
  *
- * Enseña **solo lo que se sabe de verdad**, que de los demás es poquísimo: el widget
- * público de Discord da nombre, foto, estado y, si acaso, el nombre de lo que tienen
- * abierto. Nada de progreso de lectura ajeno, porque en Yoru el progreso es local y de
- * cada uno: inventarse la barra de avance de otra persona sería mentir con buena
- * presentación.
+ * Junta dos fuentes. De Discord (el widget público) salen el nombre, la foto, el
+ * estado y, si acaso, el nombre de lo que tiene abierto. De Yoru (el servidor de
+ * sincronización) sale lo que lee y lo que escucha, con su avance de verdad, y si lo
+ * está haciendo ahora mismo. Lo segundo solo existe para quien ha sincronizado y no
+ * ha apagado «Enseñar a los miembros lo que lees».
  *
- * De uno mismo sí hay más que contar, y ahí la tarjeta añade lo que Yoru tiene en
- * casa: el libro que está leyendo, con su portada y su avance de verdad.
+ * De uno mismo no se pregunta a nadie: lo que estás leyendo sale de este aparato, que
+ * va por delante de lo que haya llegado al servidor.
  */
 
 export interface LecturaActual {
@@ -28,8 +32,11 @@ export default function MemberCard({
   es,
   esTuyo,
   lectura,
+  ficha,
+  cargandoFicha = false,
   onCerrar,
   onVerPerfil,
+  onVerPerfilDe,
 }: {
   miembro: DiscordMember;
   es: boolean;
@@ -37,8 +44,14 @@ export default function MemberCard({
   esTuyo: boolean;
   /** Lo que estás leyendo ahora. Solo se pasa para uno mismo. */
   lectura?: LecturaActual | null;
+  /** Lo que Yoru sabe de este miembro, si ha sincronizado. */
+  ficha?: FichaMiembro | null;
+  /** Mientras se pregunta por primera vez: para no decir «no hay nada» antes de saberlo. */
+  cargandoFicha?: boolean;
   onCerrar: () => void;
   onVerPerfil?: () => void;
+  /** Abre el perfil de otro miembro. */
+  onVerPerfilDe?: (ficha: FichaMiembro) => void;
 }) {
   const cerrarRef = useRef<HTMLButtonElement | null>(null);
 
@@ -57,6 +70,8 @@ export default function MemberCard({
   // La misma función que usa la fila de la lista, para que el punto no pueda salir de
   // un color aquí y de otro allí.
   const estado = estadoMiembro(miembro.status, es);
+  const suyas = esTuyo ? [] : actividades(ficha);
+  const ahora = Date.now();
 
   return (
     <div
@@ -107,7 +122,7 @@ export default function MemberCard({
             </div>
           )}
 
-          {/* Lo que Yoru sabe de ti, y solo de ti. */}
+          {/* Lo que Yoru sabe de ti sale de este aparato. */}
           {esTuyo && lectura && (
             <div className="yoru-member-card-bloque">
               <span className="yoru-member-card-titulo-bloque">
@@ -128,19 +143,67 @@ export default function MemberCard({
             </div>
           )}
 
+          {/* Lo que Yoru sabe de los demás: lo que subieron al sincronizar. */}
+          {suyas.map((actividad) => (
+            <BloqueActividad key={actividad.tipo} actividad={actividad} ahora={ahora} es={es} />
+          ))}
+
           {esTuyo && onVerPerfil && (
             <button type="button" className="yoru-btn yoru-member-card-boton" onClick={onVerPerfil}>
               {es ? 'Ver mi perfil' : 'View my profile'}
             </button>
           )}
 
-          {!esTuyo && (
+          {!esTuyo && ficha?.comparte && onVerPerfilDe && (
+            <button type="button" className="yoru-btn yoru-member-card-boton" onClick={() => onVerPerfilDe(ficha)}>
+              {es ? 'Ver perfil' : 'View profile'}
+            </button>
+          )}
+
+          {!esTuyo && !cargandoFicha && ficha && !ficha.comparte && (
             <p className="yoru-member-card-nota">
-              {es
-                ? 'Esto es todo lo que Discord publica de los demás. Lo que lee cada uno se queda en su aparato.'
-                : 'This is all Discord publishes about other people. What each person reads stays on their device.'}
+              {es ? 'Prefiere no enseñar lo que lee.' : 'Prefers not to share what they read.'}
             </p>
           )}
+
+          {!esTuyo && !cargandoFicha && !ficha && (
+            <p className="yoru-member-card-nota">
+              {es ? 'Todavía no ha sincronizado su lectura con Yoru.' : 'Has not synced their reading with Yoru yet.'}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Un libro o un audiolibro del otro miembro: rótulo, portada, título y avance. */
+function BloqueActividad({ actividad, ahora, es }: { actividad: ActividadMiembro; ahora: number; es: boolean }) {
+  const portada = actividad.libro
+    ? portadaDeLibro(actividad.libro)
+    : actividad.audio ? portadaDeAudiolibro(actividad.audio) : '';
+  const Icono = actividad.tipo === 'leyendo' ? BookOpen : Headphones;
+  const titulo = actividad.titulo
+    || (actividad.tipo === 'leyendo' ? (es ? 'Un libro' : 'A book') : (es ? 'Un audiolibro' : 'An audiobook'));
+  return (
+    <div className={`yoru-member-card-bloque${actividad.ahora ? ' is-ahora' : ''}`}>
+      <span className="yoru-member-card-titulo-bloque">
+        <Icono size={12} aria-hidden="true" />
+        {rotuloActividad(actividad, ahora, es)}
+      </span>
+      <div className="yoru-member-card-lectura">
+        <MemberCoverImage
+          src={portada}
+          className="yoru-member-card-portada"
+          fallback={<span className="yoru-member-card-portada is-vacia" aria-hidden="true" />}
+        />
+        <div className="yoru-member-card-lectura-texto">
+          <span className="yoru-member-card-libro">{titulo}</span>
+          {actividad.detalle && <span className="yoru-member-card-detalle">{actividad.detalle}</span>}
+          <span className="yoru-member-card-barra" aria-hidden="true">
+            <i style={{ width: `${Math.max(0, Math.min(100, actividad.porcentaje))}%` }} />
+          </span>
+          <span className="yoru-member-card-porcentaje">{Math.round(actividad.porcentaje)}%</span>
         </div>
       </div>
     </div>

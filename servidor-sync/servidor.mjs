@@ -183,6 +183,11 @@ export function abrirBase(ruta = process.env.YORU_SYNC_DB || join(AQUI, 'datos',
     );
     CREATE INDEX IF NOT EXISTS sesiones_por_usuario ON sesiones (usuario_id);
   `);
+  // El nombre de usuario de Discord, además del nombre a la vista. Hace falta para
+  // reconocer a alguien en la lista de Miembros, que sale del widget y unas veces trae
+  // un nombre y otras el otro. En una base de antes la columna no existe: se añade.
+  const columnas = base.prepare('PRAGMA table_info(usuarios)').all().map((columna) => columna.name);
+  if (!columnas.includes('alias')) base.exec("ALTER TABLE usuarios ADD COLUMN alias TEXT NOT NULL DEFAULT ''");
   return base;
 }
 
@@ -232,6 +237,7 @@ export async function identificar(accessToken, fetchImpl = fetch) {
     usuario: {
       id: String(usuario.datos.id),
       nombre: String(usuario.datos.global_name || usuario.datos.username || ''),
+      alias: String(usuario.datos.username || ''),
     },
   };
 }
@@ -247,10 +253,10 @@ export function crearSesion(base, usuario, ahora = Date.now()) {
   base.prepare('INSERT INTO sesiones (token, usuario_id, nombre, creada, expira, vista) VALUES (?, ?, ?, ?, ?, ?)')
     .run(token, usuario.id, usuario.nombre, ahora, ahora + VIDA_SESION_MS, ahora);
   base.prepare(`
-    INSERT INTO usuarios (id, nombre, version, actualizado, creado, datos)
-    VALUES (?, ?, 0, 0, ?, NULL)
-    ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre
-  `).run(usuario.id, usuario.nombre, ahora);
+    INSERT INTO usuarios (id, nombre, alias, version, actualizado, creado, datos)
+    VALUES (?, ?, ?, 0, 0, ?, NULL)
+    ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, alias = excluded.alias
+  `).run(usuario.id, usuario.nombre, String(usuario.alias || ''), ahora);
   return { token, expiraEn: ahora + VIDA_SESION_MS };
 }
 
@@ -305,79 +311,251 @@ export function guardarProgreso(base, usuarioId, datos, baseVersion, ahora = Dat
 /* ---------------------------------------------------------- lo que ven los demás */
 
 /**
- * Qué está leyendo alguien, para que la tarjeta de Miembros lo enseñe.
+ * Lo que un miembro ve de otro: su perfil de lectura, y nada más que eso.
  *
- * Esto es lo único que un miembro puede ver de otro, y es a propósito. Lo que la app
- * sube es la biblioteca entera: todos los libros, los estados de cada palabra, las
- * tarjetas del SRS, los ajustes. Devolver eso a cualquiera que pregunte convertiría
- * una tarjeta de «qué está leyendo fulano» en una copia de su cuenta, y nadie que
- * entre con Discord espera eso. Así que aquí se saca **un libro y un porcentaje**, y
- * se tira el resto.
+ * Hasta el 20 nov 2026 esto era **un libro y un porcentaje**. zams pidió que la
+ * tarjeta de Miembros enseñara el perfil del otro como se ve el propio: sus libros,
+ * sus audiolibros y por dónde va en cada uno, y si está leyendo o escuchando ahora.
+ * Así que ahora salen las dos listas, con título, autor, portada y avance.
+ *
+ * Lo que sigue sin salir nunca, y es la razón de que esto se construya campo a campo
+ * en vez de devolver el bulto: los estados de cada palabra, las tarjetas del SRS, los
+ * ajustes, el texto de los libros y los identificadores internos. La app sube la
+ * cuenta entera; aquí se saca de ella una estantería.
  *
  * Y se respeta lo que cada uno ya había decidido sobre enseñar lo que lee:
  *
  *  - `shareReadingWithMembers: false` → no se enseña nada.
  *  - La lista negra de Discord (`discordBlacklist`) vale también aquí, con la misma
  *    regla que en `discordRpc.ts`: un título por línea, comparado en minúsculas. Un
- *    libro que alguien escondió de sus amigos en Discord no va a aparecer en la
- *    tarjeta de Miembros por la puerta de atrás.
+ *    libro escondido allí no sale en ninguna lista, y si es justo el último que se
+ *    abrió, no se enseña nada: decir «leyó otra cosa hace un mes» sería mentir.
  */
-export function queEstaLeyendo(datos) {
+
+/**
+ * Cuánto dura «ahora».
+ *
+ * La app sube el progreso cada cinco minutos mientras se lee, así que lo que aquí se
+ * sabe de alguien tiene hasta cinco minutos de retraso. Con doce de margen, quien
+ * está leyendo sale como «leyendo ahora» sin parpadear entre subida y subida, y
+ * quien cerró el libro deja de salir al cabo de un rato razonable.
+ */
+export const VENTANA_AHORA_MS = 12 * 60 * 1000;
+
+/** Una portada incrustada (`data:`) más grande que esto no viaja: sale sin portada. */
+const MAX_PORTADA = 120_000;
+/** Y entre todas las de un perfil, hasta aquí. Las de después salen sin portada. */
+const MAX_PORTADAS_PERFIL = 1_500_000;
+const MAX_LISTA = 300;
+
+function momento(texto) {
+  return Date.parse(texto || '') || 0;
+}
+
+function porcentaje(valor) {
+  return Math.max(0, Math.min(100, Math.round(Number(valor) || 0)));
+}
+
+function portadaSegura(libro) {
+  if (!libro || libro.hideCover) return '';
+  const portada = String(libro.cover || '');
+  if (/^https?:\/\//i.test(portada)) return portada.length <= 2000 ? portada : '';
+  if (/^data:image\//i.test(portada)) return portada.length <= MAX_PORTADA ? portada : '';
+  return '';
+}
+
+/** El estante de un libro, con el mismo respaldo por progreso que `bookStatus` en la app. */
+function estadoLibro(libro) {
+  const avance = Number(libro?.progress?.percent) || 0;
+  const estado = String(libro?.status || (avance === 0 ? 'unread' : avance >= 100 ? 'completed' : 'reading'));
+  if (estado === 'completed') return 'completado';
+  if (estado === 'paused' || estado === 'planning') return 'pendiente';
+  if (estado === 'unread') return 'por-empezar';
+  return 'leyendo';
+}
+
+/** El perfil activo, si su dueño comparte, y su lista negra. */
+function loCompartido(datos) {
   const perfiles = Array.isArray(datos?.profiles) ? datos.profiles : [];
   const perfilId = datos?.activeProfileId || perfiles[0]?.id;
   const perfil = perfilId ? datos?.profileData?.[perfilId] : null;
-  if (!perfil) return { comparte: true, leyendo: null };
+  if (!perfil) return { comparte: true, perfil: null, negra: [] };
 
   const ajustes = perfil.settings || {};
   // Por defecto sí se comparte: la tarjeta de Miembros es la razón de que esto exista.
   // Quien no quiera, lo apaga en Ajustes y deja de salir desde la siguiente subida.
-  if (ajustes.shareReadingWithMembers === false) return { comparte: false, leyendo: null };
-
-  const libros = (Array.isArray(perfil.books) ? perfil.books : []).filter((libro) => libro && !libro.isDeleted);
-  let ultimo = null;
-  let cuando = 0;
-  for (const libro of libros) {
-    const momento = Date.parse(libro.lastRead || '') || 0;
-    if (momento > cuando) { cuando = momento; ultimo = libro; }
-  }
-  if (!ultimo || !cuando) return { comparte: true, leyendo: null };
+  if (ajustes.shareReadingWithMembers === false) return { comparte: false, perfil: null, negra: [] };
 
   const negra = String(ajustes.discordBlacklist || '')
     .split('\n').map((linea) => linea.trim().toLowerCase()).filter(Boolean);
-  if (negra.includes(String(ultimo.title || '').toLowerCase())) return { comparte: false, leyendo: null };
+  return { comparte: true, perfil, negra };
+}
 
-  const progreso = ultimo.progress || {};
-  const capitulo = Array.isArray(ultimo.chapters) ? ultimo.chapters[progreso.currentChapter] : null;
+/**
+ * Los libros de un perfil: los importados y las series que lee en Kavita sin
+ * importarlas, lo último abierto primero. `fuente` es el libro de verdad, para sacar
+ * la portada después; no sale nunca en una respuesta.
+ */
+function librosDe(perfil) {
+  const salida = [];
+  for (const libro of Array.isArray(perfil.books) ? perfil.books : []) {
+    if (!libro || libro.isDeleted) continue;
+    const progreso = libro.progress || {};
+    const capitulo = Array.isArray(libro.chapters) ? libro.chapters[progreso.currentChapter] : null;
+    salida.push({
+      origen: 'local',
+      titulo: String(libro.title || ''),
+      autor: String(libro.author || ''),
+      capitulo: capitulo ? String(capitulo.title || '') : '',
+      porcentaje: porcentaje(progreso.percent),
+      estado: estadoLibro(libro),
+      ultimaLectura: momento(libro.lastRead),
+      fuente: libro,
+    });
+  }
+
+  // Un tomo por serie, el que se abrió más tarde: lo mismo que `localKavitaSeriesRead`.
+  const porSerie = new Map();
+  const kavita = perfil.serverProgress?.kavita;
+  for (const entrada of Object.values(kavita && typeof kavita === 'object' ? kavita : {})) {
+    if (!entrada || entrada.borrado || !entrada.seriesId) continue;
+    const actual = porSerie.get(entrada.seriesId);
+    if (!actual || momento(entrada.at) > momento(actual.at)) porSerie.set(entrada.seriesId, entrada);
+  }
+  for (const entrada of porSerie.values()) {
+    const avance = porcentaje(entrada.percent);
+    salida.push({
+      origen: 'kavita',
+      seriesId: Number(entrada.seriesId) || 0,
+      volumeId: Number(entrada.volumeId) || 0,
+      titulo: String(entrada.seriesName || entrada.volumeTitle || 'Kavita'),
+      autor: '',
+      capitulo: entrada.seriesName ? String(entrada.volumeTitle || '') : '',
+      porcentaje: avance,
+      estado: avance >= 99 ? 'completado' : 'leyendo',
+      ultimaLectura: momento(entrada.at),
+      fuente: null,
+    });
+  }
+
+  return salida.sort((a, b) => b.ultimaLectura - a.ultimaLectura);
+}
+
+/** Los audiolibros que ha escuchado un perfil, lo último primero. */
+function audiolibrosDe(perfil) {
+  const salida = [];
+  const audio = perfil.serverProgress?.audiobooks;
+  for (const [itemId, entrada] of Object.entries(audio && typeof audio === 'object' ? audio : {})) {
+    if (!entrada || entrada.borrado) continue;
+    const dura = Number(entrada.duration) || 0;
+    salida.push({
+      itemId: String(itemId),
+      titulo: String(entrada.title || ''),
+      autor: String(entrada.author || ''),
+      porcentaje: dura > 0 ? porcentaje(((Number(entrada.currentTime) || 0) / dura) * 100) : 0,
+      ultimaEscucha: momento(entrada.at),
+    });
+  }
+  return salida.sort((a, b) => b.ultimaEscucha - a.ultimaEscucha);
+}
+
+/**
+ * Todo lo que se puede enseñar de una cuenta, ya limpio. No depende de la hora: lo
+ * que sí depende («¿está leyendo ahora?») lo pone `actividadAhora` al contestar, y
+ * así esto se puede guardar entre una subida y la siguiente.
+ */
+export function resumenPublico(datos) {
+  const { comparte, perfil, negra } = loCompartido(datos);
+  const nada = { comparte, leyendo: null, escuchando: null, libros: [], audiolibros: [] };
+  if (!perfil) return nada;
+
+  const escondido = (titulo) => negra.includes(String(titulo || '').toLowerCase());
+  const todos = librosDe(perfil);
+  const ultimo = todos.find((libro) => libro.ultimaLectura > 0) || null;
+  if (ultimo && escondido(ultimo.titulo)) return { ...nada, comparte: false };
+
+  let gastado = 0;
+  const libros = todos.filter((libro) => !escondido(libro.titulo)).slice(0, MAX_LISTA).map((libro) => {
+    const { fuente, ...limpio } = libro;
+    let portada = portadaSegura(fuente);
+    if (gastado + portada.length > MAX_PORTADAS_PERFIL) portada = '';
+    gastado += portada.length;
+    return { ...limpio, portada };
+  });
+  const audiolibros = audiolibrosDe(perfil).filter((item) => !escondido(item.titulo)).slice(0, MAX_LISTA);
+
   return {
     comparte: true,
-    leyendo: {
-      titulo: String(ultimo.title || ''),
-      autor: String(ultimo.author || ''),
-      portada: String(ultimo.cover || ''),
-      capitulo: capitulo ? String(capitulo.title || '') : '',
-      porcentaje: Math.max(0, Math.min(100, Math.round(Number(progreso.percent) || 0))),
-      ultimaLectura: cuando,
-    },
+    leyendo: libros.find((libro) => libro.ultimaLectura > 0) || null,
+    escuchando: audiolibros.find((item) => item.ultimaEscucha > 0) || null,
+    libros,
+    audiolibros,
   };
 }
 
-/** La ficha pública de un miembro: quién es y qué lee. Nunca sus datos. */
-export function fichaDe(base, usuarioId) {
-  const fila = base.prepare('SELECT id, nombre, actualizado FROM usuarios WHERE id = ?').get(usuarioId);
+/** `'leyendo'`, `'escuchando'` o `null`: lo último que hizo, si fue hace nada. */
+export function actividadAhora(resumen, ahora = Date.now()) {
+  const leyo = resumen.leyendo?.ultimaLectura || 0;
+  const escucho = resumen.escuchando?.ultimaEscucha || 0;
+  const ultimo = Math.max(leyo, escucho);
+  if (!ultimo || ahora - ultimo >= VENTANA_AHORA_MS) return null;
+  return escucho > leyo ? 'escuchando' : 'leyendo';
+}
+
+/** Qué está leyendo y escuchando alguien, sin sus listas. Lo que usa la tarjeta. */
+export function queEstaLeyendo(datos, ahora = Date.now()) {
+  const { comparte, leyendo, escuchando } = resumenPublico(datos);
+  return { comparte, leyendo, escuchando, ahora: actividadAhora({ leyendo, escuchando }, ahora) };
+}
+
+/**
+ * El resumen de cada cuenta, guardado hasta que vuelva a subir.
+ *
+ * La lista de Miembros se pregunta cada minuto desde cada app abierta, y sin esto
+ * cada pregunta volvería a leer y trocear la biblioteca entera de todo el mundo, que
+ * son megas. La versión cambia con cada subida, así que sirve de llave.
+ */
+const resumenes = new WeakMap();
+
+function resumenDe(base, usuarioId) {
+  let guardados = resumenes.get(base);
+  if (!guardados) { guardados = new Map(); resumenes.set(base, guardados); }
+  const fila = base.prepare('SELECT version FROM usuarios WHERE id = ?').get(usuarioId);
+  const version = Number(fila?.version || 0);
+  const previo = guardados.get(usuarioId);
+  if (previo && previo.version === version) return previo.resumen;
+  const resumen = resumenPublico(leerProgreso(base, usuarioId).datos);
+  guardados.set(usuarioId, { version, resumen });
+  return resumen;
+}
+
+/**
+ * La ficha pública de un miembro: quién es, qué lee y qué escucha. Nunca sus datos.
+ * Con `conPerfil` lleva además sus dos listas, que es lo que abre «Ver perfil».
+ */
+export function fichaDe(base, usuarioId, { conPerfil = false, ahora = Date.now() } = {}) {
+  const fila = base.prepare('SELECT id, nombre, alias, actualizado FROM usuarios WHERE id = ?').get(usuarioId);
   if (!fila) return null;
-  const { datos } = leerProgreso(base, usuarioId);
+  const { comparte, leyendo, escuchando, libros, audiolibros } = resumenDe(base, usuarioId);
+  const nombre = String(fila.nombre || '');
+  const alias = [...new Set([nombre, String(fila.alias || '')].filter(Boolean))];
   return {
     usuarioId: String(fila.id),
-    nombre: String(fila.nombre || ''),
+    nombre,
+    alias,
     actualizadoEn: Number(fila.actualizado || 0),
-    ...queEstaLeyendo(datos),
+    comparte,
+    leyendo,
+    escuchando,
+    ahora: actividadAhora({ leyendo, escuchando }, ahora),
+    ...(conPerfil ? { perfil: { libros, audiolibros } } : {}),
   };
 }
 
 /** Todos los que alguna vez han sincronizado, del más reciente al más antiguo. */
-export function fichasDeTodos(base) {
+export function fichasDeTodos(base, ahora = Date.now()) {
   const filas = base.prepare('SELECT id FROM usuarios WHERE datos IS NOT NULL ORDER BY actualizado DESC').all();
-  return filas.map((fila) => fichaDe(base, fila.id)).filter(Boolean);
+  return filas.map((fila) => fichaDe(base, fila.id, { ahora })).filter(Boolean);
 }
 
 /* ------------------------------------------------------- aguantar el mundo entero */
@@ -581,7 +759,7 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
 
       const unMiembro = ruta.match(/^\/api\/progreso\/([0-9]{1,32})$/);
       if (unMiembro && req.method === 'GET') {
-        const ficha = fichaDe(bd, unMiembro[1]);
+        const ficha = fichaDe(bd, unMiembro[1], { conPerfil: true });
         if (!ficha) { responder(res, 404, { error: 'no-existe' }); return; }
         responder(res, 200, ficha);
         return;

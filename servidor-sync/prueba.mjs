@@ -24,7 +24,7 @@ function discordDeMentira(cuentas) {
     if (!cuenta) return new Response('{"message":"401: Unauthorized"}', { status: 401 });
     if (cuenta.caido) return new Response('oops', { status: 500 });
     if (url.endsWith('/users/@me')) {
-      return new Response(JSON.stringify({ id: cuenta.id, global_name: cuenta.nombre }), { status: 200 });
+      return new Response(JSON.stringify({ id: cuenta.id, global_name: cuenta.nombre, username: cuenta.usuario || cuenta.nombre }), { status: 200 });
     }
     if (url.endsWith('/users/@me/guilds')) {
       return new Response(JSON.stringify(cuenta.guilds.map((id) => ({ id }))), { status: 200 });
@@ -34,7 +34,7 @@ function discordDeMentira(cuentas) {
 }
 
 const CUENTAS = {
-  'tok-zams': { id: '111', nombre: 'zams', guilds: [GUILD_YORU, '999'] },
+  'tok-zams': { id: '111', nombre: 'zams', usuario: 'zams0524', guilds: [GUILD_YORU, '999'] },
   'tok-otro': { id: '222', nombre: 'otro miembro', guilds: [GUILD_YORU] },
   'tok-fuera': { id: '333', nombre: 'de paso', guilds: ['999'] },
   'tok-caido': { id: '444', nombre: 'mala suerte', guilds: [GUILD_YORU], caido: true },
@@ -211,8 +211,93 @@ await prueba('y no ve nada más de él', async () => {
   // ser una copia de la cuenta de nadie.
   assert.ok(!crudo.includes('wordStatuses'), 'los estados de palabras no salen');
   assert.ok(!crudo.includes('srsData'), 'las tarjetas del SRS no salen');
-  assert.ok(!crudo.includes('un libro viejo'), 'el resto de la biblioteca no sale');
+  assert.ok(!crudo.includes('四葉'), 'ni una sola palabra de su vocabulario');
+  assert.ok(!crudo.includes('settings'), 'los ajustes no salen');
   assert.ok(!crudo.includes('profileData'), 'la biblioteca entera no sale');
+  assert.ok(!crudo.includes('"chapters"'), 'ni los capítulos de sus libros');
+});
+
+/* El perfil de otro miembro: sus dos listas, que es lo que abre «Ver perfil». */
+
+/** Una biblioteca con lo leído en Kavita y lo escuchado, además de los libros. */
+function bibliotecaConServidor({ leido = '2026-11-18T10:00:00.000Z', escuchado = '2026-11-17T10:00:00.000Z', ajustes = {} } = {}) {
+  const datos = biblioteca({ ajustes });
+  datos.profileData.p1.books[1].lastRead = leido;
+  datos.profileData.p1.serverProgress = {
+    kavita: {
+      10: { chapterId: 10, volumeId: 5, seriesId: 7, pages: 200, percent: 30, at: '2026-11-10T00:00:00.000Z', seriesName: '本好きの下剋上', volumeTitle: 'Tomo 1' },
+      11: { chapterId: 11, volumeId: 6, seriesId: 7, pages: 200, percent: 100, at: '2026-11-05T00:00:00.000Z', seriesName: '本好きの下剋上', volumeTitle: 'Tomo 0' },
+      12: { chapterId: 12, volumeId: 9, seriesId: 8, pages: 100, percent: 0, borrado: true, at: '2026-11-19T00:00:00.000Z', seriesName: 'olvidada' },
+    },
+    audiobooks: {
+      'abs-1': { currentTime: 900, duration: 3600, at: escuchado, title: 'キノの旅', author: '時雨沢恵一' },
+      'abs-2': { currentTime: 10, duration: 100, at: '2026-11-19T00:00:00.000Z', borrado: true, title: 'quitado' },
+    },
+  };
+  return datos;
+}
+
+await prueba('el perfil de otro trae sus libros y sus audiolibros, con su avance', async () => {
+  await subirComo('tok-zams', bibliotecaConServidor());
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const ficha = await (await pedir('/api/progreso/111', { headers: auth })).json();
+
+  const titulos = ficha.perfil.libros.map((libro) => libro.titulo);
+  assert.deepEqual(titulos, ['よつばと!', '本好きの下剋上', 'un libro viejo'], 'lo último primero, sin el borrado ni la serie olvidada');
+  const serie = ficha.perfil.libros[1];
+  assert.equal(serie.origen, 'kavita');
+  assert.equal(serie.seriesId, 7);
+  assert.equal(serie.volumeId, 5, 'el tomo que se abrió más tarde');
+  assert.equal(serie.porcentaje, 30);
+  assert.equal(ficha.perfil.libros[0].estado, 'leyendo');
+
+  assert.equal(ficha.perfil.audiolibros.length, 1, 'el audiolibro quitado no sale');
+  assert.equal(ficha.perfil.audiolibros[0].titulo, 'キノの旅');
+  assert.equal(ficha.perfil.audiolibros[0].porcentaje, 25);
+  assert.equal(ficha.escuchando.itemId, 'abs-1');
+});
+
+await prueba('la lista de todos no carga con el perfil de nadie', async () => {
+  await subirComo('tok-zams', bibliotecaConServidor());
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const { miembros } = await (await pedir('/api/miembros', { headers: auth })).json();
+  const zams = miembros.find((m) => m.usuarioId === '111');
+  assert.equal(zams.perfil, undefined);
+  assert.equal(zams.leyendo.titulo, 'よつばと!');
+  assert.deepEqual(zams.alias, ['zams', 'zams0524'], 'el nombre a la vista y el de usuario, para reconocerlo en la lista');
+});
+
+await prueba('quien leyó hace nada sale como «leyendo ahora», y quien no, no', async () => {
+  const hace = (minutos) => new Date(Date.now() - minutos * 60_000).toISOString();
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+
+  await subirComo('tok-zams', bibliotecaConServidor({ leido: hace(3) }));
+  assert.equal((await (await pedir('/api/progreso/111', { headers: auth })).json()).ahora, 'leyendo');
+
+  await subirComo('tok-zams', bibliotecaConServidor({ leido: hace(30), escuchado: hace(2) }));
+  assert.equal((await (await pedir('/api/progreso/111', { headers: auth })).json()).ahora, 'escuchando');
+
+  await subirComo('tok-zams', bibliotecaConServidor({ leido: hace(90), escuchado: hace(60) }));
+  assert.equal((await (await pedir('/api/progreso/111', { headers: auth })).json()).ahora, null);
+});
+
+await prueba('un libro de la lista negra no sale en el perfil', async () => {
+  await subirComo('tok-zams', bibliotecaConServidor({ ajustes: { discordBlacklist: 'un libro viejo\nキノの旅' } }));
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const crudo = await (await pedir('/api/progreso/111', { headers: auth })).text();
+  assert.ok(!crudo.includes('un libro viejo'));
+  assert.ok(!crudo.includes('キノの旅'));
+  assert.ok(crudo.includes('よつばと!'), 'los demás sí');
+});
+
+await prueba('quien apaga el compartir no enseña ni su perfil', async () => {
+  await subirComo('tok-zams', bibliotecaConServidor({ ajustes: { shareReadingWithMembers: false } }));
+  const auth = await subirComo('tok-otro', biblioteca({ titulo: 'otra cosa' }));
+  const ficha = await (await pedir('/api/progreso/111', { headers: auth })).json();
+  assert.equal(ficha.comparte, false);
+  assert.deepEqual(ficha.perfil, { libros: [], audiolibros: [] });
+  assert.equal(ficha.escuchando, null);
+  assert.equal(ficha.ahora, null);
 });
 
 await prueba('la lista negra de Discord vale también aquí', async () => {
