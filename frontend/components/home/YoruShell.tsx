@@ -1010,9 +1010,11 @@ export default function YoruShell({
           <button
             type="button"
             className="yoru-shell-icon-btn"
-            onClick={() => go('catalog')}
-            title={es ? 'Importar libros' : 'Import books'}
-            aria-label={es ? 'Importar libros' : 'Import books'}
+            // El «+» abre la misma ventana que «Crear colección» del lateral: colección
+            // manual, dinámica o agregar novelas del aparato. Antes solo llevaba al Catálogo.
+            onClick={() => { setIsDrawerOpen(false); setIsCreatingCollection(true); }}
+            title={es ? 'Crear colección o agregar novelas' : 'Create collection or add novels'}
+            aria-label={es ? 'Crear colección o agregar novelas' : 'Create collection or add novels'}
           >
             <Plus size={20} />
           </button>
