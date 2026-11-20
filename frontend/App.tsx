@@ -719,7 +719,7 @@ export default function App() {
    * como libro suyo. `importKavitaBook` ya deja registrada la fuente por titulo, que
    * es lo que necesita el progreso para subir a Kavita.
    */
-  const handleReadTemporary = useCallback(async (kavitaBook: any) => {
+  const handleReadTemporary = useCallback(async (kavitaBook: any, audio?: { itemId: string; title: string }) => {
     // El cronometro arranca aqui, no al montar el lector: la descarga y el parseo son
     // justo lo que se espera, y dejarlos fuera de la cuenta era lo que hacia parecer
     // que abrir del servidor era instantaneo.
@@ -746,8 +746,19 @@ export default function App() {
       seriesName: kavitaBook.seriesName,
       volumeTitle: first.title || kavitaBook.title,
     });
+    /*
+      Viene de «Leer y escuchar»: el tomo se abre con su audiolibro ya vinculado y el
+      reproductor abierto, para que suene sin otro toque. El vínculo va por el id del
+      temporal, que es el mismo cada vez que se abre ese tomo, así que la alineación
+      bajada la primera vez sirve para las siguientes.
+    */
+    if (audio) {
+      const { setAudiobookLink } = await import('./utils/audiobookshelfService');
+      setAudiobookLink(temporaryBookId(kavitaBook.volumeId), { itemId: audio.itemId, title: audio.title });
+    }
     setActiveBook({
       ...first,
+      ...(audio ? { __openAudiobook: true } : {}),
       id: temporaryBookId(kavitaBook.volumeId),
       isTemporary: true,
       kavitaBook,
@@ -755,6 +766,20 @@ export default function App() {
       progress: { currentChapter, currentPage: 0, percent },
     });
   }, []);
+
+  /**
+   * Un toque en un tomo de «Leer y escuchar» que todavía está solo en Kavita: se baja,
+   * se abre en el lector y suena su audiolibro. Antes ese toque llevaba a la ficha de
+   * Kavita, y de ahí había que traer el tomo, volver y pulsar otra vez.
+   */
+  const handleReadAndListenKavita = useCallback(async (serieId: string, audio: { itemId: string; title: string }) => {
+    const { getKavitaSeriesById, getKavitaVolumes, kavitaVolumesToBooks } = await import('./utils/kavitaService');
+    const serie = await getKavitaSeriesById(Number(serieId));
+    if (!serie) throw new Error(lang === 'es' ? 'Kavita no encuentra esa novela.' : 'Kavita cannot find that novel.');
+    const tomos = kavitaVolumesToBooks(serie, await getKavitaVolumes(Number(serieId)), lang === 'es');
+    if (!tomos.length) throw new Error(lang === 'es' ? 'Esa novela no trae ningún tomo que abrir.' : 'That novel has no volume to open.');
+    await handleReadTemporary(tomos[0], audio);
+  }, [handleReadTemporary, lang]);
 
   /**
    * Convertir en permanente el libro temporal que se esta leyendo, sin volver a
@@ -1254,6 +1279,7 @@ export default function App() {
           libraryProps={{
             navigateTo: libraryNav,
             onReadTemporary: handleReadTemporary,
+            onReadAndListenKavita: handleReadAndListenKavita,
             onAddBooks: handleAddBooks,
             onDeleteBook: handleDeleteBook,
             onBulkDeleteBooks: handleBulkDeleteBooks,

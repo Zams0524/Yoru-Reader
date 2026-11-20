@@ -3660,6 +3660,9 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-sett
 }
 .yoru-pair-volume:hover,
 .yoru-pair-volume:focus-visible { border-color: var(--border-focus); background: var(--bg-card-hover); }
+.yoru-pair-volume:disabled { cursor: default; opacity: 0.55; }
+.yoru-pair-volume.is-opening { opacity: 1; border-color: var(--border-focus); }
+.yoru-pair-error { margin: 0 0 12px; color: var(--danger, #e5484d); font-size: 13px; }
 .yoru-pair-section { margin-top: 34px; }
 .yoru-pair-section-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-main); }
 .yoru-pair-section .yoru-view-sub { margin: 4px 0 16px; }
