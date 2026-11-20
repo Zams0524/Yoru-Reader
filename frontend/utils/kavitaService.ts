@@ -357,6 +357,36 @@ export async function getKavitaOnDeck(limit = 20): Promise<KavitaSeries[]> {
   return (Array.isArray(response.data) ? response.data : []).map(toSeries);
 }
 
+/**
+ * Las series cuyo nombre contiene este texto, todas y no las quince primeras.
+ *
+ * El buscador de Kavita (`/api/Search/search`) corta en quince resultados, y una
+ * serie larga pasa de ahí cuando cada tomo es su propia entrada: 無職転生 son
+ * veintinueve. El filtro v2 no corta (campo 1 = nombre de la serie, comparación 7 =
+ * «coincide», que para texto es «contiene»). Si el servidor no lo entiende, queda
+ * el buscador de siempre: quince resultados son mejor que ninguno.
+ */
+export async function getKavitaSeriesByName(text: string, limit = 100): Promise<KavitaSeries[]> {
+  const q = text.trim();
+  if (!q) return [];
+  try {
+    const response = await kavitaRequest<any[]>(`/api/Series/v2?PageNumber=1&PageSize=${limit}`, {
+      method: 'POST',
+      body: {
+        id: 0,
+        name: '',
+        statements: [{ comparison: 7, field: 1, value: q }],
+        combination: 1,
+        sortOptions: { sortField: 1, isAscending: true },
+        limitTo: 0,
+      },
+    });
+    return (Array.isArray(response.data) ? response.data : []).map(toSeries);
+  } catch {
+    return searchKavitaSeries(q);
+  }
+}
+
 export async function searchKavitaSeries(query: string): Promise<KavitaSeries[]> {
   const q = query.trim();
   if (!q) return [];

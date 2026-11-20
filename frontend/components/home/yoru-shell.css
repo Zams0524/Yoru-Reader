@@ -3644,6 +3644,22 @@ html:where(:not(.yoru-compact)) .yoru-shell.is-settings-fullscreen .yomitan-sett
 .yoru-pair-progress-value { text-align: right; font-variant-numeric: tabular-nums; }
 .yoru-pair-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
 .yoru-pair-actions .yoru-btn { padding: 7px 14px; font-size: 13px; }
+.yoru-pair-volumes { display: flex; flex-wrap: wrap; gap: 6px; }
+.yoru-pair-volume {
+  min-width: 34px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.yoru-pair-volume:hover,
+.yoru-pair-volume:focus-visible { border-color: var(--border-focus); background: var(--bg-card-hover); }
 .yoru-pair-section { margin-top: 34px; }
 .yoru-pair-section-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-main); }
 .yoru-pair-section .yoru-view-sub { margin: 4px 0 16px; }
