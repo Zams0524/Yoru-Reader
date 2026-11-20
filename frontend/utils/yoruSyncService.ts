@@ -190,6 +190,33 @@ export interface ResultadoSync {
   fallo?: Fallo;
 }
 
+/**
+ * Lo que este aparato guarda por perfil y no viaja (el historial de repasos, las
+ * rachas, el orden de Inicio) pasa al perfil que queda cuando el activo se funde con
+ * otro. Solo se copia lo que el destino no tiene: nunca se pisa nada.
+ *
+ * Lo que sí viaja —palabras, tarjetas, progreso— lo escribe después
+ * `db.importFullDatabase`, ya combinado.
+ */
+function adoptarClavesDePerfil(de: string, a: string): void {
+  try {
+    const sufijo = `_${de}`;
+    const claves: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const clave = localStorage.key(i);
+      if (clave && clave.endsWith(sufijo)) claves.push(clave);
+    }
+    for (const clave of claves) {
+      const destino = `${clave.slice(0, -sufijo.length)}_${a}`;
+      if (localStorage.getItem(destino) !== null) continue;
+      const valor = localStorage.getItem(clave);
+      if (valor !== null) localStorage.setItem(destino, valor);
+    }
+  } catch {
+    /* Sin sitio para copiarlo no se pierde nada: sigue guardado en el perfil de antes. */
+  }
+}
+
 let enMarcha = false;
 
 /**
@@ -255,6 +282,9 @@ export async function sincronizarConServidorYoru(
         // La copia de antes de tocar nada, igual que con Drive: si la combinación
         // saliera mal, lo de este aparato sigue estando entero en alguna parte.
         await db.saveSyncBackup(local);
+        const activoAntes = String(local.activeProfileId || '');
+        const activoAhora = String(perfiles.local.activeProfileId || '');
+        if (activoAntes && activoAhora && activoAntes !== activoAhora) adoptarClavesDePerfil(activoAntes, activoAhora);
         await db.importFullDatabase(merged);
         // Si lo único que llegó es progreso de Kavita o de audiolibros, Inicio se
         // repinta solo con su aviso y no hace falta recargar la pantalla.
