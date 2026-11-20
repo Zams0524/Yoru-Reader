@@ -12,6 +12,10 @@ import { leerSesion } from '../../utils/discordAuth';
 import { estadoMiembro, mismaLista, RITMO_INICIAL, siguienteRitmo } from '../../utils/miembrosVivos';
 import { continueReading, type ShelfBook } from './libraryIndex';
 import MemberCard, { type LecturaActual } from './MemberCard';
+import MemberProfileView from './MemberProfileView';
+import { fichasDeMiembros, type FichaMiembro } from '../../utils/yoruSyncService';
+import { fichaPara, lineaAhora } from '../../utils/miembrosFichas';
+import { useBackHandler } from '../../hooks/useBackButton';
 
 /**
  * Miembros: quién del servidor de Yoru está conectado ahora, y con qué.
@@ -21,7 +25,15 @@ import MemberCard, { type LecturaActual } from './MemberCard';
  * widget público (ver `discordWidget.ts`), así que no hace falta bot ni clave, y por
  * eso mismo solo salen los conectados: Discord no publica a los desconectados por esa
  * vía.
+ *
+ * Lo que lee cada uno no lo sabe Discord: lo sabe el servidor de sincronización de
+ * Yoru, al que se pregunta aparte (`fichasDeMiembros`). Las dos respuestas se casan
+ * por nombre (ver `miembrosFichas.ts`), y de ahí sale que la lista diga «Leyendo ·
+ * título» de quien está leyendo ahora y que su tarjeta abra su perfil.
  */
+
+/** Cada cuánto se vuelve a preguntar qué lee cada uno. La app sube cada cinco minutos. */
+const REFRESCO_FICHAS_MS = 60_000;
 
 
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 } as const;
@@ -57,11 +69,53 @@ export default function MembersView({
   onVerPerfil,
 }: {
   es: boolean;
-  /** La estantería, para contar qué estás leyendo tú. De los demás no se sabe nada. */
+  /** La estantería, para contar qué estás leyendo tú. Lo de los demás viene del servidor. */
   libros?: ShelfBook[];
   onVerPerfil?: () => void;
 }) {
   const [elegido, setElegido] = useState<DiscordMember | null>(null);
+  /** Lo que el servidor de Yoru cuenta de cada miembro que ha sincronizado. */
+  const [fichas, setFichas] = useState<FichaMiembro[]>([]);
+  const [fichasListas, setFichasListas] = useState(false);
+  /** El perfil de otro miembro, abierto encima de la lista. */
+  const [perfilDe, setPerfilDe] = useState<{ miembro: DiscordMember; ficha: FichaMiembro } | null>(null);
+
+  // El botón atrás de Android cierra primero lo que está encima: la tarjeta, y si no
+  // el perfil. Sin esto se salía de Miembros entero con un perfil abierto.
+  useBackHandler(Boolean(perfilDe), () => setPerfilDe(null));
+  useBackHandler(Boolean(elegido), () => setElegido(null));
+
+  /*
+    Qué lee cada uno. Va aparte del sondeo de Discord porque es otro servidor (el PC
+    de zams) y otro ritmo, y porque si no contesta no pasa nada: la lista sale igual,
+    solo que sin lo que lee nadie. `fichasDeMiembros` devuelve vacío en vez de fallar.
+  */
+  useEffect(() => {
+    let vivo = true;
+    let enVuelo = false;
+    const cargar = async () => {
+      if (enVuelo || document.visibilityState === 'hidden') return;
+      enVuelo = true;
+      try {
+        const lista = await fichasDeMiembros();
+        if (!vivo) return;
+        // Un refresco que vuelve vacío (el servidor no contesta) no borra lo que ya había.
+        setFichas((previas) => (lista.length > 0 || previas.length === 0 ? lista : previas));
+        setFichasListas(true);
+      } finally {
+        enVuelo = false;
+      }
+    };
+    void cargar();
+    const reloj = window.setInterval(() => { void cargar(); }, REFRESCO_FICHAS_MS);
+    const alVolver = () => { if (document.visibilityState === 'visible') void cargar(); };
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      vivo = false;
+      window.clearInterval(reloj);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, []);
   /** La sesión de Discord: tu nombre y tu foto, para reconocerte y pintarte. */
   const [miSesion] = useState(() => leerSesion());
   const miNombre = miSesion?.usuarioNombre || '';
@@ -175,12 +229,28 @@ export default function MembersView({
     confunde. Aquí se enseña lo que Discord publica, de ti igual que de los demás, o no
     se enseña nada.
   */
+  // De uno mismo no se enseña la ficha del servidor: lo de este aparato va por delante.
+  const fichaDe = (member: DiscordMember) => (esMiCuenta(member.name) ? null : fichaPara(member.name, fichas));
   const members = (widget ? widget.members : [])
     .slice()
     .sort((a, b) =>
-      Number(Boolean(b.activity)) - Number(Boolean(a.activity))
+      // Quien está leyendo o escuchando ahora, arriba: es lo que se viene a mirar.
+      Number(Boolean(lineaAhora(fichaDe(b), es))) - Number(Boolean(lineaAhora(fichaDe(a), es)))
+      || Number(Boolean(b.activity)) - Number(Boolean(a.activity))
       || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
       || a.name.localeCompare(b.name));
+
+  if (perfilDe) {
+    return (
+      <MemberProfileView
+        // El miembro al día, si sigue conectado: su punto de estado cambia mientras miras.
+        miembro={members.find((member) => member.name === perfilDe.miembro.name) || perfilDe.miembro}
+        fichaInicial={perfilDe.ficha}
+        es={es}
+        onVolver={() => setPerfilDe(null)}
+      />
+    );
+  }
 
   return (
     <div className="yoru-members">
@@ -255,8 +325,8 @@ export default function MembersView({
                     </span>
                     <span className="yoru-member-text">
                       <span className="yoru-member-name">{member.name}</span>
-                      <span className="yoru-member-activity">
-                        {member.activity || estadoMiembro(member.status, es).etiqueta}
+                      <span className={`yoru-member-activity${lineaAhora(fichaDe(member), es) ? ' is-ahora' : ''}`}>
+                        {lineaAhora(fichaDe(member), es) || member.activity || estadoMiembro(member.status, es).etiqueta}
                       </span>
                     </span>
                   </button>
@@ -273,6 +343,9 @@ export default function MembersView({
           es={es}
           esTuyo={esMiCuenta(elegido.name)}
           lectura={esMiCuenta(elegido.name) ? miLectura : null}
+          ficha={fichaDe(elegido)}
+          cargandoFicha={!fichasListas}
+          onVerPerfilDe={(ficha) => { setPerfilDe({ miembro: elegido, ficha }); setElegido(null); }}
           onCerrar={() => setElegido(null)}
           onVerPerfil={onVerPerfil ? () => { setElegido(null); onVerPerfil(); } : undefined}
         />

@@ -119,34 +119,68 @@ app se abre y se lee igual; lo único que pasa es que el progreso espera.
 
 ## Qué ven los demás miembros
 
-Para la tarjeta de Miembros, el servidor cuenta de cada uno **un libro y un
-porcentaje**: `GET /api/progreso/<usuarioId>` y `GET /api/miembros`, ambos con sesión.
+Desde el 20 nov 2026 un miembro ve de otro **su perfil de lectura**: sus libros, sus
+audiolibros, por dónde va en cada uno, y si está leyendo o escuchando ahora mismo.
+Antes era un libro y un porcentaje; zams pidió que la tarjeta de Miembros abriera el
+perfil del otro como se ve el propio.
+
+Dos rutas, las dos con sesión:
+
+- `GET /api/miembros`: la ficha corta de todos los que han sincronizado. Es lo que
+  pregunta la lista de Miembros cada minuto.
+- `GET /api/progreso/<usuarioId>`: la misma ficha con `perfil`, sus dos listas. Es
+  lo que pregunta «Ver perfil».
+
 En la app, `fichasDeMiembros()` y `fichaDeMiembro(id)` en `yoruSyncService.ts`.
 
 ```json
-{ "usuarioId": "111", "nombre": "zams", "actualizadoEn": 1795016000000,
-  "comparte": true,
-  "leyendo": { "titulo": "よつばと!", "autor": "Azuma Kiyohiko", "portada": "",
-               "capitulo": "Capítulo 2", "porcentaje": 43, "ultimaLectura": 1795010000000 } }
+{ "usuarioId": "111", "nombre": "zams", "alias": ["zams", "zams0524"],
+  "actualizadoEn": 1795016000000, "comparte": true,
+  "leyendo": { "origen": "local", "titulo": "よつばと!", "autor": "Azuma Kiyohiko",
+               "portada": "", "capitulo": "Capítulo 2", "porcentaje": 43,
+               "estado": "leyendo", "ultimaLectura": 1795010000000 },
+  "escuchando": { "itemId": "abs-1", "titulo": "キノの旅", "autor": "時雨沢恵一",
+                  "porcentaje": 25, "ultimaEscucha": 1794900000000 },
+  "ahora": "leyendo",
+  "perfil": { "libros": [ … ], "audiolibros": [ … ] } }
 ```
 
-La diferencia con `GET /api/progreso` a secas es toda la seguridad de esto:
-**`/api/progreso` devuelve lo tuyo entero y va por tu propia sesión;
-`/api/progreso/<id>` devuelve de cualquiera solo esa ficha.** Lo que la app sube es la
-biblioteca completa —todos los libros, el estado de cada palabra, las tarjetas del SRS,
-los ajustes—, y devolver eso a quien pregunte convertiría una tarjeta de «qué está
-leyendo fulano» en una copia de su cuenta.
+- **`ahora`** es `"leyendo"`, `"escuchando"` o `null`. Lo decide el servidor: lo último
+  que hizo, si fue hace menos de doce minutos (`VENTANA_AHORA_MS`). La app sube cada
+  cinco minutos mientras se lee, así que con doce de margen quien está leyendo no
+  parpadea entre subida y subida. No es tiempo real: va con el retraso de la última
+  subida.
+- **`alias`** son los nombres por los que se reconoce a esa cuenta en la lista de
+  Discord. La lista sale del widget, que no da el id de Discord, así que se casa por
+  nombre (`fichaPara` en `miembrosFichas.ts`). El de usuario se guarda al entrar; a
+  quien entró antes de este cambio le aparece cuando renueve la sesión (como mucho,
+  una semana).
+- **Los libros** son los importados y las series que se leen en Kavita sin importar
+  (`origen: "kavita"`, con `seriesId` y `volumeId`). De las de Kavita y de los
+  audiolibros no viaja portada: Kavita y Audiobookshelf son los mismos para todos, y la
+  app la pide con su propia sesión (`memberCovers.ts`). De un libro importado viaja la
+  suya si es pequeña (hasta 120 KB cada una y 1,5 MB entre todas); si no, sale el hueco
+  con el título.
 
-Dos formas de no salir, y las dos ya existían en espíritu:
+La diferencia con `GET /api/progreso` a secas sigue siendo toda la seguridad de esto:
+**`/api/progreso` devuelve lo tuyo entero y va por tu propia sesión;
+`/api/progreso/<id>` devuelve de cualquiera solo esa ficha**, construida campo a campo.
+Lo que la app sube es la cuenta completa, y de ella no salen nunca los estados de cada
+palabra, las tarjetas del SRS, los ajustes ni el texto de los libros. Hay una prueba
+que lo vigila (`y no ve nada más de él` en `servidor-sync/prueba.mjs`).
+
+El resumen de cada cuenta se guarda en memoria hasta su siguiente subida, para no
+trocear megas de biblioteca en cada pregunta de la lista.
+
+Dos formas de no salir:
 
 - **El interruptor** «Enseñar a los miembros lo que lees» (`shareReadingWithMembers`),
-  en Ajustes → Sincronización de Yoru. **Viene encendido**, que es lo que hace que la
-  tarjeta sirva para algo el primer día; apagarlo deja de enseñar desde la siguiente
-  subida. Si zams prefiere que venga apagado, es cambiar el `!== false` por `=== true`
-  en `YoruSyncSettings.tsx` y en `queEstaLeyendo()`.
+  en Ajustes → Sincronización de Yoru. **Viene encendido**; apagarlo deja de enseñar
+  desde la siguiente subida, también el perfil. Si zams prefiere que venga apagado, es
+  cambiar el `!== false` por `=== true` en `YoruSyncSettings.tsx` y en `loCompartido()`.
 - **La lista negra de Discord** (`discordBlacklist`) vale también aquí, con la misma
-  regla que en `discordRpc.ts`. Un libro que alguien escondió de sus amigos en Discord
-  no va a aparecer en Miembros por la puerta de atrás.
+  regla que en `discordRpc.ts`. Un libro escondido allí no sale en ninguna lista, y si
+  es justo el último que se abrió no se enseña nada.
 
 ## Android
 

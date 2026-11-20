@@ -207,21 +207,24 @@ los que está: solo su ID, su nombre y su progreso.
 | `DELETE` | `/api/sesion` | Cierra la sesión de ese token |
 | `GET` | `/api/progreso` | **Lo tuyo, entero**: `{ version, actualizadoEn, datos }` |
 | `PUT` | `/api/progreso` | `{ baseVersion, datos }` → `{ version, actualizadoEn }`, o **409** |
-| `GET` | `/api/progreso/<id>` | **De cualquiera, reducido**: `{ usuarioId, nombre, comparte, leyendo }` |
-| `GET` | `/api/miembros` | Lo mismo para todos: `{ miembros: [...] }` |
+| `GET` | `/api/progreso/<id>` | **De cualquiera, reducido**: `{ usuarioId, nombre, alias, comparte, leyendo, escuchando, ahora, perfil }` |
+| `GET` | `/api/miembros` | Lo mismo para todos, sin `perfil`: `{ miembros: [...] }` |
 | `GET` | `/api/medios` | Las claves de Kavita y de ABS: `{ kavita, audiobookshelf }`, cada una `null` si no hay |
 
-Las dos últimas son para la tarjeta de Miembros, y la diferencia con `/api/progreso`
-a secas es toda su seguridad: **`/api/progreso` devuelve lo tuyo entero y va por tu
-propia sesión; `/api/progreso/<id>` devuelve de cualquiera solo un libro y un
-porcentaje.** Lo que la app sube es la biblioteca completa —todos los libros, el
-estado de cada palabra, las tarjetas del SRS, los ajustes—, y devolver eso a quien
-pregunte convertiría una tarjeta de «qué está leyendo fulano» en una copia de su
-cuenta. Nadie que entre con Discord espera eso.
+Esas dos son para Miembros, y la diferencia con `/api/progreso` a secas es toda su
+seguridad: **`/api/progreso` devuelve lo tuyo entero y va por tu propia sesión;
+`/api/progreso/<id>` devuelve de cualquiera solo su perfil de lectura**: sus libros y
+audiolibros con su avance (`perfil`), lo último que leyó y escuchó, y si lo está
+haciendo ahora (`ahora`, cuando su última lectura es de hace menos de doce minutos).
+Lo que la app sube es la cuenta completa, y de ella no salen nunca el estado de cada
+palabra, las tarjetas del SRS, los ajustes ni el texto de los libros. Detalles en
+`docs/SINCRONIZACION_YORU.md`.
 
-`leyendo` es `null`, y `comparte` es `false`, cuando esa persona apagó
-«Enseñar a los miembros lo que lees» (`shareReadingWithMembers`) o cuando el libro
-está en su lista negra de Discord: un libro escondido allí no asoma por aquí.
+Todo sale vacío, y `comparte` es `false`, cuando esa persona apagó
+«Enseñar a los miembros lo que lees» (`shareReadingWithMembers`). Un libro de su lista
+negra de Discord no sale en ninguna lista.
+
+Al arrancar con una base de antes se añade sola la columna `alias` a `usuarios`.
 
 El 409 es la pieza que evita que dos aparatos se pisen. `baseVersion` es la versión
 que el cliente leyó antes de combinar; si entretanto escribió otro, el número ya no

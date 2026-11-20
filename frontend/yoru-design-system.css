@@ -7844,6 +7844,53 @@ html.yoru-compact #root {
   line-height: 1.45;
   color: var(--text-muted);
 }
+/* Lo que lee o escucha otro miembro. Cuando es ahora mismo, el rotulo va en el color
+   de acento y con un punto que late: es la unica senal de "en directo" de la tarjeta. */
+.yoru-member-card-titulo-bloque {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.yoru-member-card-bloque.is-ahora .yoru-member-card-titulo-bloque { color: var(--primary); }
+.yoru-member-card-bloque.is-ahora .yoru-member-card-titulo-bloque::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: yoru-member-late 1.8s ease-in-out infinite;
+}
+@keyframes yoru-member-late {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .yoru-member-card-bloque.is-ahora .yoru-member-card-titulo-bloque::after { animation: none; }
+}
+.yoru-member-card-detalle {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yoru-member-activity.is-ahora { color: var(--primary); }
+
+/* El perfil de otro miembro: la misma pagina que el propio, de solo mirar. */
+.yoru-member-profile-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.yoru-member-profile-ahora {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.yoru-member-profile-ahora.is-ahora { color: var(--primary); font-weight: 600; }
+.yoru-poster.is-estatico { cursor: default; }
 
 /* =========================================================
    Estantería vacía
