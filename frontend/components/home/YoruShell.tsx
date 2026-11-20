@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   BookMarked,
@@ -299,14 +299,57 @@ export default function YoruShell({
   */
   const [beforeSettings, setBeforeSettings] = useState<View>('home');
 
+  /** La sección de Ajustes que pidió el propio shell; la de fuera llega por `libraryProps`. */
+  const [settingsNav, setSettingsNav] = useState<{ tab: string; section?: string; nonce: number } | null>(null);
+
   const go = useCallback((next: View, target: typeof serverTarget = null) => {
     setView((current) => {
       if (next === 'settings' && current !== 'settings') setBeforeSettings(current);
       return next;
     });
     setServerTarget(target);
+    setSettingsNav(null);
     setIsDrawerOpen(false);
   }, []);
+
+  /**
+   * «Editar perfil» abre Ajustes en la sección del perfil.
+   *
+   * Antes llevaba a Ajustes a secas, igual que el engranaje de al lado: en el teléfono
+   * salía la lista de secciones y en el ordenador «Apariencia e idioma», y había que
+   * buscar el perfil a mano después de haber pulsado «Editar perfil».
+   */
+  const openProfileSettings = useCallback(() => {
+    go('settings');
+    setSettingsNav({ tab: 'settings', section: 'sec-profile', nonce: Date.now() });
+  }, [go]);
+
+  /*
+    Cada pantalla empieza arriba.
+
+    El lienzo es un único contenedor con scroll que comparten todas las pantallas, y el
+    navegador conserva su posición al cambiar lo de dentro: bajabas en Inicio, pasabas
+    al Catálogo y aparecía empezado por la mitad. La excepción es volver de la ficha de
+    un libro a la pantalla desde la que se abrió, que se queda donde estaba para no
+    perder el sitio en una lista larga.
+  */
+  const canvasRef = useRef<HTMLElement | null>(null);
+  const lastView = useRef(view);
+  const beforeDetail = useRef<{ view: View; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const from = lastView.current;
+    lastView.current = view;
+    if (!canvas || from === view) return;
+    const saved = beforeDetail.current;
+    if (view === 'detail') {
+      if (from !== 'detail') beforeDetail.current = { view: from, top: canvas.scrollTop };
+      canvas.scrollTop = 0;
+      return;
+    }
+    beforeDetail.current = null;
+    canvas.scrollTop = from === 'detail' && saved?.view === view ? saved.top : 0;
+  }, [view]);
 
   const exitSettings = useCallback(() => {
     setView(beforeSettings);
@@ -479,7 +522,11 @@ export default function YoruShell({
                   />
                 )
                 : undefined}
-              navigateTo={libraryProps.navigateTo}
+              // La petición más reciente manda: la del shell («Editar perfil») o la de
+              // fuera (una notificación que pide el repaso o las actualizaciones).
+              navigateTo={(settingsNav?.nonce ?? 0) > (libraryProps.navigateTo?.nonce ?? 0)
+                ? settingsNav
+                : libraryProps.navigateTo}
               /*
                 La salida de Ajustes. Se la damos a `Library` porque la flecha va
                 dentro de su propia lateral, encima del buscador, y es ella quien la
@@ -624,6 +671,7 @@ export default function YoruShell({
           onOpenDetail={openDetail}
           onOpenServerItem={openServerItem}
           onOpenSettings={() => go('settings')}
+          onEditProfile={openProfileSettings}
           onUpdateProfile={(profileId, changes) => libraryProps.onUpdateProfile?.(profileId, changes)}
         />
       );
@@ -1096,7 +1144,7 @@ export default function YoruShell({
             onClick={() => setIsDrawerOpen(false)}
           />
         )}
-        <main className="yoru-shell-canvas">
+        <main className="yoru-shell-canvas" ref={canvasRef}>
           {serverToast && (
             <div className="yoru-server-toast" role="status" aria-live="polite">{serverToast}</div>
           )}

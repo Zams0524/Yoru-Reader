@@ -376,6 +376,35 @@ body:has(.yoru-shell.is-settings-fullscreen) { --yoru-bottom-nav-h: 0px; }
   min-height: 0;
   height: auto;
 }
+/*
+  Embebida, la biblioteca no hace scroll: lo hace el lienzo.
+
+  En el teléfono la hoja de Library convierte `.library-container` en la pantalla
+  entera (`height: 100dvh`, `overflow-y: auto`, `overscroll-behavior: contain`, todo
+  con `!important`), y la regla de arriba no le ganaba. Quedaban dos scrolls uno dentro
+  del otro, con dos barras: el lienzo movía la caja y la caja movía los libros. Y al
+  llegar de otra pantalla con el lienzo bajado, la caja estaba en su tope y, por el
+  `contain`, no le pasaba el gesto al lienzo: no había manera de subir. Ajustes a
+  pantalla completa se queda fuera, que tiene su propia cadena de alturas más abajo.
+*/
+html .yoru-shell:not(.is-settings-fullscreen) .library-container.is-embedded {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  overscroll-behavior: auto !important;
+}
+/*
+  En Android esa caja reservaba abajo el alto de la barra de pestañas, que el lienzo ya
+  reserva por su cuenta. Lo único que se conserva es el hueco para la barra de selección
+  múltiple.
+*/
+html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-container.is-embedded {
+  padding-bottom: 0 !important;
+}
+html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-container.is-embedded:has(.book-card.select-mode-active),
+html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-container.is-embedded:has(.book-list-row.select-mode-active) {
+  padding-bottom: calc(330px + var(--yoru-safe-bottom, 0px)) !important;
+}
 
 /* =========================================================
    3. Primitivas de vista: títulos, carruseles y tarjetas

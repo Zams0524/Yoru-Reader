@@ -3043,6 +3043,28 @@ const Library = React.memo(function Library({
           {!settingsNarrow && !settingsSearchQuery && (
             <h2 className="settings-pane-title">{settingsSectionTitle(activeSettingsSection)}</h2>
           )}
+
+          {/*
+            La vuelta a la lista, en el teléfono y dentro del shell.
+
+            Ahí no hay barra de arriba —es de la Biblioteca suelta y el shell la
+            esconde—, así que dentro de una sección no quedaba en pantalla ninguna
+            salida: solo el gesto de atrás del sistema. Se notaba sobre todo al llegar
+            directo desde «Editar perfil», sin haber pasado por la lista.
+          */}
+          {settingsNarrow && mobileSettingsSectionOpen && onExitSettings && (
+            <div className="settings-page-head">
+              <button
+                type="button"
+                className="settings-back-btn"
+                onClick={() => setMobileSettingsSectionOpen(false)}
+                aria-label={lang === 'es' ? 'Volver a Ajustes' : 'Back to Settings'}
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <h2 className="settings-page-heading">{lang === 'es' ? 'Ajustes' : 'Settings'}</h2>
+            </div>
+          )}
           
           {/*
             Perfil. Lo mismo que hace el modal del menú del avatar, pero donde se

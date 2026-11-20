@@ -5,6 +5,7 @@ import {
   getKavitaSeriesMetadata,
   isKavitaConfigured,
   kavitaSeriesCoverUrl,
+  kavitaVolumeCoverUrl,
 } from './kavitaService';
 import {
   absCoverUrl,
@@ -14,7 +15,7 @@ import {
   getAudiobooksInProgress,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
-import { localContinueEntries, sharesServerProgress } from './serverProgress';
+import { localContinueEntries, localKavitaSeriesRead, sharesServerProgress } from './serverProgress';
 
 /**
  * Novedades de los servidores de casa, para que al abrir la app ya haya algo que
@@ -240,6 +241,33 @@ export function localAudioContinueItems(): ServerItem[] {
       }
       : null))
     .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+/**
+ * Las series de Kavita que este perfil ha abierto, con su avance: sus libros del servidor.
+ *
+ * Es la misma lista en la Biblioteca («Leyendo») y en el perfil («Libros»). Antes solo
+ * la armaba la Biblioteca, y el perfil, que miraba nada más que lo importado, decía
+ * «Este estante está vacío» a quien lee de Kavita sin descargar nada.
+ *
+ * Lo leído sale de lo apuntado en el aparato; el título y el autor, de la caché del
+ * catálogo cuando la serie está en ella. No se le pide nada al servidor.
+ */
+export function localKavitaReadingItems(catalog: ServerCatalog = getCachedServerCatalog()): ServerItem[] {
+  const delServidor = new Map(catalog.kavita.map((item) => [serverItemId(item), item]));
+  return localKavitaSeriesRead().map((serie) => {
+    const conocida = delServidor.get(String(serie.seriesId));
+    return {
+      id: `kavita-${serie.seriesId}`,
+      serverId: String(serie.seriesId),
+      title: conocida?.title || serie.title,
+      // La portada es la del tomo por el que vas, no la de la serie.
+      cover: kavitaVolumeCoverUrl(serie.volumeId) || conocida?.cover || '',
+      source: 'kavita' as const,
+      author: conocida?.author,
+      percent: serie.percent,
+    };
+  });
 }
 
 /** «Continuar escuchando»: lo que Audiobookshelf tiene a medias, con su avance. */
