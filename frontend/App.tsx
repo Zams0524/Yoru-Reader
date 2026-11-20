@@ -655,9 +655,23 @@ export default function App() {
   const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
     // Start of an open, for the timing line the native reader logs.
     startOpenTiming(book?.title || 'libro');
-    const positioned = typeof startChapter === 'number'
-      ? { ...book, progress: { ...(book.progress || {}), currentChapter: startChapter, currentPage: 0 } }
-      : book;
+    let positioned = book;
+    if (typeof startChapter === 'number') {
+      // The reader keeps its place as a section and a paragraph, not as a chapter: a chapter is
+      // cut into several sections, so the chapter's first one is looked up.
+      const { computeSections } = await import('./components/reader/ReaderEngine');
+      const sections = computeSections(book);
+      const sectionIndex = sections.findIndex((section) => section.chapterIndex === startChapter);
+      positioned = {
+        ...book,
+        _savedSection: undefined,
+        progress: {
+          ...(book.progress || {}),
+          currentChapter: Math.max(0, sectionIndex),
+          currentPage: sectionIndex === -1 ? 0 : sections[sectionIndex].startParagraphId,
+        },
+      };
+    }
     // Bandera de apertura, solo en memoria: no se guarda con el libro.
     const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
     setActiveBook(target);

@@ -764,10 +764,14 @@ function ReaderEngineComponent({
   }, [sections.length, updateChars]);
 
   useEffect(() => {
-    if (typeof targetSection === 'number') {
-      goToSection(targetSection);
-    }
-  }, [targetSection, goToSection]);
+    if (typeof targetSection !== 'number') return;
+    // targetSection is a chapter (what the table of contents lists); a chapter is cut into
+    // several sections here, so its number is not a section's.
+    const sectionIdx = sections.findIndex((section) => section.chapterIndex === targetSection);
+    if (sectionIdx !== -1) goToSection(sectionIdx);
+    // Only a new target moves the reader, not a re-render that rebuilds the sections.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetSection]);
 
   const revealRange = useCallback((range: Range) => {
     const content = contentRef.current;

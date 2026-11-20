@@ -48,6 +48,7 @@ import { useReadAloud } from './reader/useReadAloud';
 import { useReadAloudPlayer } from './reader/useReadAloudPlayer';
 import ReaderNavbar from './reader/ReaderNavbar';
 import ReaderSidebar from './reader/ReaderSidebar';
+import { activeTocEntry, buildTocEntries } from '../utils/toc';
 import ReaderSettings from './reader/ReaderSettings';
 import ReaderSettingsPopover from './reader/ReaderSettingsPopover';
 import { Capacitor } from '@capacitor/core';
@@ -434,7 +435,15 @@ export default function Reader({
   const skipNextReadingPositionRef = useRef(false);
 
   const [selection, setSelection] = useState<any | null>(null);
+  /** A chapter (not a section) to open: what the table of contents asks for. */
   const [navTargetSection, setNavTargetSection] = useState<number | null>(null);
+  // What the table of contents lists: the book's own index, not one row per file of the EPUB.
+  const tocEntries = useMemo(() => buildTocEntries(book.chapters || [], book.title).map((entry, idx) => ({
+    id: `toc-${idx}`,
+    title: chapterDisplayTitle(entry.title, entry.chapterIndex, lang),
+    level: entry.level,
+    chapterIndex: entry.chapterIndex,
+  })), [book.chapters, book.title, lang]);
   const [navTargetParagraphId, setNavTargetParagraphId] = useState<number | null>(null);
 
   const [selectedWord, setSelectedWord] = useState<any | null>(null);
@@ -3426,8 +3435,12 @@ export default function Reader({
         <ReaderSidebar
           mode={sidebarMode}
           onClose={() => setSidebarMode(null)}
-          sections={book.chapters.map((ch: any, idx: number) => ({ id: `chapter-${idx}`, title: chapterDisplayTitle(ch.title, idx, lang), isFromToc: ch.isFromToc }))}
-          currSection={currentProgress.currSection}
+          sections={tocEntries}
+          currSection={activeTocEntry(
+            tocEntries,
+            // The reader counts sections (a chapter is cut into several); the index, chapters.
+            engineApiRef.current?.getSections()?.[currentProgress.currSection]?.chapterIndex ?? currentProgress.currSection,
+          )}
           onGoToSection={(idx: number) => {
             skipNextReadingPositionRef.current = true;
             setNavTargetSection(idx);
