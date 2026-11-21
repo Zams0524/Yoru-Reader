@@ -436,7 +436,7 @@ export default function AudioSyncPlayer({
       });
       navigator.mediaSession.setActionHandler('play', () => play());
       navigator.mediaSession.setActionHandler('pause', () => pause());
-      navigator.mediaSession.setActionHandler('seekbackward', () => seekTo(timeRef.current - 15));
+      navigator.mediaSession.setActionHandler('seekbackward', () => seekTo(timeRef.current - 10));
       navigator.mediaSession.setActionHandler('seekforward', () => seekTo(timeRef.current + 30));
     } catch {
       // Not supported here.
@@ -491,7 +491,7 @@ export default function AudioSyncPlayer({
   const sleepLabel = !sleep ? (es ? 'Dormir' : 'Sleep')
     : sleep.kind === 'chapter' ? (es ? 'Fin del capítulo' : 'End of chapter')
       : `${Math.max(1, Math.ceil((sleep.endsAt - Date.now()) / 60_000))} min`;
-  const className = `audio-sync-player${docked ? ' is-docked' : ''}${raised ? ' is-raised' : ''}${hidden ? ' is-hidden' : ''}`;
+  const className = `audio-sync-player${docked ? ' is-docked' : ''}${raised ? ' is-raised' : ''}${hidden ? ' is-hidden' : ''}${expanded ? ' is-covered' : ''}`;
   const style = {
     '--read-aloud-accent': accent,
     ...(docked ? { '--dock-bg': docked.bg, '--dock-text': docked.text, '--dock-border': docked.border } : {}),
@@ -641,7 +641,7 @@ export default function AudioSyncPlayer({
             if (file) onImportSrt?.(file);
           }}
         />
-        <button type="button" className="read-aloud-btn" onClick={relink} aria-label={es ? 'Cambiar audiolibro' : 'Change audiobook'} title={es ? 'Cambiar audiolibro' : 'Change audiobook'}>
+        <button type="button" className="read-aloud-btn audio-sync-relink" onClick={relink} aria-label={es ? 'Cambiar audiolibro' : 'Change audiobook'} title={es ? 'Cambiar audiolibro' : 'Change audiobook'}>
           <Link2 size={16} />
         </button>
         {closeButton}
@@ -676,8 +676,8 @@ export default function AudioSyncPlayer({
         <span className="audio-sync-time">-{formatTime(session.duration - shownTime)}</span>
       </div>
       <div className="audio-sync-row audio-sync-controls">
-        <button type="button" className="read-aloud-btn" onClick={() => seekTo(time - 15)} aria-label={es ? 'Atrás 15 segundos' : 'Back 15 seconds'}>
-          <RotateCcw size={18} /><small>15</small>
+        <button type="button" className="read-aloud-btn" onClick={() => seekTo(time - 10)} aria-label={es ? 'Atrás 10 segundos' : 'Back 10 seconds'}>
+          <RotateCcw size={18} /><small>10</small>
         </button>
         <button type="button" className="read-aloud-btn read-aloud-play" onClick={playing ? pause : play} aria-label={playing ? (es ? 'Pausar' : 'Pause') : (es ? 'Reproducir' : 'Play')}>
           {playing ? <Pause size={20} /> : <Play size={20} />}

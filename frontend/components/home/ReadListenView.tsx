@@ -167,6 +167,9 @@ export default function ReadListenView({
   }, [deKavita, needle]);
 
   const total = parejas.length;
+  // Los tomos de Kavita también son novelas con su audiolibro: sin contarlos, el
+  // encabezado decía «0» encima de una lista con veinticuatro.
+  const cuenta = total + deKavita.reduce((suma, { tomos }) => suma + tomos.length, 0);
   // Sin parejas todavía y con la pregunta a Kavita en marcha: no es que no haya, es
   // que aún no se sabe. Decir «ninguna» ahí era mentir durante los primeros segundos.
   const buscando = total === 0 && deKavita.length === 0 && buscandoKavitaParaAudios();
@@ -177,8 +180,8 @@ export default function ReadListenView({
         ? 'Ninguna novela tiene su audiolibro todavía. Abre un libro y elige su audiolibro en el reproductor, o vincúlalo desde Audiolibros.'
         : 'No novel has its audiobook yet. Open a book and pick its audiobook in the player, or link it from Audiobooks.')
     : es
-      ? `${total} ${total === 1 ? 'novela con su audiolibro' : 'novelas con su audiolibro'}`
-      : `${total} ${total === 1 ? 'novel with its audiobook' : 'novels with their audiobook'}`;
+      ? `${cuenta} ${cuenta === 1 ? 'novela con su audiolibro' : 'novelas con su audiolibro'}`
+      : `${cuenta} ${cuenta === 1 ? 'novel with its audiobook' : 'novels with their audiobook'}`;
 
   return (
     <div>
@@ -320,7 +323,7 @@ export default function ReadListenView({
                       <Headphones size={13} aria-hidden="true" />
                       {tomos.length === 1
                         ? (es ? 'Tiene su audiolibro' : 'Has its audiobook')
-                        : (es ? `${tomos.length} tomos con su audiolibro` : `${tomos.length} volumes with their audiobook`)}
+                        : (es ? `${tomos.length} tomos con audio` : `${tomos.length} volumes with audio`)}
                     </div>
                     {/*
                       Con varios tomos, cada uno es un botón que abre ese tomo ya sonando:

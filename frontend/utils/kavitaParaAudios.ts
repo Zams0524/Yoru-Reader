@@ -45,6 +45,29 @@ let enCurso: Promise<void> | null = null;
 /** Cuándo falló la última búsqueda: para no volver a intentarlo en bucle. */
 let falloAt = 0;
 const ESPERA_TRAS_FALLO_MS = 60_000;
+/** Fallos seguidos: tras unos cuantos se deja de insistir sola. */
+let fallosSeguidos = 0;
+const REINTENTOS_SOLOS = 5;
+let reintento: ReturnType<typeof setTimeout> | null = null;
+
+const avisar = () => window.dispatchEvent(new Event(KAVITA_PARA_AUDIOS_EVENT));
+
+/*
+  Un fallo no puede ser definitivo. En el teléfono la primera búsqueda cae a menudo
+  con la red aún dormida, y antes de esto la pantalla se quedaba en «ninguna novela
+  tiene su audiolibro» hasta cerrar la app. Al volver la red, o al volver a la app,
+  se olvida la espera y se pregunta otra vez.
+*/
+if (typeof window !== 'undefined') {
+  const otraVez = () => {
+    if (!falloAt || enCurso) return;
+    falloAt = 0;
+    fallosSeguidos = 0;
+    avisar();
+  };
+  window.addEventListener('online', otraVez);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') otraVez(); });
+}
 
 /**
  * Si ahora mismo se le está preguntando a Kavita. La pantalla lo usa para decir
@@ -75,9 +98,16 @@ export function refrescarKavitaParaAudios(audiolibros: AudioDePareja[]): Promise
     }
     localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), firma, series: [...porId.values()] } satisfies Guardado));
     falloAt = 0;
+    fallosSeguidos = 0;
   })()
     .catch((error) => {
       falloAt = Date.now();
+      fallosSeguidos += 1;
+      // Pasada la espera, se avisa: quien escucha vuelve a llamar aquí y se reintenta.
+      if (fallosSeguidos <= REINTENTOS_SOLOS) {
+        if (reintento) clearTimeout(reintento);
+        reintento = setTimeout(avisar, ESPERA_TRAS_FALLO_MS + 500);
+      }
       console.warn('[servidor] No se pudieron buscar en Kavita las novelas de los audiolibros:', error);
     })
     .finally(() => {

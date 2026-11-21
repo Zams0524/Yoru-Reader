@@ -7154,7 +7154,20 @@ html.yoru-compact #root {
     row-gap: 4px;
   }
   .audio-sync-player.is-docked .audio-sync-cover { width: 36px; height: 36px; }
+  /* El título del capítulo no cabía («第二話 「自»): se le da el sitio del botón de
+     cambiar de audiolibro, que sigue arriba a la derecha en el reproductor abierto. */
+  .audio-sync-player.is-docked { column-gap: 8px; }
+  .audio-sync-player.is-docked .audio-sync-who { gap: 8px; }
+  .audio-sync-player.is-docked .audio-sync-chapter { flex: 1 1 auto; }
+  .audio-sync-player.is-docked .audio-sync-relink { display: none; }
 }
+
+/*
+  Con el reproductor abierto la barra se quita de en medio. El reproductor es
+  translúcido, y en el teléfono la barra se transparentaba detrás de sus botones.
+  `visibility` y no `display`: el <audio> vive aquí dentro y tiene que seguir montado.
+*/
+.audio-sync-player.is-covered { visibility: hidden; }
 
 /*
   ── Modo limpio: las palabras, del color del texto ───────────────────────
