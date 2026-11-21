@@ -50,6 +50,24 @@ export default function ReaderSettingsPopover({
     if (mode !== 'horizontal') onSettingChange('paginated', true);
   };
 
+  /*
+    Modo limpio. Encenderlo pone también el color y la fuente que le van, y recuerda los
+    que había para devolverlos al apagarlo; entre medias cada uno se cambia por su lado.
+  */
+  const setModoLimpio = (on: boolean) => {
+    if (on) {
+      try { localStorage.setItem('reader:antesDeLimpio', JSON.stringify({ theme, fontFamily })); } catch { /* sin sitio */ }
+      onSettingChange('theme', 'grafito');
+      onSettingChange('fontFamily', 'Noto Serif JP');
+    } else {
+      let antes: { theme?: ReaderSettingsState['theme']; fontFamily?: string } = {};
+      try { antes = JSON.parse(localStorage.getItem('reader:antesDeLimpio') || '{}'); } catch { /* se queda vacío */ }
+      onSettingChange('theme', antes.theme && antes.theme !== 'grafito' ? antes.theme : 'dark');
+      onSettingChange('fontFamily', antes.fontFamily || '__default__');
+    }
+    onSettingChange('modoLimpio', on);
+  };
+
   const fonts = BUILT_IN_FONTS.some((font) => font.value === fontFamily)
     ? BUILT_IN_FONTS
     : [...BUILT_IN_FONTS, { label: fontFamily, value: fontFamily }];
@@ -62,6 +80,11 @@ export default function ReaderSettingsPopover({
         <div className="readera-settings-title">{es ? 'AJUSTES DEL LIBRO · EPUB, TXT, HTML' : 'BOOK SETTINGS · EPUB, TXT, HTML'}</div>
 
         <div className="readera-settings-body">
+          <SwitchRow
+            label={es ? 'Modo limpio (texto blanco, audio en barra)' : 'Clean mode (white text, audio bar)'}
+            checked={!!settings.modoLimpio}
+            onChange={setModoLimpio}
+          />
           <PickerRow
             label={es ? 'Paso de página' : 'Page flipping'}
             value={paginated ? 'paged' : 'continuous'}
@@ -82,6 +105,7 @@ export default function ReaderSettingsPopover({
               { value: 'sepia-contrast', label: es ? 'Sepia contraste' : 'Sepia contrast' },
               { value: 'twilight', label: es ? 'Crepúsculo' : 'Twilight' },
               { value: 'console', label: es ? 'Consola' : 'Console' },
+              { value: 'grafito', label: es ? 'Grafito' : 'Graphite' },
             ]}
             onChange={(value) => onSettingChange('theme', value as ReaderSettingsState['theme'])}
           />

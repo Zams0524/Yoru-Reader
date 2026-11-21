@@ -62,6 +62,11 @@ interface Props {
   onResumeFollow?: () => void;
   /** La frase que suena ahora, para enseñarla en el reproductor grande. */
   currentLine?: string;
+  /**
+   * Modo limpio: la barra deja de flotar y se acopla abajo, a lo ancho, con los colores
+   * de la página. Trae esos colores; `null` es la barra flotante de siempre.
+   */
+  docked?: { bg: string; text: string; border: string } | null;
 }
 
 /**
@@ -110,7 +115,7 @@ export default function AudioSyncPlayer({
   book, lang, accent, onClose, raised = false, autoHide = false, onReach,
   autoPlay = false,
   alignment = null, onImportSrt, onTimeMs, seekRef, followText = false, onFollowTextChange,
-  followSuspended = false, onResumeFollow, currentLine = '',
+  followSuspended = false, onResumeFollow, currentLine = '', docked = null,
 }: Props) {
   const es = lang === 'es';
   /** Lo que hace el botón de seguir ahora mismo, y cómo se cuenta. */
@@ -486,8 +491,11 @@ export default function AudioSyncPlayer({
   const sleepLabel = !sleep ? (es ? 'Dormir' : 'Sleep')
     : sleep.kind === 'chapter' ? (es ? 'Fin del capítulo' : 'End of chapter')
       : `${Math.max(1, Math.ceil((sleep.endsAt - Date.now()) / 60_000))} min`;
-  const className = `audio-sync-player${raised ? ' is-raised' : ''}${hidden ? ' is-hidden' : ''}`;
-  const style = { '--read-aloud-accent': accent } as React.CSSProperties;
+  const className = `audio-sync-player${docked ? ' is-docked' : ''}${raised ? ' is-raised' : ''}${hidden ? ' is-hidden' : ''}`;
+  const style = {
+    '--read-aloud-accent': accent,
+    ...(docked ? { '--dock-bg': docked.bg, '--dock-text': docked.text, '--dock-border': docked.border } : {}),
+  } as React.CSSProperties;
 
   const closeButton = (
     <button type="button" className="read-aloud-btn" onClick={onClose} aria-label={es ? 'Cerrar audiolibro' : 'Close audiobook'}>
@@ -567,7 +575,7 @@ export default function AudioSyncPlayer({
         onEnded={onEnded}
         onError={() => { setPlaying(false); setPhase({ kind: 'error', message: es ? 'No se pudo cargar el audio desde Audiobookshelf.' : 'Could not load the audio from Audiobookshelf.' }); }}
       />
-      <div className="audio-sync-row">
+      <div className="audio-sync-row audio-sync-head">
         {/*
           La portada y el titulo abren el reproductor. Es el gesto que ya trae
           aprendido cualquiera que haya usado Spotify o YT Music, y no hay que
@@ -575,6 +583,7 @@ export default function AudioSyncPlayer({
           Cuando hay capitulos, el selector ocupa el sitio del titulo y se queda
           fuera del boton: es un control, y meterlo dentro lo dejaria inservible.
         */}
+        <div className="audio-sync-who">
         <button
           type="button"
           className={`audio-sync-open${chapters.length > 0 ? ' is-cover-only' : ''}`}
@@ -595,6 +604,8 @@ export default function AudioSyncPlayer({
             {chapters.map((chapter, index) => <option key={chapter.id} value={index}>{chapter.title}</option>)}
           </select>
         ) : null}
+        </div>
+        <div className="audio-sync-tools">
         {alignment ? (
           <button
             type="button"
@@ -634,6 +645,7 @@ export default function AudioSyncPlayer({
           <Link2 size={16} />
         </button>
         {closeButton}
+        </div>
       </div>
       {/*
         Apartaste la página a mano: el audio sigue por su lado y esto te devuelve a
@@ -647,7 +659,7 @@ export default function AudioSyncPlayer({
           {es ? 'Volver a la narración' : 'Back to the narration'}
         </button>
       )}
-      <div className="audio-sync-row">
+      <div className="audio-sync-row audio-sync-scrub">
         <span className="audio-sync-time">{formatTime(shownTime)}</span>
         <input
           type="range"

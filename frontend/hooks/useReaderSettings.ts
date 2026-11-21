@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect } from 'react';
 
 /** Book colour modes. The extra ones are variants of light, sepia or dark (see baseReaderTheme). */
-export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console';
+export type ReaderTheme = 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console' | 'grafito';
 
 export function baseReaderTheme(theme: string): 'light' | 'sepia' | 'dark' {
   if (theme === 'light') return 'light';
@@ -52,6 +52,13 @@ export interface ReaderSettingsState {
    *   cabe, y si no encima).
    */
   dictPopupPlacement: 'leido' | 'clasico';
+  /**
+   * Modo limpio: el libro con todas las palabras del color del texto (el subrayado y el
+   * resto de marcas del análisis se quedan) y el audiolibro como barra fija a lo ancho,
+   * abajo. Al encenderlo se ponen además el color «Grafito» y la fuente Noto Serif JP,
+   * que luego se pueden cambiar por separado.
+   */
+  modoLimpio: boolean;
 }
 
 const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
@@ -82,6 +89,7 @@ const LS_KEYS: Record<keyof ReaderSettingsState, string> = {
   nativeEngine: 'reader:nativeEngine',
   hideImages: 'reader:hideImages',
   dictPopupPlacement: 'reader:dictPopupPlacement',
+  modoLimpio: 'reader:modoLimpio',
 };
 
 function getNumber(key: string, fallback: number): number {
@@ -138,6 +146,7 @@ function loadSettings(): ReaderSettingsState {
     nativeEngine: getBool(LS_KEYS.nativeEngine, true),
     hideImages: getBool(LS_KEYS.hideImages, false),
     dictPopupPlacement: getString(LS_KEYS.dictPopupPlacement, 'leido') === 'clasico' ? 'clasico' : 'leido',
+    modoLimpio: getBool(LS_KEYS.modoLimpio, false),
   };
 }
 

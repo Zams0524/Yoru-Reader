@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-21-modo-limpio',
+    es: 'Nuevo «Modo limpio» en los ajustes del libro: fondo grafito, fuente Noto Serif JP y todas las palabras en blanco, conservando los subrayados del análisis. En ese modo el audiolibro va en una barra fija abajo, a lo ancho.',
+    en: 'New “Clean mode” in the book settings: graphite background, Noto Serif JP font and every word in white, keeping the analysis underlines. In that mode the audiobook sits in a fixed bar across the bottom.',
+  },
+  {
     id: '2026-11-21-leer-y-escuchar-mas-claro',
     es: 'En «Leer y escuchar» la frase que suena se ve mejor, con fondo y subrayado. Si pasas de página por tu cuenta, la barra del audio te ofrece «Volver a la narración». Y el reproductor grande enseña la frase que suena y trae un temporizador de sueño: por minutos o hasta el final del capítulo.',
     en: 'In “Read and listen” the sentence being read stands out more, with a background and an underline. If you turn the page yourself, the audio bar offers “Back to the narration”. And the full player shows the sentence being read and has a sleep timer: by minutes or until the end of the chapter.',
