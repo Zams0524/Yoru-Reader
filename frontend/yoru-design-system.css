@@ -7089,6 +7089,15 @@ html.yoru-compact #root {
   align-items: center;
 }
 
+/*
+  Lo que no tiene sitio propio en la rejilla ocupa el ancho entero. Es el caso de la
+  barra mientras busca o prepara el audiolibro, o cuando pide elegir uno: ahí no hay
+  mandos ni avance, solo un título, un mensaje y a veces una lista, y repartidos en
+  tres columnas quedaban cada uno en una esquina.
+*/
+.audio-sync-player.is-docked > * { grid-column: 1 / -1; }
+.audio-sync-player.is-docked > .audio-sync-matches { max-height: 40vh; overflow-y: auto; }
+
 .audio-sync-player.is-docked.is-raised { bottom: calc(92px + var(--yoru-safe-bottom, 0px)); }
 .audio-sync-player.is-docked.is-hidden { transform: translateY(24px); }
 

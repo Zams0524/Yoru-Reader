@@ -4,7 +4,7 @@ import { Cover, EmptyState } from './primitives';
 import type { ShelfBook } from './libraryIndex';
 import { absCoverUrl, getAudiobookLink } from '../../utils/audiobookshelfService';
 import { kavitaSeriesCoverUrl } from '../../utils/kavitaService';
-import { KAVITA_PARA_AUDIOS_EVENT, getKavitaParaAudios, refrescarKavitaParaAudios } from '../../utils/kavitaParaAudios';
+import { buscandoKavitaParaAudios, KAVITA_PARA_AUDIOS_EVENT, getKavitaParaAudios, refrescarKavitaParaAudios } from '../../utils/kavitaParaAudios';
 import { getCachedServerCatalog, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import { getLocalAudiobookProgress } from '../../utils/serverProgress';
 import {
@@ -167,7 +167,12 @@ export default function ReadListenView({
   }, [deKavita, needle]);
 
   const total = parejas.length;
-  const subtitle = total === 0 && deKavita.length === 0
+  // Sin parejas todavía y con la pregunta a Kavita en marcha: no es que no haya, es
+  // que aún no se sabe. Decir «ninguna» ahí era mentir durante los primeros segundos.
+  const buscando = total === 0 && deKavita.length === 0 && buscandoKavitaParaAudios();
+  const subtitle = buscando
+    ? (es ? 'Buscando en Kavita las novelas de tus audiolibros…' : 'Looking in Kavita for the novels of your audiobooks…')
+    : total === 0 && deKavita.length === 0
     ? (es
         ? 'Ninguna novela tiene su audiolibro todavía. Abre un libro y elige su audiolibro en el reproductor, o vincúlalo desde Audiolibros.'
         : 'No novel has its audiobook yet. Open a book and pick its audiobook in the player, or link it from Audiobooks.')
@@ -202,7 +207,7 @@ export default function ReadListenView({
         </div>
       )}
 
-      {total === 0 && deKavita.length === 0 && (
+      {total === 0 && deKavita.length === 0 && !buscando && (
         <div className="yoru-detail-actions">
           {library.length === 0 && (
             <button type="button" className="yoru-btn yoru-btn-primary" onClick={onImport}>

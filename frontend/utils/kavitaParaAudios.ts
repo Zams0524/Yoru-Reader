@@ -42,6 +42,17 @@ export function getKavitaParaAudios(): SerieDePareja[] {
 }
 
 let enCurso: Promise<void> | null = null;
+/** Cuándo falló la última búsqueda: para no volver a intentarlo en bucle. */
+let falloAt = 0;
+const ESPERA_TRAS_FALLO_MS = 60_000;
+
+/**
+ * Si ahora mismo se le está preguntando a Kavita. La pantalla lo usa para decir
+ * «buscando» en vez de «no hay ninguna» mientras la respuesta no ha llegado.
+ */
+export function buscandoKavitaParaAudios(): boolean {
+  return enCurso !== null;
+}
 
 /** Vuelve a preguntar a Kavita si hace falta. Se puede llamar las veces que sea. */
 export function refrescarKavitaParaAudios(audiolibros: AudioDePareja[]): Promise<void> {
@@ -51,6 +62,9 @@ export function refrescarKavitaParaAudios(audiolibros: AudioDePareja[]): Promise
   const firma = busquedas.join('\n');
   const guardado = leer();
   if (guardado && guardado.firma === firma && Date.now() - guardado.at < VALE_MS) return Promise.resolve();
+  // El aviso de «terminé» vuelve a llamar aquí. Si la búsqueda falló, sin esta espera
+  // se relanzaría en el acto, una y otra vez, contra un servidor que no contesta.
+  if (Date.now() - falloAt < ESPERA_TRAS_FALLO_MS) return Promise.resolve();
 
   enCurso = (async () => {
     const porId = new Map<string, SerieDePareja>();
@@ -60,9 +74,18 @@ export function refrescarKavitaParaAudios(audiolibros: AudioDePareja[]): Promise
       for (const serie of encontradas) porId.set(String(serie.id), { serieId: String(serie.id), title: serie.name });
     }
     localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), firma, series: [...porId.values()] } satisfies Guardado));
-    window.dispatchEvent(new Event(KAVITA_PARA_AUDIOS_EVENT));
+    falloAt = 0;
   })()
-    .catch((error) => console.warn('[servidor] No se pudieron buscar en Kavita las novelas de los audiolibros:', error))
-    .finally(() => { enCurso = null; });
+    .catch((error) => {
+      falloAt = Date.now();
+      console.warn('[servidor] No se pudieron buscar en Kavita las novelas de los audiolibros:', error);
+    })
+    .finally(() => {
+      enCurso = null;
+      // También al fallar: la pantalla tiene que dejar de decir «buscando».
+      window.dispatchEvent(new Event(KAVITA_PARA_AUDIOS_EVENT));
+    });
+  // Y al empezar, para que lo diga. Fuera de este turno: quien llama está pintando.
+  setTimeout(() => window.dispatchEvent(new Event(KAVITA_PARA_AUDIOS_EVENT)), 0);
   return enCurso;
 }
