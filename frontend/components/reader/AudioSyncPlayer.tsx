@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignLeft, ChevronDown, ChevronUp, FileText, Link2, Loader2, Pause, Play, RotateCcw, RotateCw, Search, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
+import { AlignLeft, ChevronDown, ChevronUp, FileText, Link2, Loader2, Moon, Pause, Play, RotateCcw, RotateCw, Search, SkipBack, SkipForward, Volume2, X } from 'lucide-react';
 import type { AudiobookItem, AudiobookshelfPlaybackSession } from '../../types/integrations';
 import {
   unambiguousAudiobook,
@@ -60,7 +60,17 @@ interface Props {
   */
   followSuspended?: boolean;
   onResumeFollow?: () => void;
+  /** La frase que suena ahora, para enseñarla en el reproductor grande. */
+  currentLine?: string;
 }
+
+/**
+ * El temporizador de sueño: o un reloj, o «hasta que acabe este capítulo».
+ * El capítulo se guarda por el segundo en que termina, no por su número: si el
+ * usuario salta a otro, el temporizador ya no tiene sentido y se apaga solo.
+ */
+type Sleep = { kind: 'time'; endsAt: number } | { kind: 'chapter'; end: number } | null;
+const SLEEP_MINUTES = [15, 30, 45, 60];
 
 /** Speeds for language learners: a bit slower than normal up to double. */
 const AUDIOBOOK_RATES = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
@@ -100,7 +110,7 @@ export default function AudioSyncPlayer({
   book, lang, accent, onClose, raised = false, autoHide = false, onReach,
   autoPlay = false,
   alignment = null, onImportSrt, onTimeMs, seekRef, followText = false, onFollowTextChange,
-  followSuspended = false, onResumeFollow,
+  followSuspended = false, onResumeFollow, currentLine = '',
 }: Props) {
   const es = lang === 'es';
   /** Lo que hace el botón de seguir ahora mismo, y cómo se cuenta. */
@@ -373,6 +383,24 @@ export default function AudioSyncPlayer({
     changeRate(AUDIOBOOK_RATES[(index + 1) % AUDIOBOOK_RATES.length]);
   };
 
+  // ── Temporizador de sueño ─────────────────────────────────────────────
+  const [sleep, setSleep] = useState<Sleep>(null);
+  /** Solo para que la cuenta atrás se repinte cada medio minuto. */
+  const [, setSleepTick] = useState(0);
+  useEffect(() => {
+    if (sleep?.kind !== 'time') return undefined;
+    const left = sleep.endsAt - Date.now();
+    const done = window.setTimeout(() => { audioRef.current?.pause(); setSleep(null); }, Math.max(0, left));
+    const tick = window.setInterval(() => setSleepTick((n) => n + 1), 30_000);
+    return () => { window.clearTimeout(done); window.clearInterval(tick); };
+  }, [sleep]);
+  useEffect(() => {
+    if (sleep?.kind !== 'chapter') return;
+    // Medio segundo antes del final: `timeupdate` llega unas cuatro veces por
+    // segundo, y esperar al segundo exacto dejaría sonar el arranque del siguiente.
+    if (time >= sleep.end - 0.5) { audioRef.current?.pause(); setSleep(null); }
+  }, [sleep, time]);
+
   const relink = () => {
     pause();
     void report(true);
@@ -444,6 +472,20 @@ export default function AudioSyncPlayer({
   const chapters = session?.chapters || [];
   const shownTime = scrubbing ?? time;
   const chapterIndex = chapterAt(chapters, shownTime);
+  const chapterEnd = chapterIndex >= 0 ? chapters[chapterIndex].end : null;
+  /** Cada toque pasa al siguiente: 15, 30, 45, 60 minutos, fin del capítulo, apagado. */
+  const nextSleep = () => {
+    if (!sleep) { setSleep({ kind: 'time', endsAt: Date.now() + SLEEP_MINUTES[0] * 60_000 }); return; }
+    if (sleep.kind === 'chapter') { setSleep(null); return; }
+    const left = (sleep.endsAt - Date.now()) / 60_000;
+    const more = SLEEP_MINUTES.find((minutes) => minutes > left + 1);
+    if (more) setSleep({ kind: 'time', endsAt: Date.now() + more * 60_000 });
+    else if (chapterEnd !== null) setSleep({ kind: 'chapter', end: chapterEnd });
+    else setSleep(null);
+  };
+  const sleepLabel = !sleep ? (es ? 'Dormir' : 'Sleep')
+    : sleep.kind === 'chapter' ? (es ? 'Fin del capítulo' : 'End of chapter')
+      : `${Math.max(1, Math.ceil((sleep.endsAt - Date.now()) / 60_000))} min`;
   const className = `audio-sync-player${raised ? ' is-raised' : ''}${hidden ? ' is-hidden' : ''}`;
   const style = { '--read-aloud-accent': accent } as React.CSSProperties;
 
@@ -593,6 +635,18 @@ export default function AudioSyncPlayer({
         </button>
         {closeButton}
       </div>
+      {/*
+        Apartaste la página a mano: el audio sigue por su lado y esto te devuelve a
+        donde va el narrador. Sale con texto y a lo ancho porque es lo único que uno
+        busca en ese momento; el icono atenuado de arriba no lo veía nadie.
+      */}
+      {alignment && enPausa && (
+        <button type="button" className="audio-sync-return" onClick={() => onResumeFollow?.()}
+                style={{ color: accent, borderColor: accent }}>
+          <AlignLeft size={15} aria-hidden="true" />
+          {es ? 'Volver a la narración' : 'Back to the narration'}
+        </button>
+      )}
       <div className="audio-sync-row">
         <span className="audio-sync-time">{formatTime(shownTime)}</span>
         <input
@@ -684,6 +738,9 @@ export default function AudioSyncPlayer({
             </select>
           )}
 
+          {/* La frase que suena, para seguir el libro sin salir del reproductor. */}
+          {currentLine && <p className="audio-full-line" lang="ja">{currentLine}</p>}
+
           <input
             type="range"
             className="audio-sync-scrubber audio-full-scrubber"
@@ -736,6 +793,16 @@ export default function AudioSyncPlayer({
           <div className="audio-full-tools">
             <button type="button" className="read-aloud-chip" onClick={nextRate}
                     aria-label={es ? 'Velocidad' : 'Speed'}>{rate}×</button>
+
+            <button type="button" className="read-aloud-chip" onClick={nextSleep}
+                    aria-pressed={Boolean(sleep)}
+                    style={sleep ? { color: accent, borderColor: accent } : undefined}
+                    aria-label={es ? 'Temporizador de sueño' : 'Sleep timer'}
+                    title={es ? 'Pausar el audio pasado un rato o al acabar el capítulo'
+                      : 'Pause the audio after a while or at the end of the chapter'}>
+              <Moon size={16} aria-hidden="true" />
+              {sleepLabel}
+            </button>
 
             <label className="audio-full-volume">
               <Volume2 size={18} aria-hidden="true" />
