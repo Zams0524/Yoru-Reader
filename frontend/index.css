@@ -7536,7 +7536,11 @@ body:has(.reader-container) #ajb-reader {
   esto mueva un píxel del texto. Por eso no lleva el halo del párrafo.
 */
 ::highlight(frase-sonando) {
-  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 32%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.22em;
 }
 
 /*
@@ -7557,7 +7561,7 @@ body:has(.reader-container) #ajb-reader {
   position: absolute;
   pointer-events: none;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  background: color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
 /* First-time Reader Controls Hint Pill */

@@ -540,6 +540,8 @@ export default function Reader({
   */
   const [seguimientoSuspendido, setSeguimientoSuspendido] = useState(false);
   const audioSeekRef = useRef<((seconds: number) => void) | null>(null);
+  const [lineaSonando, setLineaSonando] = useState('');
+  const lineaSonandoRef = useRef('');
   /** El último párrafo al que llevó el audio: evita repetir el salto en cada tick. */
   const lastFollowedRef = useRef<number | null>(null);
   /** Para avisar una sola vez de que ese tramo no está alineado, y no en cada tick. */
@@ -1377,6 +1379,12 @@ export default function Reader({
   const handleAudioTime = useCallback((ms: number) => {
     if (!alignment) return;
     const donde = paragraphAtTime(alignment.index, ms);
+    // El texto de la frase, para el reproductor grande. Solo al cambiar de frase.
+    const linea = donde ? donde.cue.text : '';
+    if (lineaSonandoRef.current !== linea) {
+      lineaSonandoRef.current = linea;
+      setLineaSonando(linea);
+    }
 
     /*
       Android: la página la dibuja el motor nativo y no es DOM, así que marcar un `<p>`
@@ -3036,6 +3044,7 @@ export default function Reader({
           followText={followsAudio}
           followSuspended={seguimientoSuspendido}
           onResumeFollow={volverALaNarracion}
+          currentLine={lineaSonando}
           onFollowTextChange={(value) => {
             setFollowsAudio(value);
             lastFollowedRef.current = null;

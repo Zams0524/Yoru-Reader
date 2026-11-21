@@ -7049,6 +7049,39 @@ html.yoru-compact #root {
   justify-content: center;
 }
 
+/* «Volver a la narración»: a lo ancho de la barra, solo mientras el texto va por libre. */
+.audio-sync-return {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.audio-sync-return:active { transform: scale(0.98); }
+
+/* La frase que suena, en el reproductor grande. Tres renglones como mucho. */
+.audio-full-line {
+  max-width: min(560px, 90vw);
+  margin: 0;
+  color: #d9d9e6;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .audio-sync-controls .read-aloud-btn {
   position: relative;
 }

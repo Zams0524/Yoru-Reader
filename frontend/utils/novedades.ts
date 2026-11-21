@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-21-leer-y-escuchar-mas-claro',
+    es: 'En «Leer y escuchar» la frase que suena se ve mejor, con fondo y subrayado. Si pasas de página por tu cuenta, la barra del audio te ofrece «Volver a la narración». Y el reproductor grande enseña la frase que suena y trae un temporizador de sueño: por minutos o hasta el final del capítulo.',
+    en: 'In “Read and listen” the sentence being read stands out more, with a background and an underline. If you turn the page yourself, the audio bar offers “Back to the narration”. And the full player shows the sentence being read and has a sleep timer: by minutes or until the end of the chapter.',
+  },
+  {
     id: '2026-11-20-leer-y-escuchar-sincronizado',
     es: '«Leer y escuchar» ya va sincronizado: al abrir una novela con su audiolibro, el audio arranca solo y el texto resalta la frase que suena y la sigue. Funciona en los audiolibros que el servidor ya tiene alineados; los demás suenan igual, sin resaltado, hasta que les toque.',
     en: '“Read and listen” is now in sync: open a novel with its audiobook and the audio starts on its own while the text highlights the sentence being read and follows it. It works for the audiobooks the server has already aligned; the rest still play, without highlighting, until their turn comes.',
