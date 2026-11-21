@@ -2671,6 +2671,17 @@ export default function Reader({
         accent: '#f5c86b',
         popoverBg: '#171c28',
       },
+      // Gris casi negro y texto blanco roto, sin tinte: el del modo limpio.
+      grafito: {
+        bg: '#181818',
+        headerBg: '#181818',
+        border: 'rgba(255, 255, 255, 0.12)',
+        textMain: '#e5e5e5',
+        textMuted: 'rgba(229, 229, 229, 0.55)',
+        cardBg: 'rgba(255, 255, 255, 0.05)',
+        accent: '#e5e5e5',
+        popoverBg: '#141414',
+      },
       console: {
         bg: '#000000',
         headerBg: '#000000',
@@ -2681,7 +2692,7 @@ export default function Reader({
         accent: '#33ff66',
         popoverBg: '#000000',
       },
-    }[themeName as 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console'] || {
+    }[themeName as 'light' | 'sepia' | 'dark' | 'night-contrast' | 'sepia-contrast' | 'twilight' | 'console' | 'grafito'] || {
       bg: themeName === 'custom' ? (localStorage.getItem('reader:customBg') || '#08080a') : '#08080a',
       headerBg: themeName === 'custom' ? (localStorage.getItem('reader:customBg') || '#08080a') : '#08080a',
       border: 'rgba(255, 255, 255, 0.12)',
@@ -2841,7 +2852,7 @@ export default function Reader({
   return (
     <div 
       ref={containerRef}
-      className="reader-container"
+      className={`reader-container${readerSettings.modoLimpio ? ' reader-limpio' : ''}`}
       data-theme={baseReaderTheme(readerSettings.theme || 'dark')}
       data-reader-theme={readerSettings.theme || 'dark'}
       style={{
@@ -3033,7 +3044,8 @@ export default function Reader({
           lang={lang}
           accent={colors.accent}
           raised={isHeaderVisible}
-          autoHide={!isHeaderVisible}
+          autoHide={!isHeaderVisible && !readerSettings.modoLimpio}
+          docked={readerSettings.modoLimpio ? { bg: colors.bg, text: colors.textMain, border: colors.border } : null}
           onReach={setReadAloudReach}
           onClose={() => setIsAudiobookOpen(false)}
           autoPlay={abrioEscuchando}

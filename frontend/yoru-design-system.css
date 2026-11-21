@@ -7049,6 +7049,116 @@ html.yoru-compact #root {
   justify-content: center;
 }
 
+/*
+  La cabecera de la barra del audiolibro va en dos grupos —quién suena y las
+  herramientas— que en la barra flotante no pintan caja: sus hijos siguen siendo
+  los de la fila. Solo cuentan en la barra acoplada, que los manda a cada lado.
+*/
+.audio-sync-who,
+.audio-sync-tools { display: contents; }
+
+/*
+  ── Barra acoplada (modo limpio) ─────────────────────────────────────────
+  A lo ancho, pegada abajo, con el fondo de la página y una raya arriba: es parte
+  del lector, no un panel encima. Quién suena a la izquierda, los mandos y el
+  avance en el centro, las herramientas a la derecha.
+*/
+.audio-sync-player.is-docked {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: 100%;
+  max-height: none;
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(10px + var(--yoru-safe-bottom, 0px)) max(16px, env(safe-area-inset-left));
+  border: none;
+  border-top: 1px solid var(--dock-border, rgba(255, 255, 255, 0.12));
+  border-radius: 0;
+  background: var(--dock-bg, #181818);
+  box-shadow: none;
+  backdrop-filter: none;
+  color: var(--dock-text, #e5e5e5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 2fr) minmax(0, 1fr);
+  grid-template-areas:
+    "ret ret ret"
+    "who controls tools"
+    "who scrub tools";
+  column-gap: 20px;
+  row-gap: 2px;
+  align-items: center;
+}
+
+.audio-sync-player.is-docked.is-raised { bottom: calc(92px + var(--yoru-safe-bottom, 0px)); }
+.audio-sync-player.is-docked.is-hidden { transform: translateY(24px); }
+
+.audio-sync-player.is-docked .audio-sync-head { display: contents; }
+.audio-sync-player.is-docked .audio-sync-who {
+  grid-area: who;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.audio-sync-player.is-docked .audio-sync-tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.audio-sync-player.is-docked .audio-sync-controls { grid-area: controls; }
+.audio-sync-player.is-docked .audio-sync-scrub { grid-area: scrub; }
+.audio-sync-player.is-docked .audio-sync-return { grid-area: ret; width: auto; justify-self: center; margin-bottom: 6px; }
+
+.audio-sync-player.is-docked .audio-sync-cover { width: 48px; height: 48px; border-radius: 6px; }
+.audio-sync-player.is-docked .audio-sync-chapter { flex: 0 1 260px; }
+.audio-sync-player.is-docked .read-aloud-btn,
+.audio-sync-player.is-docked .read-aloud-chip,
+.audio-sync-player.is-docked .audio-sync-chapter { color: var(--dock-text, #e5e5e5); }
+.audio-sync-player.is-docked .audio-sync-time { color: color-mix(in srgb, var(--dock-text, #e5e5e5) 65%, transparent); }
+.audio-sync-player.is-docked .audio-sync-open:hover .audio-sync-title { color: inherit; }
+
+/* El de reproducir: redondo, del color del texto, con el icono del color del fondo. */
+.audio-sync-player.is-docked .read-aloud-play,
+.audio-sync-player.is-docked .read-aloud-play:hover {
+  width: 38px;
+  height: 38px;
+  background: var(--dock-text, #e5e5e5);
+  color: var(--dock-bg, #181818);
+}
+.audio-sync-player.is-docked .audio-sync-scrubber { accent-color: var(--dock-text, #e5e5e5) !important; height: 4px; }
+.audio-sync-player.is-docked .audio-sync-scrubber::-webkit-slider-thumb { background: var(--dock-text, #e5e5e5) !important; }
+.audio-sync-player.is-docked .audio-sync-scrubber::-moz-range-thumb { background: var(--dock-text, #e5e5e5) !important; }
+.audio-sync-player.is-docked .audio-sync-expand { border: none; color: var(--dock-text, #e5e5e5); }
+
+/* Sin sitio para tres columnas (teléfono en vertical): se apila. */
+@media (max-width: 720px) {
+  .audio-sync-player.is-docked {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "ret ret"
+      "who tools"
+      "scrub scrub"
+      "controls controls";
+    row-gap: 4px;
+  }
+  .audio-sync-player.is-docked .audio-sync-cover { width: 36px; height: 36px; }
+}
+
+/*
+  ── Modo limpio: las palabras, del color del texto ───────────────────────
+  Solo cambia el color de la letra. Subrayados, fondos y el resto de marcas del
+  análisis se quedan, que son los que dicen en qué estado está cada palabra. Va con
+  la clase repetida para ganar a las reglas del análisis, vengan de la extensión o
+  de los estilos guardados, que también llevan `!important`.
+*/
+html .reader-container.reader-limpio .jiten-word.jiten-word.jiten-word,
+html .reader-container.reader-limpio .jiten-word.jiten-word.jiten-word rt {
+  color: inherit !important;
+}
+
 /* «Volver a la narración»: a lo ancho de la barra, solo mientras el texto va por libre. */
 .audio-sync-return {
   display: flex;
