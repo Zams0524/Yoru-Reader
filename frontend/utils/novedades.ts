@@ -34,8 +34,8 @@ export interface Novedad {
 export const NOVEDADES: Novedad[] = [
   {
     id: '2026-11-22-disposicion-nanahoshi',
-    es: 'El «Modo limpio» ahora también coloca el texto como Nanahoshi: mismo tamaño de letra, interlineado 1,65, texto justificado y 5 % de margen. Al apagarlo vuelven tus valores de antes. Y los ajustes del libro traen un interruptor de furigana.',
-    en: '“Clean mode” now also lays the text out like Nanahoshi: same font size, 1.65 line spacing, justified text and 5% margins. Turning it off brings your previous values back. And the book settings now have a furigana switch.',
+    es: 'El lector se acerca más a Nanahoshi. Los ajustes del libro ahora suben desde abajo en una hoja con cuatro categorías: Apariencia, Texto, Diseño y Comportamiento. Y el «Modo limpio» coloca el texto igual (tamaño, interlineado 1,65, justificado, 5 % de margen) y cambia la barra de páginas por un contador de caracteres y porcentaje abajo a la derecha.',
+    en: 'The reader gets closer to Nanahoshi. The book settings now slide up from the bottom in a sheet with four categories: Appearance, Text, Layout and Behaviour. And “Clean mode” lays the text out the same way (size, 1.65 line spacing, justified, 5% margins) and replaces the page bar with a character and percentage counter at the bottom right.',
   },
   {
     id: '2026-11-21-leer-y-escuchar-arreglos',

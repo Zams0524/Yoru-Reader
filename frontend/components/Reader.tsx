@@ -2991,7 +2991,7 @@ export default function Reader({
       )}
 
       <ReaderPageBar
-        visible={isHeaderVisible && !showSettingsPopover && !isSearchOpen}
+        visible={isHeaderVisible && !showSettingsPopover && !isSearchOpen && !readerSettings.modoLimpio}
         currChars={currentProgress.currChars}
         totalChars={currentProgress.totalChars}
         apiRef={engineApiRef}
@@ -3043,7 +3043,7 @@ export default function Reader({
           book={{ id: book.id, title: book.title || '', author: book.author || '' }}
           lang={lang}
           accent={colors.accent}
-          raised={isHeaderVisible}
+          raised={isHeaderVisible && !readerSettings.modoLimpio}
           autoHide={!isHeaderVisible && !readerSettings.modoLimpio}
           docked={readerSettings.modoLimpio ? { bg: colors.bg, text: colors.textMain, border: colors.border } : null}
           onReach={setReadAloudReach}
@@ -4110,6 +4110,22 @@ export default function Reader({
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/*
+        Modo limpio: en vez de la barra de páginas, el contador de Nanahoshi. Caracteres
+        leídos, total y porcentaje, encima de la barra del audio si la hay.
+      */}
+      {readerSettings.modoLimpio && currentProgress.totalChars > 0 && (
+        <div
+          className="reader-counter"
+          style={{
+            color: colors.textMain,
+            bottom: `calc(${isAudiobookOpen || isReadAloudOpen ? Math.max(0, readAloudReach.current - 6) : 0}px + ${isAudiobookOpen || isReadAloudOpen ? '6px' : 'var(--yoru-safe-bottom, 0px) + 8px'})`,
+          }}
+        >
+          {`${currentProgress.currChars} / ${currentProgress.totalChars} ${((currentProgress.currChars / currentProgress.totalChars) * 100).toFixed(2)}%`}
         </div>
       )}
 

@@ -8175,3 +8175,112 @@ html:where(.yoru-compact) .yoru-shell.is-settings-fullscreen .yomitan-settings-p
   justify-content: flex-start;
   padding: 16px;
 }
+
+/*
+  ── Ajustes del lector en hoja inferior (como el lector de Nanahoshi) ─────
+  Sube desde abajo a lo ancho, con las esquinas de arriba redondeadas y un
+  tirador; primero las categorías, dentro cada una con sus ajustes. Va al final
+  del fichero para ganar a la tarjeta desplegable de antes, que sigue arriba.
+*/
+.readera-settings.is-sheet {
+  top: auto;
+  right: 0;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  max-height: min(62dvh, 560px);
+  padding: 0 16px calc(16px + var(--yoru-safe-bottom, 0px));
+  border-radius: 22px 22px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: none;
+  background: #171717;
+  color: #e5e5e5;
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.55);
+  animation: readera-sheet-in 0.2s ease-out;
+}
+@keyframes readera-sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.readera-sheet-handle {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 0 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.readera-sheet-handle span {
+  width: 100px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.readera-sheet-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+}
+.readera-sheet-title { font-size: 0.95rem; font-weight: 700; }
+.readera-sheet-back {
+  position: absolute;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+}
+.readera-sheet-note {
+  margin: 2px 0 10px;
+  text-align: center;
+  font-size: 0.74rem;
+  color: rgba(229, 229, 229, 0.55);
+}
+.readera-settings.is-sheet .readera-settings-body { padding: 8px 0 0; }
+.readera-sheet-cats { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+.readera-sheet-cat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: none;
+  border-radius: 10px;
+  background: #1f1f1f;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.readera-sheet-cat span { flex: 1; }
+.readera-sheet-cat svg { color: rgba(229, 229, 229, 0.6); flex-shrink: 0; }
+.readera-sheet-cat:hover { background: #262626; }
+.readera-settings.is-sheet .readera-settings-row { background: #1f1f1f; border-radius: 10px; margin-bottom: 8px; padding: 10px 14px; }
+.readera-settings.is-sheet .readera-settings-label { color: rgba(229, 229, 229, 0.6); }
+
+/*
+  ── Modo limpio: el contador, abajo a la derecha ──────────────────────────
+  Lo que Nanahoshi enseña en vez de una barra de páginas: caracteres leídos, el
+  total y el porcentaje, en pequeño y siempre a la vista.
+*/
+.reader-counter {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 9994;
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
