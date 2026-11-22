@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-21-leer-y-escuchar-arreglos',
+    es: 'Arreglos en «Leer y escuchar»: si la búsqueda de tus novelas falla al abrir la app, ahora se reintenta sola en vez de quedarse en «ninguna»; el contador cuenta también los tomos de Kavita; y en el teléfono, con el Modo limpio, el título del capítulo ya cabe en la barra y esta no se transparenta bajo el reproductor grande.',
+    en: 'Fixes in “Read and listen”: if the search for your novels fails when the app opens, it now retries by itself instead of staying on “none”; the counter also counts the Kavita volumes; and on the phone, in Clean mode, the chapter title now fits in the bar and the bar no longer shows through the full player.',
+  },
+  {
     id: '2026-11-21-modo-limpio',
     es: 'Nuevo «Modo limpio» en los ajustes del libro: fondo grafito, fuente Noto Serif JP y todas las palabras en blanco, conservando los subrayados del análisis. En ese modo el audiolibro va en una barra fija abajo, a lo ancho.',
     en: 'New “Clean mode” in the book settings: graphite background, Noto Serif JP font and every word in white, keeping the analysis underlines. In that mode the audiobook sits in a fixed bar across the bottom.',
