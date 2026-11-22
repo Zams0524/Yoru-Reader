@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-22-disposicion-nanahoshi',
+    es: 'El lector se acerca más a Nanahoshi. Los ajustes del libro ahora suben desde abajo en una hoja con cuatro categorías: Apariencia, Texto, Diseño y Comportamiento. Y el «Modo limpio» coloca el texto igual (tamaño, interlineado 1,65, justificado, 5 % de margen) y cambia la barra de páginas por un contador de caracteres y porcentaje abajo a la derecha.',
+    en: 'The reader gets closer to Nanahoshi. The book settings now slide up from the bottom in a sheet with four categories: Appearance, Text, Layout and Behaviour. And “Clean mode” lays the text out the same way (size, 1.65 line spacing, justified, 5% margins) and replaces the page bar with a character and percentage counter at the bottom right.',
+  },
+  {
     id: '2026-11-21-leer-y-escuchar-arreglos',
     es: 'Arreglos en «Leer y escuchar»: si la búsqueda de tus novelas falla al abrir la app, ahora se reintenta sola en vez de quedarse en «ninguna»; el contador cuenta también los tomos de Kavita; y en el teléfono, con el Modo limpio, el título del capítulo ya cabe en la barra y esta no se transparenta bajo el reproductor grande.',
     en: 'Fixes in “Read and listen”: if the search for your novels fails when the app opens, it now retries by itself instead of staying on “none”; the counter also counts the Kavita volumes; and on the phone, in Clean mode, the chapter title now fits in the bar and the bar no longer shows through the full player.',
