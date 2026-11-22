@@ -1,18 +1,9 @@
 import type { BookHighlight } from './highlights';
 import { recordHourActivity } from './statsHabits';
+import { borrarPartesDe, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
-/** Un parte de lectura: un libro, un dia. `listeningTime` puede faltar en los viejos. */
-export interface DailyStatRecord {
-  title: string;
-  /** YYYY-MM-DD en hora local. */
-  dateKey: string;
-  charactersRead?: number;
-  readingTime?: number;
-  listeningTime?: number;
-  sessionsCount?: number;
-  lastStatisticModified?: number;
-}
+export type { DailyStatRecord };
 
 export interface Book {
   id: string;
@@ -527,166 +518,20 @@ export const db = {
     });
   },
 
-  /**
-   * Suma al parte del dia de un libro. `listeningToAdd` va a un campo propio,
-   * `listeningTime`, y nunca se mezcla con `readingTime`: si se sumaran, ya no
-   * se podria saber cuanto se leyo de verdad. Los partes antiguos no lo traen y
-   * cuentan como 0; no se migra nada.
-   */
-  /** Todos los partes diarios guardados, para la vista de estadisticas. */
-  async getReadingStats(): Promise<DailyStatRecord[]> {
-    return new Promise((resolve) => {
-      const request = indexedDB.open('books', 4);
-      request.onerror = () => resolve([]);
-      request.onsuccess = (e: any) => {
-        const dbInstance = e.target.result;
-        if (!dbInstance.objectStoreNames.contains('statistic')) { resolve([]); return; }
-        try {
-          const tx = dbInstance.transaction('statistic', 'readonly');
-          const query = tx.objectStore('statistic').getAll();
-          query.onsuccess = () => resolve((query.result || []) as DailyStatRecord[]);
-          query.onerror = () => resolve([]);
-        } catch {
-          resolve([]);
-        }
-      };
-    });
+  /** Los partes diarios viven en `estadisticasDb.ts`; aqui solo se les da paso. */
+  getReadingStats(): Promise<DailyStatRecord[]> {
+    return leerPartes();
   },
 
   async saveReadingStatsEntry(title: string, charsToAdd: number, secondsToAdd: number, sessionsToAdd = 0, listeningToAdd = 0): Promise<void> {
     // La hora del día va aparte del parte diario (ver `statsHabits.ts`): mismo tiempo,
     // mismo momento, pero sin tocar el registro que se sincroniza.
     recordHourActivity(secondsToAdd, listeningToAdd);
-    return new Promise((resolve) => {
-      const request = indexedDB.open('books', 4);
-      request.onupgradeneeded = (e: any) => {
-        const dbInstance = e.target.result;
-        if (!dbInstance.objectStoreNames.contains('statistic')) {
-          const statisticsStore = dbInstance.createObjectStore('statistic', {
-            keyPath: ['title', 'dateKey']
-          });
-          statisticsStore.createIndex('dateKey', 'dateKey');
-          statisticsStore.createIndex('completedBook', ['completedBook', 'title']);
-        }
-      };
-      request.onsuccess = (e: any) => {
-        const dbInstance = e.target.result;
-        if (!dbInstance.objectStoreNames.contains('statistic')) {
-          // If version was already >=4 but store didn't exist for some reason, create it by recreating connection (rare fallback)
-          dbInstance.close();
-          const reqUpgrade = indexedDB.open('books', dbInstance.version + 1);
-          reqUpgrade.onupgradeneeded = (ev: any) => {
-            const upDb = ev.target.result;
-            const statisticsStore = upDb.createObjectStore('statistic', {
-              keyPath: ['title', 'dateKey']
-            });
-            statisticsStore.createIndex('dateKey', 'dateKey');
-            statisticsStore.createIndex('completedBook', ['completedBook', 'title']);
-          };
-          reqUpgrade.onsuccess = (ev: any) => {
-            const upDb = ev.target.result;
-            const tx = upDb.transaction('statistic', 'readwrite');
-            const store = tx.objectStore('statistic');
-            const todayStr = new Date().toLocaleDateString('sv').slice(0, 10);
-            const req = store.get([title, todayStr]);
-            req.onsuccess = () => {
-              const record = req.result;
-              if (record) {
-                record.charactersRead = (record.charactersRead || 0) + charsToAdd;
-                record.readingTime = (record.readingTime || 0) + secondsToAdd;
-                record.listeningTime = (record.listeningTime || 0) + listeningToAdd;
-                record.sessionsCount = (record.sessionsCount || 0) + sessionsToAdd;
-                record.lastStatisticModified = Date.now();
-                store.put(record);
-              } else {
-                store.put({
-                  title,
-                  dateKey: todayStr,
-                  charactersRead: charsToAdd,
-                  readingTime: secondsToAdd,
-                  listeningTime: listeningToAdd,
-                  sessionsCount: sessionsToAdd,
-                  lastStatisticModified: Date.now()
-                });
-              }
-            };
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => resolve();
-          };
-          reqUpgrade.onerror = () => resolve();
-          return;
-        }
-
-        const tx = dbInstance.transaction('statistic', 'readwrite');
-        const store = tx.objectStore('statistic');
-        
-        const todayStr = new Date().toLocaleDateString('sv').slice(0, 10);
-        const req = store.get([title, todayStr]);
-        
-        req.onsuccess = () => {
-          const record = req.result;
-          if (record) {
-            record.charactersRead = (record.charactersRead || 0) + charsToAdd;
-            record.readingTime = (record.readingTime || 0) + secondsToAdd;
-            record.listeningTime = (record.listeningTime || 0) + listeningToAdd;
-            record.sessionsCount = (record.sessionsCount || 0) + sessionsToAdd;
-            record.lastStatisticModified = Date.now();
-            store.put(record);
-          } else {
-            store.put({
-              title,
-              dateKey: todayStr,
-              charactersRead: charsToAdd,
-              readingTime: secondsToAdd,
-              listeningTime: listeningToAdd,
-              sessionsCount: sessionsToAdd,
-              lastStatisticModified: Date.now()
-            });
-          }
-        };
-        tx.oncomplete = () => {
-          resolve();
-        };
-        tx.onerror = () => {
-          resolve();
-        };
-      };
-      request.onerror = () => {
-        resolve();
-      };
-    });
+    await sumarAlParte(title, charsToAdd, secondsToAdd, sessionsToAdd, listeningToAdd);
   },
 
-  async deleteReadingStatsForBook(title: string): Promise<void> {
-    return new Promise((resolve) => {
-      const request = indexedDB.open('books', 4);
-      request.onsuccess = (e: any) => {
-        const dbInstance = e.target.result;
-        if (!dbInstance.objectStoreNames.contains('statistic')) {
-          resolve();
-          return;
-        }
-        const tx = dbInstance.transaction('statistic', 'readwrite');
-        const store = tx.objectStore('statistic');
-        try {
-          const keyRange = IDBKeyRange.bound([title, ''], [title, '\uffff']);
-          const req = store.openCursor(keyRange);
-          req.onsuccess = (event: any) => {
-            const cursor = event.target.result;
-            if (cursor) {
-              cursor.delete();
-              cursor.continue();
-            } else {
-              resolve();
-            }
-          };
-          req.onerror = () => resolve();
-        } catch (err) {
-          resolve();
-        }
-      };
-      request.onerror = () => resolve();
-    });
+  deleteReadingStatsForBook(title: string): Promise<void> {
+    return borrarPartesDe(title);
   },
 
   saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
