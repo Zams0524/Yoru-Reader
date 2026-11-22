@@ -311,6 +311,9 @@ interface ReaderProps {
   onUpdateBookDetails?: (bookId: string, data: any) => Promise<void>;
 }
 
+/** Sitio que el contador del modo limpio le pide a la página por abajo, en px de CSS. */
+const CONTADOR_PX = 18;
+
 export default function Reader({ 
   book, 
   onBack, 
@@ -3098,7 +3101,7 @@ export default function Reader({
           onError={handleNativeError}
           readAloudIdle={readAloud.status === 'idle'}
           lang={lang}
-          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.low : 0}
+          bottomReserve={(isReadAloudOpen || isAudiobookOpen ? readAloudReach.low : 0) + (readerSettings.modoLimpio ? CONTADOR_PX : 0)}
           highlights={highlights}
           onSelection={handleNativeSelection}
         />
@@ -3115,7 +3118,7 @@ export default function Reader({
           onPageTurn={handlePageTurn}
           wordStatuses={wordStatuses}
           colors={colors}
-          bottomReserve={isReadAloudOpen || isAudiobookOpen ? readAloudReach.current : 0}
+          bottomReserve={(isReadAloudOpen || isAudiobookOpen ? readAloudReach.current : 0) + (readerSettings.modoLimpio ? CONTADOR_PX : 0)}
         />
       )}
 
