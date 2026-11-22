@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, MinusCircle, PlusCircle } from 'lucide-react';
-import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
+import { BUILT_IN_FONTS, ReaderSettingsState, guardarAntesDeLimpio, recuperarAntesDeLimpio, valoresDeLimpio } from '../../hooks/useReaderSettings';
 import { isNativeReaderAvailable } from '../../utils/nativeReader';
 
 interface ReaderSettingsPopoverProps {
@@ -55,15 +55,19 @@ export default function ReaderSettingsPopover({
     que había para devolverlos al apagarlo; entre medias cada uno se cambia por su lado.
   */
   const setModoLimpio = (on: boolean) => {
+    const claves = ['theme', 'fontFamily', 'fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const;
+    const poner = <K extends keyof ReaderSettingsState>(clave: K, valor: ReaderSettingsState[K] | undefined) => {
+      if (valor !== undefined) onSettingChange(clave, valor);
+    };
     if (on) {
-      try { localStorage.setItem('reader:antesDeLimpio', JSON.stringify({ theme, fontFamily })); } catch { /* sin sitio */ }
-      onSettingChange('theme', 'grafito');
-      onSettingChange('fontFamily', 'Noto Serif JP');
+      guardarAntesDeLimpio({ theme, fontFamily, fontSize, lineHeight, horizontalPadding, verticalPadding, textAlign, fontWeight });
+      const valores = valoresDeLimpio();
+      for (const clave of claves) poner(clave, valores[clave]);
     } else {
-      let antes: { theme?: ReaderSettingsState['theme']; fontFamily?: string } = {};
-      try { antes = JSON.parse(localStorage.getItem('reader:antesDeLimpio') || '{}'); } catch { /* se queda vacío */ }
-      onSettingChange('theme', antes.theme && antes.theme !== 'grafito' ? antes.theme : 'dark');
-      onSettingChange('fontFamily', antes.fontFamily || '__default__');
+      const antes = recuperarAntesDeLimpio();
+      poner('theme', antes.theme && antes.theme !== 'grafito' ? antes.theme : 'dark');
+      poner('fontFamily', antes.fontFamily || '__default__');
+      for (const clave of ['fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const) poner(clave, antes[clave]);
     }
     onSettingChange('modoLimpio', on);
   };
@@ -81,7 +85,7 @@ export default function ReaderSettingsPopover({
 
         <div className="readera-settings-body">
           <SwitchRow
-            label={es ? 'Modo limpio (texto blanco, audio en barra)' : 'Clean mode (white text, audio bar)'}
+            label={es ? 'Modo limpio (texto y disposición de Nanahoshi, audio en barra)' : 'Clean mode (Nanahoshi text and layout, audio bar)'}
             checked={!!settings.modoLimpio}
             onChange={setModoLimpio}
           />
@@ -191,6 +195,11 @@ export default function ReaderSettingsPopover({
               { value: 'horizontal', label: es ? 'Escritura horizontal' : 'Horizontal writing' },
             ]}
             onChange={(value) => setDirection(value as 'auto' | 'vertical' | 'horizontal')}
+          />
+          <SwitchRow
+            label={es ? 'Furigana' : 'Furigana'}
+            checked={settings.showFurigana !== false}
+            onChange={(value) => onSettingChange('showFurigana', value)}
           />
           <PickerRow
             label={es ? 'Posición del diccionario' : 'Dictionary position'}

@@ -116,6 +116,7 @@ export const BUILT_IN_FONTS = [
 ];
 
 function loadSettings(): ReaderSettingsState {
+  ponerAlDiaLimpio();
   const direction = getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal';
   return {
     fontSize: getNumber(LS_KEYS.fontSize, 20),
@@ -148,6 +149,78 @@ function loadSettings(): ReaderSettingsState {
     dictPopupPlacement: getString(LS_KEYS.dictPopupPlacement, 'leido') === 'clasico' ? 'clasico' : 'leido',
     modoLimpio: getBool(LS_KEYS.modoLimpio, false),
   };
+}
+
+/*
+  ── Modo limpio: la disposición del texto ────────────────────────────────
+  Los valores son los del lector de Nanahoshi tal como viene (medidos en su
+  panel de ajustes): Noto Serif JP a 28 px, interlineado 1,65, texto justificado
+  y un 5 % de margen por cada lado. Los 28 px son de una pantalla de 412 px de
+  ancho; en un teléfono más estrecho se baja en proporción, para que quepan las
+  mismas columnas y no la misma cifra.
+*/
+const ANTES_DE_LIMPIO = 'reader:antesDeLimpio';
+const LIMPIO_TEXTO_HECHO = 'reader:limpioTexto';
+
+type DeLimpio = Pick<ReaderSettingsState,
+  'theme' | 'fontFamily' | 'fontSize' | 'lineHeight' | 'horizontalPadding' | 'verticalPadding' | 'textAlign' | 'fontWeight'>;
+
+export function valoresDeLimpio(): DeLimpio {
+  const ancho = typeof window !== 'undefined' ? Math.min(window.innerWidth, window.innerHeight) : 412;
+  const fontSize = ancho < 412 ? Math.max(20, Math.round(28 * ancho / 412)) : 28;
+  return {
+    theme: 'grafito',
+    fontFamily: 'Noto Serif JP',
+    fontSize,
+    lineHeight: 1.65,
+    horizontalPadding: 5,
+    verticalPadding: 5,
+    textAlign: 'justify',
+    fontWeight: 400,
+  };
+}
+
+const CLAVES_DE_LIMPIO = ['theme', 'fontFamily', 'fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const;
+
+/** Guarda lo que había antes de entrar al modo limpio, sin pisar lo ya guardado. */
+export function guardarAntesDeLimpio(actual: Partial<DeLimpio>): void {
+  try {
+    const ya = JSON.parse(localStorage.getItem(ANTES_DE_LIMPIO) || '{}') as Partial<DeLimpio>;
+    const antes: Record<string, unknown> = { ...ya };
+    for (const clave of CLAVES_DE_LIMPIO) if (antes[clave] === undefined && actual[clave] !== undefined) antes[clave] = actual[clave];
+    localStorage.setItem(ANTES_DE_LIMPIO, JSON.stringify(antes));
+    localStorage.setItem(LIMPIO_TEXTO_HECHO, '1');
+  } catch { /* sin sitio: al salir se vuelve a los valores de fábrica */ }
+}
+
+/** Lo que había antes del modo limpio (y lo olvida): a eso se vuelve al apagarlo. */
+export function recuperarAntesDeLimpio(): Partial<DeLimpio> {
+  let antes: Partial<DeLimpio> = {};
+  try { antes = JSON.parse(localStorage.getItem(ANTES_DE_LIMPIO) || '{}'); } catch { /* se queda vacío */ }
+  try { localStorage.removeItem(ANTES_DE_LIMPIO); localStorage.removeItem(LIMPIO_TEXTO_HECHO); } catch { /* da igual */ }
+  return antes;
+}
+
+/*
+  Quien ya tenía el modo limpio puesto cuando solo cambiaba colores y fuente: la
+  disposición se le aplica una vez, al abrir, guardando lo que tenía.
+*/
+function ponerAlDiaLimpio(): void {
+  try {
+    if (localStorage.getItem(LS_KEYS.modoLimpio) !== 'true' || localStorage.getItem(LIMPIO_TEXTO_HECHO) === '1') return;
+    const antes: Record<string, unknown> = {};
+    for (const clave of ['fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'fontWeight'] as const) {
+      const valor = localStorage.getItem(LS_KEYS[clave]);
+      if (valor !== null && Number.isFinite(Number(valor))) antes[clave] = Number(valor);
+    }
+    const alineado = localStorage.getItem(LS_KEYS.textAlign);
+    if (alineado) antes.textAlign = alineado;
+    guardarAntesDeLimpio(antes as Partial<DeLimpio>);
+    const valores = valoresDeLimpio();
+    for (const clave of ['fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const) {
+      localStorage.setItem(LS_KEYS[clave], String(valores[clave]));
+    }
+  } catch { /* sin almacenamiento no hay nada que poner al día */ }
 }
 
 export function useReaderSettings(): [ReaderSettingsState, <K extends keyof ReaderSettingsState>(key: K, value: ReaderSettingsState[K]) => void] {
