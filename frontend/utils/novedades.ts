@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-22-estadisticas-que-no-se-guardaban',
+    es: 'Las estadísticas vuelven a llenarse solas. Si abrías Estadísticas antes de haber leído nada, lo que leías después dejaba de guardarse y la página se quedaba vacía; ya se guarda en cualquier caso, también en los aparatos donde había dejado de hacerlo. Y en Android, leer con el audiolibro sonando ahora suma los caracteres leídos, no solo el tiempo.',
+    en: 'Statistics fill in by themselves again. If you opened Statistics before reading anything, what you read afterwards stopped being saved and the page stayed empty; it is now saved in every case, also on devices where it had stopped. And on Android, reading with the audiobook playing now adds the characters read, not just the time.',
+  },
+  {
     id: '2026-11-22-disposicion-nanahoshi',
     es: 'El lector se acerca más a Nanahoshi. Los ajustes del libro ahora suben desde abajo en una hoja con cuatro categorías: Apariencia, Texto, Diseño y Comportamiento. Y el «Modo limpio» coloca el texto igual (tamaño, interlineado 1,65, justificado, 5 % de margen) y cambia la barra de páginas por un contador de caracteres y porcentaje abajo a la derecha.',
     en: 'The reader gets closer to Nanahoshi. The book settings now slide up from the bottom in a sheet with four categories: Appearance, Text, Layout and Behaviour. And “Clean mode” lays the text out the same way (size, 1.65 line spacing, justified, 5% margins) and replaces the page bar with a character and percentage counter at the bottom right.',

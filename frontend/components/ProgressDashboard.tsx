@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Flame, BookOpen, RefreshCw } from 'lucide-react';
 import { isPhoneUI } from '../utils/platform';
+import { db } from '../utils/db';
 
 interface Book {
   id: number;
@@ -73,22 +74,8 @@ export default function ProgressDashboard({ books, lang = 'en', excludedBookIds 
   const loadStatistics = async () => {
     setLoading(true);
     try {
-      const dbStatsList = await new Promise<DbStatistic[]>((resolve) => {
-        const request = indexedDB.open('books');
-        request.onsuccess = (e: any) => {
-          const dbInstance = e.target.result;
-          if (!dbInstance.objectStoreNames.contains('statistic')) {
-            resolve([]);
-            return;
-          }
-          const tx = dbInstance.transaction('statistic', 'readonly');
-          const store = tx.objectStore('statistic');
-          const req = store.getAll();
-          req.onsuccess = () => resolve(req.result || []);
-          req.onerror = () => resolve([]);
-        };
-        request.onerror = () => resolve([]);
-      });
+      // Por `db`, que abre la base en la versión que tenga y cierra la conexión al acabar.
+      const dbStatsList = (await db.getReadingStats()) as unknown as DbStatistic[];
       setDbStats(dbStatsList);
     } catch (err) {
       console.error('Failed to load db statistics:', err);

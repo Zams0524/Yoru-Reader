@@ -1400,11 +1400,17 @@ export default function Reader({
     if (nativo?.revealParagraph) {
       if (!followsAudio || seguimientoSuspendido) return;
       const cue = donde ? donde.cue.index : -1;
-      if (cueNativoRef.current === cue) return;
+      const cueAnterior = cueNativoRef.current;
+      if (cueAnterior === cue) return;
       cueNativoRef.current = cue;
       if (!donde) { nativo.clearReveal?.(); return; }
       const índice = alignment.index;
-      skipNextReadingPositionRef.current = true;
+      /*
+        Solo es un salto si el audio saltó (otro capítulo, arrastrar la barra). La frase
+        que sigue a la anterior es leer escuchando, y cuenta: marcándolas todas como
+        salto, en Android no se sumaba ni un carácter mientras sonaba el audiolibro.
+      */
+      if (cueAnterior === null || cue !== cueAnterior + 1) skipNextReadingPositionRef.current = true;
       nativo.revealParagraph(donde.sectionIndex, donde.paragraphId, (parrafo) =>
         rangoDeFrase(parrafo, índice.offsetInParagraph[cue], índice.lengthOfCue[cue]));
       return;
