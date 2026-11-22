@@ -1,6 +1,7 @@
 import type { BookHighlight } from './highlights';
-import { recordHourActivity } from './statsHabits';
-import { borrarPartesDe, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
+import { borrarHorasDe, recordHourActivity } from './statsHabits';
+import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
+import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
 // LocalStorage DB manager for the Migaku-style Japanese Reader
 
 export type { DailyStatRecord };
@@ -99,6 +100,13 @@ const SRS_REMOVALS_KEY = 'yoru_srs_removals';
  */
 export const KAVITA_LOCAL_PROGRESS_KEY = 'yoru_kavita_local_progress';
 export const ABS_LOCAL_PROGRESS_KEY = 'yoru_abs_local_progress';
+/**
+ * Cuándo borró este perfil su progreso de lectura por última vez (ISO). Viaja con la
+ * exportación para que el resto de aparatos lo borren también; ver `progresoBorrado.ts`.
+ */
+const PROGRESS_RESET_KEY = 'yoru_progress_reset';
+/** La última marca de borrado que este aparato ya aplicó a lo que no se sincroniza. */
+const PROGRESS_RESET_APPLIED_KEY = 'yoru_progress_reset_applied';
 /** Avisa a Inicio de que «Continuar» puede haber cambiado. */
 export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
 
@@ -534,6 +542,59 @@ export const db = {
     return borrarPartesDe(title);
   },
 
+  /**
+   * Borra el progreso de lectura del perfil activo: por dónde va en cada libro, lo leído
+   * (caracteres, tiempo, partes diarios y horas) y lo leído o escuchado de Kavita y
+   * Audiobookshelf. Los libros, marcadores, notas, palabras, tarjetas y ajustes se quedan.
+   *
+   * Deja apuntado cuándo se hizo: esa marca viaja con la sincronización y hace que los
+   * demás aparatos borren lo mismo en vez de devolverlo (ver `progresoBorrado.ts`).
+   */
+  async borrarProgresoDeLectura(): Promise<Book[]> {
+    const profileId = this.getActiveProfileId() || 'profile-default';
+    const marca = new Date().toISOString();
+    const libros = await serializeBookAccess(async () => {
+      const actuales = await this._readBooks();
+      const vaciados = librosTrasBorrado(actuales as any[], marca) as Book[];
+      if (vaciados !== actuales) await this._writeBooks(vaciados);
+      return vaciados;
+    });
+    for (const base of [KAVITA_LOCAL_PROGRESS_KEY, ABS_LOCAL_PROGRESS_KEY]) {
+      const clave = `${base}_${profileId}`;
+      const mapa = readJsonObject(clave);
+      const olvidado = mapaTrasBorrado(mapa, marca);
+      if (olvidado !== mapa) localStorage.setItem(clave, JSON.stringify(olvidado));
+    }
+    localStorage.setItem(`${PROGRESS_RESET_KEY}_${profileId}`, marca);
+    await this._borrarRestosDeProgreso(profileId, marca, libros);
+    try { window.dispatchEvent(new Event(LOCAL_PROGRESS_EVENT)); } catch { /* sin ventana */ }
+    return libros;
+  },
+
+  /**
+   * Lo que no viaja con la sincronización y hay que borrar en cada aparato: los partes
+   * diarios, las horas y la posición exacta del lector nativo. Se hace una vez por marca.
+   */
+  async _borrarRestosDeProgreso(profileId: string, marca: string, libros: any[]): Promise<void> {
+    const limite = Date.parse(marca) || 0;
+    if (!limite) return;
+    // Los partes diarios no van por perfil: solo se tocan por el perfil que se está usando.
+    if (profileId === (this.getActiveProfileId() || 'profile-default')) await borrarPartesHasta(limite);
+    borrarHorasDe(profileId);
+    try {
+      const vaciados = new Set((libros || []).filter((libro) => libro && !libro.lastRead).map((libro) => String(libro.id)));
+      const sobran: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const clave = localStorage.key(i) || '';
+        if (clave.startsWith('native-reader:position:') && vaciados.has(clave.slice(clave.lastIndexOf(':') + 1))) sobran.push(clave);
+      }
+      for (const clave of sobran) localStorage.removeItem(clave);
+      localStorage.setItem(`${PROGRESS_RESET_APPLIED_KEY}_${profileId}`, marca);
+    } catch {
+      /* Sin almacenamiento, se volverá a intentar con la siguiente sincronización. */
+    }
+  },
+
   saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
     return serializeBookAccess(async () => {
       const books = await this._readBooks();
@@ -926,6 +987,9 @@ export const db = {
         srsRemovals,
         serverProgress
       };
+      // 6. Cuándo se borró el progreso de lectura, si se borró alguna vez.
+      const progressResetAt = localStorage.getItem(`${PROGRESS_RESET_KEY}_${p.id}`);
+      if (progressResetAt) dbExport.profileData[p.id].progressResetAt = progressResetAt;
     }
 
     return dbExport;
@@ -976,6 +1040,23 @@ export const db = {
           localStorage.setItem(`${KAVITA_LOCAL_PROGRESS_KEY}_${p.id}`, JSON.stringify(pData.serverProgress.kavita || {}));
           localStorage.setItem(`${ABS_LOCAL_PROGRESS_KEY}_${p.id}`, JSON.stringify(pData.serverProgress.audiobooks || {}));
           progresoServidorCambiado = true;
+        }
+        // 6. El progreso se borró en otro aparato: aquí se borra también lo que no viaja.
+        const marca = typeof pData.progressResetAt === 'string' ? pData.progressResetAt : '';
+        if (marca && Date.parse(marca)) {
+          localStorage.setItem(`${PROGRESS_RESET_KEY}_${p.id}`, marca);
+          const aplicada = Date.parse(localStorage.getItem(`${PROGRESS_RESET_APPLIED_KEY}_${p.id}`) || '') || 0;
+          if (Date.parse(marca) > aplicada) {
+            // La estantería que usa la app, por si no llegó vaciada con la combinación.
+            const clave = `${STORAGE_KEYS.BOOKS}_${p.id}`;
+            const libros = await serializeBookAccess(async () => {
+              const actuales = (await idb.get(clave)) || [];
+              const vaciados = librosTrasBorrado(actuales, marca);
+              if (vaciados !== actuales) await idb.set(clave, vaciados);
+              return vaciados;
+            });
+            await this._borrarRestosDeProgreso(p.id, marca, libros);
+          }
         }
       }
     }

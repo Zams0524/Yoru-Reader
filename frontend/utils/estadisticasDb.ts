@@ -186,6 +186,39 @@ export async function sumarAlParte(
   });
 }
 
+/**
+ * Borra los partes apuntados hasta `limiteMs` (al borrar el progreso de lectura). Los de
+ * después se quedan: son lo que se leyó ya con el progreso borrado. Un parte viejo sin
+ * fecha de cambio cuenta por su día.
+ */
+export async function borrarPartesHasta(limiteMs: number): Promise<void> {
+  const base = await abrirPartes(false);
+  if (!base) return;
+  return new Promise((resolve) => {
+    const acabar = () => {
+      base.close();
+      resolve();
+    };
+    try {
+      const tx = base.transaction(ALMACEN, 'readwrite');
+      const cursor = tx.objectStore(ALMACEN).openCursor();
+      cursor.onsuccess = () => {
+        const actual = cursor.result;
+        if (!actual) return;
+        const parte = actual.value as DailyStatRecord;
+        const cuando = Number(parte.lastStatisticModified) || Date.parse(`${parte.dateKey}T00:00:00`) || 0;
+        if (cuando <= limiteMs) actual.delete();
+        actual.continue();
+      };
+      tx.oncomplete = acabar;
+      tx.onerror = acabar;
+      tx.onabort = acabar;
+    } catch {
+      acabar();
+    }
+  });
+}
+
 /** Borra todos los partes de un libro (al quitar sus estadísticas). */
 export async function borrarPartesDe(title: string): Promise<void> {
   const base = await abrirPartes(false);

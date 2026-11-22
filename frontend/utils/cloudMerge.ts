@@ -5,6 +5,8 @@
  * win (the more recently read book, the more recently reviewed card).
  */
 
+import { perfilTrasBorrado, ultimaMarca } from './progresoBorrado';
+
 type DbExport = {
   version?: number;
   exportDate?: string;
@@ -26,6 +28,12 @@ type ProfileData = {
    * (utils/serverProgress.ts). Each entry carries `at`, the ISO time it was last touched.
    */
   serverProgress?: ServerProgress | null;
+  /**
+   * When this profile last erased its reading progress (utils/progresoBorrado.ts). Whatever
+   * was read before it is dropped from both copies, so the erase is not undone by a device
+   * that has not heard of it yet.
+   */
+  progressResetAt?: string | null;
 };
 
 type ServerProgress = {
@@ -214,7 +222,12 @@ function sameJson(a: unknown, b: unknown): boolean {
  * each profile, on its own so the Yoru sync can also fold two profiles of the same account
  * into one (reconciliarPerfiles in yoruSyncNucleo.ts) with the very same rules.
  */
-export function mergeProfileData(l: ProfileData, c: ProfileData, preferCloud: boolean): ProfileData {
+export function mergeProfileData(local: ProfileData, cloud: ProfileData, preferCloud: boolean): ProfileData {
+  // An erase of the reading progress on either side applies to both before they are merged:
+  // reading totals only grow in a merge, so the older copy would otherwise bring them back.
+  const progressResetAt = ultimaMarca(local.progressResetAt, cloud.progressResetAt);
+  const l = perfilTrasBorrado(local, progressResetAt);
+  const c = perfilTrasBorrado(cloud, progressResetAt);
   const result: ProfileData = {
     books: mergeBooks(l.books, c.books),
     settings: l.settings ?? c.settings ?? null,
@@ -223,6 +236,7 @@ export function mergeProfileData(l: ProfileData, c: ProfileData, preferCloud: bo
   };
   const serverProgress = mergeServerProgress(l, c);
   if (serverProgress) result.serverProgress = serverProgress;
+  if (progressResetAt) result.progressResetAt = progressResetAt;
   return result;
 }
 
@@ -256,7 +270,8 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
       const m = profileData[id];
       return !sameJson(s.books, m.books) || !sameJson(s.wordStatuses, m.wordStatuses)
         || !sameJson(s.wordStatusTimes, m.wordStatusTimes) || !sameJson(s.srsData, m.srsData)
-        || !sameJson(s.srsRemovals, m.srsRemovals);
+        || !sameJson(s.srsRemovals, m.srsRemovals)
+        || (s.progressResetAt || null) !== (m.progressResetAt || null);
     });
   const progressDiffers = (side: DbExport) =>
     profiles.some(({ id }) =>

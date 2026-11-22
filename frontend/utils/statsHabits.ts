@@ -72,6 +72,16 @@ function readLog(): HoursLog {
   }
 }
 
+/** Olvida a qué horas se leyó en un perfil (al borrar su progreso de lectura). */
+export function borrarHorasDe(profileId: string): void {
+  try {
+    localStorage.removeItem(`${HOURS_KEY}_${profileId || 'profile-default'}`);
+    notify();
+  } catch {
+    // Sin almacenamiento no hay nada que olvidar.
+  }
+}
+
 function ymd(date: Date): string {
   return date.toLocaleDateString('sv').slice(0, 10);
 }
