@@ -113,6 +113,22 @@ serie de la Biblioteca no borra su entrada, la deja marcada (`borrado`) con su f
 para que el otro aparato no la devuelva. Cuando lo único que llega es esto, la pantalla
 no se recarga: Inicio se repinta con `LOCAL_PROGRESS_EVENT`.
 
+### Borrar el progreso de lectura
+
+Ajustes → Zona de peligro → «Borrar mi progreso de lectura» (`db.borrarProgresoDeLectura`)
+pone a cero por dónde va el perfil en cada libro, lo leído (caracteres, tiempo, partes
+diarios, horas) y lo leído o escuchado de Kavita y Audiobookshelf. Los libros, marcadores,
+notas, palabras, tarjetas y ajustes se quedan.
+
+Como el combinador nunca resta, borrar solo en un aparato no duraría: el otro lo
+devolvería. El borrado deja en el perfil una marca con fecha, `progressResetAt`, que viaja
+con la exportación. `mergeProfileData` la aplica **a las dos copias antes de juntarlas**
+(`frontend/utils/progresoBorrado.ts`): lo leído antes de la marca queda a cero y lo que se
+lea después, en cualquier aparato, vuelve a contar. Lo que no viaja (partes diarios, horas,
+posición del lector nativo) lo borra cada aparato al recibir una marca que aún no había
+aplicado (`importFullDatabase`). No toca el progreso guardado en la cuenta compartida de
+Kavita o Audiobookshelf.
+
 ## Cuándo se sincroniza
 
 - **Al abrir la app**: en los dos sentidos, tras dos segundos de espera.

@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-22-borrar-progreso-de-lectura',
+    es: 'Ya puedes borrar tu progreso de lectura: en Ajustes, Zona de peligro, «Borrar mi progreso de lectura» pone a cero por dónde vas en cada libro, tus estadísticas y lo leído o escuchado del servidor, también en tus otros aparatos. Tus libros, marcadores, palabras y tarjetas se conservan.',
+    en: 'You can now erase your reading progress: in Settings, Danger Zone, “Erase my reading progress” resets your place in every book, your statistics and what you read or listened to from the server, on your other devices too. Your books, bookmarks, words and cards are kept.',
+  },
+  {
     id: '2026-11-22-estadisticas-que-no-se-guardaban',
     es: 'Las estadísticas vuelven a llenarse solas. Si abrías Estadísticas antes de haber leído nada, lo que leías después dejaba de guardarse y la página se quedaba vacía; ya se guarda en cualquier caso, también en los aparatos donde había dejado de hacerlo. Y en Android, leer con el audiolibro sonando ahora suma los caracteres leídos, no solo el tiempo.',
     en: 'Statistics fill in by themselves again. If you opened Statistics before reading anything, what you read afterwards stopped being saved and the page stayed empty; it is now saved in every case, also on devices where it had stopped. And on Android, reading with the audiobook playing now adds the characters read, not just the time.',
