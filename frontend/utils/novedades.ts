@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-23-modo-limpio-de-fabrica',
+    es: 'El «Modo limpio» viene ahora encendido de fábrica: fondo grafito, Noto Serif JP y el contador de caracteres abajo. Si prefieres tu aspecto de antes, apágalo en los ajustes del libro (Apariencia) y vuelve tal cual lo tenías.',
+    en: '“Clean mode” is now on by default: graphite background, Noto Serif JP and the character counter at the bottom. If you prefer your previous look, turn it off in the book settings (Appearance) and it comes back exactly as you had it.',
+  },
+  {
     id: '2026-11-23-borrar-progreso-en-perfil',
     es: '«Borrar mi progreso de lectura» se ha mudado a tu perfil (pestaña Yo, al final). Ahora te dice mientras borra, y si algo falla te lo enseña en vez de quedarse callado.',
     en: '“Erase my reading progress” has moved to your profile (Me tab, at the bottom). It now shows while it erases, and if something fails it tells you instead of staying silent.',
