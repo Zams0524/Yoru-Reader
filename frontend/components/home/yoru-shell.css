@@ -3380,6 +3380,11 @@ button.yoru-menu-scrim { border: none; padding: 0; background: none; cursor: def
 .yoru-btn-danger:disabled { opacity: 0.6; cursor: default; }
 .yoru-profile-reset-msg { margin: 12px 0 0; font-size: 13px; color: var(--text-muted); }
 .yoru-profile-reset-msg.is-error { color: var(--yoru-danger, #e05b55); }
+.yoru-reset-row .settings-btn.yoru-btn-danger {
+  border-color: var(--yoru-danger, #e05b55) !important;
+  color: var(--yoru-danger, #e05b55) !important;
+  background: var(--yoru-danger-soft, rgba(224, 91, 85, 0.12)) !important;
+}
 
 @media (max-width: 700px) {
   .yoru-profile-banner { height: 130px; border-radius: 14px; }

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, LogOut, User } from 'lucide-react';
 import { resizeToJpeg } from '../../utils/profileImage';
 import { cerrarSesion, leerSesion } from '../../utils/discordAuth';
+import BorrarProgresoPerfil from '../home/BorrarProgresoPerfil';
 
 /**
  * El perfil, dentro de Ajustes.
@@ -226,6 +227,12 @@ export default function ProfileSettings({
           </div>
         </div>
       )}
+
+      {/*
+        Borrar el progreso de la cuenta, justo debajo de la cuenta: es aquí donde lo
+        buscó zams. El mismo botón sale al final de la página del perfil.
+      */}
+      <BorrarProgresoPerfil es={es} fila />
     </div>
   );
 }
