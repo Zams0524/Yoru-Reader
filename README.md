@@ -1,154 +1,71 @@
-<div align="center">
-
-<img src="build/icons/png/256x256.png" width="112" alt="Yoru Reader" />
-
 # Yoru Reader
 
-**Aprende japonés leyendo.** Lector de novelas ligeras con diccionario al toque, repaso espaciado estilo Anki y estadísticas de lectura.
+Una app para aprender japonés leyendo: lector de novelas, diccionario al toque, repaso espaciado y estadísticas de lectura, en el escritorio y en Android. Entras con tu cuenta de Discord y tu progreso te sigue de un aparato a otro.
 
-[![Release](https://img.shields.io/github/v/release/Zams0524/Yoru-Reader?label=release&color=FFE000&labelColor=0c0e13&style=for-the-badge)](https://github.com/Zams0524/Yoru-Reader/releases/latest)
-[![Plataformas](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux%20·%20Android-ff8a6b?style=for-the-badge&labelColor=0c0e13)](#-descargas)
-[![SRS](https://img.shields.io/badge/SRS-FSRS-22c55e?style=for-the-badge&labelColor=0c0e13)](https://github.com/open-spaced-repetition/ts-fsrs)
+<img width="1914" height="1078" alt="La pantalla de inicio de Yoru Reader en el escritorio" src="docs/capturas/inicio.png" />
 
-</div>
+Abres un EPUB, un PDF, un TXT o unos subtítulos, lo lees en vertical u horizontal, y cuando una palabra no te suena la tocas: sale su lectura, su significado, el acento y la frecuencia, reconocida aunque esté conjugada. Si quieres recordarla, va a tu mazo y Yoru te la pregunta cuando toca, con el mismo algoritmo (FSRS) que usa Anki. Mientras tanto lleva la cuenta de los caracteres que has leído, a qué ritmo y cuánto tiempo, libro a libro.
 
----
+## Instalación
 
-## 📥 Descargas
+1. Descarga la versión de tu sistema desde la [última release](https://github.com/Zams0524/Yoru-Reader/releases/latest):
 
-| Plataforma | Archivo | Descarga directa |
-| :--- | :--- | :--- |
-| 🪟 **Windows** (x64) | Instalador `.exe` | [**Yoru-Reader.Setup.exe**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.Setup.exe) |
-| 📱 **Android** (7.0+) | `.apk` | [**Yoru-Reader.apk**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.apk) |
-| 🍎 **macOS** Apple Silicon (M1–M4) | `.dmg` | [**Yoru-Reader-arm64.dmg**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-arm64.dmg) |
-| 🍎 **macOS** Intel | `.dmg` | [**Yoru-Reader-x64.dmg**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x64.dmg) |
-| 🐧 **Linux** (x86_64) | `.flatpak` | [**Yoru-Reader-x86_64.flatpak**](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x86_64.flatpak) |
+   | Sistema | Archivo |
+   | :--- | :--- |
+   | Windows (x64) | [`Yoru-Reader.Setup.exe`](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.Setup.exe) |
+   | Android 7.0 o más nuevo | [`Yoru-Reader.apk`](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader.apk) |
+   | macOS con Apple Silicon | [`Yoru-Reader-arm64.dmg`](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-arm64.dmg) |
+   | macOS con Intel | [`Yoru-Reader-x64.dmg`](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x64.dmg) |
+   | Linux (x86_64) | [`Yoru-Reader-x86_64.flatpak`](https://github.com/Zams0524/Yoru-Reader/releases/latest/download/Yoru-Reader-x86_64.flatpak) |
 
-Todas las versiones están en la página de [**Releases**](https://github.com/Zams0524/Yoru-Reader/releases/latest). La app avisa sola cuando hay una versión nueva.
+2. Instálala:
 
-<details>
-<summary><b>Windows dice «Windows protegió tu PC»</b></summary>
+   - **Windows**: el instalador aún no está firmado, así que SmartScreen avisa de un «editor desconocido». Pulsa **Más información → Ejecutar de todas formas**.
+   - **Android**: abre el APK y deja que tu navegador o gestor de archivos instale apps desconocidas. Para actualizar, instala la versión nueva encima de la anterior: si desinstalas, pierdes lo que no esté sincronizado.
+   - **Linux**:
 
-El instalador todavía no está firmado con un certificado de editor, así que SmartScreen lo marca como «editor desconocido». Para instalarlo: **Más información → Ejecutar de todas formas**.
-</details>
+     ```sh
+     flatpak install --user Yoru-Reader-x86_64.flatpak
+     flatpak run com.yorureader.app
+     ```
 
-<details>
-<summary><b>Android: cómo instalar el APK</b></summary>
+3. Abre Yoru y entra con Discord. La app es para los miembros del servidor de Yoru Cafe: lo comprueba una vez y después no vuelve a molestar. La primera vez instala sola los diccionarios, y a partir de ahí se actualiza sola cuando sale una versión nueva.
 
-1. Descarga `Yoru-Reader.apk` desde el teléfono.
-2. Ábrelo y permite **Instalar apps desconocidas** para tu navegador o gestor de archivos cuando Android lo pida.
-3. Para actualizar, instala la nueva versión **encima** de la anterior (no desinstales: perderías tus datos locales).
-</details>
+Para leer, pulsa **+** e importa una novela desde tu aparato, o abre una de la biblioteca compartida en **Explorar Kavita**. Los audiolibros están en **Audiolibros**.
 
-<details>
-<summary><b>Linux: instalar el .flatpak</b></summary>
+## Desarrollo local
 
-```bash
-flatpak install --user Yoru-Reader-x86_64.flatpak
-```
+Requisitos: Node 22 o más nuevo y npm. Para compilar el APK, además, Android Studio con el JDK 21.
 
-```bash
-flatpak run com.yorureader.app
-```
-</details>
-
----
-
-## ✨ Qué hace
-
-**📖 Lector**
-- EPUB, PDF, HTML, TXT y subtítulos (SRT, VTT, ASS).
-- Texto vertical (縦書き) u horizontal, con paginación o desplazamiento.
-- Furigana, temas claro/sepia/oscuro y ajustes de fuente, márgenes y brillo.
-
-**🔍 Diccionario al toque**
-- Toca o pasa el cursor (con `Shift`) sobre una palabra y aparece su definición.
-- Diccionarios incluidos y activos desde el primer momento, más soporte para diccionarios de Yomitan.
-- Gráfico de acento tonal (pitch accent), frecuencia y audio.
-- Análisis morfológico con Kuromoji: reconoce conjugaciones y la forma base de cada palabra.
-
-**🎴 Repaso espaciado (SRS)**
-- Algoritmo FSRS, como el de Anki, con mazos propios.
-- Integración con **AnkiConnect** para crear tarjetas con la frase de contexto.
-- Calendario de actividad y rachas.
-
-**📊 Estadísticas**
-- Caracteres leídos, tiempo y velocidad de lectura (con medidor de sesión en el lector).
-- Progreso por libro.
-
-**☁️ Sincronización**
-- Copia de seguridad y sincronización entre PC y Android con **Google Drive**.
-
----
-
-## ⌨️ Atajos (escritorio)
-
-| Tecla | Acción |
-| :--- | :--- |
-| `→` / `←` | Página siguiente / anterior |
-| `F` | Pantalla completa |
-| `Esc` | Mostrar u ocultar el menú |
-| `T` | Leer en voz alta |
-| `Shift` + cursor | Buscar la palabra en el diccionario |
-
-Se pueden cambiar en **Ajustes → Atajos de teclado**.
-
----
-
-## 🛠️ Desarrollo
-
-Un solo frontend (React + Vite, en `frontend/`) que se empaqueta con **Electron** para escritorio y con **Capacitor** para Android.
-
-```text
-frontend/        Interfaz compartida (React + TypeScript)
-backend/         Proceso principal de Electron
-android/         Proyecto nativo de Android (Capacitor)
-mobile/scripts/  Compilación y verificación del APK
-build/           Iconos y recursos del instalador
-docs/            Guías del proyecto
-```
-
-**Preparar el entorno**
-
-```bash
+```sh
 npm install
+cp .env.example .env.local   # rellena los valores de Google OAuth (sincronización con Drive)
+npm run dev                  # la interfaz, en http://localhost:5173
+npm run electron:start       # la app de escritorio, en otra terminal
 ```
 
-Copia `.env.example` como `.env.local` y rellena los valores de Google OAuth (necesarios para la sincronización con Google Drive).
+Es un solo frontend en React + Vite (`frontend/`) que se empaqueta con Electron para el escritorio (`backend/`) y con Capacitor para Android (`android/`). El servidor de sincronización vive en `servidor-sync/` y tiene su propio [README](servidor-sync/README.md).
 
-**Escritorio**
+En Windows, `COMPILAR-APK.bat` deja el APK firmado en `mobile/releases/`. Las versiones de escritorio las compila y publica [GitHub Actions](.github/workflows/build-all-releases.yml) con cada cambio que entra en `main`.
 
-```bash
-npm run dev
-```
+Yoru no recopila analíticas ni telemetría: qué servicios externos usa y cuándo está en la [política de privacidad](docs/PRIVACY.md). La firma de los instaladores de Windows sigue la [política de firma de código](docs/CODE_SIGNING_POLICY.md).
 
-```bash
-npm run electron:start
-```
+## Contribución y atribución
 
-**Android** (Windows)
+<table>
+    <tr>
+        <td align="center">
+            <a href="https://github.com/Zams0524">
+                <img src="https://github.com/Zams0524.png?size=100" width="100;" alt="Zams0524"/>
+                <br />
+                <sub><b>Zams0524</b></sub>
+            </a>
+        </td>
+    </tr>
+</table>
 
-- `COMPILAR-APK.bat`: compila el APK firmado en `mobile/releases/`.
-- `PUBLICAR-APK.bat`: lo sube a la release `latest` como `Yoru-Reader.apk` y avisa a las apps instaladas.
+Yoru Reader es software libre bajo la [GPL-2.0-or-later](LICENSE). Hasta la 1.3.x era MIT; cambió al incorporar el motor de lectura nativo de Android.
 
-**Publicar escritorio**
-
-Cada push a `main` ejecuta [GitHub Actions](.github/workflows/build-all-releases.yml), que compila Windows, macOS y Linux y los publica en la release `latest`.
-
----
-
-## 🔏 Code signing policy
-
-Se ha solicitado firma de código gratuita a la SignPath Foundation para los instaladores de Windows (pendiente de aprobación). Detalles, roles del equipo y proceso: [**Code signing policy**](docs/CODE_SIGNING_POLICY.md).
-
-## 🔒 Privacidad
-
-Yoru Reader no recopila analíticas ni telemetría; tus datos se quedan en tu dispositivo. Qué servicios externos usa y cuándo: [**Política de privacidad**](docs/PRIVACY.md).
-
-## 📄 Licencia
-
-Yoru Reader es software libre bajo la [GNU General Public License, versión 2 o (a tu elección) cualquier versión posterior](LICENSE) (GPL-2.0-or-later). Hasta la 1.3.x era MIT; cambió a GPL al incorporar el motor de lectura nativo de Android.
-
-El lector nativo de Android usa el motor **EraEPUB** de [OpenReadEra](https://readera.org/open-readera) (© READERA LLC, GPL-2.0), basado en [CoolReader / crengine](https://github.com/buggins/coolreader). El binario `android/app/src/main/jniLibs/arm64-v8a/liberaepub.so` se compila sin cambios desde OpenReadEra 21.12.11 ([copia del código usado](https://github.com/champignoom/OpenReadEra/tree/664251abd5584b97b5c6941a3ef5e8856d2c0efc)); cómo compilarlo: [docs/NATIVE_READER.md](docs/NATIVE_READER.md).
-
-La extensión de lectura que usa la app de escritorio (`backend/reader-ext`) es una versión modificada de [Jiten Reader](https://github.com/Sirush/JitenReader), basada a su vez en [Anki JPDB Reader](https://github.com/Kagu-chan/anki-jpdb.reader). Ambas son MIT; ver [su licencia](backend/reader-ext/LICENSE.md).
+- El lector nativo de Android usa el motor **EraEPUB** de [OpenReadEra](https://readera.org/open-readera) (© READERA LLC, GPL-2.0), basado en [CoolReader / crengine](https://github.com/buggins/coolreader). `liberaepub.so` se compila sin cambios desde OpenReadEra 21.12.11 ([código usado](https://github.com/champignoom/OpenReadEra/tree/664251abd5584b97b5c6941a3ef5e8856d2c0efc)); cómo compilarlo, en [docs/NATIVE_READER.md](docs/NATIVE_READER.md).
+- La extensión de lectura del escritorio (`backend/reader-ext`) es una versión modificada de [Jiten Reader](https://github.com/Sirush/JitenReader), basada a su vez en [Anki JPDB Reader](https://github.com/Kagu-chan/anki-jpdb.reader), las dos MIT ([licencia](backend/reader-ext/LICENSE.md)).
+- El código que otros autores han cedido a Yoru está anotado en [THIRD-PARTY-GRANTS.md](THIRD-PARTY-GRANTS.md).
