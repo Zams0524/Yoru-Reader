@@ -3039,7 +3039,10 @@ export default function Reader({
           onRate={readAloud.setRate}
           onSleep={readAloud.setSleepMinutes}
           onSettings={() => setIsVoiceSettingsOpen(true)}
-          raised={isHeaderVisible}
+          // Sube solo para dejar sitio a la barra de páginas; en modo limpio no la hay, y
+          // subirla dejaba un hueco vacío bajo el reproductor (y la página se encogía para
+          // dejarle sitio).
+          raised={isHeaderVisible && !readerSettings.modoLimpio}
           autoHide={readAloud.status === 'playing' && !isHeaderVisible}
           onReach={setReadAloudReach}
           onClose={() => { readAloud.stop(); setIsReadAloudOpen(false); }}
