@@ -52,7 +52,7 @@ async function subirBorradoACuenta(): Promise<EnCuenta> {
   }
 }
 
-export default function BorrarProgresoPerfil({ es }: { es: boolean }) {
+export default function BorrarProgresoPerfil({ es, fila = false }: { es: boolean; fila?: boolean }) {
   const { showConfirm, confirmModal } = useConfirm();
   const [estado, setEstado] = useState<Estado>('quieto');
   const [detalle, setDetalle] = useState('');
@@ -99,30 +99,12 @@ export default function BorrarProgresoPerfil({ es }: { es: boolean }) {
     }
   };
 
-  return (
-    <section className="yoru-profile-panel yoru-profile-reset">
-      <div className="yoru-profile-panel-head">
-        <span className="yoru-profile-panel-icon"><RotateCcw size={18} /></span>
-        <strong>{es ? 'Progreso de lectura' : 'Reading progress'}</strong>
-      </div>
-      <p className="yoru-profile-reset-desc">
-        {es
-          ? 'Pone a cero por dónde vas en cada libro, tus estadísticas y rachas, y lo leído o escuchado del servidor, en tu cuenta de Yoru (Discord) y en todos tus aparatos. Conserva tus libros, marcadores, notas, palabras y tarjetas.'
-          : 'Resets your place in every book, your statistics and streaks, and what you read or listened to from the server, on your Yoru (Discord) account and all your devices. Keeps your books, bookmarks, notes, words and cards.'}
-      </p>
-      <button
-        type="button"
-        className="yoru-btn yoru-btn-danger"
-        onClick={borrar}
-        disabled={estado === 'borrando' || estado === 'subiendo' || estado === 'hecho'}
-      >
-        <RotateCcw size={15} />
-        {estado === 'borrando'
-          ? (es ? 'Borrando…' : 'Erasing…')
-          : estado === 'subiendo'
-            ? (es ? 'Borrando en tu cuenta…' : 'Erasing on your account…')
-            : (es ? 'Borrar mi progreso de lectura' : 'Erase my reading progress')}
-      </button>
+  const descripcion = es
+    ? 'Pone a cero por dónde vas en cada libro, tus estadísticas y rachas, y lo leído o escuchado del servidor, en tu cuenta de Yoru (Discord) y en todos tus aparatos. Conserva tus libros, marcadores, notas, palabras y tarjetas.'
+    : 'Resets your place in every book, your statistics and streaks, and what you read or listened to from the server, on your Yoru (Discord) account and all your devices. Keeps your books, bookmarks, notes, words and cards.';
+
+  const avisos = (
+    <>
       {estado === 'hecho' && enCuenta?.ok && (
         <p className="yoru-profile-reset-msg" role="status">
           {es
@@ -142,6 +124,53 @@ export default function BorrarProgresoPerfil({ es }: { es: boolean }) {
           {(es ? 'No se pudo borrar el progreso' : 'Could not erase the progress') + (detalle ? `: ${detalle}` : '.')}
         </p>
       )}
+    </>
+  );
+
+  const ocupado = estado === 'borrando' || estado === 'subiendo' || estado === 'hecho';
+  const rotulo = estado === 'borrando'
+    ? (es ? 'Borrando…' : 'Erasing…')
+    : estado === 'subiendo'
+      ? (es ? 'Borrando en tu cuenta…' : 'Erasing on your account…')
+      : (es ? 'Borrar mi progreso de lectura' : 'Erase my reading progress');
+
+  // En Ajustes → Perfil, debajo de «Cuenta de Discord»: una fila como las demás.
+  if (fila) {
+    return (
+      <div className="settings-row yoru-reset-row">
+        <div className="settings-row-text">
+          <span className="settings-row-label">{es ? 'Progreso de la cuenta' : 'Account progress'}</span>
+          <span className="settings-row-desc">{descripcion}</span>
+          {avisos}
+        </div>
+        <div className="settings-row-control">
+          <button type="button" className="settings-btn yoru-btn-danger" onClick={borrar} disabled={ocupado}>
+            <RotateCcw size={15} />
+            {rotulo}
+          </button>
+        </div>
+        {confirmModal}
+      </div>
+    );
+  }
+
+  return (
+    <section className="yoru-profile-panel yoru-profile-reset">
+      <div className="yoru-profile-panel-head">
+        <span className="yoru-profile-panel-icon"><RotateCcw size={18} /></span>
+        <strong>{es ? 'Progreso de lectura' : 'Reading progress'}</strong>
+      </div>
+      <p className="yoru-profile-reset-desc">{descripcion}</p>
+      <button
+        type="button"
+        className="yoru-btn yoru-btn-danger"
+        onClick={borrar}
+        disabled={ocupado}
+      >
+        <RotateCcw size={15} />
+        {rotulo}
+      </button>
+      {avisos}
       {confirmModal}
     </section>
   );
