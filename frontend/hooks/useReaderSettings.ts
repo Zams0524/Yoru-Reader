@@ -28,7 +28,7 @@ export interface ReaderSettingsState {
   direction: 'auto' | 'vertical' | 'horizontal';
   autoScrollEnabled: boolean;
   autoScrollSpeed: number;
-  tapZoneMode: 'edge' | 'kindle';
+  tapZoneMode: 'edge' | 'asymmetric';
   invertTapZones: boolean;
   volumeKeysNavigation: boolean;
   invertVolumeKeys: boolean;
@@ -134,7 +134,7 @@ function loadSettings(): ReaderSettingsState {
     direction,
     autoScrollEnabled: getBool(LS_KEYS.autoScrollEnabled, false),
     autoScrollSpeed: getNumber(LS_KEYS.autoScrollSpeed, 1.0),
-    tapZoneMode: (getString(LS_KEYS.tapZoneMode, 'edge') as 'edge' | 'kindle'),
+    tapZoneMode: (getString(LS_KEYS.tapZoneMode, 'edge') as 'edge' | 'asymmetric'),
     invertTapZones: getBool(LS_KEYS.invertTapZones, false),
     volumeKeysNavigation: getBool(LS_KEYS.volumeKeysNavigation, true),
     invertVolumeKeys: getBool(LS_KEYS.invertVolumeKeys, false),

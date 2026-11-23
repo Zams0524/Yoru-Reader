@@ -10,8 +10,8 @@ import type { ShelfBook } from './libraryIndex';
  * pasarle el menú a mano a cada uno habría sido atravesar cinco componentes que no
  * tienen nada que ver con esto.
  *
- * Lo que **no** lleva, porque Yoru no es un navegador ni un Kindle: «abrir en pestaña
- * nueva» y «enviar a Kindle».
+ * Lo que **no** lleva, porque Yoru no es un navegador: «abrir en pestaña nueva» ni
+ * «enviar a otro aparato».
  */
 
 export interface BookMenuActions {
