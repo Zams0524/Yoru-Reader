@@ -153,8 +153,7 @@ function loadSettings(): ReaderSettingsState {
 
 /*
   ── Modo limpio: la disposición del texto ────────────────────────────────
-  Los valores son los del lector de Nanahoshi tal como viene (medidos en su
-  panel de ajustes): Noto Serif JP a 28 px, interlineado 1,65, texto justificado
+  Los valores: Noto Serif JP a 28 px, interlineado 1,65, texto justificado
   y un 5 % de margen por cada lado. Los 28 px son de una pantalla de 412 px de
   ancho; en un teléfono más estrecho se baja en proporción, para que quepan las
   mismas columnas y no la misma cifra.

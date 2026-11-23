@@ -49,9 +49,9 @@ export default function NotificationSettings({
         <span>{label}</span>
         <span style={{ fontSize: '0.74rem', color: 'var(--text-dark)', fontWeight: 400 }}>{hint}</span>
       </span>
-      <label className="migaku-switch">
+      <label className="yoru-switch">
         <input type="checkbox" checked={checked} onChange={(e) => setOption(key, e.target.checked)} />
-        <span className="migaku-switch-slider"></span>
+        <span className="yoru-switch-slider"></span>
       </label>
     </div>
   );

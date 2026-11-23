@@ -78,13 +78,13 @@ export default function YoruSyncSettings({
             {es ? 'Solo el libro y por dónde vas, en la pestaña de Miembros' : 'Only the book and how far you are, in the Members tab'}
           </span>
         </span>
-        <label className="migaku-switch">
+        <label className="yoru-switch">
           <input
             type="checkbox"
             checked={settings.shareReadingWithMembers !== false}
             onChange={(e) => onSaveSettings({ ...settings, shareReadingWithMembers: e.target.checked })}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
 

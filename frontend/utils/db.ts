@@ -2,7 +2,7 @@ import type { BookHighlight } from './highlights';
 import { borrarHorasDe, recordHourActivity } from './statsHabits';
 import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
 import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
-// LocalStorage DB manager for the Migaku-style Japanese Reader
+// LocalStorage DB manager for Yoru Reader
 
 export type { DailyStatRecord };
 
@@ -685,7 +685,7 @@ export const db = {
     });
   },
 
-  // --- Word Status Management (Migaku state: 'new' | 'learning' | 'known') ---
+  // --- Word Status Management (word state: 'new' | 'learning' | 'known') ---
   getWordStatuses(): Record<string, string> {
     try {
       const data = localStorage.getItem(this._getKey(STORAGE_KEYS.WORD_STATUS));
@@ -732,7 +732,7 @@ export const db = {
   setWordStatus(word: string, status: string | null) {
     const statuses = this.getWordStatuses();
     if (!status || status === 'unknown') {
-      delete statuses[word]; // default is 'unknown' (or 'new' in Migaku term)
+      delete statuses[word]; // default is 'unknown'
       this.saveSrsCard(word, null);
     } else {
       statuses[word] = status; // 'new' (red underline), 'learning' (yellow), 'known' (none)

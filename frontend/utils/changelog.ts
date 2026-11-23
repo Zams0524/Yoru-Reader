@@ -16,7 +16,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         'Ajuste inteligente del popup del diccionario: ahora aparece sobre la palabra cuando se hace clic en la mitad inferior de la pantalla para evitar recortes.',
         'Detección de colisiones reactiva en tiempo real: si el popup de definición excede el borde inferior de la pantalla, sube de inmediato sobre la palabra.',
         'Corrección de conflicto CSS: solucionado un problema de animación popIn que forzaba al popup a quedarse siempre abajo de la palabra.',
-        'Cero saltos de texto al pasar el cursor: se eliminó el movimiento de renglón del texto al hacer hover sobre palabras (causado por el checkmark de Migaku).',
+        'Cero saltos de texto al pasar el cursor: se eliminó el movimiento de renglón del texto al hacer hover sobre palabras (causado por la marca de verificación).',
         'Nuevos modales de confirmación Yoru Café: eliminadas todas las alertas alert/confirm del sistema operativo, reemplazadas por diálogos premium oscuros de la app.',
         'Notificaciones toast de biblioteca: avisos no intrusivos al borrar o importar múltiples libros.',
         'Sincronización inteligente de Anki (Marcar como Conocido): busca la palabra en todos tus mazos probando nombres comunes de campos (Expression, Vocabulary-Kanji, Word, etc.) para evitar duplicados. Si la tarjeta no existe, crea una nueva tarjeta básica y la madura automáticamente en Anki.',

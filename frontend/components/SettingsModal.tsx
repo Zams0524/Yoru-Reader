@@ -92,7 +92,7 @@ export default function SettingsModal({
 
     return (
       <div className="modal-overlay" onClick={onClose}>
-        <div className="settings-modal migaku-style" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+        <div className="settings-modal yoru-style" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
           <div className="modal-header" style={{ paddingBottom: '0.2rem', marginBottom: '0.5rem' }}>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)' }}>
               {t('editInfo', lang).toUpperCase()}
@@ -102,7 +102,7 @@ export default function SettingsModal({
             </button>
           </div>
 
-          <div className="migaku-settings-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.85rem' }}>
+          <div className="yoru-settings-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.85rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px' }}>
               <span style={{ color: 'rgba(255,255,255,0.4)' }}>{t('title', lang)}</span>
               <span 
@@ -250,12 +250,12 @@ export default function SettingsModal({
   const renderThemeContent = () => (
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Tema' : 'Theme'}</h4>
-      <div className="migaku-row">
-        <span className="migaku-label">{lang === 'es' ? 'Tema del lector' : 'Reader Theme'}</span>
+      <div className="yoru-row">
+        <span className="yoru-label">{lang === 'es' ? 'Tema del lector' : 'Reader Theme'}</span>
         <select 
           value={settings.readerTheme || 'dark'}
           onChange={(e) => updateSetting('readerTheme', e.target.value)}
-          className="migaku-select"
+          className="yoru-select"
         >
           <option value="dark">{lang === 'es' ? 'Oscuro Yoru (por defecto)' : 'Dark Yoru (default)'}</option>
           <option value="sepia">{lang === 'es' ? 'Sepia Relajante' : 'Warm Sepia'}</option>
@@ -299,12 +299,12 @@ export default function SettingsModal({
   const renderDisplayContent = () => (
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Pantalla' : 'Display'}</h4>
-      <div className="migaku-row">
-        <span className="migaku-label">{t('interfaceLanguage', lang)}</span>
+      <div className="yoru-row">
+        <span className="yoru-label">{t('interfaceLanguage', lang)}</span>
         <select 
           value={settings.appLanguage || 'en'}
           onChange={(e) => updateSetting('appLanguage', e.target.value)}
-          className="migaku-select"
+          className="yoru-select"
         >
           <option value="es">Español 🇪🇸</option>
           <option value="en">English 🇺🇸</option>
@@ -318,8 +318,8 @@ export default function SettingsModal({
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Estilo de texto' : 'Text Style'}</h4>
       
-      <div className="migaku-row" style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch' }}>
-        <span className="migaku-label" style={{ fontSize: '0.72rem', fontWeight: 800, color: '#ff6b4a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <div className="yoru-row" style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch' }}>
+        <span className="yoru-label" style={{ fontSize: '0.72rem', fontWeight: 800, color: '#ff6b4a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           {lang === 'es' ? 'AJUSTES DE PANTALLA' : 'DISPLAY SETTINGS'}
         </span>
         <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>
@@ -338,19 +338,19 @@ export default function SettingsModal({
                 const newSize = FONT_SIZE_STEPS[parseInt(e.target.value)];
                 updateSetting('fontSize', newSize);
               }}
-              className="migaku-range-slider"
+              className="yoru-range-slider"
             />
           </div>
           <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>A</span>
         </div>
       </div>
 
-      <div className="migaku-row" style={{ marginBottom: '14px' }}>
-        <span className="migaku-label">Furigana</span>
+      <div className="yoru-row" style={{ marginBottom: '14px' }}>
+        <span className="yoru-label">Furigana</span>
         <select 
           value={settings.showFurigana || 'unknown-only'}
           onChange={(e) => updateSetting('showFurigana', e.target.value)}
-          className="migaku-select"
+          className="yoru-select"
         >
           <option value="unknown-only">{lang === 'es' ? 'Palabras desconocidas' : 'Unknown words only'}</option>
           <option value="all">{lang === 'es' ? 'Todo' : 'All'}</option>
@@ -358,12 +358,12 @@ export default function SettingsModal({
         </select>
       </div>
 
-      <div className="migaku-row" style={{ marginBottom: '14px' }}>
-        <span className="migaku-label">{lang === 'es' ? 'Dirección de lectura' : 'Reading direction'}</span>
+      <div className="yoru-row" style={{ marginBottom: '14px' }}>
+        <span className="yoru-label">{lang === 'es' ? 'Dirección de lectura' : 'Reading direction'}</span>
         <select 
           value={settings.readingOrientation || 'horizontal'}
           onChange={(e) => updateSetting('readingOrientation', e.target.value)}
-          className="migaku-select"
+          className="yoru-select"
         >
           <option value="horizontal">Horizontal (Yokogaki)</option>
           <option value="vertical">Vertical (Tategaki)</option>
@@ -377,7 +377,7 @@ export default function SettingsModal({
           </div>
 
           <div className="drawer-section">
-            <span className="migaku-label" style={{ fontSize: '0.85rem' }}>{lang === 'es' ? 'Ancho de tarjetas' : 'Card Width'} ({libraryViewProps.cardWidth}px)</span>
+            <span className="yoru-label" style={{ fontSize: '0.85rem' }}>{lang === 'es' ? 'Ancho de tarjetas' : 'Card Width'} ({libraryViewProps.cardWidth}px)</span>
             <input 
               type="range" 
               min="120" 
@@ -389,12 +389,12 @@ export default function SettingsModal({
             />
           </div>
 
-          <div className="migaku-row">
-            <span className="migaku-label">{lang === 'es' ? 'Imagen de portada' : 'Cover Image'}</span>
+          <div className="yoru-row">
+            <span className="yoru-label">{lang === 'es' ? 'Imagen de portada' : 'Cover Image'}</span>
             <select 
               value={libraryViewProps.coverFit}
               onChange={(e) => libraryViewProps.setCoverFit(e.target.value)}
-              className="migaku-select"
+              className="yoru-select"
             >
               <option value="cover">{lang === 'es' ? 'Rellenar' : 'Fill'}</option>
               <option value="contain">{lang === 'es' ? 'Ajustar' : 'Fit'}</option>
@@ -402,7 +402,7 @@ export default function SettingsModal({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-            <span className="migaku-label" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
+            <span className="yoru-label" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
               {lang === 'es' ? 'Detalles a mostrar:' : 'Details to display:'}
             </span>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -437,39 +437,39 @@ export default function SettingsModal({
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Resaltado' : 'Highlighting'}</h4>
       
-      <div className="migaku-row">
-        <span className="migaku-label">{lang === 'es' ? 'Acento por color' : 'Pitch accent by color'}</span>
+      <div className="yoru-row">
+        <span className="yoru-label">{lang === 'es' ? 'Acento por color' : 'Pitch accent by color'}</span>
         <select 
           value={settings.pitchAccent || 'none'}
           onChange={(e) => updateSetting('pitchAccent', e.target.value)}
-          className="migaku-select"
+          className="yoru-select"
         >
           <option value="none">{t('pitchNone', lang)}</option>
           <option value="pitch-color">{t('pitchColor', lang)}</option>
         </select>
       </div>
 
-      <div className="migaku-row">
-        <span className="migaku-label">{lang === 'es' ? 'Estado de aprendizaje' : 'Learning Status'}</span>
-        <label className="migaku-switch">
+      <div className="yoru-row">
+        <span className="yoru-label">{lang === 'es' ? 'Estado de aprendizaje' : 'Learning Status'}</span>
+        <label className="yoru-switch">
           <input 
             type="checkbox" 
             checked={settings.showLearningStatus !== false}
             onChange={(e) => updateSetting('showLearningStatus', e.target.checked)}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
 
-      <div className="migaku-row">
-        <span className="migaku-label">{lang === 'es' ? 'Oración al pasar el cursor' : 'Sentence hover info'}</span>
-        <label className="migaku-switch">
+      <div className="yoru-row">
+        <span className="yoru-label">{lang === 'es' ? 'Oración al pasar el cursor' : 'Sentence hover info'}</span>
+        <label className="yoru-switch">
           <input 
             type="checkbox" 
             checked={settings.sentenceHover === true}
             onChange={(e) => updateSetting('sentenceHover', e.target.checked)}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
     </div>
@@ -479,7 +479,7 @@ export default function SettingsModal({
   const renderSourcesContent = () => (
     <div className="settings-panel-section">
       <h4 className="settings-panel-title">{lang === 'es' ? 'Gestión de Vocabulario y Anki' : 'Vocabulary & Anki Management'}</h4>
-      <div className="migaku-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+      <div className="yoru-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
         <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
           {isPhoneUI()
             ? (lang === 'es' ? 'Importa tus mazos de Anki (.apkg) con su progreso, o tus palabras desde JPDB, listas de palabras o listas de frecuencia.' : 'Import your Anki decks (.apkg) with their progress, or your words from JPDB, word lists or frequency lists.')
@@ -519,7 +519,7 @@ export default function SettingsModal({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-            <span className="migaku-label" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
+            <span className="yoru-label" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
               {lang === 'es' ? 'Copias Locales (Archivo ZIP)' : 'Local Backups (ZIP File)'}
             </span>
             <div style={{ display: 'flex', gap: '10px' }}>

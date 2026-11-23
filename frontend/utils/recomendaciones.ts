@@ -4,7 +4,7 @@ import { db } from './db';
  * «Libros para ti»: por qué se recomienda cada uno, y los que no quieres volver a ver.
  *
  * El carrusel ya existía, pero no decía nada: una fila de portadas sin motivo parece
- * una lista al azar, y cuando acierta tampoco se nota. Nanahoshi enseña la razón en
+ * una lista al azar, y cuando acierta tampoco se nota. Ahora se enseña la razón en
  * cada tarjeta («Mismo autor que X», «Parecido a X») y deja apartar una con un «no me
  * interesa». Las dos cosas son el mismo arreglo: una recomendación solo se puede
  * juzgar cuando se sabe de dónde viene.

@@ -53,9 +53,9 @@ export const NOVEDADES: Novedad[] = [
     en: 'Statistics fill in by themselves again. If you opened Statistics before reading anything, what you read afterwards stopped being saved and the page stayed empty; it is now saved in every case, also on devices where it had stopped. And on Android, reading with the audiobook playing now adds the characters read, not just the time.',
   },
   {
-    id: '2026-11-22-disposicion-nanahoshi',
-    es: 'El lector se acerca más a Nanahoshi. Los ajustes del libro ahora suben desde abajo en una hoja con cuatro categorías: Apariencia, Texto, Diseño y Comportamiento. Y el «Modo limpio» coloca el texto igual (tamaño, interlineado 1,65, justificado, 5 % de margen) y cambia la barra de páginas por un contador de caracteres y porcentaje abajo a la derecha.',
-    en: 'The reader gets closer to Nanahoshi. The book settings now slide up from the bottom in a sheet with four categories: Appearance, Text, Layout and Behaviour. And “Clean mode” lays the text out the same way (size, 1.65 line spacing, justified, 5% margins) and replaces the page bar with a character and percentage counter at the bottom right.',
+    id: '2026-11-22-hoja-ajustes-modo-limpio',
+    es: 'Nuevos ajustes del lector. Los ajustes del libro ahora suben desde abajo en una hoja con cuatro categorías: Apariencia, Texto, Diseño y Comportamiento. Y el «Modo limpio» coloca el texto de forma más cómoda (tamaño, interlineado 1,65, justificado, 5 % de margen) y cambia la barra de páginas por un contador de caracteres y porcentaje abajo a la derecha.',
+    en: 'New reader settings. The book settings now slide up from the bottom in a sheet with four categories: Appearance, Text, Layout and Behaviour. And “Clean mode” lays the text out more comfortably (size, 1.65 line spacing, justified, 5% margins) and replaces the page bar with a character and percentage counter at the bottom right.',
   },
   {
     id: '2026-11-21-leer-y-escuchar-arreglos',

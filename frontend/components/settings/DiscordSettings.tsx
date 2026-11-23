@@ -52,13 +52,13 @@ export default function DiscordSettings({
         <span className="settings-label-text">
           {lang === 'es' ? 'Mostrar lo que lees en Discord' : 'Show what you are reading on Discord'}
         </span>
-        <label className="migaku-switch">
+        <label className="yoru-switch">
           <input
             type="checkbox"
             checked={settings.discordEnabled || false}
             onChange={(e) => onSaveSettings({ ...settings, discordEnabled: e.target.checked })}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
 
@@ -71,7 +71,7 @@ export default function DiscordSettings({
         </span>
         <input
           type="number"
-          className="migaku-select"
+          className="yoru-select"
           style={{ width: '120px' }}
           value={settings.discordInactivityTimer !== undefined ? settings.discordInactivityTimer : 300}
           onChange={(e) => onSaveSettings({ ...settings, discordInactivityTimer: parseInt(e.target.value) || 0 })}
@@ -81,7 +81,7 @@ export default function DiscordSettings({
       <div className="settings-row-control">
         <span className="settings-label-text">{lang === 'es' ? 'Icono' : 'Icon'}</span>
         <select
-          className="migaku-select"
+          className="yoru-select"
           value={settings.discordIcon || 'Yoru'}
           onChange={(e) => onSaveSettings({ ...settings, discordIcon: e.target.value })}
         >
@@ -95,7 +95,7 @@ export default function DiscordSettings({
       <div className="settings-row-control">
         <span className="settings-label-text">{lang === 'es' ? 'Mostrar estadísticas' : 'Show stats'}</span>
         <select
-          className="migaku-select"
+          className="yoru-select"
           value={settings.discordShowStats || 'None'}
           onChange={(e) => onSaveSettings({ ...settings, discordShowStats: e.target.value })}
         >

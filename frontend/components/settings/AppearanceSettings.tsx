@@ -164,7 +164,7 @@ export default function AppearanceSettings({
               <select
                 value={settings.theme || 'dark'}
                 onChange={(e) => onSaveSettings({ ...settings, theme: e.target.value })}
-                className="migaku-select"
+                className="yoru-select"
                 style={{ width: '100%' }}
               >
                 <option value="system">{lang === 'es' ? 'Sistema' : 'System'}</option>
@@ -193,7 +193,7 @@ export default function AppearanceSettings({
                   localStorage.setItem('app_language', selectedLang);
                   onSaveSettings({ ...settings, appLanguage: selectedLang });
                 }}
-                className="migaku-select"
+                className="yoru-select"
                 style={{ width: '100%' }}
               >
                 <option value="es">Español</option>
@@ -269,13 +269,13 @@ export default function AppearanceSettings({
                   margin: '18px 0 0', cursor: 'pointer',
                 }}
               >
-                <span className="migaku-switch" style={{ order: 2, marginLeft: 'auto', flexShrink: 0 }}>
+                <span className="yoru-switch" style={{ order: 2, marginLeft: 'auto', flexShrink: 0 }}>
                   <input
                     type="checkbox"
                     checked={settings.showPosterTitles !== false}
                     onChange={(e) => onSaveSettings({ ...settings, showPosterTitles: e.target.checked })}
                   />
-                  <span className="migaku-switch-slider"></span>
+                  <span className="yoru-switch-slider"></span>
                 </span>
                 <span>
                   <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)' }}>

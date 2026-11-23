@@ -86,7 +86,7 @@ export default function ReaderSettingsPopover({
   const abierta = secciones.find((item) => item.id === seccion) || null;
 
   /*
-    La hoja de ajustes, como la del lector de Nanahoshi: sube desde abajo, primero
+    La hoja de ajustes: sube desde abajo, primero
     las cuatro categorías y dentro de cada una sus ajustes, con una flecha para
     volver. Los ajustes son los de siempre; lo que cambia es dónde están.
   */
@@ -123,7 +123,7 @@ export default function ReaderSettingsPopover({
           {seccion === 'apariencia' && (
             <>
             <SwitchRow
-              label={es ? 'Modo limpio (como Nanahoshi)' : 'Clean mode (like Nanahoshi)'}
+              label={es ? 'Modo limpio' : 'Clean mode'}
               checked={!!settings.modoLimpio}
               onChange={setModoLimpio}
             />

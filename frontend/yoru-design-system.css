@@ -633,7 +633,7 @@ html:where(:not(.yoru-compact)) .tab-view-title {
 }
 
 .settings-sidebar-modal,
-.settings-modal.migaku-style,
+.settings-modal.yoru-style,
 .settings-popover-card {
   border: 1px solid var(--border-light);
   border-radius: 20px;
@@ -752,7 +752,7 @@ html:where(:not(.yoru-compact)) .tab-view-title {
   line-height: 1.55;
 }
 
-.migaku-select,
+.yoru-select,
 .sidebar-search-input,
 .settings-search-input,
 .settings-panel-section input:not([type='checkbox']):not([type='range']),
@@ -4953,7 +4953,7 @@ html.platform-android:where(.yoru-compact) .yomitan-settings-pane {
     font-weight: 600;
   }
 
-  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .migaku-select {
+  html.platform-android:where(.yoru-compact) .yomitan-settings-pane .yoru-select {
     min-width: 0;
     max-width: 100%;
     min-height: 44px;
@@ -8177,7 +8177,7 @@ html:where(.yoru-compact) .yoru-shell.is-settings-fullscreen .yomitan-settings-p
 }
 
 /*
-  ── Ajustes del lector en hoja inferior (como el lector de Nanahoshi) ─────
+  ── Ajustes del lector en hoja inferior ───────────────────────────────────
   Sube desde abajo a lo ancho, con las esquinas de arriba redondeadas y un
   tirador; primero las categorías, dentro cada una con sus ajustes. Va al final
   del fichero para ganar a la tarjeta desplegable de antes, que sigue arriba.
@@ -8272,7 +8272,7 @@ html:where(.yoru-compact) .yoru-shell.is-settings-fullscreen .yomitan-settings-p
 
 /*
   ── Modo limpio: el contador, abajo a la derecha ──────────────────────────
-  Lo que Nanahoshi enseña en vez de una barra de páginas: caracteres leídos, el
+  En vez de una barra de páginas: caracteres leídos, el
   total y el porcentaje, en pequeño y siempre a la vista.
 */
 .reader-counter {
