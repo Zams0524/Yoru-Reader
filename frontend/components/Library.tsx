@@ -2414,28 +2414,6 @@ const Library = React.memo(function Library({
     setDeleteAllState('confirm');
   };
 
-  // Borra el progreso de lectura del perfil y deja la marca que lo lleva a los demás
-  // aparatos (`db.borrarProgresoDeLectura`). Se recarga para que ninguna pantalla siga
-  // enseñando lo de antes; al arrancar, la sincronización sube el borrado.
-  const handleResetReadingProgress = async () => {
-    const ok = await showConfirm({
-      title: lang === 'es' ? '¿Borrar tu progreso de lectura?' : 'Erase your reading progress?',
-      message: lang === 'es'
-        ? 'Se pone a cero por dónde vas en cada libro, tus estadísticas y rachas, y lo leído o escuchado del servidor. Se borra también en tus otros aparatos al sincronizar. Tus libros, marcadores, notas, palabras y tarjetas se conservan. No se puede deshacer.'
-        : 'Your place in every book, your statistics and streaks, and what you read or listened to from the server are reset. It is erased on your other devices too when they sync. Your books, bookmarks, notes, words and cards are kept. This cannot be undone.',
-      type: 'danger',
-      confirmText: lang === 'es' ? 'Borrar progreso' : 'Erase progress',
-    });
-    if (!ok) return;
-    try {
-      await db.borrarProgresoDeLectura();
-      showToast(lang === 'es' ? 'Progreso de lectura borrado.' : 'Reading progress erased.', 'success');
-      setTimeout(() => window.location.reload(), 900);
-    } catch (e) {
-      showToast((lang === 'es' ? 'No se pudo borrar el progreso: ' : 'Could not erase the progress: ') + (e?.message || e), 'error');
-    }
-  };
-
   const executeDeleteAllData = async () => {
     setDeleteAllState('deleting');
     
@@ -3336,13 +3314,13 @@ const Library = React.memo(function Library({
           )}
 
           {/* Card: Danger Zone */}
-          {matchesSearch('danger zone eliminar borrar todos datos irreversible reset clear storage progreso lectura estadisticas progress') && (settingsSearchQuery || activeSettingsSection === 'sec-danger') && (
+          {matchesSearch('danger zone eliminar borrar todos datos irreversible reset clear storage')&& (settingsSearchQuery || activeSettingsSection === 'sec-danger') && (
             <div id="sec-danger" className="settings-section-card" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.02)' }}>
               <h3 className="settings-card-title" style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertTriangle size={18} style={{ color: '#ef4444' }} />
                 <span>{lang === 'es' ? 'Zona de peligro' : 'Danger Zone'}</span>
               </h3>
-              <DangerZoneSettings lang={lang} onDeleteAllData={handleDeleteAllData} onResetReadingProgress={handleResetReadingProgress} />
+              <DangerZoneSettings lang={lang} onDeleteAllData={handleDeleteAllData} />
             </div>
           )}
         </div>

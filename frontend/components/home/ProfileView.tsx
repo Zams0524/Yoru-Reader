@@ -11,6 +11,7 @@ import {
   type ServerItem,
 } from '../../utils/serverCatalog';
 import { resizeToJpeg } from '../../utils/profileImage';
+import BorrarProgresoPerfil from './BorrarProgresoPerfil';
 
 /**
  * La página del perfil: quién eres en Yoru y qué tienes entre manos.
@@ -330,6 +331,9 @@ export default function ProfileView({
               </div>
             )}
           </section>
+
+          {/* Al final y aparte: es lo único del perfil que no tiene vuelta atrás. */}
+          <BorrarProgresoPerfil es={es} />
         </div>
       )}
 
