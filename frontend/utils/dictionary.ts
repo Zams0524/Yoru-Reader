@@ -46,9 +46,9 @@ export const FUENTE_POR_DEFECTO: FuenteDefiniciones = 'ambos';
 */
 function leerFuente(): FuenteDefiniciones {
   try {
-    const perfil = localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default';
-    const crudo = localStorage.getItem(`migaku_reader_settings_${perfil}`)
-      || localStorage.getItem('migaku_reader_settings');
+    const perfil = localStorage.getItem('yoru_active_profile_id') || 'profile-default';
+    const crudo = localStorage.getItem(`yoru_settings_${perfil}`)
+      || localStorage.getItem('yoru_settings');
     const valor = crudo ? JSON.parse(crudo).definitionSource : null;
     return valor === 'locales' || valor === 'jiten' ? valor : FUENTE_POR_DEFECTO;
   } catch {

@@ -2,6 +2,7 @@ import type { BookHighlight } from './highlights';
 import { borrarHorasDe, recordHourActivity } from './statsHabits';
 import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
 import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
+import { migrarClavesIdb } from './migrarClaves';
 // LocalStorage DB manager for Yoru Reader
 
 export type { DailyStatRecord };
@@ -120,11 +121,11 @@ function readJsonObject(key: string): Record<string, any> {
 }
 
 const STORAGE_KEYS = {
-  BOOKS: 'migaku_reader_books',
-  WORD_STATUS: 'migaku_reader_word_status',
-  SETTINGS: 'migaku_reader_settings',
-  PROFILES: 'migaku_reader_profiles',
-  ACTIVE_PROFILE: 'migaku_reader_active_profile_id'
+  BOOKS: 'yoru_books',
+  WORD_STATUS: 'yoru_word_status',
+  SETTINGS: 'yoru_settings',
+  PROFILES: 'yoru_profiles',
+  ACTIVE_PROFILE: 'yoru_active_profile_id'
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -176,7 +177,12 @@ const idb = {
           db.createObjectStore('keyvalue');
         }
       };
-      request.onsuccess = (e: any) => resolve(e.target.result);
+      // Antes de entregar la base, la estantería guardada con el nombre antiguo pasa al
+      // nuevo (ver migrarClaves.ts): así ninguna lectura la ve a medio migrar.
+      request.onsuccess = (e: any) => {
+        const base: IDBDatabase = e.target.result;
+        migrarClavesIdb(base, "keyvalue").then(() => resolve(base));
+      };
       request.onerror = (e: any) => reject(e.target.error);
     });
     return this.dbPromise;
@@ -953,12 +959,12 @@ export const db = {
       const books = await idb.get(booksKey) || [];
       
       // 2. Settings from localStorage
-      const settingsKey = `migaku_reader_settings_${p.id}`;
+      const settingsKey = `yoru_settings_${p.id}`;
       const settingsRaw = localStorage.getItem(settingsKey);
       const settings = settingsRaw ? JSON.parse(settingsRaw) : null;
       
       // 3. Word statuses from localStorage
-      const statusKey = `migaku_reader_word_status_${p.id}`;
+      const statusKey = `yoru_word_status_${p.id}`;
       const statusRaw = localStorage.getItem(statusKey);
       const wordStatuses = statusRaw ? JSON.parse(statusRaw) : null;
       const timesRaw = localStorage.getItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`);
@@ -1015,12 +1021,12 @@ export const db = {
         }
         // 2. Settings
         if (pData.settings) {
-          const settingsKey = `migaku_reader_settings_${p.id}`;
+          const settingsKey = `yoru_settings_${p.id}`;
           localStorage.setItem(settingsKey, JSON.stringify(pData.settings));
         }
         // 3. Word statuses
         if (pData.wordStatuses) {
-          const statusKey = `migaku_reader_word_status_${p.id}`;
+          const statusKey = `yoru_word_status_${p.id}`;
           localStorage.setItem(statusKey, JSON.stringify(pData.wordStatuses));
         }
         if (pData.wordStatusTimes) {

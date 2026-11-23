@@ -4,7 +4,7 @@
   La forma de colocar cada lectura por su posición, y la tabla de 来る y 得る, vienen de la
   extensión oficial, Jiten Reader (https://github.com/Sirush/JitenReader,
   `src/background-worker/parser/parser.ts`), que es MIT:
-  Copyright (c) 2025 chinokusari, Copyright (c) 2026 Sirus. Ver THIRD-PARTY-GRANTS.md.
+  Copyright (c) 2025 chinokusari, Copyright (c) 2026 Sirus.
 
   Va en un fichero sin dependencias para poder probarlo en Node (`tests/furigana-jiten.test.ts`).
 */

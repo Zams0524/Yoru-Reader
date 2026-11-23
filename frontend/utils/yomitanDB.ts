@@ -41,9 +41,9 @@ export function clearYomitanCache(): void {
 function getCachedSettings(): { disabledDicts: string[]; dictOrder: string[] } {
   if (_cachedSettings) return _cachedSettings;
   try {
-    const activeProfile = localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default';
-    const settingsKey = `migaku_reader_settings_${activeProfile}`;
-    const settingsStr = localStorage.getItem(settingsKey) || localStorage.getItem('migaku_reader_settings');
+    const activeProfile = localStorage.getItem('yoru_active_profile_id') || 'profile-default';
+    const settingsKey = `yoru_settings_${activeProfile}`;
+    const settingsStr = localStorage.getItem(settingsKey) || localStorage.getItem('yoru_settings');
     if (settingsStr) {
       const parsed = JSON.parse(settingsStr);
       _cachedSettings = {

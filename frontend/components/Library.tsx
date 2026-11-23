@@ -883,7 +883,7 @@ const Library = React.memo(function Library({
         version: 2,
         exportDate: new Date().toISOString(),
         profiles,
-        activeProfileId: localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default',
+        activeProfileId: localStorage.getItem('yoru_active_profile_id') || 'profile-default',
         appLanguage: settings.appLanguage || localStorage.getItem('app_language') || 'en',
         books,
         wordStatuses,
@@ -973,9 +973,9 @@ const Library = React.memo(function Library({
         }
       }
       if (importData.activeProfileId) {
-        localStorage.setItem('migaku_reader_active_profile_id', importData.activeProfileId);
+        localStorage.setItem('yoru_active_profile_id', importData.activeProfileId);
       } else if (importData.profiles && importData.profiles.length > 0) {
-        localStorage.setItem('migaku_reader_active_profile_id', importData.profiles[0].id);
+        localStorage.setItem('yoru_active_profile_id', importData.profiles[0].id);
       }
 
       // 4. Merge profiles
@@ -1265,7 +1265,7 @@ const Library = React.memo(function Library({
         version: 2,
         exportDate: new Date().toISOString(),
         profiles: profiles,
-        activeProfileId: localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default',
+        activeProfileId: localStorage.getItem('yoru_active_profile_id') || 'profile-default',
         appLanguage: settings.appLanguage || localStorage.getItem('app_language') || 'en',
         books: books,
         wordStatuses: wordStatuses,
@@ -1347,9 +1347,9 @@ const Library = React.memo(function Library({
         }
       }
       if (importData.activeProfileId) {
-        localStorage.setItem('migaku_reader_active_profile_id', importData.activeProfileId);
+        localStorage.setItem('yoru_active_profile_id', importData.activeProfileId);
       } else if (importData.profiles && importData.profiles.length > 0) {
-        localStorage.setItem('migaku_reader_active_profile_id', importData.profiles[0].id);
+        localStorage.setItem('yoru_active_profile_id', importData.profiles[0].id);
       }
 
         // 2. Merge profiles
@@ -1802,7 +1802,7 @@ const Library = React.memo(function Library({
         version: 2,
         exportDate: new Date().toISOString(),
         profiles: profiles,
-        activeProfileId: localStorage.getItem('migaku_reader_active_profile_id') || 'profile-default',
+        activeProfileId: localStorage.getItem('yoru_active_profile_id') || 'profile-default',
         books: selectedBooks,
         wordStatuses: wordStatuses,
         settings: settings,

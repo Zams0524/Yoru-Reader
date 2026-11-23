@@ -68,4 +68,3 @@ Yoru Reader es software libre bajo la [GPL-2.0-or-later](LICENSE). Hasta la 1.3.
 
 - El lector nativo de Android usa el motor **EraEPUB** de [OpenReadEra](https://readera.org/open-readera) (© READERA LLC, GPL-2.0), basado en [CoolReader / crengine](https://github.com/buggins/coolreader). `liberaepub.so` se compila sin cambios desde OpenReadEra 21.12.11 ([código usado](https://github.com/champignoom/OpenReadEra/tree/664251abd5584b97b5c6941a3ef5e8856d2c0efc)); cómo compilarlo, en [docs/NATIVE_READER.md](docs/NATIVE_READER.md).
 - La extensión de lectura del escritorio (`backend/reader-ext`) es una versión modificada de [Jiten Reader](https://github.com/Sirush/JitenReader), basada a su vez en [Anki JPDB Reader](https://github.com/Kagu-chan/anki-jpdb.reader), las dos MIT ([licencia](backend/reader-ext/LICENSE.md)).
-- El código que otros autores han cedido a Yoru está anotado en [THIRD-PARTY-GRANTS.md](THIRD-PARTY-GRANTS.md).

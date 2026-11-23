@@ -15,7 +15,6 @@ The app only sends data to other services in the situations below. Apart from th
 | **jpdb.io** | Only if you enter your jpdb API key to import decks | Your API key and deck requests |
 | **AnkiConnect** (`127.0.0.1`) | Only if you use Anki integration | Cards you create, sent to Anki on your own computer |
 | **Discord** (local Discord client) | Only if you enable Discord Rich Presence | The book and chapter title shown on your Discord profile (books can be excluded with the blacklist) |
-| **Font CDN** (`migaku-public-data.migaku.com`) | When the app starts | A request for the interface fonts; no personal data |
 
 Each of these services handles requests under its own privacy policy.
 
