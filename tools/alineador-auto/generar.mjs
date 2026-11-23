@@ -7,8 +7,8 @@
  * app pide la alineación por el id del audiolibro, y este programa es quien la pone
  * ahí. Corre en el PC donde están los EPUB y los audios.
  *
- * El trabajo de alinear lo hace Honomiya (https://github.com/Natsume-197/Honomiya, de
- * Natsume, licencia MIT) con su motor CTC: va en CPU, sin Python ni tarjeta gráfica, a
+ * El trabajo de alinear lo hace Honomiya (https://github.com/Natsume-197/Honomiya, licencia
+ * MIT) con su motor CTC: va en CPU, sin Python ni tarjeta gráfica, a
  * unas veinte o treinta veces el tiempo real. Aquí no se copia nada suyo: se le llama
  * como programa aparte y se lee lo que deja.
  *

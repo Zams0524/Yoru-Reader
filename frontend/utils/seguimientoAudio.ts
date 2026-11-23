@@ -1,90 +1,85 @@
 /*
-  Portado de Nanahoshi (https://github.com/Natsume-197/Nanahoshi), de Natsume:
-  `packages/reader/src/read-listen/active-cue-following.ts`.
-  Usado con su permiso expreso bajo GPL; ver THIRD-PARTY-GRANTS.md.
+  Seguir con el texto la frase que suena.
 
-  Traducido y adaptado a nuestros nombres; la idea y los dos umbrales son suyos.
+  Cada vez que la narración cambia de frase, el lector se pregunta si tiene que mover
+  el texto. La respuesta depende de tres cosas: si el usuario apartó la vista a mano
+  (entonces no se toca nada hasta que pida volver), de cómo se lee (continuo o por
+  páginas) y de dónde cae la frase respecto a lo que de verdad se ve.
 */
 
-/** Si el texto va detrás del audio, o si el usuario lo apartó a mano. */
+/** `siguiendo`: el texto va con el audio. `suspendido`: el usuario lo movió a mano. */
 export type ModoSeguimiento = 'siguiendo' | 'suspendido';
 
 /**
- * Cuándo se considera que hay que mover el texto.
- *
- * - `comodidad`: en lectura continua. La frase vive en una banda central; mientras no
- *   se salga de ella, el texto no se mueve, aunque la frase haya bajado un poco.
- * - `visibilidad`: en lectura paginada. Ahí no hay banda que valga: o la frase está en
- *   la página o no está, y media frase asomando no sirve de nada.
+ * - `comodidad` (lectura continua): el texto solo se mueve cuando la frase sale de una
+ *   zona tranquila en el centro de la pantalla.
+ * - `visibilidad` (lectura paginada): basta con que la frase se vea entera.
  */
 export type EstrategiaSeguimiento = 'comodidad' | 'visibilidad';
 
-/** Un tramo sobre el eje por el que se desplaza el texto (vertical u horizontal). */
+/** Un segmento sobre el eje de desplazamiento, en píxeles. */
 export interface TramoEje {
   inicio: number;
   fin: number;
 }
 
 export interface DecisionSeguimiento {
-  /** Mover el texto hasta la frase. */
   mover: boolean;
-  /** Ofrecerle al usuario volver a la narración, porque el seguimiento está suspendido. */
+  /** Mostrar el aviso de «volver a la narración». */
   ofrecerVolver: boolean;
 }
 
 /*
-  Por qué una banda y no el centro.
+  La zona tranquila, en fracciones de la parte visible.
 
-  Centrar la frase en cada cambio convierte la lectura en una cinta transportadora: el
-  texto se mueve constantemente y la vista nunca descansa en un sitio. Con una banda, el
-  texto se queda quieto mientras la narración avanza dentro de ella y solo salta cuando
-  se sale, que es más o menos cómo pasarías tú la página.
-
-  22% y 72%: la banda queda algo por encima del centro, porque al leer vas un poco por
-  delante de lo que escuchas, y así queda más sitio por debajo para lo que viene.
+  Si el texto se recolocara en cada frase, la página no pararía nunca quieta. Con una
+  zona amplia la narración avanza varios renglones sin que nada se mueva, y cuando sale
+  de ella el salto es uno solo, como pasar de página. Va algo por encima del centro:
+  quien escucha suele leer un poco por delante.
 */
-const BANDA_INICIO = 0.22;
-const BANDA_FIN = 0.72;
+const ZONA_DESDE = 0.25;
+const ZONA_HASTA = 0.7;
+
+/** Lo que queda de la ventana una vez descontado lo que tapan barras y mandos. */
+function parteVisible(ventana: TramoEje, tapaDelante: number, tapaDetras: number): TramoEje {
+  const inicio = Math.min(ventana.fin, ventana.inicio + Math.max(0, tapaDelante));
+  const fin = Math.max(inicio, ventana.fin - Math.max(0, tapaDetras));
+  return { inicio, fin };
+}
+
+function contiene(fuera: TramoEje, dentro: TramoEje): boolean {
+  return dentro.inicio >= fuera.inicio && dentro.fin <= fuera.fin;
+}
 
 /**
- * Decide si hay que mover el texto para que se vea la frase que suena.
+ * ¿Hay que mover el texto hasta la frase que suena?
  *
- * `margenInicio` y `margenFin` son lo que la pantalla tiene tapado por delante y por
- * detrás (la barra del reproductor, por ejemplo): sin descontarlos, la cuenta daría por
- * visible una frase que está debajo de los mandos.
+ * `margenInicio` y `margenFin` son los píxeles tapados al principio y al final del eje
+ * (la barra del reproductor, por ejemplo): una frase debajo de los mandos no se ve.
  */
-export function decidirSeguimiento({
-  modo,
-  estrategia = 'comodidad',
-  forzar = false,
-  frase,
-  ventana,
-  margenInicio = 0,
-  margenFin = 0,
-}: {
+export function decidirSeguimiento(opciones: {
   modo: ModoSeguimiento;
   estrategia?: EstrategiaSeguimiento;
-  /** Llevar el texto allí sí o sí: el usuario acaba de pedirlo. */
+  /** El usuario acaba de pedir ir a la frase. */
   forzar?: boolean;
   frase: TramoEje;
   ventana: TramoEje;
   margenInicio?: number;
   margenFin?: number;
 }): DecisionSeguimiento {
+  const { modo, frase, ventana } = opciones;
   if (modo === 'suspendido') return { mover: false, ofrecerVolver: true };
-  if (forzar) return { mover: true, ofrecerVolver: false };
+  if (opciones.forzar) return { mover: true, ofrecerVolver: false };
 
-  const utilInicio = Math.min(ventana.fin, ventana.inicio + margenInicio);
-  const utilFin = Math.max(utilInicio, ventana.fin - margenFin);
-  const utilTamano = Math.max(1, utilFin - utilInicio);
-  const bandaInicio = utilInicio + utilTamano * BANDA_INICIO;
-  const bandaFin = utilInicio + utilTamano * BANDA_FIN;
-  const centroFrase = (frase.inicio + frase.fin) / 2;
-  const seVeEntera = frase.inicio >= utilInicio && frase.fin <= utilFin;
+  const visible = parteVisible(ventana, opciones.margenInicio ?? 0, opciones.margenFin ?? 0);
+  if (!contiene(visible, frase)) return { mover: true, ofrecerVolver: false };
+  if ((opciones.estrategia ?? 'comodidad') === 'visibilidad') return { mover: false, ofrecerVolver: false };
 
-  return {
-    mover: !seVeEntera
-      || (estrategia === 'comodidad' && (centroFrase < bandaInicio || centroFrase > bandaFin)),
-    ofrecerVolver: false,
+  const alto = Math.max(1, visible.fin - visible.inicio);
+  const zona: TramoEje = {
+    inicio: visible.inicio + alto * ZONA_DESDE,
+    fin: visible.inicio + alto * ZONA_HASTA,
   };
+  const medio = (frase.inicio + frase.fin) / 2;
+  return { mover: medio < zona.inicio || medio > zona.fin, ofrecerVolver: false };
 }

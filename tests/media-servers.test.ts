@@ -485,7 +485,7 @@ async function absTests() {
 
 /** Cuándo el texto sigue al audio y cuándo se queda quieto. */
 function seguimientoTests() {
-  // Una ventana de 1000 px: la banda cómoda va de 220 a 720.
+  // Una ventana de 1000 px: la banda cómoda va de 250 a 700.
   const ventana = { inicio: 0, fin: 1000 };
   const enLaBanda = { inicio: 400, fin: 500 };   // centro 450
   const masAbajo = { inicio: 740, fin: 800 };    // centro 770, fuera de la banda pero visible
