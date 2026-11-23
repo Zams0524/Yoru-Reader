@@ -688,6 +688,17 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             final int startPage = clampPage(page);
             // Only the page on screen before answering; its neighbours right after.
             renderPages(gen, startPage, new int[] { startPage });
+            // A first page that was not drawn left the reader on a screen of the background colour
+            // (black in the dark themes) under the bars, with no text, no pictures and no message.
+            // Failing here sends the app back to the WebView reader, which says why.
+            boolean drawn;
+            synchronized (cache) {
+                drawn = cache.containsKey(startPage);
+            }
+            if (!drawn && gen == generation) {
+                throw new IOException("page " + startPage + " of " + enginePages + " not drawn at " + c.width + "x" + c.height
+                    + (c.vertical ? " vertical" : "") + ", font " + c.fontSize + ", density " + c.density);
+            }
             loadLetters(gen, startPage);
             engineHandler.post(() -> renderAround(gen, startPage));
             String startXPath = pageXPath(startPage);
@@ -1031,7 +1042,10 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             }
             try {
                 Bitmap bitmap = drawPage(p, c);
-                if (bitmap == null) continue;
+                if (bitmap == null) {
+                    Log.w(TAG, "page " + p + " has no bitmap (" + c.width + "x" + c.height + ")");
+                    continue;
+                }
                 synchronized (cache) {
                     cache.put(p, bitmap);
                 }

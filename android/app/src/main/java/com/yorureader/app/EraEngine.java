@@ -179,9 +179,19 @@ final class EraEngine {
         req.add(new Item(width));
         req.add(new Item(height));
         Response r = request(CMD_REQ_PAGE_RENDER, req);
-        if (r.result != 0 || r.items.isEmpty() || r.items.get(0).array == null) return null;
+        if (r.result != 0 || r.items.isEmpty() || r.items.get(0).array == null) {
+            // Without this line a page the engine does not draw only shows up as a screen of the
+            // background colour, with nothing in the log saying why.
+            Log.w(TAG, "page " + page + " not rendered at " + width + "x" + height + ": result " + r.result + ", items " + r.items.size() + "
+" + logTail());
+            return null;
+        }
         byte[] pixels = r.items.get(0).array;
-        return pixels.length == width * height * 4 ? pixels : null;
+        if (pixels.length != width * height * 4) {
+            Log.w(TAG, "page " + page + " rendered with " + pixels.length + " bytes, expected " + (width * height * 4L) + " for " + width + "x" + height);
+            return null;
+        }
+        return pixels;
     }
 
     private Response readResponse() throws IOException {
