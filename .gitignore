@@ -88,7 +88,6 @@ locales/
 # AGENTES, ARCHIVOS LOCALES Y DESCARGAS
 # ====================================================================
 # Permitir compartir reglas de agentes
-!.agents/
 .agents/scratch/
 .agents/tmp/
 test_db.js
@@ -158,3 +157,16 @@ qa-runs/
 # en main desde el PR 37. Siguen seguidos por git porque quitarlos es una decisión de
 # zams y merece un cambio que diga eso y nada más, no el arrastre de otro. Están
 # seguidos, así que esta carpeta ignorada no les afecta.
+
+# ====================================================================
+# SOLO LOCAL: notas de trabajo y configuración de agentes, no van al repo público
+# ====================================================================
+.agents/
+.claude/
+CLAUDE.md
+docs/TAREAS_NIX_CLAUDE_CODE.md
+docs/YORU_READER_ENGINEERING_PROMPT.md
+docs/PROJECT_GUIDELINES.md
+docs/SRS_ANKI_PARITY_AUDIT.md
+docs/SIGNPATH_APPLICATION.md
+docs/qa/informes/

@@ -533,7 +533,7 @@ function writeReport(runDir, session, extras) {
   const report = buildReport(session, readSteps(runDir), log, extras);
   fs.writeFileSync(path.join(runDir, 'informe.md'), report);
   console.log(`✓ Informe: ${path.join(runDir, 'informe.md')}`);
-  console.log(`  Cópialo a docs/qa/informes/ y la carpeta entera a la carpeta del proyecto auditoria-qa/ (docs/AUDITORIA_QA.md §8).`);
+  console.log(`  Guarda la carpeta entera en la carpeta del proyecto auditoria-qa/ (los informes no van al repo; docs/AUDITORIA_QA.md §8).`);
 }
 
 function cmdInforme(opts) {
