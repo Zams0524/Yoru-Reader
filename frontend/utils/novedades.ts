@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-23-borrar-progreso-en-perfil',
+    es: '«Borrar mi progreso de lectura» se ha mudado a tu perfil (pestaña Yo, al final). Ahora te dice mientras borra, y si algo falla te lo enseña en vez de quedarse callado.',
+    en: '“Erase my reading progress” has moved to your profile (Me tab, at the bottom). It now shows while it erases, and if something fails it tells you instead of staying silent.',
+  },
+  {
     id: '2026-11-23-ilustraciones-tablet',
     es: 'Las ilustraciones de los libros vuelven a verse en el lector de Android: en algunas pantallas, como la de una tablet, su página salía vacía.',
     en: 'Book illustrations show again in the Android reader: on some screens, such as a tablet’s, their page came out empty.',

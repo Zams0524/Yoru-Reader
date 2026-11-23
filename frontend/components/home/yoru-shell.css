@@ -3367,6 +3367,20 @@ button.yoru-menu-scrim { border: none; padding: 0; background: none; cursor: def
 }
 .yoru-profile-empty { margin: 0; padding: 18px 0 10px; text-align: center; font-size: 14px; color: var(--text-muted); }
 
+/* «Borrar mi progreso de lectura»: en rojo porque no tiene vuelta atrás. */
+.yoru-profile-reset { border-color: var(--yoru-danger-soft, rgba(224, 91, 85, 0.3)); }
+.yoru-profile-reset .yoru-profile-panel-icon { color: var(--yoru-danger, #e05b55); }
+.yoru-profile-reset-desc { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.yoru-btn-danger {
+  border-color: var(--yoru-danger, #e05b55);
+  background: var(--yoru-danger-soft, rgba(224, 91, 85, 0.12));
+  color: var(--yoru-danger, #e05b55);
+}
+.yoru-btn-danger:hover { background: rgba(224, 91, 85, 0.2); border-color: var(--yoru-danger, #e05b55); }
+.yoru-btn-danger:disabled { opacity: 0.6; cursor: default; }
+.yoru-profile-reset-msg { margin: 12px 0 0; font-size: 13px; color: var(--text-muted); }
+.yoru-profile-reset-msg.is-error { color: var(--yoru-danger, #e05b55); }
+
 @media (max-width: 700px) {
   .yoru-profile-banner { height: 130px; border-radius: 14px; }
   .yoru-profile-head { margin-top: -42px; padding: 0 12px; gap: 14px; }

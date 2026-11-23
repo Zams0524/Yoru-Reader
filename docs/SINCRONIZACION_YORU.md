@@ -115,7 +115,9 @@ no se recarga: Inicio se repinta con `LOCAL_PROGRESS_EVENT`.
 
 ### Borrar el progreso de lectura
 
-Ajustes → Zona de peligro → «Borrar mi progreso de lectura» (`db.borrarProgresoDeLectura`)
+Perfil (pestaña «Yo» o el avatar) → «Borrar mi progreso de lectura», al final del resumen
+(`home/BorrarProgresoPerfil.tsx`, que llama a `db.borrarProgresoDeLectura`; hasta el 23 nov
+2026 estaba en Ajustes → Zona de peligro)
 pone a cero por dónde va el perfil en cada libro, lo leído (caracteres, tiempo, partes
 diarios, horas) y lo leído o escuchado de Kavita y Audiobookshelf. Los libros, marcadores,
 notas, palabras, tarjetas y ajustes se quedan.
