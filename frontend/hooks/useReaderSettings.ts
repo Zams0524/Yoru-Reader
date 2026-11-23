@@ -116,6 +116,7 @@ export const BUILT_IN_FONTS = [
 ];
 
 function loadSettings(): ReaderSettingsState {
+  limpioDeFabrica();
   ponerAlDiaLimpio();
   const direction = getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal';
   return {
@@ -147,7 +148,7 @@ function loadSettings(): ReaderSettingsState {
     nativeEngine: getBool(LS_KEYS.nativeEngine, true),
     hideImages: getBool(LS_KEYS.hideImages, false),
     dictPopupPlacement: getString(LS_KEYS.dictPopupPlacement, 'leido') === 'clasico' ? 'clasico' : 'leido',
-    modoLimpio: getBool(LS_KEYS.modoLimpio, false),
+    modoLimpio: getBool(LS_KEYS.modoLimpio, true),
   };
 }
 
@@ -198,6 +199,33 @@ export function recuperarAntesDeLimpio(): Partial<DeLimpio> {
   try { antes = JSON.parse(localStorage.getItem(ANTES_DE_LIMPIO) || '{}'); } catch { /* se queda vacío */ }
   try { localStorage.removeItem(ANTES_DE_LIMPIO); localStorage.removeItem(LIMPIO_TEXTO_HECHO); } catch { /* da igual */ }
   return antes;
+}
+
+/*
+  El modo limpio viene encendido de fábrica (lo pidió zams, 23 nov 2026). A quien
+  nunca lo ha tocado, sea nuevo o ya tuviera la app, se le enciende una vez, igual
+  que con el interruptor: se guarda lo que tenía (o los valores de fábrica, si no
+  había cambiado nada) para devolvérselo si lo apaga, y se ponen el color, la fuente
+  y la disposición del modo. Quien ya lo encendió o lo apagó alguna vez tiene la
+  clave escrita y no se le toca.
+*/
+function limpioDeFabrica(): void {
+  try {
+    if (localStorage.getItem(LS_KEYS.modoLimpio) !== null) return;
+    guardarAntesDeLimpio({
+      theme: getString(LS_KEYS.theme, 'dark') as ReaderTheme,
+      fontFamily: getString(LS_KEYS.fontFamily, '__default__'),
+      fontSize: getNumber(LS_KEYS.fontSize, 20),
+      lineHeight: getNumber(LS_KEYS.lineHeight, 1.8),
+      horizontalPadding: getNumber(LS_KEYS.horizontalPadding, 8),
+      verticalPadding: getNumber(LS_KEYS.verticalPadding, 3),
+      textAlign: getString(LS_KEYS.textAlign, 'original') as ReaderSettingsState['textAlign'],
+      fontWeight: getNumber(LS_KEYS.fontWeight, 400),
+    });
+    const valores = valoresDeLimpio();
+    for (const clave of CLAVES_DE_LIMPIO) localStorage.setItem(LS_KEYS[clave], String(valores[clave]));
+    localStorage.setItem(LS_KEYS.modoLimpio, 'true');
+  } catch { /* sin almacenamiento se queda como estaba */ }
 }
 
 /*
