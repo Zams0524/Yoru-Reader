@@ -6,7 +6,7 @@ Formulario: <https://signpath.org/apply.html> · Condiciones: <https://signpath.
 
 - [ ] **Activar la verificación en dos pasos (2FA) en GitHub** para la cuenta Zams0524: Settings → Password and authentication. SignPath lo exige a todo el equipo, y también en la cuenta de SignPath que se cree después.
 - [x] **Compilar `backend/reader-ext/` desde su código fuente.** Hecho: es [Jiten Reader](https://github.com/Sirush/JitenReader) 1.3.2 (MIT) con los cambios de Yoru, que ahora están como código fuente en el fork [Zams0524/JitenReader, rama `yoru`](https://github.com/Zams0524/JitenReader/tree/yoru) (ver su `YORU.md`). El workflow lo compila desde el tag fijado en `build/reader-ext.json`, con `build/build-reader-ext.mjs`, antes de empaquetar.
-- [ ] **Revisar las fuentes de `index.html`.** Se cargan desde el CDN de Migaku, y GT Maru es una fuente comercial. No van dentro del instalador, pero SignPath prohíbe componentes propietarios; lo seguro es usar fuentes libres (por ejemplo, Inter y M PLUS Rounded 1c de Google Fonts) o incluir fuentes con licencia OFL.
+- [x] **Fuentes de `index.html`.** Ya no se carga ninguna fuente de fuera: se quitaron las precargas que había (23 nov 2026).
 - [ ] **Usar un correo de contacto que leas**, porque SignPath responde por correo.
 
 ## 2. Respuestas para el formulario (en inglés)

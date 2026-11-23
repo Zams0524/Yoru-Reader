@@ -190,7 +190,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         int textColor, backgroundColor;
         String fontFamily, textAlign;
         boolean invertTaps;
-        boolean kindleTaps;
+        boolean asymmetricTaps;
         int brightness;               // 0-100, below 100 the page is dimmed
         /** Picture pages are covered (spoilers) until tapped. */
         boolean hideImages;
@@ -221,7 +221,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             c.fontFamily = s.optString("fontFamily", base != null ? base.fontFamily : "");
             c.textAlign = s.optString("textAlign", base != null ? base.textAlign : "original");
             c.invertTaps = s.optBoolean("invertTaps", base != null && base.invertTaps);
-            c.kindleTaps = "kindle".equals(s.optString("tapZoneMode", base != null && base.kindleTaps ? "kindle" : "edge"));
+            c.asymmetricTaps = "asymmetric".equals(s.optString("tapZoneMode", base != null && base.asymmetricTaps ? "asymmetric" : "edge"));
             c.brightness = Math.max(0, Math.min(100, s.optInt("brightness", base != null ? base.brightness : 100)));
             c.hideImages = s.optBoolean("hideImages", base != null && base.hideImages);
             c.spoilerLabel = s.optString("spoilerLabel", base != null ? base.spoilerLabel : "");
@@ -583,7 +583,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             dropSelection();
             ensureView();
             Config base = Config.from(settings, null);
-            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.kindleTaps, base.brightness);
+            view.setLook(0xFF000000 | base.backgroundColor, base.vertical, base.invertTaps, base.asymmetricTaps, base.brightness);
             // A reload (new word states) keeps the page, the holes and the popup state until the
             // new pages are ready; a fresh open starts transparent, so the WebView's loading screen
             // shows through until the first page fades in.
@@ -2224,7 +2224,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
             return;
         }
         Config next = withScreen(Config.from(settings, config));
-        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps, next.kindleTaps, next.brightness);
+        view.setLook(0xFF000000 | next.backgroundColor, next.vertical, next.invertTaps, next.asymmetricTaps, next.brightness);
         final int gen = generation, page = current;
         engineHandler.post(() -> {
             if (gen != generation) return;

@@ -1,3 +1,6 @@
+// Lo primero: pasar los datos guardados con el nombre antiguo al nuevo, antes de que
+// ningún otro módulo los lea.
+import './utils/migrarClaves'
 import React, { Component, StrictMode, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
@@ -112,7 +115,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                     await (window as any).electronAPI.clearOtaCache();
                   }
                 } catch(e) {}
-                localStorage.removeItem('migaku_reader_active_profile_id');
+                localStorage.removeItem('yoru_active_profile_id');
                 window.location.reload();
               }}
               style={{

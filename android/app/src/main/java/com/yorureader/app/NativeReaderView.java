@@ -65,7 +65,7 @@ final class NativeReaderView extends View {
     /** Vertical text reads right to left: dragging right brings the next page. */
     private boolean vertical = true;
     private boolean invertTaps = false;
-    private boolean kindleTaps = false;
+    private boolean asymmetricTaps = false;
     private final List<Rect> holes = new ArrayList<>();
     /** The looked-up word on the current page (moves with it while sliding). */
     private final List<RectF> highlight = new ArrayList<>();
@@ -120,13 +120,13 @@ final class NativeReaderView extends View {
         return direction == 1 ? next : prev;
     }
 
-    void setLook(int background, boolean vertical, boolean invertTaps, boolean kindleTaps, int brightness) {
+    void setLook(int background, boolean vertical, boolean invertTaps, boolean asymmetricTaps, int brightness) {
         this.background = background;
         // The reader's brightness setting: a black veil over the page (not over Yoru's bars).
         dimPaint.setColor(Color.argb(Math.round((100 - brightness) * 2.55f), 0, 0, 0));
         this.vertical = vertical;
         this.invertTaps = invertTaps;
-        this.kindleTaps = kindleTaps;
+        this.asymmetricTaps = asymmetricTaps;
         invalidate();
     }
 
@@ -314,8 +314,8 @@ final class NativeReaderView extends View {
                 } else if (Math.abs(e.getX() - downX) < touchSlop && Math.abs(e.getY() - downY) < touchSlop) {
                     float x = e.getX();
                     int edge;
-                    if (kindleTaps) {
-                        // Kindle mode: left 20% back, right 80% forward (no vertical correction).
+                    if (asymmetricTaps) {
+                        // Asymmetric mode: left 20% back, right 80% forward (no vertical correction).
                         edge = (x < getWidth() * 0.20f ? -1 : 1) * (invertTaps ? -1 : 1);
                     } else {
                         // Edge mode: left/right thirds advance, center shows/hides bars.

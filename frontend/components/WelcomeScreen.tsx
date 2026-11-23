@@ -120,9 +120,9 @@ export default function WelcomeScreen({ onTerminar, settings = {}, onSaveSetting
       if (ok) {
         // 1. Restore active profile ID
         if (importData.activeProfileId) {
-          localStorage.setItem('migaku_reader_active_profile_id', importData.activeProfileId);
+          localStorage.setItem('yoru_active_profile_id', importData.activeProfileId);
         } else if (importData.profiles && importData.profiles.length > 0) {
-          localStorage.setItem('migaku_reader_active_profile_id', importData.profiles[0].id);
+          localStorage.setItem('yoru_active_profile_id', importData.profiles[0].id);
         }
 
         // 2. Merge profiles

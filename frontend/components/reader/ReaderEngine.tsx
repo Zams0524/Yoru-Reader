@@ -1218,8 +1218,8 @@ function ReaderEngineComponent({
         const tapMode = readerSettings.tapZoneMode || 'edge';
         const invert = readerSettings.invertTapZones || false;
 
-        if (tapMode === 'kindle') {
-          // Kindle Style: 20% left is Prev, 80% right is Next
+        if (tapMode === 'asymmetric') {
+          // Asymmetric: 20% left is Prev, 80% right is Next
           if (tapX < screenWidth * 0.20) {
             flipPage(invert ? 1 : -1);
           } else {
@@ -1480,7 +1480,7 @@ function ReaderEngineComponent({
     const width = rect?.width || window.innerWidth;
     const x = e.clientX - (rect?.left || 0);
     const invert = readerSettings.invertTapZones || false;
-    if ((readerSettings.tapZoneMode || 'edge') === 'kindle') {
+    if ((readerSettings.tapZoneMode || 'edge') === 'asymmetric') {
       flipPage(x < width * 0.2 ? (invert ? 1 : -1) : (invert ? -1 : 1));
     } else if (x < width * 0.25 || x > width * 0.75) {
       // Vertical text reads right to left: the left edge is the next page.

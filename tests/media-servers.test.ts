@@ -661,8 +661,8 @@ function fueraTests() {
 
 /** El perfil activo y si comparte el progreso con la cuenta del servidor. */
 function shareProgress(profileId: string, share: boolean) {
-  store.set('migaku_reader_active_profile_id', profileId);
-  store.set(`migaku_reader_settings_${profileId}`, JSON.stringify({ shareServerProgress: share }));
+  store.set('yoru_active_profile_id', profileId);
+  store.set(`yoru_settings_${profileId}`, JSON.stringify({ shareServerProgress: share }));
 }
 
 /**
@@ -735,13 +735,13 @@ async function localProgressTests() {
   // Sin ajuste no comparte nadie, ni el primero de la lista ni el único que haya:
   // esto es lo que falló al borrar los perfiles y crear uno nuevo, que pasaba a ser
   // el primero y heredaba el progreso de la cuenta.
-  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p1', name: 'zams' }, { id: 'p3', name: 'otro' }]));
-  store.delete('migaku_reader_settings_p1');
-  store.set('migaku_reader_active_profile_id', 'p1');
+  store.set('yoru_profiles', JSON.stringify([{ id: 'p1', name: 'zams' }, { id: 'p3', name: 'otro' }]));
+  store.delete('yoru_settings_p1');
+  store.set('yoru_active_profile_id', 'p1');
   const primeroComparte = sharesServerProgress();
-  store.set('migaku_reader_profiles', JSON.stringify([{ id: 'p9', name: 'nuevo' }]));
-  store.delete('migaku_reader_settings_p9');
-  store.set('migaku_reader_active_profile_id', 'p9');
+  store.set('yoru_profiles', JSON.stringify([{ id: 'p9', name: 'nuevo' }]));
+  store.delete('yoru_settings_p9');
+  store.set('yoru_active_profile_id', 'p9');
   check(!primeroComparte && !sharesServerProgress(),
     'Sin ajuste no comparte nadie, ni el primer perfil ni un perfil recién creado');
 

@@ -19,7 +19,7 @@ export interface NativeReaderSettings {
   fontFamily: string;
   textAlign: string;
   invertTaps: boolean;
-  tapZoneMode: 'edge' | 'kindle';
+  tapZoneMode: 'edge' | 'asymmetric';
   /** 0-100: below 100 the page is dimmed (the reader's brightness setting). */
   brightness: number;
   /** Underlines the plugin draws itself (see engineWordCss). */
