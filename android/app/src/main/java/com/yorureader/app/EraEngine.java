@@ -182,8 +182,7 @@ final class EraEngine {
         if (r.result != 0 || r.items.isEmpty() || r.items.get(0).array == null) {
             // Without this line a page the engine does not draw only shows up as a screen of the
             // background colour, with nothing in the log saying why.
-            Log.w(TAG, "page " + page + " not rendered at " + width + "x" + height + ": result " + r.result + ", items " + r.items.size() + "
-" + logTail());
+            Log.w(TAG, "page " + page + " not rendered at " + width + "x" + height + ": result " + r.result + ", items " + r.items.size() + "\n" + logTail());
             return null;
         }
         byte[] pixels = r.items.get(0).array;
