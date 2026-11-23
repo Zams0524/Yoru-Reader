@@ -193,25 +193,16 @@ export function guardarAntesDeLimpio(actual: Partial<DeLimpio>): void {
   } catch { /* sin sitio: al salir se vuelve a los valores de fábrica */ }
 }
 
-/** Lo que había antes del modo limpio (y lo olvida): a eso se vuelve al apagarlo. */
-export function recuperarAntesDeLimpio(): Partial<DeLimpio> {
-  let antes: Partial<DeLimpio> = {};
-  try { antes = JSON.parse(localStorage.getItem(ANTES_DE_LIMPIO) || '{}'); } catch { /* se queda vacío */ }
-  try { localStorage.removeItem(ANTES_DE_LIMPIO); localStorage.removeItem(LIMPIO_TEXTO_HECHO); } catch { /* da igual */ }
-  return antes;
-}
-
 /*
-  El modo limpio viene encendido de fábrica (lo pidió zams, 23 nov 2026). A quien
-  nunca lo ha tocado, sea nuevo o ya tuviera la app, se le enciende una vez, igual
-  que con el interruptor: se guarda lo que tenía (o los valores de fábrica, si no
-  había cambiado nada) para devolvérselo si lo apaga, y se ponen el color, la fuente
-  y la disposición del modo. Quien ya lo encendió o lo apagó alguna vez tiene la
-  clave escrita y no se le toca.
+  El modo limpio va siempre encendido (lo pidió zams, 23 nov 2026) y ya no tiene
+  interruptor. A quien no lo tenga puesto, sea nuevo, ya tuviera la app o lo hubiera
+  apagado cuando había interruptor, se le enciende una vez: se guarda lo que tenía
+  (o los valores de fábrica) y se ponen el color, la fuente y la disposición del
+  modo. Después cada uno puede cambiar color, fuente y tamaño por su lado.
 */
 function limpioDeFabrica(): void {
   try {
-    if (localStorage.getItem(LS_KEYS.modoLimpio) !== null) return;
+    if (localStorage.getItem(LS_KEYS.modoLimpio) === 'true') return;
     guardarAntesDeLimpio({
       theme: getString(LS_KEYS.theme, 'dark') as ReaderTheme,
       fontFamily: getString(LS_KEYS.fontFamily, '__default__'),
