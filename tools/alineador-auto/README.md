@@ -10,7 +10,7 @@ Corre en el PC donde están los EPUB y los audios. No va dentro de la app.
 
 - **Node 22** o más nuevo (el mismo del servidor de sincronización).
 - **[Bun](https://bun.sh/)** y un clon de **[Honomiya](https://github.com/Natsume-197/Honomiya)**
-  (de Natsume, licencia MIT), con `bun install` hecho y el modelo japonés bajado:
+  (licencia MIT), con `bun install` hecho y el modelo japonés bajado:
   `bun run honomiya models pull quartznet15x5-ja`. Honomiya alinea con un modelo CTC que
   va en CPU: ni Python ni tarjeta gráfica.
 - **ffmpeg** y **ffprobe** en el PATH (Audiobookshelf trae los suyos en `C:\Audiobookshelf`).
