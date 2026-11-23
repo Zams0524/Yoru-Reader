@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-23-lectura-en-voz-sin-hueco',
+    es: 'Al escuchar el libro en voz alta, el reproductor ya no se queda flotando a media pantalla cuando sacas las barras: se queda abajo, sin dejar un hueco vacío en la página.',
+    en: 'When reading aloud, the player no longer floats halfway up the screen when you bring up the bars: it stays at the bottom, without leaving an empty gap on the page.',
+  },
+  {
     id: '2026-11-23-modo-limpio-sin-interruptor',
     es: 'El lector va ahora siempre en «Modo limpio» (fondo grafito, Noto Serif JP y el contador de caracteres abajo), así que su interruptor ya no está en los ajustes. El color, la fuente y el tamaño los sigues cambiando como quieras.',
     en: 'The reader now always uses “Clean mode” (graphite background, Noto Serif JP and the character counter at the bottom), so its switch is gone from the settings. You can still change the colour, font and size as you like.',
