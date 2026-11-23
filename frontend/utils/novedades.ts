@@ -33,6 +33,21 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-23-lectura-en-voz-sin-hueco',
+    es: 'Al escuchar el libro en voz alta, el reproductor ya no se queda flotando a media pantalla cuando sacas las barras: se queda abajo, sin dejar un hueco vacío en la página.',
+    en: 'When reading aloud, the player no longer floats halfway up the screen when you bring up the bars: it stays at the bottom, without leaving an empty gap on the page.',
+  },
+  {
+    id: '2026-11-23-modo-limpio-sin-interruptor',
+    es: 'El lector va ahora siempre en «Modo limpio» (fondo grafito, Noto Serif JP y el contador de caracteres abajo), así que su interruptor ya no está en los ajustes. El color, la fuente y el tamaño los sigues cambiando como quieras.',
+    en: 'The reader now always uses “Clean mode” (graphite background, Noto Serif JP and the character counter at the bottom), so its switch is gone from the settings. You can still change the colour, font and size as you like.',
+  },
+  {
+    id: '2026-11-23-modo-limpio-de-fabrica',
+    es: 'El «Modo limpio» viene ahora encendido de fábrica: fondo grafito, Noto Serif JP y el contador de caracteres abajo. Si prefieres tu aspecto de antes, apágalo en los ajustes del libro (Apariencia) y vuelve tal cual lo tenías.',
+    en: '“Clean mode” is now on by default: graphite background, Noto Serif JP and the character counter at the bottom. If you prefer your previous look, turn it off in the book settings (Appearance) and it comes back exactly as you had it.',
+  },
+  {
     id: '2026-11-23-borrar-progreso-en-perfil',
     es: '«Borrar mi progreso de lectura» se ha mudado a tu perfil (pestaña Yo, al final). Ahora te dice mientras borra, y si algo falla te lo enseña en vez de quedarse callado.',
     en: '“Erase my reading progress” has moved to your profile (Me tab, at the bottom). It now shows while it erases, and if something fails it tells you instead of staying silent.',

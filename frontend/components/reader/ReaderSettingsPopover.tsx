@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, MinusCircle, PanelsTopLeft, Palette, PlusCircle, Settings, Type } from 'lucide-react';
-import { BUILT_IN_FONTS, ReaderSettingsState, guardarAntesDeLimpio, recuperarAntesDeLimpio, valoresDeLimpio } from '../../hooks/useReaderSettings';
+import { BUILT_IN_FONTS, ReaderSettingsState } from '../../hooks/useReaderSettings';
 import { isNativeReaderAvailable } from '../../utils/nativeReader';
 
 interface ReaderSettingsPopoverProps {
@@ -49,28 +49,6 @@ export default function ReaderSettingsPopover({
     onSettingChange('direction', mode);
     onSettingChange('vertical', mode !== 'horizontal');
     if (mode !== 'horizontal') onSettingChange('paginated', true);
-  };
-
-  /*
-    Modo limpio. Encenderlo pone también el color y la fuente que le van, y recuerda los
-    que había para devolverlos al apagarlo; entre medias cada uno se cambia por su lado.
-  */
-  const setModoLimpio = (on: boolean) => {
-    const claves = ['theme', 'fontFamily', 'fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const;
-    const poner = <K extends keyof ReaderSettingsState>(clave: K, valor: ReaderSettingsState[K] | undefined) => {
-      if (valor !== undefined) onSettingChange(clave, valor);
-    };
-    if (on) {
-      guardarAntesDeLimpio({ theme, fontFamily, fontSize, lineHeight, horizontalPadding, verticalPadding, textAlign, fontWeight });
-      const valores = valoresDeLimpio();
-      for (const clave of claves) poner(clave, valores[clave]);
-    } else {
-      const antes = recuperarAntesDeLimpio();
-      poner('theme', antes.theme && antes.theme !== 'grafito' ? antes.theme : 'dark');
-      poner('fontFamily', antes.fontFamily || '__default__');
-      for (const clave of ['fontSize', 'lineHeight', 'horizontalPadding', 'verticalPadding', 'textAlign', 'fontWeight'] as const) poner(clave, antes[clave]);
-    }
-    onSettingChange('modoLimpio', on);
   };
 
   const fonts = BUILT_IN_FONTS.some((font) => font.value === fontFamily)
@@ -122,11 +100,6 @@ export default function ReaderSettingsPopover({
           )}
           {seccion === 'apariencia' && (
             <>
-            <SwitchRow
-              label={es ? 'Modo limpio' : 'Clean mode'}
-              checked={!!settings.modoLimpio}
-              onChange={setModoLimpio}
-            />
             <PickerRow
               label={es ? 'Modo de color' : 'Color mode'}
               value={theme || 'dark'}

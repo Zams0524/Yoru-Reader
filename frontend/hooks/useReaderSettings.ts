@@ -116,6 +116,7 @@ export const BUILT_IN_FONTS = [
 ];
 
 function loadSettings(): ReaderSettingsState {
+  limpioDeFabrica();
   ponerAlDiaLimpio();
   const direction = getString(LS_KEYS.direction, 'auto') as 'auto' | 'vertical' | 'horizontal';
   return {
@@ -147,7 +148,7 @@ function loadSettings(): ReaderSettingsState {
     nativeEngine: getBool(LS_KEYS.nativeEngine, true),
     hideImages: getBool(LS_KEYS.hideImages, false),
     dictPopupPlacement: getString(LS_KEYS.dictPopupPlacement, 'leido') === 'clasico' ? 'clasico' : 'leido',
-    modoLimpio: getBool(LS_KEYS.modoLimpio, false),
+    modoLimpio: getBool(LS_KEYS.modoLimpio, true),
   };
 }
 
@@ -192,12 +193,30 @@ export function guardarAntesDeLimpio(actual: Partial<DeLimpio>): void {
   } catch { /* sin sitio: al salir se vuelve a los valores de fábrica */ }
 }
 
-/** Lo que había antes del modo limpio (y lo olvida): a eso se vuelve al apagarlo. */
-export function recuperarAntesDeLimpio(): Partial<DeLimpio> {
-  let antes: Partial<DeLimpio> = {};
-  try { antes = JSON.parse(localStorage.getItem(ANTES_DE_LIMPIO) || '{}'); } catch { /* se queda vacío */ }
-  try { localStorage.removeItem(ANTES_DE_LIMPIO); localStorage.removeItem(LIMPIO_TEXTO_HECHO); } catch { /* da igual */ }
-  return antes;
+/*
+  El modo limpio va siempre encendido (lo pidió zams, 23 nov 2026) y ya no tiene
+  interruptor. A quien no lo tenga puesto, sea nuevo, ya tuviera la app o lo hubiera
+  apagado cuando había interruptor, se le enciende una vez: se guarda lo que tenía
+  (o los valores de fábrica) y se ponen el color, la fuente y la disposición del
+  modo. Después cada uno puede cambiar color, fuente y tamaño por su lado.
+*/
+function limpioDeFabrica(): void {
+  try {
+    if (localStorage.getItem(LS_KEYS.modoLimpio) === 'true') return;
+    guardarAntesDeLimpio({
+      theme: getString(LS_KEYS.theme, 'dark') as ReaderTheme,
+      fontFamily: getString(LS_KEYS.fontFamily, '__default__'),
+      fontSize: getNumber(LS_KEYS.fontSize, 20),
+      lineHeight: getNumber(LS_KEYS.lineHeight, 1.8),
+      horizontalPadding: getNumber(LS_KEYS.horizontalPadding, 8),
+      verticalPadding: getNumber(LS_KEYS.verticalPadding, 3),
+      textAlign: getString(LS_KEYS.textAlign, 'original') as ReaderSettingsState['textAlign'],
+      fontWeight: getNumber(LS_KEYS.fontWeight, 400),
+    });
+    const valores = valoresDeLimpio();
+    for (const clave of CLAVES_DE_LIMPIO) localStorage.setItem(LS_KEYS[clave], String(valores[clave]));
+    localStorage.setItem(LS_KEYS.modoLimpio, 'true');
+  } catch { /* sin almacenamiento se queda como estaba */ }
 }
 
 /*
