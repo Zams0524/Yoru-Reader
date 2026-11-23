@@ -518,9 +518,8 @@ function ReaderEngineComponent({
           En una pantalla ancha, una sola columna obliga a recorrer con la vista toda
           la ventana en cada renglón, que es justo lo que cansa al leer. Dos columnas
           parten el renglón por la mitad. El umbral son 1000 px de caja por columna,
-          el mismo que usa Nanahoshi, y nunca pasa de dos: con tres, cada columna se
-          queda tan estrecha que las palabras largas se parten. (De Nanahoshi sale el
-          umbral, no el código; la cesión de Natsume está en THIRD-PARTY-GRANTS.md.)
+          y nunca pasa de dos: con tres, cada columna se queda tan estrecha que las
+          palabras largas se parten.
 
           La cuenta mantiene intacto el paso de página. Con hueco `g = 2·margen` y
           columna `c = caja/n − g`, n columnas ocupan exactamente una caja: la primera

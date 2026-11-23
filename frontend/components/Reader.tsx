@@ -2541,8 +2541,7 @@ export default function Reader({
     /*
       Guardar el sitio, volver a él y cambiar de capítulo.
 
-      Las cuatro teclas vienen de Nanahoshi, de Natsume, que las tiene como B, R, N y
-      M; de ahí sale la elección, no el código. Su cesión: THIRD-PARTY-GRANTS.md.
+      Cuatro teclas: B, R, N y M.
 
       Guardar y volver no estrenan nada: usan los marcadores de página que ya hay, los
       mismos que pinta la cinta y que lista la barra lateral. Una segunda lista de
@@ -4123,7 +4122,7 @@ export default function Reader({
       )}
 
       {/*
-        Modo limpio: en vez de la barra de páginas, el contador de Nanahoshi. Caracteres
+        Modo limpio: en vez de la barra de páginas, un contador. Caracteres
         leídos, total y porcentaje, encima de la barra del audio si la hay.
       */}
       {readerSettings.modoLimpio && currentProgress.totalChars > 0 && (

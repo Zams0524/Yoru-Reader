@@ -41,13 +41,13 @@ export default function StatisticsSettings({
             {lang === 'es' ? 'Tus horas y rachas no bajan aunque quites la novela.' : 'Your hours and streaks stay even if you remove the novel.'}
           </span>
         </span>
-        <label className="migaku-switch">
+        <label className="yoru-switch">
           <input
             type="checkbox"
             checked={settings.keepStatsOnDelete !== false}
             onChange={(e) => onSaveSettings({ ...settings, keepStatsOnDelete: e.target.checked })}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
 

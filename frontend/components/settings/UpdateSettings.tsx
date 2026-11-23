@@ -116,13 +116,13 @@ export default function UpdateSettings({
       */}
       <div className="settings-row-control">
         <span className="settings-label-text">{lang === 'es' ? 'Actualizar sola' : 'Update automatically'}</span>
-        <label className="migaku-switch">
+        <label className="yoru-switch">
           <input
             type="checkbox"
             checked={settings.autoUpdate || false}
             onChange={(e) => onSaveSettings({ ...settings, autoUpdate: e.target.checked })}
           />
-          <span className="migaku-switch-slider"></span>
+          <span className="yoru-switch-slider"></span>
         </label>
       </div>
 

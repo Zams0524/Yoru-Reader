@@ -568,14 +568,14 @@ body.reader-active .app-container {
   
   display: flex;
   flex-direction: column;
-  justify-content: flex-start; /* Top-align paragraphs inside the container for a consistent Kindle-like feel */
+  justify-content: flex-start; /* Top-align paragraphs inside the container for a consistent feel */
 }
 
 .reader-text-page {
   line-height: 1.9; /* clean spacing for Japanese text with ruby */
   text-align: left; /* Align text content exactly to the left */
   width: 100%;
-  word-break: break-all; /* Wrap character by character, matching Migaku layout */
+  word-break: break-all; /* Wrap character by character */
 }
 
 .paragraph-break {
@@ -1381,7 +1381,7 @@ rt {
   border-radius: 4px;
 }
 
-/* --- JUMP TO PAGE MODAL (Migaku style) --- */
+/* --- JUMP TO PAGE MODAL --- */
 .jump-modal-overlay {
   position: fixed;
   top: 0;
@@ -1538,7 +1538,7 @@ rt {
 }
 
 /* --- REPLICA SETTINGS STYLES (Yoru Cafe Cyberpunk Style) --- */
-.settings-modal.migaku-style {
+.settings-modal.yoru-style {
   background-color: var(--bg-panel);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
@@ -1553,7 +1553,7 @@ rt {
   overflow: hidden;
 }
 
-.migaku-settings-content {
+.yoru-settings-content {
   overflow-y: auto;
   padding-right: 6px;
   flex: 1;
@@ -1568,7 +1568,7 @@ rt {
 
 
 
-.migaku-section-title {
+.yoru-section-title {
   color: var(--primary);
   text-shadow: 0 0 8px color-mix(in srgb, var(--primary) 25%, transparent);
   font-family: var(--font-heading);
@@ -1579,7 +1579,7 @@ rt {
   text-transform: uppercase;
 }
 
-.migaku-row {
+.yoru-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1587,7 +1587,7 @@ rt {
   min-height: 40px;
 }
 
-.migaku-label {
+.yoru-label {
   font-size: 0.95rem;
   font-weight: 500;
   color: #ffffff;
@@ -1597,7 +1597,7 @@ rt {
 }
 
 /* Custom Dropdown Select */
-.migaku-select {
+.yoru-select {
   background-color: #18181b;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
@@ -1618,18 +1618,18 @@ rt {
   background-size: 14px;
 }
 
-.migaku-select:focus {
+.yoru-select:focus {
   border-color: var(--primary);
   box-shadow: none;
 }
 
-.migaku-select option {
+.yoru-select option {
   background-color: #18181b;
   color: #ffffff;
 }
 
 /* Custom Toggle Switch */
-.migaku-switch {
+.yoru-switch {
   position: relative;
   display: inline-block;
   width: 48px;
@@ -1637,13 +1637,13 @@ rt {
   cursor: pointer;
 }
 
-.migaku-switch input {
+.yoru-switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.migaku-switch-slider {
+.yoru-switch-slider {
   position: absolute;
   top: 0;
   left: 0;
@@ -1655,7 +1655,7 @@ rt {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.migaku-switch-slider:before {
+.yoru-switch-slider:before {
   position: absolute;
   content: "";
   height: 18px;
@@ -1668,19 +1668,19 @@ rt {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
-.migaku-switch input:checked + .migaku-switch-slider {
+.yoru-switch input:checked + .yoru-switch-slider {
   background-color: var(--primary);
   box-shadow: none;
   border-color: var(--primary);
 }
 
-.migaku-switch input:checked + .migaku-switch-slider:before {
+.yoru-switch input:checked + .yoru-switch-slider:before {
   transform: translateX(22px);
   background-color: #0d0d0f;
 }
 
 /* Tamaño del texto Slider CSS */
-.migaku-slider-row {
+.yoru-slider-row {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1693,7 +1693,7 @@ rt {
   color: #ffffff;
 }
 
-.migaku-slider-container {
+.yoru-slider-container {
   display: flex;
   align-items: center;
   background-color: #18181b;
@@ -1722,7 +1722,7 @@ rt {
   align-items: center;
 }
 
-.migaku-slider {
+.yoru-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -1734,7 +1734,7 @@ rt {
   z-index: 5;
 }
 
-.migaku-slider::-webkit-slider-thumb {
+.yoru-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 22px;
@@ -1746,7 +1746,7 @@ rt {
   transition: transform 0.1s;
 }
 
-.migaku-slider::-webkit-slider-thumb:hover {
+.yoru-slider::-webkit-slider-thumb:hover {
   transform: scale(1.1);
 }
 
@@ -2262,7 +2262,7 @@ rt {
   border-radius: 4px;
 }
 
-/* --- BOOK PREVIEW MODAL STYLES (Migaku style/* --- BOOK PREVIEW MODAL STYLES (Yoru Cafe Cyberpunk Style) --- */
+/* --- BOOK PREVIEW MODAL STYLES (Yoru Cafe Cyberpunk Style) --- */
 .book-preview-modal {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-light);
@@ -4696,7 +4696,7 @@ rt {
   text-decoration: underline;
 }
 
-/* Comprehension Popover overlays and cards (Migaku style with Yoru Cafe theme) */
+/* Comprehension Popover overlays and cards (Yoru Cafe theme) */
 .comprehension-popover-overlay {
   position: fixed;
   top: 0;
@@ -5819,8 +5819,8 @@ html:where(.yoru-compact) .heatmap-legend-row {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Range Slider (Migaku style) */
-.migaku-range-slider {
+/* Range Slider */
+.yoru-range-slider {
   -webkit-appearance: none;
   width: 100%;
   height: 6px;
@@ -5836,7 +5836,7 @@ html:where(.yoru-compact) .heatmap-legend-row {
   cursor: pointer;
 }
 
-.migaku-range-slider::-webkit-slider-thumb {
+.yoru-range-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 18px;
@@ -5848,11 +5848,11 @@ html:where(.yoru-compact) .heatmap-legend-row {
   transition: transform 0.1s ease;
 }
 
-.migaku-range-slider::-webkit-slider-thumb:hover {
+.yoru-range-slider::-webkit-slider-thumb:hover {
   transform: scale(1.15);
 }
 
-.migaku-range-slider::-webkit-slider-thumb:active {
+.yoru-range-slider::-webkit-slider-thumb:active {
   transform: scale(0.95);
 }
 
@@ -5953,7 +5953,7 @@ html:where(.yoru-compact) .heatmap-legend-row {
 .yomitan-settings-pane select,
 .yomitan-settings-pane option,
 .yomitan-settings-pane input[type="text"],
-.yomitan-settings-pane select.migaku-select {
+.yomitan-settings-pane select.yoru-select {
   background: var(--bg-app) !important;
   border: 1px solid var(--border-light) !important;
   color: var(--text-main) !important;

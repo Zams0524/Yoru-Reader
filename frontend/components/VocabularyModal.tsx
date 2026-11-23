@@ -1541,13 +1541,13 @@ export default function VocabularyModal({
                       <div className="yomitan-anki-row-left" style={{ paddingRight: '12px' }}>
                         <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff' }}>{lang === 'es' ? 'Analizar y lematizar oraciones' : 'Parse and lemmatize sentences'}</div>
                       </div>
-                      <label className="migaku-switch" style={{ flexShrink: 0 }}>
+                      <label className="yoru-switch" style={{ flexShrink: 0 }}>
                         <input
                           type="checkbox"
                           checked={ankiSettings.importParseWords !== false}
                           onChange={e => saveAnkiSettings({ ...ankiSettings, importParseWords: e.target.checked })}
                         />
-                        <span className="migaku-switch-slider" />
+                        <span className="yoru-switch-slider" />
                       </label>
                     </div>
 
@@ -1636,13 +1636,13 @@ export default function VocabularyModal({
                         <div className="yomitan-anki-row-left" style={{ paddingRight: '12px' }}>
                           <span style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)' }}>{lang === 'es' ? 'Omitir tarjetas no estudiadas' : 'Skip unstudied cards'}</span>
                         </div>
-                        <label className="migaku-switch" style={{ flexShrink: 0 }}>
+                        <label className="yoru-switch" style={{ flexShrink: 0 }}>
                           <input
                             type="checkbox"
                             checked={jpdbOverwrite}
                             onChange={e => setJpdbOverwrite(e.target.checked)}
                           />
-                          <span className="migaku-switch-slider" />
+                          <span className="yoru-switch-slider" />
                         </label>
                       </div>
                     </div>
@@ -1758,13 +1758,13 @@ export default function VocabularyModal({
                             {lang === 'es' ? 'Activa si las líneas contienen oraciones o conjugaciones en lugar de vocablos básicos.' : 'Enable if lines contain sentences or conjugated verbs instead of simple words.'}
                           </div>
                         </div>
-                        <label className="migaku-switch" style={{ flexShrink: 0 }}>
+                        <label className="yoru-switch" style={{ flexShrink: 0 }}>
                           <input
                             type="checkbox"
                             checked={fileParseWords}
                             onChange={e => setFileParseWords(e.target.checked)}
                           />
-                          <span className="migaku-switch-slider" />
+                          <span className="yoru-switch-slider" />
                         </label>
                       </div>
                     )}

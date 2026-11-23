@@ -6428,7 +6428,7 @@ const Library = React.memo(function Library({
         </div>
       )}
 
-      {/* Book Edit Details Modal (Migaku replica) */}
+      {/* Book Edit Details Modal */}
       {editingBook && (
         <div className="modal-overlay" onClick={() => setEditingBook(null)} style={{ zIndex: 1200 }}>
           <div className="book-edit-modal" onClick={(e) => e.stopPropagation()}>
@@ -6467,13 +6467,13 @@ const Library = React.memo(function Library({
               {/* Ocultar imagen de portada */}
               <div className="edit-form-row inline-row">
                 <label className="edit-form-label">{lang === 'es' ? 'Ocultar imagen de portada' : 'Hide cover image'}</label>
-                <label className="migaku-switch">
+                <label className="yoru-switch">
                   <input 
                     type="checkbox" 
                     checked={editHideCover}
                     onChange={(e) => setEditHideCover(e.target.checked)}
                   />
-                  <span className="migaku-switch-slider"></span>
+                  <span className="yoru-switch-slider"></span>
                 </label>
               </div>
 
