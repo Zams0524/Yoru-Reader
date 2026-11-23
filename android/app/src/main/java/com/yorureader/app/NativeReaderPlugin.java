@@ -1180,13 +1180,33 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
      * ReadEra does: fitted between the page margins and centred, upright in either direction.
      * Returns null for any other page.
      */
+    /**
+     * The picture block this page shows, or -1. The engine usually starts a picture's page inside
+     * the picture (".../p[n]/img.0"), and that was the only form recognised. It can also start it
+     * at the block itself (".../p[n].0"), or, when the page-tall placeholder does not fit one page
+     * (a wide screen, a tablet in landscape), split it and leave a page with nothing to read right
+     * after the picture's block. Those pages were drawn by the engine: the transparent placeholder
+     * on the background, an empty page where the illustration should be. A picture block holds
+     * only its image, so any page starting in it is the picture's page; a page without letters
+     * that starts just after one is its leftover, and shows it too.
+     */
+    private int pictureOrdinalOf(int page, String xpath) throws IOException {
+        int ordinal = ordinalOf(xpath);
+        if (ordinal < 0) return -1;
+        if (pictures.containsKey(ordinal)) return ordinal;
+        if (pictures.containsKey(ordinal - 1) && lettersOf(page).texts.length == 0) return ordinal - 1;
+        return -1;
+    }
+
     private Bitmap drawPicturePage(int page, Config c) throws IOException {
         if (pictures.isEmpty()) return null;
-        String xpath = pageXPath(page);
-        if (!xpath.contains("/img")) return null;
-        int ordinal = ordinalOf(xpath);
+        int ordinal = pictureOrdinalOf(page, pageXPath(page));
+        if (ordinal < 0) return null;
         File file = pictures.get(ordinal);
-        if (file == null || !file.isFile()) return null;
+        if (file == null || !file.isFile()) {
+            Log.w(TAG, "picture page " + page + ": no image file for block " + ordinal + " (" + file + ")");
+            return null;
+        }
         int minMargin = Math.round(10 * c.density);
         int left = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f)) + c.insets.left;
         int right = Math.max(minMargin, Math.round(c.width * c.horizontalPadding / 100f)) + c.insets.right;
@@ -1197,14 +1217,20 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            Log.w(TAG, "picture page " + page + ": cannot read " + file.getName() + " (" + file.length() + " bytes)");
+            return null;
+        }
         float scale = Math.min(boxW / (float) bounds.outWidth, boxH / (float) bounds.outHeight);
         BitmapFactory.Options decode = new BitmapFactory.Options();
         decode.inSampleSize = 1;
         while (bounds.outWidth / (decode.inSampleSize * 2) >= bounds.outWidth * scale
             && bounds.outHeight / (decode.inSampleSize * 2) >= bounds.outHeight * scale) decode.inSampleSize *= 2;
         Bitmap image = BitmapFactory.decodeFile(file.getAbsolutePath(), decode);
-        if (image == null) return null;
+        if (image == null) {
+            Log.w(TAG, "picture page " + page + ": decoding " + file.getName() + " failed");
+            return null;
+        }
         int w = Math.round(bounds.outWidth * scale), h = Math.round(bounds.outHeight * scale);
         int x = left + (boxW - w) / 2, y = top + (boxH - h) / 2;
         Bitmap pageBitmap = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888);
