@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-23-ilustraciones-tablet',
+    es: 'Las ilustraciones de los libros vuelven a verse en el lector de Android: en algunas pantallas, como la de una tablet, su página salía vacía.',
+    en: 'Book illustrations show again in the Android reader: on some screens, such as a tablet’s, their page came out empty.',
+  },
+  {
     id: '2026-11-22-borrar-progreso-de-lectura',
     es: 'Ya puedes borrar tu progreso de lectura: en Ajustes, Zona de peligro, «Borrar mi progreso de lectura» pone a cero por dónde vas en cada libro, tus estadísticas y lo leído o escuchado del servidor, también en tus otros aparatos. Tus libros, marcadores, palabras y tarjetas se conservan.',
     en: 'You can now erase your reading progress: in Settings, Danger Zone, “Erase my reading progress” resets your place in every book, your statistics and what you read or listened to from the server, on your other devices too. Your books, bookmarks, words and cards are kept.',
