@@ -961,6 +961,15 @@ html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-containe
 .yoru-continue-bar span { display: block; height: 100%; background: var(--primary); }
 
 /* Tarjeta de entidad (serie, autor, colección) */
+.yoru-entity-section {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 28px 0 14px;
+}
+.yoru-entity-section:first-child { margin-top: 8px; }
 .yoru-entity-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

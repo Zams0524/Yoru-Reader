@@ -14,6 +14,7 @@ import {
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
 import { cachedServerCollection, getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
+import type { ServerGroup } from '../../utils/serverEntities';
 import { Rail } from './primitives';
 import { useAudiobookPlayer } from './AudiobookPlayerBar';
 import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
@@ -708,6 +709,89 @@ export function ServerCollectionView({
               </button>
             </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Una serie de audiolibros o un autor del servidor, sacado de Explorar.
+ *
+ * Sale de la caché de `serverEntities`, igual que la colección sale de la del
+ * catálogo: aparece al instante y funciona sin red. Mezcla series de Kavita y
+ * audiolibros cuando el autor tiene de los dos.
+ */
+export function ServerGroupView({
+  group,
+  es,
+  onBack,
+  onOpenItem,
+}: {
+  group: ServerGroup | null;
+  es: boolean;
+  onBack: () => void;
+  onOpenItem: (item: ServerItem) => void;
+}) {
+  const items = group?.items || [];
+  const kavita = items.filter((item) => item.source === 'kavita').length;
+  const audio = items.length - kavita;
+  const parts: string[] = [];
+  if (kavita > 0) parts.push(`${kavita} ${kavita === 1 ? 'serie' : 'series'}`);
+  if (audio > 0) {
+    parts.push(`${audio} ${es ? (audio === 1 ? 'audiolibro' : 'audiolibros') : (audio === 1 ? 'audiobook' : 'audiobooks')}`);
+  }
+  const author = group?.key.startsWith('abs:') ? items.find((item) => item.author)?.author : undefined;
+  if (author) parts.push(author);
+
+  return (
+    <div>
+      <button type="button" className="yoru-detail-back" onClick={onBack}>
+        <ArrowLeft size={16} />
+        {es ? 'Volver' : 'Back'}
+      </button>
+
+      <div className="yoru-view-head">
+        <div className="yoru-series-head">
+          <span className="yoru-series-head-cover">
+            {items[0]?.cover ? <img src={items[0].cover} alt="" loading="lazy" /> : <span />}
+          </span>
+          <span>
+            <h1 className="yoru-view-title">{group?.name || ''}</h1>
+            <span className="yoru-view-sub">{parts.join(' · ')}</span>
+          </span>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="yoru-empty-note">
+          {es
+            ? 'No queda nada de esto en la lista guardada. Vuelve a abrirlo con conexión al servidor.'
+            : 'Nothing of this is left in the saved list. Open it again while connected to the server.'}
+        </p>
+      ) : (
+        <ul className="yoru-link-list yoru-volume-list">
+          {items.map((item, index) => {
+            const isAudio = item.source === 'audiobookshelf';
+            return (
+              <li key={item.id}>
+                <button type="button" className="yoru-volume-row" onClick={() => onOpenItem(item)}>
+                  <span className="yoru-volume-index">{index + 1}</span>
+                  <span className="yoru-volume-cover">
+                    {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span />}
+                  </span>
+                  <span className="yoru-volume-text">
+                    <span className="yoru-link-title">{item.title}</span>
+                    {item.author && <span className="yoru-link-author">{item.author}</span>}
+                  </span>
+                  <span className="yoru-volume-listen">
+                    {isAudio ? <Headphones size={15} aria-hidden="true" /> : <BookOpen size={15} aria-hidden="true" />}
+                    <span>{isAudio ? (es ? 'Escuchar' : 'Listen') : (es ? 'Ver' : 'Open')}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
