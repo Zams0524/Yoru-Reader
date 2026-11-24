@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
-import { BookPoster, BookRail, EmptyState, EntityCard, Rail } from './primitives';
+import { Tag, X } from 'lucide-react';
+import { BookPoster, BookRail, Cover, EmptyState, EntityCard, Rail } from './primitives';
 import {
   ServerCard,
   ServerCollectionCard,
@@ -439,14 +439,36 @@ export default function HomeView({
   if (collectionsLocal.length > 0 || collectionsServer.length > 0) {
     localRails.collections = (
       <Rail title={es ? 'Descubre colecciones' : 'Discover collections'} es={es}>
+        {/*
+          Las colecciones propias con la misma tarjeta que las del servidor. Antes iban
+          en una caja de 240 px que la fila encogía, y una vacía salía como una tira
+          estrecha sin portada al lado de las del servidor (zams, 23 nov 2026).
+        */}
         {collectionsLocal.map((group) => (
-          <div key={group.key} style={{ width: 240 }}>
-            <EntityCard
-              group={group}
-              subtitle={formatCount(group.books.length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
-              onOpen={onOpenCollection}
-            />
-          </div>
+          <button
+            key={group.key}
+            type="button"
+            className="yoru-series-stack"
+            title={group.name}
+            onClick={() => onOpenCollection(group)}
+          >
+            <span className="yoru-series-stack-frame">
+              {group.books.slice(1, 3).map((book, index) => (
+                <span key={book.id} className={`yoru-series-stack-back is-${index + 1}`}>
+                  <Cover book={book} />
+                </span>
+              ))}
+              {group.books[0] ? (
+                <span className="yoru-series-stack-front"><Cover book={group.books[0]} /></span>
+              ) : (
+                <span className="yoru-series-stack-front yoru-series-stack-empty"><Tag size={28} aria-hidden="true" /></span>
+              )}
+            </span>
+            <span className="yoru-poster-title">{group.name}</span>
+            <span className="yoru-poster-meta">
+              {formatCount(group.books.length, es ? 'libro' : 'book', es ? 'libros' : 'books')}
+            </span>
+          </button>
         ))}
         {collectionsServer.map((entry) => (
           <ServerCollectionCard key={entry.key} collection={entry} es={es} onOpen={onOpenServerCollection} />
