@@ -9,6 +9,7 @@
 
 import { getDynamicCollections, getManualCollections, matchesCollection } from '../../utils/collections';
 import { descartados, type MotivoRecomendacion } from '../../utils/recomendaciones';
+import { crearBuscador } from '../../utils/busquedaRomaji';
 
 export interface ShelfBook {
   id: string;
@@ -259,16 +260,11 @@ export function similarBooks(books: ShelfBook[], book: ShelfBook, limit = 18): S
 }
 
 export function searchBooks(books: ShelfBook[], query: string, limit = 30): ShelfBook[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
+  // En romaji también: «re zero» encuentra «Ｒｅ：ゼロから…» (`busquedaRomaji.ts`).
+  const buscador = crearBuscador(query);
+  if (!buscador) return [];
   return visibleBooks(books)
-    .filter((book) => {
-      const haystack = [book.title, book.author, book.series, ...(book.tags || [])]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(needle);
-    })
+    .filter((book) => buscador(book.title, book.author, book.series, ...(book.tags || [])))
     .slice(0, limit);
 }
 

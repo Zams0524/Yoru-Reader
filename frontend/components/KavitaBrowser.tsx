@@ -12,7 +12,7 @@ import {
   kavitaSeriesCoverUrl,
   kavitaVolumeTitles,
   kavitaVolumesToBooks,
-  searchKavitaSeries,
+  searchKavitaSeriesRomaji,
 } from '../utils/kavitaService';
 import { getAudiobookLink } from '../utils/audiobookshelfService';
 import { describeServerError } from '../utils/serverHttp';
@@ -176,7 +176,7 @@ export default function KavitaBrowser({ lang, libraryTitles, onImport, onClose, 
     const q = query.trim();
     if (!q) { setSearchResults(null); return; }
     searchTimer.current = setTimeout(() => {
-      searchKavitaSeries(q)
+      searchKavitaSeriesRomaji(q)
         .then(setSearchResults)
         .catch((err) => setError(describeServerError(err, es)));
     }, 350);

@@ -1,4 +1,5 @@
 import { db } from './db';
+import { crearBuscador } from './busquedaRomaji';
 
 /**
  * Colecciones del usuario.
@@ -288,7 +289,11 @@ export function matchesRule(book: RuleBook, rule: CollectionRule): boolean {
   const textos = textsOf(book, rule.field);
   const needle = rule.value.trim().toLowerCase();
   if (!needle) return true;
-  if (op === 'contains') return textos.some((texto) => texto.toLowerCase().includes(needle));
+  if (op === 'contains') {
+    // «Título contiene re zero» también recoge «Ｒｅ：ゼロから…» (`busquedaRomaji.ts`).
+    const buscador = crearBuscador(rule.value);
+    return !!buscador && textos.some((texto) => buscador(texto));
+  }
   const igual = textos.some((texto) => texto === rule.value);
   return op === 'isNot' ? !igual : igual;
 }

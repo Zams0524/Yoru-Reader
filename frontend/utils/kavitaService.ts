@@ -1,5 +1,6 @@
 import { KAVITA_DEFAULTS } from '../config/serverDefaults';
 import { leerCredencialesMedios } from './credencialesMedios';
+import { crearBuscador, variantesParaServidor } from './busquedaRomaji';
 import type {
   ConnectionTestResult,
   KavitaBook,
@@ -467,6 +468,38 @@ export async function getKavitaSeriesByName(text: string, limit = 100): Promise<
   } catch {
     return searchKavitaSeries(q);
   }
+}
+
+/**
+ * El buscador de la pantalla de Kavita. Kavita solo busca el texto tal cual, así que
+ * «re zero» no le encuentra «Ｒｅ：ゼロから…»: con romaji se le pregunta además en
+ * kana (`variantesParaServidor`) y lo que vuelve de esas preguntas se filtra con el
+ * mismo buscador que la biblioteca, para no traer cualquier cosa con «ゼロ».
+ */
+export async function searchKavitaSeriesRomaji(query: string): Promise<KavitaSeries[]> {
+  const variantes = variantesParaServidor(query);
+  if (variantes.length <= 1) return searchKavitaSeries(query);
+  const respuestas = await Promise.allSettled([
+    searchKavitaSeries(variantes[0]),
+    ...variantes.slice(1).map((variante) => getKavitaSeriesByName(variante)),
+  ]);
+  if (respuestas.every((respuesta) => respuesta.status === 'rejected')) {
+    throw (respuestas[0] as PromiseRejectedResult).reason;
+  }
+  const buscador = crearBuscador(query);
+  const vistas = new Set<number>();
+  const series: KavitaSeries[] = [];
+  respuestas.forEach((respuesta, indice) => {
+    if (respuesta.status !== 'fulfilled') return;
+    for (const serie of respuesta.value) {
+      if (vistas.has(serie.id)) continue;
+      // Lo que Kavita encontró con la búsqueda tal cual se respeta; lo de las variantes, se filtra.
+      if (indice > 0 && buscador && !buscador(serie.name, serie.originalName, serie.localizedName)) continue;
+      vistas.add(serie.id);
+      series.push(serie);
+    }
+  });
+  return series;
 }
 
 export async function searchKavitaSeries(query: string): Promise<KavitaSeries[]> {
