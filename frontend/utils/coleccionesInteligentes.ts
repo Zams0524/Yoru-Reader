@@ -55,6 +55,7 @@ const SINONIMOS: string[][] = [
   ['reencarnacion', 'reincarnation', '転生', 'tensei', 'transmigration'],
   ['sci-fi', 'scifi', 'ciencia ficcion', 'science fiction', 'sf'],
   ['realidad virtual', 'virtual reality', 'vr', 'vrmmo', 'mmorpg', 'game world', 'videojuegos'],
+  ['fantasia oscura', 'dark fantasy', 'ダークファンタジー'],
   ['fantasia', 'fantasy', 'ファンタジー'],
   ['romance', 'romantico', 'amor', 'love', '恋愛', 'ラブコメ', 'romcom', 'rom-com'],
   ['comedia', 'comedy', 'humor', 'コメディ'],
@@ -90,19 +91,39 @@ SINONIMOS.forEach((grupo, indice) => {
 const TIENE_JAPONES = /[぀-ヿ㐀-鿿]/;
 
 /**
- * Los trozos de un nombre de colección que podrían ser géneros:
- * «Sci-Fi & Realidad Virtual» → «sci fi», «realidad virtual».
+ * Los trozos de un nombre de colección que podrían ser géneros, con lo que vaya entre
+ * paréntesis incluido. Las colecciones del servidor de Yoru se llaman así:
+ * «Isekai & Reencarnación (異世界・転生)» → «isekai», «reencarnacion», «異世界», «転生».
  */
 export function terminosDeGenero(nombre: string): string[] {
   return nombre
-    .split(/\s*(?:&|＆|\+|\/|,|、|・|\s+y\s+|\s+and\s+|\s+e\s+)\s*/i)
+    .split(/\s*(?:&|＆|\+|\/|,|、|・|[()（）]|\s+y\s+|\s+and\s+|\s+e\s+)\s*/i)
     .map(plano)
     .filter((termino) => termino.length >= 2);
 }
 
+/**
+ * Lo que un trozo pide, palabra a palabra. Un trozo conocido entero («realidad
+ * virtual», «異世界») es un requisito solo. Uno que no («Romance Escolar») vale si
+ * todas sus palabras son géneros, y entonces pide todas: romance **y** escolar, no
+ * cualquier romance. Si alguna palabra no se conoce, el trozo no cuenta.
+ */
+function requisitosDe(nombre: string): string[][] {
+  const requisitos: string[][] = [];
+  for (const termino of terminosDeGenero(nombre)) {
+    if (GRUPO_DE.has(termino)) {
+      requisitos.push([termino]);
+      continue;
+    }
+    const palabras = termino.split(' ').filter(Boolean);
+    if (palabras.length > 1 && palabras.every((palabra) => GRUPO_DE.has(palabra))) requisitos.push(palabras);
+  }
+  return requisitos;
+}
+
 /** Si el nombre de la colección es (en parte) un género conocido. */
 export function esColeccionDeGenero(nombre: string): boolean {
-  return terminosDeGenero(nombre).some((termino) => GRUPO_DE.has(termino));
+  return requisitosDe(nombre).length > 0;
 }
 
 /** Las formas de decir un término: el suyo y los sinónimos, si los tiene. */
@@ -131,15 +152,17 @@ function casaPorGenero(libro: Clasificable, nombre: string): boolean {
     «overlord» entre las etiquetas, y un libro etiquetado así por el agregador
     entraría en una colección de serie por una vía que nadie entiende.
   */
-  const terminos = terminosDeGenero(nombre).filter((termino) => GRUPO_DE.has(termino));
-  if (terminos.length === 0) return false;
+  const requisitos = requisitosDe(nombre);
+  if (requisitos.length === 0) return false;
   const etiquetas = [...(libro.genres || []), ...(libro.tags || [])].map(plano).filter(Boolean);
   const titulos = [libro.title, ...(libro.altTitles || []), libro.series || ''].map(normalizarTexto);
-  return terminos.some((termino) => formasDe(termino).some((forma) => {
+  const tiene = (termino: string) => formasDe(termino).some((forma) => {
     if (etiquetas.some((etiqueta) => etiquetaCasa(etiqueta, forma))) return true;
     // En el título solo lo japonés: 異世界 en un título es una pista clara; «vr», no.
     return TIENE_JAPONES.test(forma) && titulos.some((titulo) => titulo.includes(forma));
-  }));
+  });
+  // Basta un trozo; dentro del trozo, todas sus palabras.
+  return requisitos.some((palabras) => palabras.every(tiene));
 }
 
 /* ------------------------------------------------------------------ */
@@ -182,13 +205,33 @@ function mismaSerie(libro: Clasificable, miembro: Clasificable): boolean {
   return raices(libro).some((a) => deMiembro.some((b) => a.startsWith(b) || b.startsWith(a)));
 }
 
+/**
+ * Los nombres por los que se puede buscar una colección en un título.
+ *
+ * Las del servidor de Yoru llevan el nombre en romaji y, entre paréntesis, en
+ * japonés: «Re:Zero (Re:ゼロから始める異世界生活)», «Kino no Tabi (キノの旅)». Buscar
+ * el nombre entero no encontraría nada; cada mitad por separado, sí. Y una colección
+ * de dos series, «Sukasuka & Sukamoka», es cada una de las dos.
+ */
+export function nombresDeColeccion(nombre: string): string[] {
+  const dentro = [...nombre.matchAll(/[(（]([^)）]*)[)）]/g)].map((parte) => parte[1]);
+  const fuera = nombre.replace(/[(（][^)）]*[)）]/g, ' ');
+  const enteros = [fuera, ...dentro].map((parte) => parte.trim()).filter(Boolean);
+  const trozos = enteros.flatMap((parte) => parte.split(/\s*[&＆]\s*/));
+  return [...new Set([...enteros, ...trozos].map((parte) => parte.trim()))].filter((parte) => {
+    // Un nombre muy corto («86», «K») casaría con cualquier cosa; lo japonés dice más con menos.
+    const largo = plano(parte).replace(/\s/g, '').length;
+    return TIENE_JAPONES.test(parte) ? largo >= 2 : largo >= 4;
+  });
+}
+
 function casaPorTitulo(libro: Clasificable, nombre: string): boolean {
-  // Un nombre muy corto («86», «K») casaría con cualquier cosa.
-  if (plano(nombre).replace(/\s/g, '').length < 3) return false;
   // «Isekai & Reencarnación» no es un título: eso lo decide el género.
   if (esColeccionDeGenero(nombre)) return false;
-  const buscador = crearBuscador(nombre);
-  return !!buscador && buscador(libro.title, ...(libro.altTitles || []), libro.series);
+  return nombresDeColeccion(nombre).some((alias) => {
+    const buscador = crearBuscador(alias);
+    return !!buscador && buscador(libro.title, ...(libro.altTitles || []), libro.series);
+  });
 }
 
 /* ------------------------------------------------------------------ */
