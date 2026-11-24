@@ -56,7 +56,8 @@ check(esColeccionDeGenero('Isekai & Reencarnación'), '«Isekai & Reencarnación
 check(!esColeccionDeGenero('Re:Zero'), '«Re:Zero» no es de género');
 check(terminosDeGenero('Sci-Fi & Realidad Virtual').join('|') === 'sci fi|realidad virtual', 'se parte por «&»');
 check(motivoParaColeccion(mushoku, 'Isekai & Reencarnación') === 'genero', 'géneros del servidor en inglés');
-check(motivoParaColeccion({ title: '転生したらスライムだった件 2' }, 'Isekai & Reencarnación') === 'genero', '転生 en el título basta');
+check(motivoParaColeccion({ title: '転生したらスライムだった件 2' }, 'Isekai & Reencarnación') === null, 'con «&» hacen falta las dos: 転生 solo no basta');
+check(motivoParaColeccion({ title: '異世界転生 2' }, 'Isekai & Reencarnación') === 'genero', '異世界 y 転生 en el título');
 check(motivoParaColeccion(sao, 'Sci-Fi & Realidad Virtual') === 'genero', 'Sci-Fi y VRMMO');
 check(motivoParaColeccion(majo, 'Sci-Fi & Realidad Virtual') === null, 'fantasía no es sci-fi');
 check(motivoParaColeccion({ title: 'x', genres: ['Dark Fantasy'] }, 'Fantasía') === 'genero', '«Dark Fantasy» es fantasía');
@@ -78,14 +79,16 @@ check(
 check(motivoParaColeccion(majo, 'Overlord (オーバーロード)') === null, 'y no recoge otra cosa');
 check(motivoParaColeccion(majo, 'Leer y Escuchar (Sync Audiobooks)') === null, '«Leer y Escuchar» no recoge al azar');
 check(esColeccionDeGenero('Isekai & Reencarnación (異世界・転生)'), 'el género con paréntesis sigue siendo género');
-check(motivoParaColeccion({ title: '29歳独身は異世界で自由に生きた…かった。 2' }, 'Isekai & Reencarnación (異世界・転生)') === 'genero', '異世界 en el título → Isekai');
+check(motivoParaColeccion({ title: '29歳独身は異世界で自由に生きた…かった。 2', genres: ['Reincarnation'] }, 'Isekai & Reencarnación (異世界・転生)') === 'genero', '異世界 en el título + Reincarnation; el paréntesis no pide más');
+check(motivoParaColeccion({ title: 'x', genres: ['Action'] }, 'Fantasía Oscura & Acción (ダークファンタジー)') === null, 'acción sola no entra en «Fantasía Oscura & Acción»');
+check(motivoParaColeccion({ title: 'x', genres: ['Dark Fantasy', 'Action'] }, 'Fantasía Oscura & Acción (ダークファンタジー)') === 'genero', 'oscura y acción, sí');
 check(motivoParaColeccion(sao, 'Sci-Fi & Realidad Virtual (SF・VRMMO)') === 'genero', 'SAO → Sci-Fi (SF・VRMMO)');
 check(
   motivoParaColeccion({ title: 'x', genres: ['Romance', 'School Life'] }, 'Romance Escolar') === 'genero'
     && motivoParaColeccion({ title: 'x', genres: ['Romance'] }, 'Romance Escolar') === null,
   '«Romance Escolar» pide romance y escolar, no cualquier romance'
 );
-check(motivoParaColeccion({ title: 'x', genres: ['Dark Fantasy'] }, 'Fantasía Oscura & Acción (ダークファンタジー)') === 'genero', 'Dark Fantasy → Fantasía Oscura');
+check(motivoParaColeccion({ title: 'x', genres: ['Dark Fantasy'] }, 'Fantasía Oscura') === 'genero', 'Dark Fantasy → Fantasía Oscura');
 check(motivoParaColeccion({ title: 'x', genres: ['Fantasy'] }, 'Fantasía Oscura') === null, 'fantasía a secas no es oscura');
 
 // clasificar: no repite lo que ya está y respeta el orden.
