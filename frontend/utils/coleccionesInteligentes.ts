@@ -88,7 +88,27 @@ SINONIMOS.forEach((grupo, indice) => {
   for (const palabra of grupo) GRUPO_DE.set(plano(palabra), indice);
 });
 
-const TIENE_JAPONES = /[぀-ヿ㐀-鿿]/;
+/**
+ * Géneros que van juntos: en una colección, el «&» entre dos de la misma familia es
+ * «o», no «y». Overlord o Kino no Tabi son isekai sin reencarnación y tienen que
+ * entrar en «Isekai & Reencarnación»; lo mismo un sci-fi sin realidad virtual. Entre
+ * géneros de familias distintas («Fantasía Oscura & Acción», «Romance Escolar &
+ * Comedia») el «&» pide los dos. Decidido con Nix (24 nov 2026).
+ */
+const FAMILIAS: string[][] = [
+  ['isekai', 'reencarnacion'],
+  ['sci-fi', 'realidad virtual'],
+];
+const FAMILIA_DE = new Map<number, string>();
+FAMILIAS.forEach((familia, indice) => {
+  for (const palabra of familia) FAMILIA_DE.set(GRUPO_DE.get(plano(palabra))!, `f${indice}`);
+});
+
+function familiaDe(grupo: number): string {
+  return FAMILIA_DE.get(grupo) ?? `g${grupo}`;
+}
+
+const TIENE_JAPONES =/[぀-ヿ㐀-鿿]/;
 
 /**
  * Los trozos de un nombre de colección que podrían ser géneros, con lo que vaya entre
@@ -167,9 +187,13 @@ function casaPorGenero(libro: Clasificable, nombre: string): boolean {
     24 nov 2026). Lo de dentro del paréntesis suele repetir lo de fuera en japonés
     (異世界・転生), así que se juntan por grupo de sinónimos y no se pide dos veces.
   */
-  const grupos = new Map<number, string>();
-  for (const palabra of requisitos.flat()) grupos.set(GRUPO_DE.get(palabra)!, palabra);
-  return [...grupos.values()].every(tiene);
+  const familias = new Map<string, string[]>();
+  for (const palabra of requisitos.flat()) {
+    const familia = familiaDe(GRUPO_DE.get(palabra)!);
+    familias.set(familia, [...(familias.get(familia) || []), palabra]);
+  }
+  // De cada familia basta una; las familias, todas.
+  return [...familias.values()].every((palabras) => palabras.some(tiene));
 }
 
 /* ------------------------------------------------------------------ */

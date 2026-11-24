@@ -56,7 +56,11 @@ check(esColeccionDeGenero('Isekai & Reencarnación'), '«Isekai & Reencarnación
 check(!esColeccionDeGenero('Re:Zero'), '«Re:Zero» no es de género');
 check(terminosDeGenero('Sci-Fi & Realidad Virtual').join('|') === 'sci fi|realidad virtual', 'se parte por «&»');
 check(motivoParaColeccion(mushoku, 'Isekai & Reencarnación') === 'genero', 'géneros del servidor en inglés');
-check(motivoParaColeccion({ title: '転生したらスライムだった件 2' }, 'Isekai & Reencarnación') === null, 'con «&» hacen falta las dos: 転生 solo no basta');
+check(motivoParaColeccion({ title: '転生したらスライムだった件 2' }, 'Isekai & Reencarnación') === 'genero', 'isekai y reencarnación son familia: basta una (転生)');
+check(motivoParaColeccion({ title: 'オーバーロード 3', genres: ['Isekai'] }, 'Isekai & Reencarnación (異世界・転生)') === 'genero', 'Overlord: isekai sin reencarnación entra');
+check(motivoParaColeccion({ title: 'x', genres: ['Sci-Fi'] }, 'Sci-Fi & Realidad Virtual (SF・VRMMO)') === 'genero', 'sci-fi sin realidad virtual entra');
+check(motivoParaColeccion({ title: 'x', genres: ['Romance', 'School Life'] }, 'Romance Escolar & Comedia (学園・ラブコメ)') === null, 'Romance Escolar & Comedia pide también comedia');
+check(motivoParaColeccion({ title: 'x', genres: ['Romance', 'School Life', 'Comedy'] }, 'Romance Escolar & Comedia (学園・ラブコメ)') === 'genero', 'romance, escolar y comedia, sí');
 check(motivoParaColeccion({ title: '異世界転生 2' }, 'Isekai & Reencarnación') === 'genero', '異世界 y 転生 en el título');
 check(motivoParaColeccion(sao, 'Sci-Fi & Realidad Virtual') === 'genero', 'Sci-Fi y VRMMO');
 check(motivoParaColeccion(majo, 'Sci-Fi & Realidad Virtual') === null, 'fantasía no es sci-fi');
