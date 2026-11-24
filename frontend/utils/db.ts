@@ -5,6 +5,23 @@ import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
 import { migrarClavesIdb } from './migrarClaves';
 import { mergeBooks } from './cloudMerge';
 import { librosParaSincronizar } from './textosLibros';
+import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
+
+/**
+ * Los nombres de las colecciones manuales del perfil, leídos a mano.
+ *
+ * Son los de `collections.ts` (misma clave), pero sin importarlo: ese módulo importa
+ * `db`, y el ciclo no hace falta para leer una lista de nombres.
+ */
+function readManualCollectionNames(profileId: string | null): string[] {
+  try {
+    const raw = localStorage.getItem(`yoru_collections_${profileId || 'profile-default'}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed?.manual) ? parsed.manual.filter((name: unknown) => typeof name === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 // LocalStorage DB manager for Yoru Reader
 
 export type { DailyStatRecord };
@@ -490,6 +507,20 @@ export const db = {
           ...(book.series ? { series: book.series } : {}),
           ...(book.tags?.length ? { tags: book.tags } : {})
         };
+        /*
+          A las colecciones que le tocan (`coleccionesInteligentes.ts`): el tomo 3 de
+          una serie va donde ya estaban el 1 y el 2. Solo ahora, al llegar; si el
+          usuario le quita la etiqueta después, nadie se la vuelve a poner.
+        */
+        const nombres = [...new Set([
+          ...readManualCollectionNames(this.getActiveProfileId()),
+          ...books.flatMap((otro) => (otro.isDeleted ? [] : otro.tags || [])),
+        ])];
+        const extra = etiquetasParaLibroNuevo(newBook, books, nombres);
+        if (extra.length > 0) {
+          newBook.tags = [...(newBook.tags || []), ...extra];
+          console.log(`db.addBooks - "${newBook.title}" entra solo en: ${extra.join(', ')}`);
+        }
         books.push(newBook);
         addedCount++;
       }
