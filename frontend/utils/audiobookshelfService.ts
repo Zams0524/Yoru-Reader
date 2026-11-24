@@ -221,7 +221,14 @@ export function toAudiobookItem(raw: any): AudiobookItem {
     isbn: text(metadata.isbn),
     asin: text(metadata.asin),
     description: text(metadata.description),
+    genres: textList([...(Array.isArray(metadata.genres) ? metadata.genres : []), ...(Array.isArray(raw?.media?.tags) ? raw.media.tags : [])]),
   };
+}
+
+/** Las cadenas con contenido de una lista, sin repetir; `undefined` si no queda ninguna. */
+function textList(values: unknown[]): string[] | undefined {
+  const list = [...new Set(values.map(text).filter((value): value is string => !!value))];
+  return list.length > 0 ? list : undefined;
 }
 
 /** Cadena con contenido, o `undefined`: así la ficha no pinta una fila en blanco. */

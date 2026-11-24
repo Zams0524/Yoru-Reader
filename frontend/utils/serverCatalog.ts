@@ -23,6 +23,7 @@ import {
 } from './audiobookshelfService';
 import type { AudiobookItem, KavitaSeries } from '../types/integrations';
 import { localContinueEntries, localKavitaSeriesRead, sharesServerProgress } from './serverProgress';
+import { clasificar, esColeccionDeGenero } from './coleccionesInteligentes';
 
 /**
  * Novedades de los servidores de casa, para que al abrir la app ya haya algo que
@@ -65,6 +66,15 @@ export interface ServerItem {
   addedAt?: number;
   /** Cuántas personas lo leen o escuchan en el servidor. Solo en «Popular». */
   readers?: number;
+  /** Otros nombres del mismo título (Kavita: el original y el traducido). */
+  altTitles?: string[];
+  /** Géneros y etiquetas del servidor, cuando se conocen. Sirven para clasificar. */
+  genres?: string[];
+  /**
+   * Lo metió la app en la colección, no el servidor (`coleccionesInteligentes.ts`).
+   * Solo en los títulos de una colección.
+   */
+  auto?: boolean;
 }
 
 /**
@@ -173,14 +183,7 @@ async function fetchKavita(): Promise<ServerItem[]> {
   const first = libraries[0];
   if (!first) return [];
   const page = await withTimeout(getKavitaSeries(first.id, 1, MAX_ITEMS));
-  return (page.items || []).slice(0, MAX_ITEMS).map((series) => ({
-    id: `kavita-${series.id}`,
-    serverId: String(series.id),
-    title: series.name,
-    cover: kavitaSeriesCoverUrl(series.id),
-    source: 'kavita' as const,
-    hours: series.avgHoursToRead,
-  }));
+  return (page.items || []).slice(0, MAX_ITEMS).map((series) => kavitaItem('kavita', series));
 }
 
 async function fetchAudiobooks(): Promise<ServerItem[]> {
@@ -188,15 +191,7 @@ async function fetchAudiobooks(): Promise<ServerItem[]> {
   const first = libraries[0];
   if (!first) return [];
   const page = await withTimeout(getAudiobooks(first.id, 0, MAX_ITEMS));
-  return (page.items || []).slice(0, MAX_ITEMS).map((item) => ({
-    id: `abs-${item.id}`,
-    serverId: item.id,
-    title: item.title,
-    cover: absCoverUrl(item.id),
-    source: 'audiobookshelf' as const,
-    series: item.series || undefined,
-    author: item.author || undefined,
-  }));
+  return (page.items || []).slice(0, MAX_ITEMS).map((item) => audiobookItem('abs', item));
 }
 
 async function fetchOnDeck(): Promise<ServerItem[]> {
@@ -334,6 +329,8 @@ async function fetchContinueAudio(): Promise<ServerItem[]> {
 
 /** Una serie de Kavita como tarjeta del servidor, con un prefijo de carrusel. */
 function kavitaItem(prefix: string, series: KavitaSeries): ServerItem {
+  const otros = [series.originalName, series.localizedName]
+    .filter((nombre): nombre is string => !!nombre && nombre.trim() !== '' && nombre !== series.name);
   return {
     id: `${prefix}-${series.id}`,
     serverId: String(series.id),
@@ -341,6 +338,7 @@ function kavitaItem(prefix: string, series: KavitaSeries): ServerItem {
     cover: kavitaSeriesCoverUrl(series.id),
     source: 'kavita',
     hours: series.avgHoursToRead,
+    ...(otros.length > 0 ? { altTitles: [...new Set(otros)] } : {}),
   };
 }
 
@@ -354,6 +352,7 @@ function audiobookItem(prefix: string, item: AudiobookItem): ServerItem {
     source: 'audiobookshelf',
     series: item.series || undefined,
     author: item.author || undefined,
+    ...(item.genres?.length ? { genres: item.genres } : {}),
   };
 }
 
@@ -426,6 +425,151 @@ async function fetchCollectionsAudio(): Promise<ServerCollection[]> {
     source: 'audiobookshelf' as const,
     items: entry.items.map((item) => audiobookItem('coleccion', item)),
   }));
+}
+
+/* ------------------------------------------------------------------ */
+/*  Colecciones que se llenan solas                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Los géneros de las series de Kavita que ya se preguntaron.
+ *
+ * El listado de series no los trae: hay que pedir los metadatos serie a serie. Como
+ * no cambian, se guardan, y cada refresco pregunta solo por las que no se conocían
+ * (lo recién llegado, que es justo lo que hay que clasificar).
+ */
+const GENEROS_KEY = 'yoru_server_generos_v1';
+/** Cuántas series nuevas se preguntan como mucho por refresco. */
+const GENEROS_POR_VEZ = 24;
+/** Cuántas se recuerdan: de sobra para un servidor de casa, y la caché no crece sin fin. */
+const GENEROS_MAX = 2000;
+
+function leerGeneros(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(GENEROS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardarGeneros(generos: Record<string, string[]>): void {
+  try {
+    const claves = Object.keys(generos);
+    const recortado = claves.length > GENEROS_MAX
+      ? Object.fromEntries(claves.slice(claves.length - GENEROS_MAX).map((clave) => [clave, generos[clave]]))
+      : generos;
+    localStorage.setItem(GENEROS_KEY, JSON.stringify(recortado));
+  } catch {
+    /* sin sitio: se volverán a preguntar la próxima vez */
+  }
+}
+
+/** Una colección tal como la dio el servidor, sin lo que añadió la app. */
+function soloDelServidor(collection: ServerCollection): ServerCollection {
+  return { ...collection, items: collection.items.filter((item) => !item.auto) };
+}
+
+function claveDe(item: ServerItem): string {
+  return `${item.source}:${serverItemId(item)}`;
+}
+
+/**
+ * Cada colección del servidor, con lo que le falta.
+ *
+ * Kavita y Audiobookshelf no meten solos una serie nueva en «Re:Zero» ni en
+ * «Isekai & Reencarnación»: alguien tiene que ir a hacerlo. Aquí se hace en la app,
+ * con `coleccionesInteligentes.ts`, y **no se le escribe nada al servidor**: lo que
+ * se añade lleva `auto` y vive solo en esta caché. Así no hace falta una cuenta de
+ * administrador, y si la regla se equivoca, se arregla con una actualización y no
+ * hay que deshacer nada en el servidor.
+ *
+ * Los candidatos son todo lo que el catálogo conoce de los dos servidores; lo recién
+ * llegado está siempre entre ellos, en «Añadidos recientemente». Lo de un servidor
+ * puede entrar en una colección del otro: el audiolibro de Re:Zero va con sus novelas.
+ */
+async function completarColecciones(catalog: ServerCatalog): Promise<ServerCollection[]> {
+  const colecciones = catalog.collections.map(soloDelServidor);
+  if (colecciones.length === 0) return colecciones;
+
+  const candidatos = new Map<string, ServerItem>();
+  for (const item of [
+    ...catalog.recent, ...catalog.kavita, ...catalog.audiobooks, ...catalog.popular,
+    ...catalog.onDeck, ...catalog.forYouAudio, ...catalog.continueAudio,
+  ]) {
+    const clave = claveDe(item);
+    const visto = candidatos.get(clave);
+    // La misma serie sale en varias filas: se junta lo que sepa cada una.
+    candidatos.set(clave, visto ? {
+      ...visto,
+      series: visto.series || item.series,
+      author: visto.author || item.author,
+      altTitles: visto.altTitles || item.altTitles,
+      genres: visto.genres || item.genres,
+    } : item);
+  }
+
+  // Los géneros de Kavita, solo si alguna colección es de género: si no, sobran.
+  if (colecciones.some((coleccion) => esColeccionDeGenero(coleccion.title))) {
+    const generos = leerGeneros();
+    const faltan = [...candidatos.values()]
+      .filter((item) => item.source === 'kavita' && !(claveDe(item) in generos))
+      .slice(0, GENEROS_POR_VEZ);
+    if (faltan.length > 0) {
+      await withTimeout(
+        Promise.all(faltan.map(async (item) => {
+          const id = Number(serverItemId(item));
+          if (!Number.isFinite(id)) return;
+          // `getKavitaSeriesMetadata` no lanza; sin respuesta da listas vacías.
+          const meta = await getKavitaSeriesMetadata(id);
+          generos[claveDe(item)] = [...meta.genres, ...meta.tags];
+        })),
+        TIMEOUT_MS * 4
+      ).catch(() => undefined);
+      guardarGeneros(generos);
+    }
+    for (const [clave, item] of candidatos) {
+      const sabidos = generos[clave];
+      if (sabidos?.length && !item.genres?.length) candidatos.set(clave, { ...item, genres: sabidos });
+    }
+  }
+
+  const nuevos = clasificar(
+    colecciones.map((coleccion) => ({
+      nombre: coleccion.title,
+      // Los miembros con lo que se sepa de ellos: sus otros títulos dan la pista de la serie.
+      miembros: coleccion.items.map((item) => candidatos.get(claveDe(item)) || item),
+    })),
+    [...candidatos.values()],
+    claveDe
+  );
+
+  let total = 0;
+  const resultado = colecciones.map((coleccion, indice) => {
+    const extra = nuevos[indice];
+    if (extra.length === 0) return coleccion;
+    total += extra.length;
+    return {
+      ...coleccion,
+      items: [
+        ...coleccion.items,
+        ...extra.map(({ libro }) => ({
+          id: `auto-${libro.source}-${serverItemId(libro)}`,
+          serverId: serverItemId(libro),
+          title: libro.title,
+          cover: libro.cover,
+          source: libro.source,
+          series: libro.series,
+          author: libro.author,
+          hours: libro.hours,
+          auto: true,
+        })),
+      ],
+    };
+  });
+  if (total > 0) console.log(`[catálogo] colecciones: ${total} título(s) añadido(s) solos`);
+  return resultado;
 }
 
 /** Una colección del servidor, de la caché. La usa la vista de la colección. */
@@ -531,7 +675,7 @@ export async function refreshServerCatalog(): Promise<void> {
     const keep = <T extends { source: 'kavita' | 'audiobookshelf' }>(
       fresh: T[] | null, old: T[], source: 'kavita' | 'audiobookshelf', wanted: boolean
     ): T[] => (!wanted ? [] : fresh ?? old.filter((entry) => entry.source === source));
-    save({
+    const next: ServerCatalog = {
       at: Date.now(),
       kavita: kavita.items ?? previous.kavita,
       audiobooks: audiobooks.items ?? previous.audiobooks,
@@ -554,7 +698,18 @@ export async function refreshServerCatalog(): Promise<void> {
         ...keep(collectionsKavita.items, previous.collections, 'kavita', wantsKavita),
         ...keep(collectionsAudio.items, previous.collections, 'audiobookshelf', wantsAudiobooks),
       ],
-    });
+    };
+    /*
+      Lo nuevo de los servidores, a sus colecciones. Si algo falla aquí, las
+      colecciones se guardan como las dio el servidor: completarlas es un extra.
+    */
+    try {
+      next.collections = await completarColecciones(next);
+    } catch (error) {
+      console.warn('[catálogo] no se pudieron completar las colecciones:', error);
+      next.collections = next.collections.map(soloDelServidor);
+    }
+    save(next);
   } finally {
     running = false;
   }
