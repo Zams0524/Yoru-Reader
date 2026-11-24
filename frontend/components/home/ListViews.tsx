@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Search, Shuffle } from 'lucide-react';
 import { BookPoster, EmptyState, EntityCard } from './primitives';
 import { byCreatedAt, byLastRead, formatCount, type EntityGroup, type ShelfBook } from './libraryIndex';
+import type { ServerGroup } from '../../utils/serverEntities';
 
 /** Cómo se ordena la cuadrícula. «default» es el orden en que llega la lista. */
 type GridSort = 'default' | 'added' | 'read' | 'title';
@@ -148,45 +149,129 @@ export function EntityListView({
   unit,
   es,
   onOpenGroup,
+  serverGroups,
+  serverLoading,
+  onOpenServerGroup,
 }: {
   title: string;
   groups: EntityGroup[];
   unit: { singular: string; plural: string };
   es: boolean;
   onOpenGroup: (group: EntityGroup) => void;
+  /**
+   * Lo mismo, pero de los servidores de casa (Kavita y Audiobookshelf). Series y
+   * autores no son solo de lo importado: con todo en el servidor, la sección salía
+   * vacía aunque hubiera doscientas series a un toque.
+   */
+  serverGroups?: ServerGroup[];
+  /** Se está trayendo el listado del servidor y todavía no hay nada guardado. */
+  serverLoading?: boolean;
+  onOpenServerGroup?: (group: ServerGroup) => void;
 }) {
+  const server = serverGroups || [];
+  const total = groups.length + server.length;
+  const both = groups.length > 0 && server.length > 0;
   return (
     <div>
       <div className="yoru-view-head">
         <div>
           <h1 className="yoru-view-title">{title}</h1>
           <div className="yoru-view-sub">
-            {formatCount(groups.length, es ? 'resultado' : 'result', es ? 'resultados' : 'results')}
+            {formatCount(total, es ? 'resultado' : 'result', es ? 'resultados' : 'results')}
           </div>
         </div>
       </div>
 
-      {groups.length === 0 ? (
-        <EmptyState
-          title={es ? 'Todavía no hay nada' : 'Nothing yet'}
-          sub={
-            es
-              ? 'Añade series, autores o colecciones a tus libros desde sus detalles.'
-              : 'Add series, authors or collections to your books from their details.'
-          }
-        />
+      {total === 0 ? (
+        serverLoading ? (
+          <div className="app-section-loading" role="status" aria-live="polite">
+            <span className="app-section-loading-indicator" />
+            {es ? 'Buscando en el servidor…' : 'Looking on the server…'}
+          </div>
+        ) : (
+          <EmptyState
+            title={es ? 'Todavía no hay nada' : 'Nothing yet'}
+            sub={
+              es
+                ? 'Añade series, autores o colecciones a tus libros desde sus detalles.'
+                : 'Add series, authors or collections to your books from their details.'
+            }
+          />
+        )
       ) : (
-        <div className="yoru-entity-grid">
-          {groups.map((group) => (
-            <EntityCard
-              key={group.key}
-              group={group}
-              subtitle={formatCount(group.books.length, unit.singular, unit.plural)}
-              onOpen={onOpenGroup}
-            />
-          ))}
-        </div>
+        <>
+          {groups.length > 0 && (
+            <>
+              {both && <h2 className="yoru-entity-section">{es ? 'En tu biblioteca' : 'In your library'}</h2>}
+              <div className="yoru-entity-grid">
+                {groups.map((group) => (
+                  <EntityCard
+                    key={group.key}
+                    group={group}
+                    subtitle={formatCount(group.books.length, unit.singular, unit.plural)}
+                    onOpen={onOpenGroup}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          {server.length > 0 && (
+            <>
+              {both && <h2 className="yoru-entity-section">{es ? 'En el servidor' : 'On the server'}</h2>}
+              <div className="yoru-entity-grid">
+                {server.map((group) => (
+                  <ServerEntityCard key={group.key} group={group} es={es} onOpen={onOpenServerGroup} />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+/** La tarjeta de una serie o un autor del servidor: la misma pila de portadas. */
+function ServerEntityCard({
+  group,
+  es,
+  onOpen,
+}: {
+  group: ServerGroup;
+  es: boolean;
+  onOpen?: (group: ServerGroup) => void;
+}) {
+  const [main, left, right] = group.items;
+  const kavita = group.items.filter((item) => item.source === 'kavita').length;
+  const audio = group.items.length - kavita;
+  const parts: string[] = [];
+  if (kavita > 0) parts.push(formatCount(kavita, 'serie', 'series'));
+  if (audio > 0) parts.push(formatCount(audio, es ? 'audiolibro' : 'audiobook', es ? 'audiolibros' : 'audiobooks'));
+  // Una serie de Kavita es un título solo: lo que dice algo es su autor y de dónde viene.
+  const subtitle = group.key.startsWith('kavita:')
+    ? [main?.author, 'Kavita'].filter(Boolean).join(' · ')
+    : parts.join(' · ');
+  return (
+    <button type="button" className="yoru-entity-card" onClick={() => onOpen?.(group)} title={group.name}>
+      <span className="yoru-entity-stack">
+        {left && (
+          <span className="stack-cover stack-left">
+            <img src={left.cover} alt="" loading="lazy" />
+          </span>
+        )}
+        {right && (
+          <span className="stack-cover stack-right">
+            <img src={right.cover} alt="" loading="lazy" />
+          </span>
+        )}
+        {main && (
+          <span className="stack-main">
+            <img src={main.cover} alt="" loading="lazy" />
+          </span>
+        )}
+      </span>
+      <span className="yoru-entity-name">{group.name}</span>
+      <span className="yoru-entity-sub">{subtitle}</span>
+    </button>
   );
 }

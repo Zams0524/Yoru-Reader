@@ -17,6 +17,7 @@ import {
   Settings,
   SlidersHorizontal,
   Tag,
+  Trash2,
   User,
   Users,
   Zap,
@@ -38,7 +39,7 @@ import NotificationsView from './NotificationsView';
 import NovedadesCard from './NovedadesCard';
 import { NOTICES_EVENT, pushNotice, unseenNoticeCount } from '../../utils/appNotices';
 import { anunciarNovedadEnAvisos } from '../../utils/novedades';
-import { AudiobookSeriesView, AudiobookshelfView, ServerCollectionView, ServerEmptyState } from './ServerViews';
+import { AudiobookSeriesView, AudiobookshelfView, ServerCollectionView, ServerEmptyState, ServerGroupView } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { ServerLibrarySection } from './HomeServerSections';
 import {
@@ -46,7 +47,16 @@ import {
   getAudiobookLink,
   unambiguousAudiobook,
 } from '../../utils/audiobookshelfService';
-import { getDynamicCollections, type DynamicCollection } from '../../utils/collections';
+import { getDynamicCollections, removeCollection, type DynamicCollection } from '../../utils/collections';
+import { useConfirm } from '../ConfirmModal';
+import {
+  SERVER_ENTITIES_EVENT,
+  getCachedServerEntities,
+  refreshServerEntities,
+  serverAuthorGroups,
+  serverSeriesGroups,
+  type ServerGroup,
+} from '../../utils/serverEntities';
 import { descartar } from '../../utils/recomendaciones';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
@@ -89,6 +99,7 @@ type View =
   | 'audiobooks'
   | 'audioseries'
   | 'servercollection'
+  | 'servergroup'
   | 'shelf'
   | 'group'
   | 'detail';
@@ -246,6 +257,36 @@ export default function YoruShell({
   const [editingCollection, setEditingCollection] = useState<DynamicCollection | null>(null);
   /** Sube cada vez que se crea o cambia una colección, para recalcular los grupos. */
   const [collectionsVersion, setCollectionsVersion] = useState(0);
+  const { showConfirm, confirmModal } = useConfirm();
+
+  /*
+    Series y autores de los servidores de casa, para Explorar. Salen de su caché al
+    instante y se refrescan en segundo plano: al arrancar, al cambiar las claves de
+    los servidores y al entrar en Series o Autores si lo guardado ya es viejo.
+  */
+  const [serverEntities, setServerEntities] = useState(() => getCachedServerEntities());
+  const [serverEntitiesLoading, setServerEntitiesLoading] = useState(false);
+  const loadServerEntities = useCallback((force = false) => {
+    setServerEntitiesLoading(true);
+    void refreshServerEntities(force).finally(() => setServerEntitiesLoading(false));
+  }, []);
+  useEffect(() => {
+    const onUpdate = () => setServerEntities(getCachedServerEntities());
+    const onServers = () => loadServerEntities(true);
+    window.addEventListener(SERVER_ENTITIES_EVENT, onUpdate);
+    window.addEventListener('yoru-media-servers-changed', onServers);
+    loadServerEntities();
+    return () => {
+      window.removeEventListener(SERVER_ENTITIES_EVENT, onUpdate);
+      window.removeEventListener('yoru-media-servers-changed', onServers);
+    };
+  }, [loadServerEntities]);
+  const serverGroups = useMemo(
+    () => ({ series: serverSeriesGroups(serverEntities), authors: serverAuthorGroups(serverEntities) }),
+    [serverEntities]
+  );
+  /** La serie o el autor del servidor que se está mirando. */
+  const [serverGroup, setServerGroup] = useState<{ kind: 'series' | 'author'; key: string } | null>(null);
 
   useEffect(() => {
     const onUpdate = () => setCollectionsVersion((value) => value + 1);
@@ -394,6 +435,20 @@ export default function YoruShell({
     go('servercollection');
   }, [go]);
 
+  /**
+   * Una serie o un autor del servidor, desde Explorar. Una serie de Kavita es un solo
+   * título y va directa a su ficha; una serie de audiolibros o un autor abren la lista
+   * de sus títulos.
+   */
+  const openServerGroup = useCallback((kind: 'series' | 'author', entry: ServerGroup) => {
+    if (kind === 'series' && entry.key.startsWith('kavita:') && entry.items[0]) {
+      openServerItem(entry.items[0]);
+      return;
+    }
+    setServerGroup({ kind, key: entry.key });
+    go('servergroup');
+  }, [go, openServerItem]);
+
   const openDetail = useCallback((book: ShelfBook) => {
     setDetailId(book.id);
     setView('detail');
@@ -416,6 +471,7 @@ export default function YoruShell({
     // La serie de audiolibros se abre desde Inicio, así que atrás vuelve a Inicio.
     [view === 'audioseries', () => go('home')],
     [view === 'servercollection', () => go('home')],
+    [view === 'servergroup', () => go(serverGroup?.kind === 'author' ? 'authors' : 'series')],
     // Ajustes sale por atrás igual que por su flecha: al sitio del que se venía.
     [view === 'settings', exitSettings],
     [view !== 'home', () => go('home')],
@@ -454,6 +510,36 @@ export default function YoruShell({
   );
 
   const embeddedTab = EMBEDDED_TABS[view];
+
+  /**
+   * Borra una colección. Las manuales viven también en las etiquetas de los libros,
+   * así que se quitan de ellos: si no, la colección volvía a salir en cuanto se
+   * recalculaba la lista. Los libros no se tocan en nada más.
+   */
+  const deleteCollection = useCallback(async (name: string) => {
+    const needle = name.trim().toLowerCase();
+    const tagged = books.filter((book) => (book.tags || []).some((tag) => tag.trim().toLowerCase() === needle));
+    const ok = await showConfirm({
+      title: es ? `¿Eliminar la colección «${name}»?` : `Delete the collection “${name}”?`,
+      message: tagged.length > 0
+        ? (es
+            ? `Se quita de ${tagged.length === 1 ? 'el libro que la tiene' : `los ${tagged.length} libros que la tienen`}. Los libros no se borran.`
+            : `It is removed from the ${tagged.length === 1 ? 'book' : `${tagged.length} books`} in it. The books are not deleted.`)
+        : (es ? 'Los libros no se borran.' : 'No books are deleted.'),
+      type: 'danger',
+      confirmText: es ? 'Eliminar' : 'Delete',
+      cancelText: es ? 'Cancelar' : 'Cancel',
+    });
+    if (!ok) return;
+    for (const book of tagged) {
+      onUpdateBookDetails(book.id, {
+        tags: (book.tags || []).filter((tag) => tag.trim().toLowerCase() !== needle),
+      });
+    }
+    removeCollection(name);
+    setGroup(null);
+    go('collections');
+  }, [books, es, showConfirm, onUpdateBookDetails, go]);
 
   const groupBooks = useMemo(() => {
     if (!group) return [];
@@ -587,11 +673,24 @@ export default function YoruShell({
           es={es}
           onOpenDetail={openDetail}
           onBack={() => go(groupBackView(group))}
-          action={dinamica && (
-            <button type="button" className="yoru-btn" onClick={() => setEditingCollection(dinamica)}>
-              <SlidersHorizontal size={15} />
-              {es ? 'Editar reglas' : 'Edit rules'}
-            </button>
+          action={group.kind === 'collection' && (
+            <>
+              {dinamica && (
+                <button type="button" className="yoru-btn" onClick={() => setEditingCollection(dinamica)}>
+                  <SlidersHorizontal size={15} />
+                  {es ? 'Editar reglas' : 'Edit rules'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="yoru-btn"
+                onClick={() => void deleteCollection(group.name)}
+                title={es ? 'Eliminar colección' : 'Delete collection'}
+              >
+                <Trash2 size={15} />
+                {es ? 'Eliminar' : 'Delete'}
+              </button>
+            </>
           )}
         />
       );
@@ -636,6 +735,18 @@ export default function YoruShell({
           collectionKey={serverCollection}
           es={es}
           onBack={() => go('home')}
+          onOpenItem={openServerItem}
+        />
+      );
+    }
+
+    if (view === 'servergroup' && serverGroup) {
+      const list = serverGroup.kind === 'series' ? serverGroups.series : serverGroups.authors;
+      return (
+        <ServerGroupView
+          group={list.find((entry) => entry.key === serverGroup.key) ?? null}
+          es={es}
+          onBack={() => go(serverGroup.kind === 'author' ? 'authors' : 'series')}
           onOpenItem={openServerItem}
         />
       );
@@ -742,6 +853,9 @@ export default function YoruShell({
           unit={{ singular: es ? 'tomo' : 'volume', plural: es ? 'tomos' : 'volumes' }}
           es={es}
           onOpenGroup={(entry: EntityGroup) => openGroup('series', entry.key)}
+          serverGroups={serverGroups.series}
+          serverLoading={serverEntitiesLoading}
+          onOpenServerGroup={(entry) => openServerGroup('series', entry)}
         />
       );
     }
@@ -754,6 +868,9 @@ export default function YoruShell({
           unit={{ singular: es ? 'libro' : 'book', plural: es ? 'libros' : 'books' }}
           es={es}
           onOpenGroup={(entry: EntityGroup) => openGroup('author', entry.key)}
+          serverGroups={serverGroups.authors}
+          serverLoading={serverEntitiesLoading}
+          onOpenServerGroup={(entry) => openServerGroup('author', entry)}
         />
       );
     }
@@ -826,8 +943,8 @@ export default function YoruShell({
 
       <div className="yoru-shell-nav-section">
         <div className="yoru-shell-nav-label">{es ? 'Explorar' : 'Explore'}</div>
-        {navItem('series', es ? 'Series' : 'Series', Layers, groups.series.length)}
-        {navItem('authors', es ? 'Autores' : 'Authors', Users, groups.authors.length)}
+        {navItem('series', es ? 'Series' : 'Series', Layers, groups.series.length + serverGroups.series.length)}
+        {navItem('authors', es ? 'Autores' : 'Authors', Users, groups.authors.length + serverGroups.authors.length)}
         {navItem('collections', es ? 'Colecciones' : 'Collections', Tag, groups.collections.length)}
       </div>
 
@@ -1121,6 +1238,7 @@ export default function YoruShell({
         <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} />
       )}
 
+      {confirmModal}
       {(isCreatingCollection || editingCollection) && (
         <CollectionModal
           books={library}

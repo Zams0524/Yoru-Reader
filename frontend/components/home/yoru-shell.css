@@ -961,6 +961,15 @@ html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-containe
 .yoru-continue-bar span { display: block; height: 100%; background: var(--primary); }
 
 /* Tarjeta de entidad (serie, autor, colección) */
+.yoru-entity-section {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 28px 0 14px;
+}
+.yoru-entity-section:first-child { margin-top: 8px; }
 .yoru-entity-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -1931,6 +1940,23 @@ html.platform-android .yoru-shell:not(.is-settings-fullscreen) .library-containe
 .yoru-series-stack:hover .yoru-series-stack-back.is-1 { transform: translateX(10px) scale(0.965); }
 .yoru-series-stack:hover .yoru-series-stack-back.is-2 { transform: translateX(20px) scale(0.93); }
 .yoru-series-stack-back { transition: transform 0.18s ease; }
+/* Las portadas locales van dentro de un span (Cover pinta img o respaldo tipográfico). */
+span.yoru-series-stack-front,
+span.yoru-series-stack-back { overflow: hidden; display: block; }
+span.yoru-series-stack-front > img,
+span.yoru-series-stack-back > img,
+span.yoru-series-stack-front > .yoru-poster-fallback,
+span.yoru-series-stack-back > .yoru-poster-fallback { width: 100%; height: 100%; object-fit: cover; }
+/* Colección vacía: un hueco con el icono, del mismo tamaño que una portada. */
+.yoru-series-stack-empty {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border, rgb(255 255 255 / 14%));
+  color: var(--text-muted);
+  box-shadow: none !important;
+}
 
 @media (max-width: 900px) {
   .yoru-series-stack { width: 148px; }
