@@ -813,7 +813,7 @@ export default function YoruShell({
       {/* Contenido que vive en los servidores de casa, no en la biblioteca local. */}
       <div className="yoru-shell-nav-section">
         <div className="yoru-shell-nav-label">{es ? 'Servidores' : 'Servers'}</div>
-        {navItem('kavita', es ? 'Explorar Kavita' : 'Explore Kavita', ServerIcon)}
+        {navItem('kavita', es ? 'Biblioteca' : 'Library', ServerIcon)}
         {navItem('audiobooks', es ? 'Audiolibros' : 'Audiobooks', Headphones)}
       </div>
 
