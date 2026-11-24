@@ -161,8 +161,15 @@ function casaPorGenero(libro: Clasificable, nombre: string): boolean {
     // En el título solo lo japonés: 異世界 en un título es una pista clara; «vr», no.
     return TIENE_JAPONES.test(forma) && titulos.some((titulo) => titulo.includes(forma));
   });
-  // Basta un trozo; dentro del trozo, todas sus palabras.
-  return requisitos.some((palabras) => palabras.every(tiene));
+  /*
+    Todo lo que pide el nombre, no una parte: «Fantasía Oscura & Acción» es oscura
+    **y** de acción. Con «o», cualquier libro de acción entraba (decidido con Nix,
+    24 nov 2026). Lo de dentro del paréntesis suele repetir lo de fuera en japonés
+    (異世界・転生), así que se juntan por grupo de sinónimos y no se pide dos veces.
+  */
+  const grupos = new Map<number, string>();
+  for (const palabra of requisitos.flat()) grupos.set(GRUPO_DE.get(palabra)!, palabra);
+  return [...grupos.values()].every(tiene);
 }
 
 /* ------------------------------------------------------------------ */
