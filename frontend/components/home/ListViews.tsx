@@ -3,6 +3,7 @@ import { ArrowLeft, Search, Shuffle } from 'lucide-react';
 import { BookPoster, EmptyState, EntityCard } from './primitives';
 import { byCreatedAt, byLastRead, formatCount, type EntityGroup, type ShelfBook } from './libraryIndex';
 import type { ServerGroup } from '../../utils/serverEntities';
+import { crearBuscador, useLecturasJapones } from '../../utils/busquedaRomaji';
 
 /** Cómo se ordena la cuadrícula. «default» es el orden en que llega la lista. */
 type GridSort = 'default' | 'added' | 'read' | 'title';
@@ -38,21 +39,20 @@ export function BookGridView({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<GridSort>('default');
   const [filterId, setFilterId] = useState(() => filter?.options[0]?.id || '');
+  const lecturas = useLecturasJapones(query);
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const buscador = crearBuscador(query);
     const option = filter?.options.find((entry) => entry.id === filterId);
     let list = option ? books.filter(option.test) : books;
-    if (needle) {
-      list = list.filter((book) =>
-        [book.title, book.author, book.series].filter(Boolean).join(' ').toLowerCase().includes(needle)
-      );
+    if (buscador) {
+      list = list.filter((book) => buscador(book.title, book.author, book.series));
     }
     // Se ordena sobre una copia: la lista que llega es de quien la pasa.
     if (sort === 'added') return [...list].sort(byCreatedAt);
     if (sort === 'read') return [...list].sort(byLastRead);
     if (sort === 'title') return [...list].sort((a, b) => a.title.localeCompare(b.title, 'ja', { numeric: true }));
     return list;
-  }, [books, query, sort, filter, filterId]);
+  }, [books, query, sort, filter, filterId, lecturas]);
 
   return (
     <div>

@@ -7,6 +7,7 @@ import { kavitaSeriesCoverUrl } from '../../utils/kavitaService';
 import { buscandoKavitaParaAudios, KAVITA_PARA_AUDIOS_EVENT, getKavitaParaAudios, refrescarKavitaParaAudios } from '../../utils/kavitaParaAudios';
 import { getCachedServerCatalog, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import { getLocalAudiobookProgress } from '../../utils/serverProgress';
+import { crearBuscador, useLecturasJapones } from '../../utils/busquedaRomaji';
 import {
   parejasDeBiblioteca,
   parejasDeKavita,
@@ -154,17 +155,19 @@ export default function ReadListenView({
     })));
   }, [catalogVersion]);
 
-  const needle = query.trim().toLowerCase();
+  // En romaji también («re zero» → Ｒｅ：ゼロ…), ver `busquedaRomaji.ts`.
+  const needle = query.trim();
+  const lecturas = useLecturasJapones(needle);
   const visibles = useMemo<ParejaBiblioteca<ShelfBook>[]>(() => {
-    if (!needle) return parejas;
-    return parejas.filter(({ libro, audio }) =>
-      [libro.title, libro.author, libro.series, audio.title].filter(Boolean).join(' ').toLowerCase().includes(needle));
-  }, [parejas, needle]);
+    const buscador = crearBuscador(needle);
+    if (!buscador) return parejas;
+    return parejas.filter(({ libro, audio }) => buscador(libro.title, libro.author, libro.series, audio.title));
+  }, [parejas, needle, lecturas]);
   const kavitaVisibles = useMemo<ParejaKavita[]>(() => {
-    if (!needle) return deKavita;
-    return deKavita.filter(({ obra, tomos }) =>
-      [obra, ...tomos.map((tomo) => tomo.audio.title)].join(' ').toLowerCase().includes(needle));
-  }, [deKavita, needle]);
+    const buscador = crearBuscador(needle);
+    if (!buscador) return deKavita;
+    return deKavita.filter(({ obra, tomos }) => buscador(obra, ...tomos.map((tomo) => tomo.audio.title)));
+  }, [deKavita, needle, lecturas]);
 
   const total = parejas.length;
   // Los tomos de Kavita también son novelas con su audiolibro: sin contarlos, el

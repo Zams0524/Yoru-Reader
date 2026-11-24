@@ -39,6 +39,7 @@ import AppAbout from './AppAbout';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import { useBackHandler } from '../hooks/useBackButton';
 import { getNotificationPermission, hasYoruNotifications } from '../utils/yoruNotifications';
+import { crearBuscador, useLecturasJapones } from '../utils/busquedaRomaji';
 
 const ABOUT_SEARCH_TERMS = 'about acerca de version versión diagnostico diagnóstico diagnostics crash cierres errores informe report';
 
@@ -1921,6 +1922,9 @@ const Library = React.memo(function Library({
   }, {}), [books]);
   const uniqueAuthors = useMemo(() => Object.keys(authorCounts).sort(), [authorCounts]);
 
+  const lecturasCatalogo = useLecturasJapones(searchQuery);
+  // Solo para que el buscador de vocabulario vuelva a filtrar cuando Kuromoji esté listo.
+  useLecturasJapones(notesSearch);
   const filteredBooks = useMemo(() => {
     let list = books.filter(book => !book.isDeleted);
     const percent = (book: any) => book.progress?.percent ?? 0;
@@ -1952,13 +1956,11 @@ const Library = React.memo(function Library({
         break;
     }
 
-    const query = searchQuery.trim().toLocaleLowerCase();
-    if (!query) return list;
-    return list.filter(book =>
-      (book.title || '').toLocaleLowerCase().includes(query) ||
-      (book.author || '').toLocaleLowerCase().includes(query)
-    );
-  }, [books, activeFilter.type, activeFilter.value, searchQuery]);
+    // En romaji también: «re zero» encuentra «Ｒｅ：ゼロから…» (`busquedaRomaji.ts`).
+    const buscador = crearBuscador(searchQuery);
+    if (!buscador) return list;
+    return list.filter(book => buscador(book.title, book.author, book.series));
+  }, [books, activeFilter.type, activeFilter.value, searchQuery, lecturasCatalogo]);
 
   const filteredBooksList = useMemo(
     () => getSortedBooks(filteredBooks),
@@ -4721,9 +4723,10 @@ const Library = React.memo(function Library({
     const countBlacklisted = countSuspended;
 
     // 2. Filter list
+    // «taberu» encuentra 食べる (con Kuromoji cargado) y «neko» ねこ / ネコ.
+    const buscadorNotas = crearBuscador(notesSearch);
     const filteredWords = wordsList.filter(item => {
-      const matchSearch = item.word.toLowerCase().includes(notesSearch.toLowerCase());
-      if (!matchSearch) return false;
+      if (buscadorNotas && !buscadorNotas(item.word)) return false;
 
       const card = srsData[item.word];
       if (notesFilterStatus === 'all') return true;

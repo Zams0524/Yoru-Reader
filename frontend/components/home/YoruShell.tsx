@@ -1235,7 +1235,7 @@ export default function YoruShell({
       </nav>
 
       {isSearchOpen && (
-        <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} />
+        <GlobalSearch books={books} es={es} onClose={() => setIsSearchOpen(false)} onPick={openDetail} onPickServer={openServerItem} />
       )}
 
       {confirmModal}

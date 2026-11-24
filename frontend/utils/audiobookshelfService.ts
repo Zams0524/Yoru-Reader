@@ -1,5 +1,6 @@
 import { AUDIOBOOKSHELF_DEFAULTS } from '../config/serverDefaults';
 import { leerCredencialesMedios } from './credencialesMedios';
+import { crearBuscador, variantesParaServidor } from './busquedaRomaji';
 import type {
   AudiobookItem,
   AudiobookshelfConfig,
@@ -383,17 +384,34 @@ export async function getAudiobooks(libraryId: string, page = 0, limit = 50): Pr
   return { items: results.map(toAudiobookItem), total: Number(data?.total) || results.length };
 }
 
-/** Searches every audiobook library. */
+/**
+ * Searches every audiobook library. Con romaji («re zero») se pregunta además en kana,
+ * porque Audiobookshelf solo busca el texto tal cual; lo que vuelve de esas preguntas
+ * se filtra con el buscador de la biblioteca (`busquedaRomaji.ts`).
+ */
 export async function searchAudiobooks(query: string, limit = 12): Promise<AudiobookItem[]> {
   const q = query.trim();
   if (!q) return [];
   const libraries = await getAudiobookLibraries();
-  const results = await Promise.all(libraries.map(async (library) => {
-    const { data } = await absRequest<any>(`/api/libraries/${encodeURIComponent(library.id)}/search?q=${encodeURIComponent(q)}&limit=${limit}`);
-    return (Array.isArray(data?.book) ? data.book : []).map((entry: any) => toAudiobookItem(entry.libraryItem || entry));
-  }));
+  const buscarUna = async (texto: string): Promise<AudiobookItem[]> => {
+    const results = await Promise.all(libraries.map(async (library) => {
+      const { data } = await absRequest<any>(`/api/libraries/${encodeURIComponent(library.id)}/search?q=${encodeURIComponent(texto)}&limit=${limit}`);
+      return (Array.isArray(data?.book) ? data.book : []).map((entry: any) => toAudiobookItem(entry.libraryItem || entry));
+    }));
+    return results.flat();
+  };
+  const variantes = variantesParaServidor(q);
+  const tandas = [await buscarUna(q)];
+  if (variantes.length > 1) {
+    const buscador = crearBuscador(q);
+    const extra = await Promise.allSettled(variantes.slice(1).map(buscarUna));
+    for (const tanda of extra) {
+      if (tanda.status !== 'fulfilled') continue;
+      tandas.push(tanda.value.filter((item) => !buscador || buscador(item.title, item.author, item.series)));
+    }
+  }
   const seen = new Set<string>();
-  return results.flat().filter((item) => item.id && !seen.has(item.id) && seen.add(item.id));
+  return tandas.flat().filter((item) => item.id && !seen.has(item.id) && seen.add(item.id));
 }
 
 /**
