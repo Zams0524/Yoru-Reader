@@ -15,6 +15,7 @@ import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrati
 import { describeServerError } from '../../utils/serverHttp';
 import { cachedServerCollection, getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import type { ServerGroup } from '../../utils/serverEntities';
+import { nombreSeccion, ordenarSerie } from '../../utils/ordenSerie';
 import { Rail } from './primitives';
 import { useAudiobookPlayer } from './AudiobookPlayerBar';
 import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
@@ -572,10 +573,9 @@ export function AudiobookSeriesView({
 }) {
   const items = useMemo(() => {
     const catalog = getCachedServerCatalog();
-    return catalog.audiobooks
-      .filter((item) => item.series === seriesKey)
-      // Por título y con números de verdad, para que el tomo 2 no caiga tras el 10.
-      .sort((a, b) => a.title.localeCompare(b.title, 'ja', { numeric: true }));
+    // Por número de tomo (también 第二巻 o ２), y las IF y los extras al final.
+    return ordenarSerie(catalog.audiobooks.filter((item) => item.series === seriesKey), (item) => item.title)
+      .flatMap((seccion) => seccion.items);
   }, [seriesKey]);
 
   const author = items.find((item) => item.author)?.author;
@@ -655,7 +655,10 @@ export function ServerCollectionView({
   onOpenItem: (item: ServerItem) => void;
 }) {
   const collection = useMemo(() => cachedServerCollection(collectionKey), [collectionKey]);
-  const items = collection?.items || [];
+  const items = useMemo(() => collection?.items || [], [collection]);
+  // Tomos por número (21 antes que 23, 第二巻 = 2) y las historias IF, los relatos
+  // cortos y los extras aparte del hilo principal.
+  const secciones = useMemo(() => ordenarSerie(items, (item) => item.title), [items]);
   const isAudio = collection?.source === 'audiobookshelf';
   /*
     Desde que la app completa las colecciones (`coleccionesInteligentes.ts`), una de
@@ -680,7 +683,8 @@ export function ServerCollectionView({
       <div className="yoru-view-head">
         <div className="yoru-series-head">
           <span className="yoru-series-head-cover">
-            {items[0]?.cover ? <img src={items[0].cover} alt="" loading="lazy" /> : <span />}
+            {/* La portada del primer tomo de verdad, no la del que se añadió primero. */}
+            {secciones[0]?.items[0]?.cover ? <img src={secciones[0].items[0].cover} alt="" loading="lazy" /> : <span />}
           </span>
           <span>
             <h1 className="yoru-view-title">{collection?.title || (es ? 'Colección' : 'Collection')}</h1>
@@ -701,9 +705,16 @@ export function ServerCollectionView({
             ? 'De esta colección no queda nada en la lista guardada. Vuelve a Inicio con conexión al servidor para traerla otra vez.'
             : 'Nothing from this collection is left in the saved list. Go back to Home while connected to the server to fetch it again.'}
         </p>
-      ) : (
+      ) : secciones.map((seccion) => (
+        <section key={seccion.tipo} className="yoru-volume-section">
+        {secciones.length > 1 && (
+          <h2 className="yoru-volume-section-title">
+            {nombreSeccion(seccion.tipo, es)}
+            <span className="yoru-volume-section-count">{seccion.items.length}</span>
+          </h2>
+        )}
         <ul className="yoru-link-list yoru-volume-list">
-          {items.map((item, index) => (
+          {seccion.items.map((item, index) => (
             <li key={item.id}>
               <button type="button" className="yoru-volume-row" onClick={() => onOpenItem(item)}>
                 <span className="yoru-volume-index">{index + 1}</span>
@@ -730,7 +741,8 @@ export function ServerCollectionView({
             </li>
           ))}
         </ul>
-      )}
+        </section>
+      ))}
     </div>
   );
 }
