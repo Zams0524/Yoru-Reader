@@ -79,7 +79,9 @@ function mergeBook(local: any, cloud: any): any {
     ...newer,
     // Keep this device's id so open readers and saved positions still match.
     id: local.id,
-    chapters: (local.chapters?.length ? local.chapters : cloud.chapters) || [],
+    // A deleted book keeps its stats but not its text: without this, the device that still
+    // had the text would upload it again on every sync.
+    chapters: newer.isDeleted ? [] : ((local.chapters?.length ? local.chapters : cloud.chapters) || []),
     progress: {
       ...olderProgress,
       ...newerProgress,
@@ -90,7 +92,7 @@ function mergeBook(local: any, cloud: any): any {
   };
 }
 
-function mergeBooks(local: any[] = [], cloud: any[] = []): any[] {
+export function mergeBooks(local: any[] = [], cloud: any[] = []): any[] {
   const result = local.map((book) => ({ ...book }));
   const byId = new Map(result.map((book, index) => [book.id, index]));
   const byTitle = new Map(result.map((book, index) => [bookTitleKey(book), index]));

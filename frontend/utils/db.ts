@@ -3,6 +3,7 @@ import { borrarHorasDe, recordHourActivity } from './statsHabits';
 import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
 import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
 import { migrarClavesIdb } from './migrarClaves';
+import { mergeBooks } from './cloudMerge';
 // LocalStorage DB manager for Yoru Reader
 
 export type { DailyStatRecord };
@@ -127,6 +128,14 @@ const STORAGE_KEYS = {
   PROFILES: 'yoru_profiles',
   ACTIVE_PROFILE: 'yoru_active_profile_id'
 };
+
+/**
+ * Dónde vive la estantería de un perfil en IndexedDB. Un solo sitio para la clave: la
+ * app, la exportación para sincronizar y la importación tienen que usar la misma.
+ */
+function booksKeyFor(profileId: string | null): string {
+  return `${STORAGE_KEYS.BOOKS}_${profileId}`;
+}
 
 const DEFAULT_SETTINGS: Settings = {
   fontSize: 22, // default to 22px matching reference app scale
@@ -954,9 +963,14 @@ export const db = {
 
     // Collect data for each profile
     for (const p of profiles) {
-      // 1. Books list from IndexedDB
-      const booksKey = `books_list_${p.id}`;
-      const books = await idb.get(booksKey) || [];
+      // 1. La estantería, de donde la guarda la app. Hasta el 22 nov 2026 se leía de
+      // `books_list_<perfil>`, una clave en la que la app no escribe nunca: los libros
+      // importados no salían de este aparato, ni a Drive ni al servidor de Yoru.
+      // El perfil activo pasa por `_readBooks` para no saltarse una estantería antigua
+      // que siga en localStorage, y todos por la cola para no leer a medio guardar.
+      const books = await serializeBookAccess(async () => (
+        p.id === activeProfileId ? this._readBooks() : ((await idb.get(booksKeyFor(p.id))) || [])
+      ));
       
       // 2. Settings from localStorage
       const settingsKey = `yoru_settings_${p.id}`;
@@ -1014,10 +1028,17 @@ export const db = {
     for (const p of dbExport.profiles) {
       const pData = dbExport.profileData && dbExport.profileData[p.id];
       if (pData) {
-        // 1. Books
-        if (pData.books) {
-          const booksKey = `books_list_${p.id}`;
-          await idb.set(booksKey, pData.books);
+        // 1. La estantería, en la clave que usa la app (ver `exportFullDatabase`).
+        // No se pisa: se combina con lo que hay ahora mismo, porque entre que se
+        // exportó y esto se escribe hay una ida y vuelta por la red, y lo leído o
+        // importado en ese rato no puede perderse. Con la estantería vacía (app
+        // recién instalada) el resultado es lo que llega, tal cual.
+        if (Array.isArray(pData.books)) {
+          const clave = booksKeyFor(p.id);
+          await serializeBookAccess(async () => {
+            const actuales = (await idb.get(clave)) || [];
+            await idb.set(clave, mergeBooks(actuales, pData.books));
+          });
         }
         // 2. Settings
         if (pData.settings) {
@@ -1054,7 +1075,7 @@ export const db = {
           const aplicada = Date.parse(localStorage.getItem(`${PROGRESS_RESET_APPLIED_KEY}_${p.id}`) || '') || 0;
           if (Date.parse(marca) > aplicada) {
             // La estantería que usa la app, por si no llegó vaciada con la combinación.
-            const clave = `${STORAGE_KEYS.BOOKS}_${p.id}`;
+            const clave = booksKeyFor(p.id);
             const libros = await serializeBookAccess(async () => {
               const actuales = (await idb.get(clave)) || [];
               const vaciados = librosTrasBorrado(actuales, marca);
