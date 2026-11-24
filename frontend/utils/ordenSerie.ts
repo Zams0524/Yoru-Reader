@@ -122,7 +122,19 @@ const RE_IF = [
   /イフ(?:ストーリー|ルート)|ifルート|分岐(?:ルート|世界)|アナザー(?:ルート|ストーリー)|another\s+route|alternate\s+(?:route|ending|timeline)/i,
 ];
 const RE_CORTOS = /短編集|短篇集|短編|短篇|掌編|ショートストーリー|short\s*stor(?:y|ies)|アンソロジー|anthology/i;
-const RE_EXTRA = /(?<![A-Za-z])ex(?:\s*\d+|(?![A-Za-z]))|外伝|番外編|番外|スピンオフ|spin[-\s]?off|side\s*stor(?:y|ies)|公式(?:ガイド|ファンブック|アンソロジー)|ファンブック|設定資料|ガイドブック|guide\s*book|fan\s*book|画集|art\s*book|ビジュアルブック/i;
+const RE_EXTRA = new RegExp([
+  // Spin-offs y relatos aparte.
+  /(?<![A-Za-z])ex(?:\s*\d+|(?![A-Za-z]))|外伝|番外編|番外|スピンオフ|spin[-\s]?off|side\s*stor(?:y|ies)/.source,
+  // Guías, fanbooks y libros de personajes o datos.
+  /公式(?:ガイド|ファンブック|アンソロジー)|ファンブック|ガイドブック|(?<![A-Za-z])(?:guide|fan|character|data|memorial)\s*book(?![A-Za-z])/.source,
+  /キャラクターブック|データブック|メモリアルブック/.source,
+  // Libros de arte e ilustraciones.
+  /画集|原画集|設定集|資料集|設定資料|イラスト集|イラストレーション|illust集|アートワークス|ビジュアル(?:ファン)?ブック/.source,
+  /(?<![A-Za-z])(?:illust(?:ration)?s?\s*works|art\s*works?|artworks|art\s*book|illustrations)(?![A-Za-z])/.source,
+  /(?<![A-Za-z])(?:art|works)\s+(?:re:\s*)?box(?![A-Za-z])/.source,
+  // Enciclopedias: «pedia» también pegado al nombre (Re:zeropedia).
+  /pedia(?![A-Za-z])|ペディア|事典|辞典|大全|百科|(?<![A-Za-z])(?:encyclopedia|wiki)(?![A-Za-z])/.source,
+].join('|'), 'i');
 
 /** Qué clase de tomo es, mirando solo el título. */
 export function tipoDeTomo(titulo: string): TipoTomo {

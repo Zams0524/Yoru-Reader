@@ -44,6 +44,12 @@ prueba('tipo de tomo', () => {
   assert.equal(tipoDeTomo('Gift Of Life'), 'principal'); // «if» dentro de una palabra no cuenta
   assert.equal(tipoDeTomo('Exorcist 3'), 'principal'); // «Ex» dentro de una palabra tampoco
   assert.equal(tipoDeTomo('ソードアート・オンライン 外伝'), 'extra');
+  // Libros de arte y enciclopedias de la serie van a Extras.
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 Animation Illust Works'), 'extra');
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 Art Works Re:BOX'), 'extra');
+  assert.equal(tipoDeTomo('Re:zeropedia'), 'extra');
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 Re:zeropedia2'), 'extra');
+  assert.equal(tipoDeTomo('Box of Secrets 3'), 'principal'); // «box» suelto no cuenta
 });
 
 prueba('la colección de Re:Zero de la captura queda en orden y separada', () => {
@@ -60,12 +66,24 @@ prueba('la colección de Re:Zero de la captura queda en orden y separada', () =>
     'Re:ゼロから始める異世界生活 Ex2 剣鬼恋譚',
     'Re：ゼロから始める異世界生活　短編集２',
     'Re:ゼロから始める異世界生活 Ex1 獅子王の見た夢',
+    'Re:ゼロから始める異世界生活 Animation Illust Works',
+    'Re:ゼロから始める異世界生活 Art Works Re:BOX',
+    'Re:zeropedia',
+    'Re:ゼロから始める異世界生活 Re:zeropedia2',
   ];
   const secciones = ordenarSerie(titulos, (t) => t);
   assert.deepEqual(secciones.map((s) => s.tipo), ['principal', 'if', 'cortos', 'extra']);
   assert.deepEqual(secciones[0].items.map((t) => infoTomo(t).numero), [1, 2, 10, 21, 23, 24, 25]);
   assert.deepEqual(secciones[2].items.map((t) => infoTomo(t).numero), [2, 10]);
-  assert.deepEqual(secciones[3].items.map((t) => infoTomo(t).numero), [1, 2]);
+  const extras = secciones[3].items;
+  assert.equal(extras.length, 6);
+  for (const t of [
+    'Re:ゼロから始める異世界生活 Animation Illust Works',
+    'Re:ゼロから始める異世界生活 Art Works Re:BOX',
+    'Re:zeropedia',
+    'Re:ゼロから始める異世界生活 Re:zeropedia2',
+  ]) assert.ok(extras.includes(t), `${t} debería estar en Extras`);
+  assert.deepEqual(extras.filter((t) => /Ex\d/.test(t)).map((t) => infoTomo(t).numero), [1, 2]);
 });
 
 prueba('una colección con varias series deja cada serie junta y en orden', () => {
