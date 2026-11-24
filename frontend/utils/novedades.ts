@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-24-catalogo-sincronizado',
+    es: 'Los libros que agregas a tu catálogo ya aparecen en tus otros aparatos, con su estado y por dónde vas. La primera vez que abres uno en otro aparato, Yoru baja su texto (hace falta haber entrado con Discord).',
+    en: 'Books you add to your catalog now show up on your other devices, with their status and where you left off. The first time you open one on another device, Yoru downloads its text (you need to be signed in with Discord).',
+  },
+  {
     id: '2026-11-24-colecciones-inteligentes',
     es: 'Las colecciones se llenan solas: cuando llega un libro nuevo a Kavita, a Audiobookshelf o a tu biblioteca, entra en las colecciones que le tocan por su título, por su serie o por su género (por ejemplo, un isekai nuevo va a «Isekai & Reencarnación»).',
     en: 'Collections now fill themselves: when a new book reaches Kavita, Audiobookshelf or your library, it joins the collections it belongs to by title, series or genre (a new isekai goes to "Isekai & Reincarnation", for example).',

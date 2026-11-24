@@ -24,6 +24,7 @@
 import { Capacitor } from '@capacitor/core';
 import { db } from './db';
 import { mergeDatabaseExports, countLiveBooks } from './cloudMerge';
+import { claveTexto, tieneTexto } from './textosLibros';
 import { leerSesion, tokenAccesoFresco } from './discordAuth';
 import { serverRequest, ServerHttpError } from './serverHttp';
 import { YORU_SYNC_DEFAULTS } from '../config/serverDefaults';
@@ -169,6 +170,106 @@ async function subirProgreso(base: string, sesion: SesionServidor, datos: any, b
   return Number(data?.version) || 0;
 }
 
+/* ------------------------------------------------------ el texto de los libros */
+
+/*
+  El bulto de la sincronización lleva la ficha de cada libro, no su texto
+  (`textosLibros.ts`). El texto se sube aquí, una vez por libro, y el otro aparato lo
+  baja al abrir el libro. Solo con el servidor de Yoru: Drive lleva la ficha y nada más.
+*/
+
+/** Libros que el servidor no quiso (demasiado grandes): no se reintentan en cada vuelta. */
+const CLAVE_TEXTOS_RECHAZADOS = 'yoru_sync_textos_rechazados';
+
+function textosRechazados(): Set<string> {
+  try {
+    const lista = JSON.parse(localStorage.getItem(CLAVE_TEXTOS_RECHAZADOS) || '[]');
+    return new Set(Array.isArray(lista) ? lista.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function apuntarRechazado(clave: string): void {
+  try {
+    const lista = textosRechazados();
+    lista.add(clave);
+    localStorage.setItem(CLAVE_TEXTOS_RECHAZADOS, JSON.stringify([...lista].slice(-200)));
+  } catch { /* se volverá a intentar, sin más */ }
+}
+
+let subiendoTextos = false;
+
+/**
+ * Sube el texto de los libros de este aparato que el servidor todavía no tiene. De uno
+ * en uno y en segundo plano: un libro con ilustraciones pesa megas y no tiene por qué
+ * hacer esperar a nada. Si algo falla se deja para la siguiente sincronización.
+ */
+export async function subirTextosPendientes(base: string, sesion: SesionServidor): Promise<number> {
+  if (subiendoTextos) return 0;
+  const conexion = (typeof navigator !== 'undefined' ? (navigator as any).connection : null);
+  if (conexion?.saveData) return 0;
+  subiendoTextos = true;
+  let subidos = 0;
+  try {
+    const auth = { Authorization: `Bearer ${sesion.token}` };
+    const { data } = await serverRequest<{ textos: { clave: string }[] }>(urlSync(base, '/api/textos'), { headers: auth, timeoutMs: 20_000 });
+    const yaEstan = new Set((data?.textos || []).map((t) => String(t.clave)));
+    const rechazados = textosRechazados();
+    const libros = await db.getBooks();
+    for (const libro of libros) {
+      if (libro.isDeleted || !tieneTexto(libro)) continue;
+      const clave = claveTexto(libro);
+      if (yaEstan.has(clave) || rechazados.has(clave)) continue;
+      try {
+        await serverRequest(urlSync(base, `/api/textos/${clave}`), {
+          method: 'PUT',
+          headers: auth,
+          body: { title: libro.title, author: libro.author, cover: libro.cover, chapters: libro.chapters },
+          timeoutMs: 180_000,
+        });
+        yaEstan.add(clave);
+        subidos += 1;
+      } catch (error) {
+        const status = statusDe(error);
+        if (status === 413 || status === 400) { apuntarRechazado(clave); continue; }
+        // Sin espacio, sin red o sin sesión: lo que queda, en la siguiente vuelta.
+        console.warn('[yoru-sync] texto de libro sin subir:', error instanceof Error ? error.message : String(error));
+        break;
+      }
+    }
+  } catch (error) {
+    console.warn('[yoru-sync] no se pudo mirar qué textos tiene el servidor:', error instanceof Error ? error.message : String(error));
+  } finally {
+    subiendoTextos = false;
+  }
+  return subidos;
+}
+
+export type TextoBajado = { chapters: any[]; cover?: string };
+
+/**
+ * El texto de un libro que llegó de otro aparato sin él. `null` si no se puede: sin
+ * sesión, sin red, o porque el otro aparato todavía no lo ha subido.
+ */
+export async function bajarTextoDeLibro(libro: { title?: string; author?: string }): Promise<TextoBajado | null> {
+  const base = urlServidorSync();
+  if (!base) return null;
+  const sesion = await sesionUsable();
+  if (!sesion) return null;
+  try {
+    const { data } = await serverRequest<any>(urlSync(base, `/api/textos/${claveTexto(libro)}`), {
+      headers: { Authorization: `Bearer ${sesion.token}` },
+      timeoutMs: 120_000,
+    });
+    if (!Array.isArray(data?.chapters) || !data.chapters.length) return null;
+    return { chapters: data.chapters, cover: typeof data.cover === 'string' ? data.cover : undefined };
+  } catch (error) {
+    console.warn('[yoru-sync] no se pudo bajar el texto del libro:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------ la sincronización */
 
 export type ModoSync =
@@ -262,6 +363,7 @@ export async function sincronizarConServidorYoru(
       if (!remoto.datos) {
         await subirProgreso(base, sesion, local, remoto.version);
         apuntarSincronizacion();
+        void subirTextosPendientes(base, sesion);
         return { estado: 'adelante', cambioLocal: false, subido: true };
       }
 
@@ -315,6 +417,7 @@ export async function sincronizarConServidorYoru(
       }
 
       if (modo === 'bidireccional' || !localChanged) apuntarSincronizacion();
+      void subirTextosPendientes(base, sesion);
       return { estado: 'adelante', cambioLocal, subido };
     }
 

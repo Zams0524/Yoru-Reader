@@ -3,6 +3,8 @@ import { borrarHorasDe, recordHourActivity } from './statsHabits';
 import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
 import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
 import { migrarClavesIdb } from './migrarClaves';
+import { mergeBooks } from './cloudMerge';
+import { librosParaSincronizar } from './textosLibros';
 import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
 
 /**
@@ -56,6 +58,10 @@ export interface Book {
    * perdiendo cuándo se leyó por última vez, que es un dato del usuario.
    */
   hiddenFromContinue?: boolean;
+  /** Tiene texto en algún aparato; aquí puede faltar y se baja al abrirlo (`textosLibros.ts`). */
+  textoAparte?: boolean;
+  /** La portada es la pequeña que viaja con la sincronización, no la original. */
+  portadaReducida?: boolean;
 }
 
 export interface Settings {
@@ -144,6 +150,14 @@ const STORAGE_KEYS = {
   PROFILES: 'yoru_profiles',
   ACTIVE_PROFILE: 'yoru_active_profile_id'
 };
+
+/**
+ * Dónde vive la estantería de un perfil en IndexedDB. Un solo sitio para la clave: la
+ * app, la exportación para sincronizar y la importación tienen que usar la misma.
+ */
+function booksKeyFor(profileId: string | null): string {
+  return `${STORAGE_KEYS.BOOKS}_${profileId}`;
+}
 
 const DEFAULT_SETTINGS: Settings = {
   fontSize: 22, // default to 22px matching reference app scale
@@ -410,6 +424,8 @@ export const db = {
       const existingIdx = books.findIndex(b => b.title === book.title);
       if (existingIdx !== -1) {
         if (books[existingIdx].isDeleted
+          // Vino de otro aparato sin texto (`textosLibros.ts`): importarlo aquí se lo da.
+          || !(books[existingIdx].chapters || []).length
           || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
           // Restore a deleted book, or refresh readings without changing text positions.
           if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
@@ -452,7 +468,12 @@ export const db = {
         const book = booksList[i];
         const existingIdx = books.findIndex(b => b.title === book.title);
         if (existingIdx !== -1) {
-          if (books[existingIdx].isDeleted) {
+          if (!books[existingIdx].isDeleted && !(books[existingIdx].chapters || []).length) {
+            // Vino de otro aparato sin texto (`textosLibros.ts`): importarlo aquí se lo da,
+            // con su progreso y su estado intactos.
+            books[existingIdx].chapters = book.chapters || [];
+            addedCount++;
+          } else if (books[existingIdx].isDeleted) {
             // Restore/undelete it!
             books[existingIdx].isDeleted = false;
             books[existingIdx].chapters = book.chapters || [];
@@ -708,6 +729,28 @@ export const db = {
         }
       }
       const updatedBooks = books.filter(b => !b.isDeleted);
+      await this._writeBooks(updatedBooks);
+      return updatedBooks;
+    });
+  },
+
+  /**
+   * Le pone el texto a un libro que llegó de otro aparato sin él (`textosLibros.ts`).
+   * No toca `updatedAt`: bajar el texto no es un cambio del lector, y si lo marcara
+   * como reciente podría ganarle a un cambio de estado hecho en el otro aparato.
+   */
+  ponerTextoDeLibro(bookId: string, chapters: any[], cover?: string): Promise<Book[]> {
+    return serializeBookAccess(async () => {
+      const books = await this._readBooks();
+      const updatedBooks = books.map((b: any) => {
+        if (b.id !== bookId || !Array.isArray(chapters) || !chapters.length) return b;
+        const conTexto: any = { ...b, chapters };
+        if (b.portadaReducida && typeof cover === 'string' && cover) {
+          conTexto.cover = cover;
+          delete conTexto.portadaReducida;
+        }
+        return conTexto;
+      });
       await this._writeBooks(updatedBooks);
       return updatedBooks;
     });
@@ -985,9 +1028,14 @@ export const db = {
 
     // Collect data for each profile
     for (const p of profiles) {
-      // 1. Books list from IndexedDB
-      const booksKey = `books_list_${p.id}`;
-      const books = await idb.get(booksKey) || [];
+      // 1. La estantería, de donde la guarda la app. Hasta el 22 nov 2026 se leía de
+      // `books_list_<perfil>`, una clave en la que la app no escribe nunca: los libros
+      // importados no salían de este aparato, ni a Drive ni al servidor de Yoru.
+      // El perfil activo pasa por `_readBooks` para no saltarse una estantería antigua
+      // que siga en localStorage, y todos por la cola para no leer a medio guardar.
+      const books = await serializeBookAccess(async () => (
+        p.id === activeProfileId ? this._readBooks() : ((await idb.get(booksKeyFor(p.id))) || [])
+      ));
       
       // 2. Settings from localStorage
       const settingsKey = `yoru_settings_${p.id}`;
@@ -1016,7 +1064,8 @@ export const db = {
       };
 
       dbExport.profileData[p.id] = {
-        books,
+        // Sin el texto y con la portada pequeña: el texto va aparte (`textosLibros.ts`).
+        books: await librosParaSincronizar(books),
         settings,
         wordStatuses,
         wordStatusTimes,
@@ -1045,10 +1094,17 @@ export const db = {
     for (const p of dbExport.profiles) {
       const pData = dbExport.profileData && dbExport.profileData[p.id];
       if (pData) {
-        // 1. Books
-        if (pData.books) {
-          const booksKey = `books_list_${p.id}`;
-          await idb.set(booksKey, pData.books);
+        // 1. La estantería, en la clave que usa la app (ver `exportFullDatabase`).
+        // No se pisa: se combina con lo que hay ahora mismo, porque entre que se
+        // exportó y esto se escribe hay una ida y vuelta por la red, y lo leído o
+        // importado en ese rato no puede perderse. Con la estantería vacía (app
+        // recién instalada) el resultado es lo que llega, tal cual.
+        if (Array.isArray(pData.books)) {
+          const clave = booksKeyFor(p.id);
+          await serializeBookAccess(async () => {
+            const actuales = (await idb.get(clave)) || [];
+            await idb.set(clave, mergeBooks(actuales, pData.books));
+          });
         }
         // 2. Settings
         if (pData.settings) {
@@ -1085,7 +1141,7 @@ export const db = {
           const aplicada = Date.parse(localStorage.getItem(`${PROGRESS_RESET_APPLIED_KEY}_${p.id}`) || '') || 0;
           if (Date.parse(marca) > aplicada) {
             // La estantería que usa la app, por si no llegó vaciada con la combinación.
-            const clave = `${STORAGE_KEYS.BOOKS}_${p.id}`;
+            const clave = booksKeyFor(p.id);
             const libros = await serializeBookAccess(async () => {
               const actuales = (await idb.get(clave)) || [];
               const vaciados = librosTrasBorrado(actuales, marca);

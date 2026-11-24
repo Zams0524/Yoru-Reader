@@ -6,6 +6,7 @@
  */
 
 import { perfilTrasBorrado, ultimaMarca } from './progresoBorrado';
+import { claveTituloAutor, conPortadaOriginal } from './textosLibros';
 
 type DbExport = {
   version?: number;
@@ -66,7 +67,7 @@ function bookTime(book: any): number {
 
 // Books get a new random id on each device they are imported on, so match by title too.
 function bookTitleKey(book: any): string {
-  return `${String(book?.title || '').trim().toLowerCase()}\u0000${String(book?.author || '').trim().toLowerCase()}`;
+  return claveTituloAutor(book);
 }
 
 function mergeBook(local: any, cloud: any): any {
@@ -74,12 +75,14 @@ function mergeBook(local: any, cloud: any): any {
   const older = newer === local ? cloud : local;
   const newerProgress = newer.progress || {};
   const olderProgress = older.progress || {};
-  return {
+  return conPortadaOriginal({
     ...older,
     ...newer,
     // Keep this device's id so open readers and saved positions still match.
     id: local.id,
-    chapters: (local.chapters?.length ? local.chapters : cloud.chapters) || [],
+    // A deleted book keeps its stats but not its text: without this, the device that still
+    // had the text would upload it again on every sync.
+    chapters: newer.isDeleted ? [] : ((local.chapters?.length ? local.chapters : cloud.chapters) || []),
     progress: {
       ...olderProgress,
       ...newerProgress,
@@ -87,10 +90,12 @@ function mergeBook(local: any, cloud: any): any {
       charactersRead: Math.max(newerProgress.charactersRead || 0, olderProgress.charactersRead || 0),
       secondsRead: Math.max(newerProgress.secondsRead || 0, olderProgress.secondsRead || 0),
     },
-  };
+    // The text never travels in the bundle (textosLibros.ts), so the cover that came with it
+    // may be the small one: the device that has the original keeps it.
+  }, local, cloud);
 }
 
-function mergeBooks(local: any[] = [], cloud: any[] = []): any[] {
+export function mergeBooks(local: any[] = [], cloud: any[] = []): any[] {
   const result = local.map((book) => ({ ...book }));
   const byId = new Map(result.map((book, index) => [book.id, index]));
   const byTitle = new Map(result.map((book, index) => [bookTitleKey(book), index]));

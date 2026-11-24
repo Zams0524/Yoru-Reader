@@ -60,6 +60,22 @@ mismo `mergeDatabaseExports` (`frontend/utils/cloudMerge.ts`), que es lo importa
 distintos para los mismos datos serían dos sitios donde perder horas de lectura, y el
 segundo se descubriría tarde.
 
+### El catálogo viaja; el texto de los libros va aparte
+
+Hasta el 24 nov 2026 los libros del catálogo no salían del aparato: la exportación los
+leía de `books_list_<perfil>`, una clave en la que la app no escribe nunca. Ahora en el
+bulto va **la ficha** de cada libro: título, autor, estado («Por leer», «Leyendo»…), por
+dónde va, marcadores, notas y la portada reducida a 360 px si pasa de 150 KB
+(`portadaReducida`; la combinación nunca cambia la original por la pequeña).
+
+**El texto no va en el bulto.** Un EPUB con ilustraciones ronda los 10 MB y el bulto se
+sube cada vez que algo cambia: con unos pocos libros pasaría del tope de 64 MB y dejaría
+de sincronizarse todo. Así que la app sube el texto de cada libro **una vez** a
+`PUT /api/textos/<clave>` (la clave sale de título y autor, `textosLibros.ts`), y el
+aparato que recibe la ficha marca el libro con `textoAparte` y baja el texto al abrirlo
+(`bajarTextoDeLibro` en `yoruSyncService.ts`). Importar el mismo libro en ese aparato
+también le da el texto, sin perder el progreso. Por Drive solo viaja la ficha.
+
 El servidor no combina nada: guarda el bulto y lleva un contador de versiones. Si
 entre que la app lee y escribe ha escrito otro aparato, contesta **409**, y la app
 vuelve a empezar con lo que haya. Eso es lo que impide que, leyendo en el PC y en el

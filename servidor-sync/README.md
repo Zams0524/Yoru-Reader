@@ -178,6 +178,8 @@ Todo por variables de entorno, y todas tienen un valor por defecto que ya sirve:
 | `YORU_SYNC_GUILD` | `1372928430634565775` | El servidor de Discord de Yoru |
 | `YORU_SYNC_DB` | `servidor-sync/datos/yoru-sync.db` | Dónde vive la base |
 | `YORU_SYNC_DISCORD_API` | `https://discord.com/api` | Solo para pruebas |
+| `YORU_SYNC_TEXTOS` | `servidor-sync/datos/textos` | El texto de los libros, una carpeta por cuenta |
+| `YORU_SYNC_CUOTA_TEXTOS_MB` | `3072` | Lo que puede ocupar en disco (comprimido) el texto de una cuenta |
 
 Escucha en `0.0.0.0` a propósito: la dirección de Tailscale solo existe cuando
 Tailscale ya levantó su interfaz, y atarse a ella haría que el servidor fallara al
@@ -210,6 +212,9 @@ los que está: solo su ID, su nombre y su progreso.
 | `GET` | `/api/progreso/<id>` | **De cualquiera, reducido**: `{ usuarioId, nombre, alias, comparte, leyendo, escuchando, ahora, perfil }` |
 | `GET` | `/api/miembros` | Lo mismo para todos, sin `perfil`: `{ miembros: [...] }` |
 | `GET` | `/api/medios` | Las claves de Kavita y de ABS: `{ kavita, audiobookshelf }`, cada una `null` si no hay |
+| `GET` | `/api/textos` | Los libros cuyo texto tienes guardado: `{ textos: [{ clave, bytes }] }` |
+| `GET` | `/api/textos/<clave>` | El texto de un libro tuyo: `{ title, author, cover, chapters }`, o **404** |
+| `PUT` | `/api/textos/<clave>` | Lo guarda (comprimido); **400** sin capítulos, **413** si pasa de 64 MB, **507** si se pasa la cuota |
 
 Esas dos son para Miembros, y la diferencia con `/api/progreso` a secas es toda su
 seguridad: **`/api/progreso` devuelve lo tuyo entero y va por tu propia sesión;

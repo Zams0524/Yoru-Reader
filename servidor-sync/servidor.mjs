@@ -30,7 +30,8 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -207,6 +208,91 @@ export function leerAlineacion(id, carpeta = carpetaAlineaciones()) {
   } catch {
     return null;
   }
+}
+
+/* ------------------------------------------------------- el texto de los libros */
+
+/**
+ * El texto de cada libro del catálogo, aparte del progreso.
+ *
+ * El progreso (`/api/progreso`) lleva la ficha de cada libro: título, estado, por
+ * dónde va, marcadores, portada reducida. El texto no: un EPUB con ilustraciones ronda
+ * los 10 MB, y meterlo en el bulto haría que cada página pasada subiera la biblioteca
+ * entera y que, con unos pocos libros, se pasara del tope y dejara de sincronizar
+ * todo. Así que el texto se sube una vez por libro, aquí, y el otro aparato lo baja
+ * cuando abre el libro.
+ *
+ * Una carpeta por cuenta de Discord, un fichero comprimido por libro. La clave del
+ * libro la calcula la app con el título y el autor (`textosLibros.ts`), así que el
+ * mismo libro importado en dos aparatos acaba en el mismo fichero.
+ */
+export function carpetaTextos() {
+  return process.env.YORU_SYNC_TEXTOS || join(AQUI, 'datos', 'textos');
+}
+
+/** Lo que puede ocupar en disco el texto de una cuenta. Por defecto, 3 GB comprimidos. */
+export const CUOTA_TEXTOS = Number(process.env.YORU_SYNC_CUOTA_TEXTOS_MB || 3072) * 1024 * 1024;
+
+/** La clave de un libro: hexadecimal, nada que sirva de ruta. */
+const CLAVE_TEXTO = /^[a-f0-9]{16,64}$/;
+/** El id de Discord de la cuenta: solo cifras. */
+const USUARIO_TEXTO = /^[0-9]{1,32}$/;
+
+function carpetaDe(usuarioId, carpeta) {
+  return USUARIO_TEXTO.test(String(usuarioId)) ? join(carpeta, String(usuarioId)) : null;
+}
+
+/** Los libros cuyo texto ya tiene guardado esta cuenta. */
+export function listarTextos(usuarioId, carpeta = carpetaTextos()) {
+  const suya = carpetaDe(usuarioId, carpeta);
+  if (!suya) return [];
+  let nombres = [];
+  try { nombres = readdirSync(suya); } catch { return []; }
+  const fuera = [];
+  for (const nombre of nombres) {
+    if (!nombre.endsWith('.json.gz')) continue;
+    const clave = nombre.slice(0, -'.json.gz'.length);
+    if (!CLAVE_TEXTO.test(clave)) continue;
+    try {
+      const datos = statSync(join(suya, nombre));
+      if (datos.isFile()) fuera.push({ clave, bytes: datos.size });
+    } catch { /* se borró entre el listado y la consulta */ }
+  }
+  return fuera;
+}
+
+/** El texto de un libro de esta cuenta, ya descomprimido, o `null`. */
+export function leerTexto(usuarioId, clave, carpeta = carpetaTextos()) {
+  const suya = carpetaDe(usuarioId, carpeta);
+  if (!suya || !CLAVE_TEXTO.test(String(clave))) return null;
+  try {
+    return gunzipSync(readFileSync(join(suya, `${clave}.json.gz`))).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Guarda el texto de un libro. Se escribe en un fichero aparte y luego se renombra:
+ * quien lo pida a medio escribir recibe el anterior o ninguno, nunca uno roto.
+ */
+export function guardarTexto(usuarioId, clave, cuerpo, carpeta = carpetaTextos(), cuota = CUOTA_TEXTOS) {
+  const suya = carpetaDe(usuarioId, carpeta);
+  if (!suya || !CLAVE_TEXTO.test(String(clave))) return { ok: false, motivo: 'clave-invalida' };
+  if (!cuerpo || typeof cuerpo !== 'object' || !Array.isArray(cuerpo.chapters) || !cuerpo.chapters.length) {
+    return { ok: false, motivo: 'sin-texto' };
+  }
+  const comprimido = gzipSync(Buffer.from(JSON.stringify(cuerpo), 'utf8'));
+  const ocupado = listarTextos(usuarioId, carpeta)
+    .filter((t) => t.clave !== clave)
+    .reduce((suma, t) => suma + t.bytes, 0);
+  if (ocupado + comprimido.length > cuota) return { ok: false, motivo: 'sin-espacio' };
+  mkdirSync(suya, { recursive: true });
+  const destino = join(suya, `${clave}.json.gz`);
+  const temporal = `${destino}.${randomBytes(4).toString('hex')}.tmp`;
+  writeFileSync(temporal, comprimido);
+  renameSync(temporal, destino);
+  return { ok: true, bytes: comprimido.length };
 }
 
 /* ------------------------------------------------------------------ base de datos */
@@ -823,6 +909,43 @@ export function crearServidor({ base, fetchImpl = fetch } = {}) {
         const alineacion = leerAlineacion(unaAlineacion[1]);
         if (!alineacion) { responder(res, 404, { error: 'sin-alineacion' }); return; }
         responder(res, 200, alineacion);
+        return;
+      }
+
+      /*
+        El texto de los libros (ver `carpetaTextos`). Cada cuenta lee y escribe solo
+        en su carpeta: la cuenta sale de la sesión, nunca de la dirección.
+      */
+      if (ruta === '/api/textos' && req.method === 'GET') {
+        responder(res, 200, { textos: listarTextos(sesion.usuario_id) });
+        return;
+      }
+
+      const unTexto = ruta.match(/^\/api\/textos\/([a-f0-9]{16,64})$/);
+      if (unTexto && req.method === 'GET') {
+        const texto = leerTexto(sesion.usuario_id, unTexto[1]);
+        if (texto === null) { responder(res, 404, { error: 'sin-texto' }); return; }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(texto),
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+          'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
+          'Cache-Control': 'no-store',
+        });
+        res.end(texto);
+        return;
+      }
+
+      if (unTexto && req.method === 'PUT') {
+        const cuerpo = await leerCuerpo(req);
+        const hecho = guardarTexto(sesion.usuario_id, unTexto[1], cuerpo);
+        if (!hecho.ok) {
+          responder(res, hecho.motivo === 'sin-espacio' ? 507 : 400, { error: hecho.motivo });
+          return;
+        }
+        registrar('texto', sesion.nombre || sesion.usuario_id, unTexto[1].slice(0, 8), `${Math.round(hecho.bytes / 1024)} KB`);
+        responder(res, 200, { ok: true, bytes: hecho.bytes });
         return;
       }
 
