@@ -176,6 +176,8 @@ export interface AudiobookItem {
   isbn?: string;
   asin?: string;
   description?: string;
+  /** Géneros y etiquetas del libro en el servidor; sirven para clasificarlo en colecciones. */
+  genres?: string[];
 }
 
 export interface AudioTrack {

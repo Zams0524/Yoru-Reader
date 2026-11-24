@@ -657,6 +657,18 @@ export function ServerCollectionView({
   const collection = useMemo(() => cachedServerCollection(collectionKey), [collectionKey]);
   const items = collection?.items || [];
   const isAudio = collection?.source === 'audiobookshelf';
+  /*
+    Desde que la app completa las colecciones (`coleccionesInteligentes.ts`), una de
+    Kavita puede llevar el audiolibro de la misma serie, y al revés: se cuenta cada
+    cosa por lo que es, como en la vista de un autor.
+  */
+  const series = items.filter((item) => item.source === 'kavita').length;
+  const audio = items.length - series;
+  const partes: string[] = [];
+  if (series > 0) partes.push(`${series} ${series === 1 ? 'serie' : 'series'}`);
+  if (audio > 0) partes.push(`${audio} ${es ? (audio === 1 ? 'audiolibro' : 'audiolibros') : (audio === 1 ? 'audiobook' : 'audiobooks')}`);
+  if (partes.length === 0) partes.push(es ? '0 títulos' : '0 titles');
+  const automaticos = items.filter((item) => item.auto).length;
 
   return (
     <div>
@@ -673,11 +685,11 @@ export function ServerCollectionView({
           <span>
             <h1 className="yoru-view-title">{collection?.title || (es ? 'Colección' : 'Collection')}</h1>
             <span className="yoru-view-sub">
-              {items.length}{' '}
-              {isAudio
-                ? (es ? (items.length === 1 ? 'audiolibro' : 'audiolibros') : (items.length === 1 ? 'audiobook' : 'audiobooks'))
-                : (es ? (items.length === 1 ? 'serie' : 'series') : 'series')}
+              {partes.join(' · ')}
               {` · ${isAudio ? 'Audiobookshelf' : 'Kavita'}`}
+              {automaticos > 0 && (es
+                ? ` · ${automaticos} ${automaticos === 1 ? 'añadido' : 'añadidos'} por Yoru`
+                : ` · ${automaticos} added by Yoru`)}
             </span>
           </span>
         </div>
@@ -700,11 +712,19 @@ export function ServerCollectionView({
                 </span>
                 <span className="yoru-volume-text">
                   <span className="yoru-link-title">{item.title}</span>
-                  {item.author && <span className="yoru-link-author">{item.author}</span>}
+                  {(item.author || item.auto) && (
+                    <span className="yoru-link-author">
+                      {[
+                        item.author,
+                        // Que se vea que esto no lo puso nadie en el servidor.
+                        item.auto ? (es ? 'Añadido solo por Yoru' : 'Added automatically by Yoru') : '',
+                      ].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
                 </span>
                 <span className="yoru-volume-listen">
-                  {isAudio ? <Headphones size={15} aria-hidden="true" /> : <BookOpen size={15} aria-hidden="true" />}
-                  <span>{isAudio ? (es ? 'Escuchar' : 'Listen') : (es ? 'Ver' : 'Open')}</span>
+                  {item.source === 'audiobookshelf' ? <Headphones size={15} aria-hidden="true" /> : <BookOpen size={15} aria-hidden="true" />}
+                  <span>{item.source === 'audiobookshelf' ? (es ? 'Escuchar' : 'Listen') : (es ? 'Ver' : 'Open')}</span>
                 </span>
               </button>
             </li>
