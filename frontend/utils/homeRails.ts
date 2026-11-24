@@ -18,6 +18,7 @@ import { db } from './db';
 export type RailId =
   | 'continue'
   | 'recent'
+  | 'server-popular'
   | 'server-list'
   | 'server-ondeck'
   | 'server-audio-continue'
@@ -51,6 +52,14 @@ export const RAILS: RailDef[] = [
   { id: 'server-ondeck', es: 'Continuar en el servidor', en: 'Continue on the server' },
   { id: 'server-audio-continue', es: 'Seguir escuchando', en: 'Keep listening' },
   { id: 'recent', es: 'Añadidos recientemente', en: 'Recently added' },
+  /*
+    Lo que más se lee y se escucha en el servidor, como en Nanahoshi. Va detrás de
+    las novedades y antes de las filas «para ti»; lo pidió zams (24 nov 2026) al
+    comparar los dos Inicio.
+  */
+  { id: 'server-popular', es: 'Popular en el servidor', en: 'Popular on the server' },
+  // Las colecciones, ahora también las del servidor, suben detrás, igual que allí.
+  { id: 'collections', es: 'Descubre colecciones', en: 'Discover collections' },
   // Lo que tú apartaste va antes que lo que te proponemos nosotros.
   { id: 'server-list', es: 'Tu lista', en: 'Your list' },
   { id: 'server-foryou-audio', es: 'Audiolibros para ti', en: 'Audiobooks for you' },
@@ -60,7 +69,6 @@ export const RAILS: RailDef[] = [
   { id: 'server-random-audio', es: 'Audiolibros aleatorios', en: 'Random audiobooks' },
   { id: 'for-you', es: 'Libros para ti', en: 'Books for you' },
   { id: 'series', es: 'Series', en: 'Series' },
-  { id: 'collections', es: 'Descubre colecciones', en: 'Discover collections' },
 ];
 
 export interface HomeLayout {

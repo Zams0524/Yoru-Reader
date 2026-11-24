@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { BookRail, EmptyState, EntityCard, Rail } from './primitives';
-import { ServerContinueCard, useApartados, useServerRails } from './HomeServerSections';
+import { BookPoster, BookRail, EmptyState, EntityCard, Rail } from './primitives';
+import {
+  ServerCard,
+  ServerCollectionCard,
+  ServerContinueCard,
+  useApartados,
+  useServerCatalog,
+  useServerRails,
+} from './HomeServerSections';
 import { useBookActions, useBookMenu } from './BookContextMenu';
-import type { ServerItem, ServerSeries } from '../../utils/serverCatalog';
+import type { ServerCollection, ServerItem, ServerSeries } from '../../utils/serverCatalog';
 import { getHomeLayout, type RailId } from '../../utils/homeRails';
 import { motivoTexto, RECS_EVENT } from '../../utils/recomendaciones';
 import { restanteDeLibro } from '../../utils/historialLibro';
@@ -47,6 +54,7 @@ export default function HomeView({
   onOpenSeries,
   onOpenServerItem,
   onOpenServerSeries,
+  onOpenServerCollection,
 }: {
   books: ShelfBook[];
   es: boolean;
@@ -61,6 +69,8 @@ export default function HomeView({
   onOpenServerItem: (item: ServerItem) => void;
   /** Abre la serie de audiolibros, con todos sus tomos. */
   onOpenServerSeries: (series: ServerSeries) => void;
+  /** Abre una colección del servidor (Kavita o Audiobookshelf), con todos sus títulos. */
+  onOpenServerCollection: (collection: ServerCollection) => void;
 }) {
   const openMenu = useBookMenu();
   const menuActions = useBookActions();
@@ -110,10 +120,13 @@ export default function HomeView({
     () => new Set(serverContinue.map((entry) => (entry.kind === 'kavita' ? String(entry.seriesId) : entry.itemId))),
     [serverContinue]
   );
+  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
+  const catalog = useServerCatalog();
   const serverRails = useServerRails({
     es,
     localTitles,
     skipSeriesIds: continuingSeries,
+    scope,
     onOpenItem: onOpenServerItem,
     onOpenSeries: onOpenServerSeries,
   });
@@ -151,7 +164,6 @@ export default function HomeView({
     libros ahí mismo». Para ir a la sección entera están el menú de la izquierda y el
     «Ver todo» de debajo de las pestañas.
   */
-  const [scope, setScope] = useState<'all' | 'books' | 'audio'>('all');
   const scopes: { key: 'all' | 'books' | 'audio'; label: string }[] = [
     { key: 'all', label: es ? 'Inicio' : 'Home' },
     { key: 'books', label: es ? 'Libros' : 'Books' },
@@ -166,6 +178,8 @@ export default function HomeView({
     'server-audio-series',
     'server-random-audio',
   ]);
+  /** Los que llevan de las dos cosas: se construyen ya filtrados por la pestaña. */
+  const RAILES_MIXTOS = new Set<RailId>(['continue', 'recent', 'server-popular', 'collections']);
 
   /*
     Vacío de verdad: ni un libro propio ni nada en ninguno de los dos servidores.
@@ -176,7 +190,9 @@ export default function HomeView({
     tiene todo, y encima tapando lo que sí hay.
   */
   const sinLibrosPropios = propios.length === 0 && serverContinue.length === 0;
-  const sinServidores = Object.keys(serverRails).length === 0;
+  const sinServidores = Object.keys(serverRails).length === 0
+    && catalog.recent.length === 0
+    && catalog.collections.length === 0;
   if (sinLibrosPropios && sinServidores) {
     return (
       <EmptyState
@@ -343,16 +359,38 @@ export default function HomeView({
     }
   }
 
-  if (data.recent.length > 0) {
+  /*
+    Lo del servidor que toca en esta pestaña: en «Libros», Kavita; en «Audiolibros»,
+    Audiobookshelf. Lo usan las filas que mezclan lo propio con lo del servidor.
+  */
+  const enPestana = (source: 'kavita' | 'audiobookshelf') => (
+    scope === 'books' ? source === 'kavita' : scope === 'audio' ? source === 'audiobookshelf' : true
+  );
+
+  /*
+    «Añadidos recientemente»: lo último que importaste y, detrás, lo último que entró
+    en los servidores. Antes solo eran los libros importados, y en un aparato que lee
+    todo de Kavita y Audiobookshelf —el teléfono de zams— la fila no salía nunca. Lo
+    pidió zams (24 nov 2026) al comparar su Inicio con el de Nanahoshi. Un tomo de
+    Kavita que ya está importado no se repite.
+  */
+  const recentLocal = scope === 'audio' ? [] : data.recent;
+  const recentServer = catalog.recent.filter((item) => enPestana(item.source) && !localTitles.has(item.title));
+  if (recentLocal.length > 0 || recentServer.length > 0) {
     localRails.recent = (
-      <BookRail
+      <Rail
         title={es ? 'Añadidos recientemente' : 'Recently added'}
-        books={data.recent}
-        onOpen={onOpenDetail}
         es={es}
-        onMore={onGoCatalog}
+        onMore={recentLocal.length > 0 ? onGoCatalog : undefined}
         moreLabel={es ? 'Ver todo' : 'See all'}
-      />
+      >
+        {recentLocal.map((book) => (
+          <BookPoster key={book.id} book={book} onOpen={onOpenDetail} />
+        ))}
+        {recentServer.map((item) => (
+          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenServerItem} />
+        ))}
+      </Rail>
     );
   }
 
@@ -391,10 +429,17 @@ export default function HomeView({
     );
   }
 
-  if (data.collections.length > 0) {
+  /*
+    «Descubre colecciones»: las tuyas y las de los servidores. Igual que con los
+    recientes, sin libros importados la fila no salía aunque Kavita o Audiobookshelf
+    tuvieran colecciones hechas.
+  */
+  const collectionsLocal = scope === 'audio' ? [] : data.collections;
+  const collectionsServer = catalog.collections.filter((entry) => enPestana(entry.source));
+  if (collectionsLocal.length > 0 || collectionsServer.length > 0) {
     localRails.collections = (
       <Rail title={es ? 'Descubre colecciones' : 'Discover collections'} es={es}>
-        {data.collections.map((group) => (
+        {collectionsLocal.map((group) => (
           <div key={group.key} style={{ width: 240 }}>
             <EntityCard
               group={group}
@@ -402,6 +447,9 @@ export default function HomeView({
               onOpen={onOpenCollection}
             />
           </div>
+        ))}
+        {collectionsServer.map((entry) => (
+          <ServerCollectionCard key={entry.key} collection={entry} es={es} onOpen={onOpenServerCollection} />
         ))}
       </Rail>
     );
@@ -455,8 +503,11 @@ export default function HomeView({
             carrusel entero: con «Audiolibros» puesto trae los audiolibros a medias, y
             con «Libros», los tomos. Si en esa pestaña no le queda nada, no se ha
             construido y ya no está aquí.
+
+            Lo mismo con las filas que mezclan libros y audiolibros del servidor:
+            recientes, populares y colecciones.
           */
-          if (id === 'continue') return true;
+          if (RAILES_MIXTOS.has(id)) return true;
           if (scope === 'books') return !RAILES_DE_AUDIO.has(id);
           if (scope === 'audio') return RAILES_DE_AUDIO.has(id);
           return true;

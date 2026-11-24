@@ -358,6 +358,88 @@ export async function getKavitaOnDeck(limit = 20): Promise<KavitaSeries[]> {
 }
 
 /**
+ * Las últimas series que entraron en la biblioteca, la más nueva primero, con la
+ * fecha en que se añadieron (`created`). Es lo que llena «Añadidos recientemente»
+ * cuando lo que hay es el servidor y no libros importados.
+ *
+ * Filtro v2 como `getKavitaSeries`, cambiando solo el orden: sort 2 = Created.
+ */
+export async function getKavitaRecentlyAdded(libraryId: number, limit = 20): Promise<{ series: KavitaSeries; addedAt: number }[]> {
+  const response = await kavitaRequest<any[]>(`/api/Series/v2?PageNumber=1&PageSize=${limit}`, {
+    method: 'POST',
+    body: {
+      id: 0,
+      name: '',
+      statements: [{ comparison: 5, field: 19, value: String(libraryId) }],
+      combination: 1,
+      sortOptions: { sortField: 2, isAscending: false },
+      limitTo: 0,
+    },
+  });
+  return (Array.isArray(response.data) ? response.data : []).map((raw) => ({
+    series: toSeries(raw),
+    addedAt: Date.parse(raw?.created || '') || 0,
+  }));
+}
+
+/**
+ * Lo más leído del servidor, con cuántos lo leen.
+ *
+ * Kavita no tiene un «popular» para cualquiera: lo que hay son las estadísticas del
+ * servidor (`/api/Stats/server/stats`), que traen `mostPopularSeries` —series por
+ * número de lectores— y `mostReadSeries`. Solo las ve una cuenta de administrador;
+ * con otra cuenta el servidor contesta 401/403 y esto devuelve vacío, sin error, y
+ * la fila no sale.
+ */
+export async function getKavitaPopularSeries(limit = 20): Promise<{ series: KavitaSeries; count: number }[]> {
+  let data: any;
+  try {
+    ({ data } = await kavitaRequest<any>('/api/Stats/server/stats'));
+  } catch (error) {
+    if (error instanceof ServerHttpError && (error.status === 401 || error.status === 403 || error.status === 404)) return [];
+    throw error;
+  }
+  const lista = Array.isArray(data?.mostPopularSeries) && data.mostPopularSeries.length > 0
+    ? data.mostPopularSeries
+    : Array.isArray(data?.mostReadSeries) ? data.mostReadSeries : [];
+  return lista
+    .filter((entry: any) => entry?.value && (entry.value.id ?? entry.value.seriesId) != null)
+    .slice(0, limit)
+    .map((entry: any) => ({ series: toSeries(entry.value), count: Number(entry.count) || 0 }));
+}
+
+/** Una colección de Kavita, con sus series. */
+export interface KavitaCollection {
+  id: number;
+  title: string;
+  series: KavitaSeries[];
+}
+
+/**
+ * Las colecciones del servidor («Descubre colecciones»), cada una con sus series.
+ *
+ * `/api/Collection` da las colecciones del usuario y las promocionadas; las series
+ * de cada una se piden aparte (`series-by-collection`). Solo las primeras, que es lo
+ * que cabe en un carrusel, y una colección vacía no se devuelve.
+ */
+export async function getKavitaCollections(limit = 12, perCollection = 24): Promise<KavitaCollection[]> {
+  const { data } = await kavitaRequest<any[]>('/api/Collection');
+  const tags = (Array.isArray(data) ? data : []).filter((tag) => tag && tag.id != null).slice(0, limit);
+  const collections = await Promise.all(tags.map(async (tag: any): Promise<KavitaCollection | null> => {
+    try {
+      const response = await kavitaRequest<any[]>(
+        `/api/Series/series-by-collection?collectionId=${tag.id}&PageNumber=1&PageSize=${perCollection}`
+      );
+      const series = (Array.isArray(response.data) ? response.data : []).map(toSeries);
+      return series.length > 0 ? { id: Number(tag.id), title: String(tag.title || tag.name || ''), series } : null;
+    } catch {
+      return null;
+    }
+  }));
+  return collections.filter((entry): entry is KavitaCollection => entry !== null);
+}
+
+/**
  * Las series cuyo nombre contiene este texto, todas y no las quince primeras.
  *
  * El buscador de Kavita (`/api/Search/search`) corta en quince resultados, y una

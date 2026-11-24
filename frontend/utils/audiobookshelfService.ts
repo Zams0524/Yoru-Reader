@@ -249,6 +249,65 @@ export async function getAudiobookPersonalized(libraryId: string, limit = 12): P
   return [];
 }
 
+/** Los últimos audiolibros que entraron en la biblioteca, con la fecha (epoch ms). */
+export async function getRecentAudiobooks(libraryId: string, limit = 20): Promise<{ item: AudiobookItem; addedAt: number }[]> {
+  const { data } = await absRequest<any>(
+    `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=${limit}&page=0&sort=addedAt&desc=1&minified=1`
+  );
+  return (Array.isArray(data?.results) ? data.results : []).map((raw: any) => ({
+    item: toAudiobookItem(raw),
+    addedAt: Number(raw?.addedAt) || 0,
+  }));
+}
+
+/**
+ * Lo más escuchado del servidor: audiolibros por número de oyentes distintos.
+ *
+ * Audiobookshelf no tiene «popular». Lo que sí tiene son las sesiones de escucha de
+ * todos los usuarios (`/api/sessions`), pero solo para administradores; con otra
+ * cuenta contesta 403 y esto devuelve vacío. Se cuenta cada usuario una vez por
+ * libro, para que una sola persona que escucha mucho no lo haga «popular».
+ */
+export async function getPopularAudiobooks(limit = 20): Promise<{ id: string; title: string; author: string; count: number }[]> {
+  let data: any;
+  try {
+    ({ data } = await absRequest<any>('/api/sessions?itemsPerPage=500&page=0&sort=updatedAt&desc=1'));
+  } catch {
+    return [];
+  }
+  const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+  const byItem = new Map<string, { id: string; title: string; author: string; users: Set<string> }>();
+  for (const session of sessions) {
+    const id = session?.libraryItemId;
+    if (!id || (session.mediaType && session.mediaType !== 'book')) continue;
+    const entry = byItem.get(id) || {
+      id,
+      title: String(session.displayTitle || session.mediaMetadata?.title || ''),
+      author: String(session.displayAuthor || ''),
+      users: new Set<string>(),
+    };
+    entry.users.add(String(session.userId || ''));
+    byItem.set(id, entry);
+  }
+  return [...byItem.values()]
+    .filter((entry) => entry.title)
+    .sort((a, b) => b.users.size - a.users.size)
+    .slice(0, limit)
+    .map((entry) => ({ id: entry.id, title: entry.title, author: entry.author, count: entry.users.size }));
+}
+
+/** Una colección de Audiobookshelf, con sus audiolibros. */
+export async function getAudiobookCollections(libraryId: string, limit = 12): Promise<{ id: string; name: string; items: AudiobookItem[] }[]> {
+  const { data } = await absRequest<any>(`/api/libraries/${encodeURIComponent(libraryId)}/collections?limit=${limit}&page=0`);
+  return (Array.isArray(data?.results) ? data.results : [])
+    .map((raw: any) => ({
+      id: String(raw?.id || ''),
+      name: String(raw?.name || ''),
+      items: (Array.isArray(raw?.books) ? raw.books : []).filter((book: any) => book?.media).map(toAudiobookItem),
+    }))
+    .filter((entry: { id: string; items: AudiobookItem[] }) => entry.id && entry.items.length > 0);
+}
+
 /**
  * Lo que el usuario tiene a medias, en el orden en que lo escuchó por última vez.
  *

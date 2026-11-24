@@ -1,6 +1,9 @@
 import {
+  getKavitaCollections,
   getKavitaLibraries,
   getKavitaOnDeck,
+  getKavitaPopularSeries,
+  getKavitaRecentlyAdded,
   getKavitaSeries,
   getKavitaSeriesMetadata,
   isKavitaConfigured,
@@ -9,12 +12,16 @@ import {
 } from './kavitaService';
 import {
   absCoverUrl,
+  getAudiobookCollections,
   getAudiobookLibraries,
   getAudiobookPersonalized,
   getAudiobooks,
   getAudiobooksInProgress,
+  getPopularAudiobooks,
+  getRecentAudiobooks,
   isAudiobookshelfConfigured,
 } from './audiobookshelfService';
+import type { AudiobookItem, KavitaSeries } from '../types/integrations';
 import { localContinueEntries, localKavitaSeriesRead, sharesServerProgress } from './serverProgress';
 
 /**
@@ -54,6 +61,21 @@ export interface ServerItem {
   hours?: number;
   /** Por dónde va el usuario, 0-100. Solo lo traen los que están a medias. */
   percent?: number;
+  /** Cuándo entró en el servidor (epoch ms). Solo en «Añadidos recientemente». */
+  addedAt?: number;
+  /** Cuántas personas lo leen o escuchan en el servidor. Solo en «Popular». */
+  readers?: number;
+}
+
+/**
+ * Una colección del servidor: las de Kavita y las de Audiobookshelf. Lleva sus
+ * títulos dentro para que la vista de la colección salga de la caché, sin red.
+ */
+export interface ServerCollection {
+  key: string;
+  title: string;
+  source: 'kavita' | 'audiobookshelf';
+  items: ServerItem[];
 }
 
 /** Una serie del servidor, con los tomos que conocemos de ella. */
@@ -83,9 +105,17 @@ export interface ServerCatalog {
   forYouAudio: ServerItem[];
   /** Lo que el usuario tiene a medias en Audiobookshelf, con su avance. */
   continueAudio: ServerItem[];
+  /** Lo último que entró en los dos servidores, lo más nuevo primero. */
+  recent: ServerItem[];
+  /** Lo que más gente lee o escucha en el servidor (solo con cuenta de administrador). */
+  popular: ServerItem[];
+  /** Las colecciones de Kavita y de Audiobookshelf. */
+  collections: ServerCollection[];
 }
 
-const EMPTY: ServerCatalog = { at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [], continueAudio: [] };
+const EMPTY: ServerCatalog = {
+  at: 0, kavita: [], audiobooks: [], onDeck: [], forYouAudio: [], continueAudio: [], recent: [], popular: [], collections: [],
+};
 
 /** El último listado conocido. Nunca lanza: si no hay nada, devuelve vacío. */
 export function getCachedServerCatalog(): ServerCatalog {
@@ -109,6 +139,10 @@ export function getCachedServerCatalog(): ServerCatalog {
       continueAudio: sharesServerProgress()
         ? (Array.isArray(parsed?.continueAudio) ? parsed.continueAudio : [])
         : localAudioContinueItems(),
+      // Una caché de antes de estas filas no las trae: salen vacías hasta el refresco.
+      recent: Array.isArray(parsed?.recent) ? parsed.recent : [],
+      popular: Array.isArray(parsed?.popular) ? parsed.popular : [],
+      collections: Array.isArray(parsed?.collections) ? parsed.collections : [],
     };
   } catch {
     return EMPTY;
@@ -298,15 +332,116 @@ async function fetchContinueAudio(): Promise<ServerItem[]> {
   }));
 }
 
+/** Una serie de Kavita como tarjeta del servidor, con un prefijo de carrusel. */
+function kavitaItem(prefix: string, series: KavitaSeries): ServerItem {
+  return {
+    id: `${prefix}-${series.id}`,
+    serverId: String(series.id),
+    title: series.name,
+    cover: kavitaSeriesCoverUrl(series.id),
+    source: 'kavita',
+    hours: series.avgHoursToRead,
+  };
+}
+
+/** Un audiolibro como tarjeta del servidor, con un prefijo de carrusel. */
+function audiobookItem(prefix: string, item: AudiobookItem): ServerItem {
+  return {
+    id: `${prefix}-${item.id}`,
+    serverId: item.id,
+    title: item.title,
+    cover: absCoverUrl(item.id),
+    source: 'audiobookshelf',
+    series: item.series || undefined,
+    author: item.author || undefined,
+  };
+}
+
+/**
+ * Junta dos listas ya ordenadas en una, por un número que va de mayor a menor. Así
+ * «Añadidos recientemente» mezcla Kavita y Audiobookshelf por fecha, y «Popular»
+ * por lectores, en vez de poner todo lo de un servidor delante del otro.
+ */
+function mergeBy(a: ServerItem[], b: ServerItem[], key: (item: ServerItem) => number, limit: number): ServerItem[] {
+  return [...a, ...b].sort((x, y) => key(y) - key(x)).slice(0, limit);
+}
+
+/*
+  Lo de Kavita y lo de Audiobookshelf se piden por separado: un servidor caído no
+  deja sin fila al otro. Lo que se guarda es la lista ya mezclada.
+*/
+async function fetchRecentKavita(): Promise<ServerItem[]> {
+  const libraries = await withTimeout(getKavitaLibraries());
+  const first = libraries[0];
+  if (!first) return [];
+  const recientes = await withTimeout(getKavitaRecentlyAdded(first.id, 20));
+  return recientes.map(({ series, addedAt }) => ({ ...kavitaItem('reciente', series), addedAt }));
+}
+
+async function fetchRecentAudio(): Promise<ServerItem[]> {
+  const libraries = await withTimeout(getAudiobookLibraries());
+  const first = libraries[0];
+  if (!first) return [];
+  const recientes = await withTimeout(getRecentAudiobooks(first.id, 20));
+  return recientes.map(({ item, addedAt }) => ({ ...audiobookItem('reciente', item), addedAt }));
+}
+
+async function fetchPopularKavita(): Promise<ServerItem[]> {
+  const populares = await withTimeout(getKavitaPopularSeries(20), TIMEOUT_MS * 2);
+  return populares.map(({ series, count }) => ({ ...kavitaItem('popular', series), readers: count }));
+}
+
+async function fetchPopularAudio(): Promise<ServerItem[]> {
+  const populares = await withTimeout(getPopularAudiobooks(20), TIMEOUT_MS * 2);
+  return populares.map((entry) => ({
+    id: `popular-${entry.id}`,
+    serverId: entry.id,
+    title: entry.title,
+    cover: absCoverUrl(entry.id),
+    source: 'audiobookshelf' as const,
+    author: entry.author || undefined,
+    readers: entry.count,
+  }));
+}
+
+async function fetchCollectionsKavita(): Promise<ServerCollection[]> {
+  // Una petición por colección: lleva su propio plazo, más largo que el de las demás.
+  const colecciones = await withTimeout(getKavitaCollections(12, 24), TIMEOUT_MS * 4);
+  return colecciones.map((entry) => ({
+    key: `kavita-${entry.id}`,
+    title: entry.title,
+    source: 'kavita' as const,
+    items: entry.series.map((series) => kavitaItem('coleccion', series)),
+  }));
+}
+
+async function fetchCollectionsAudio(): Promise<ServerCollection[]> {
+  const libraries = await withTimeout(getAudiobookLibraries());
+  const first = libraries[0];
+  if (!first) return [];
+  const colecciones = await withTimeout(getAudiobookCollections(first.id, 12), TIMEOUT_MS * 2);
+  return colecciones.map((entry) => ({
+    key: `abs-${entry.id}`,
+    title: entry.name,
+    source: 'audiobookshelf' as const,
+    items: entry.items.map((item) => audiobookItem('coleccion', item)),
+  }));
+}
+
+/** Una colección del servidor, de la caché. La usa la vista de la colección. */
+export function cachedServerCollection(key: string): ServerCollection | null {
+  return getCachedServerCatalog().collections.find((entry) => entry.key === key) || null;
+}
+
 let running = false;
 
 /** Una petición al servidor con el motivo a mano cuando falla, en vez de tragárselo. */
-interface Attempt {
-  items: ServerItem[] | null;
+interface Attempt<T = ServerItem> {
+  items: T[] | null;
   error: string | null;
 }
 
-async function attempt(run: () => Promise<ServerItem[]>): Promise<Attempt> {
+async function attempt<T = ServerItem>(run: () => Promise<T[]>): Promise<Attempt<T>> {
   try {
     return { items: await run(), error: null };
   } catch (error) {
@@ -314,7 +449,7 @@ async function attempt(run: () => Promise<ServerItem[]>): Promise<Attempt> {
   }
 }
 
-const SKIPPED: Attempt = { items: null, error: null };
+const SKIPPED: Attempt<never> = { items: null, error: null };
 
 /**
  * Una línea por servidor en el registro, y **nada en pantalla**.
@@ -325,7 +460,7 @@ const SKIPPED: Attempt = { items: null, error: null };
  * diagnóstico que no distingue «no había nada» de «la petición se cayó» no sirve, y
  * era imposible saber por qué un carrusel salía vacío sin preguntárselo al usuario.
  */
-function report(server: string, parts: { label: string; attempt: Attempt }[]): void {
+function report(server: string, parts: { label: string; attempt: Attempt<unknown> }[]): void {
   const failed = parts.find((part) => part.attempt.error);
   if (failed) {
     console.warn(`[catálogo] ${server}: falló ${failed.label} — ${failed.attempt.error}`);
@@ -347,18 +482,32 @@ export async function refreshServerCatalog(): Promise<void> {
 
   running = true;
   try {
-    const [kavita, audiobooks, onDeck, forYouAudio, continueAudio] = await Promise.all([
+    const [
+      kavita, audiobooks, onDeck, forYouAudio, continueAudio,
+      recentKavita, recentAudio, popularKavita, popularAudio,
+    ] = await Promise.all([
       wantsKavita ? attempt(fetchKavita) : Promise.resolve(SKIPPED),
       wantsAudiobooks ? attempt(fetchAudiobooks) : Promise.resolve(SKIPPED),
       wantsKavita ? attempt(fetchOnDeck) : Promise.resolve(SKIPPED),
       wantsAudiobooks ? attempt(fetchForYouAudio) : Promise.resolve(SKIPPED),
       wantsAudiobooks ? attempt(fetchContinueAudio) : Promise.resolve(SKIPPED),
+      wantsKavita ? attempt(fetchRecentKavita) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchRecentAudio) : Promise.resolve(SKIPPED),
+      wantsKavita ? attempt(fetchPopularKavita) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt(fetchPopularAudio) : Promise.resolve(SKIPPED),
+    ]);
+    const [collectionsKavita, collectionsAudio] = await Promise.all([
+      wantsKavita ? attempt<ServerCollection>(fetchCollectionsKavita) : Promise.resolve(SKIPPED),
+      wantsAudiobooks ? attempt<ServerCollection>(fetchCollectionsAudio) : Promise.resolve(SKIPPED),
     ]);
 
     if (wantsKavita) {
       report('Kavita', [
         { label: 'series', attempt: kavita },
         { label: 'a medias', attempt: onDeck },
+        { label: 'recientes', attempt: recentKavita },
+        { label: 'populares', attempt: popularKavita },
+        { label: 'colecciones', attempt: collectionsKavita },
       ]);
     }
     if (wantsAudiobooks) {
@@ -366,12 +515,22 @@ export async function refreshServerCatalog(): Promise<void> {
         { label: 'audiolibros', attempt: audiobooks },
         { label: 'para ti', attempt: forYouAudio },
         { label: 'a medias', attempt: continueAudio },
+        { label: 'recientes', attempt: recentAudio },
+        { label: 'populares', attempt: popularAudio },
+        { label: 'colecciones', attempt: collectionsAudio },
       ]);
     }
 
     // Un servidor caído no borra lo que ya sabíamos del otro.
     if (kavita.items === null && audiobooks.items === null) return;
     const previous = getCachedServerCatalog();
+    /*
+      Las filas que mezclan los dos servidores: lo del que contestó, y lo que ya se
+      sabía del que no. Un servidor que ya no está configurado no deja nada.
+    */
+    const keep = <T extends { source: 'kavita' | 'audiobookshelf' }>(
+      fresh: T[] | null, old: T[], source: 'kavita' | 'audiobookshelf', wanted: boolean
+    ): T[] => (!wanted ? [] : fresh ?? old.filter((entry) => entry.source === source));
     save({
       at: Date.now(),
       kavita: kavita.items ?? previous.kavita,
@@ -379,6 +538,22 @@ export async function refreshServerCatalog(): Promise<void> {
       onDeck: onDeck.items ?? previous.onDeck,
       forYouAudio: forYouAudio.items ?? previous.forYouAudio,
       continueAudio: continueAudio.items ?? previous.continueAudio,
+      recent: mergeBy(
+        keep(recentKavita.items, previous.recent, 'kavita', wantsKavita),
+        keep(recentAudio.items, previous.recent, 'audiobookshelf', wantsAudiobooks),
+        (item) => item.addedAt || 0,
+        24
+      ),
+      popular: mergeBy(
+        keep(popularKavita.items, previous.popular, 'kavita', wantsKavita),
+        keep(popularAudio.items, previous.popular, 'audiobookshelf', wantsAudiobooks),
+        (item) => item.readers || 0,
+        24
+      ),
+      collections: [
+        ...keep(collectionsKavita.items, previous.collections, 'kavita', wantsKavita),
+        ...keep(collectionsAudio.items, previous.collections, 'audiobookshelf', wantsAudiobooks),
+      ],
     });
   } finally {
     running = false;
@@ -394,7 +569,7 @@ export async function refreshServerCatalog(): Promise<void> {
  * justo de donde salió.
  */
 export function serverItemId(item: ServerItem): string {
-  return item.serverId || item.id.replace(/^(kavita|abs|ondeck|foryou)-/, '');
+  return item.serverId || item.id.replace(/^(kavita|abs|ondeck|foryou|reciente|popular|coleccion)-/, '');
 }
 
 /**

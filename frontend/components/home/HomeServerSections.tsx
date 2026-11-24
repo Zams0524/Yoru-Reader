@@ -7,6 +7,7 @@ import {
   localKavitaReadingItems,
   sample,
   serverItemId,
+  type ServerCollection,
   type ServerItem,
   type ServerSeries,
 } from '../../utils/serverCatalog';
@@ -95,26 +96,13 @@ export function useApartados(): {
   return { apartados, apartar, estaApartado };
 }
 
-export function useServerRails({
-  es,
-  localTitles,
-  skipSeriesIds,
-  onOpenItem,
-  onOpenSeries,
-}: {
-  es: boolean;
-  /** Series que ya salen en «Continuar» (leídas en este perfil), para no repetirlas. */
-  skipSeriesIds?: Set<string>;
-  /** Títulos que ya están en la biblioteca local, para no repetirlos. */
-  localTitles?: Set<string>;
-  /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
-  onOpenItem: (item: ServerItem) => void;
-  /** Abre una serie de audiolibros, que por ahora es su primer tomo. */
-  onOpenSeries: (series: ServerSeries) => void;
-}) {
+/**
+ * El catálogo de los servidores, de la caché, y repintado cada vez que se refresca.
+ * Lo usan las filas del servidor y también Inicio, que mezcla en «Añadidos
+ * recientemente» y «Descubre colecciones» lo propio con lo del servidor.
+ */
+export function useServerCatalog() {
   const [catalog, setCatalog] = useState(() => getCachedServerCatalog());
-  const [seed, setSeed] = useState(1);
-
   useEffect(() => {
     const onUpdate = () => setCatalog(getCachedServerCatalog());
     // Se vuelve a leer al suscribirse: el catálogo puede haberse guardado entre el
@@ -129,8 +117,31 @@ export function useServerRails({
       window.removeEventListener(LOCAL_PROGRESS_EVENT, onUpdate);
     };
   }, []);
+  return catalog;
+}
 
-
+export function useServerRails({
+  es,
+  localTitles,
+  skipSeriesIds,
+  scope = 'all',
+  onOpenItem,
+  onOpenSeries,
+}: {
+  es: boolean;
+  /** Series que ya salen en «Continuar» (leídas en este perfil), para no repetirlas. */
+  skipSeriesIds?: Set<string>;
+  /** Títulos que ya están en la biblioteca local, para no repetirlos. */
+  localTitles?: Set<string>;
+  /** La pestaña de Inicio: las filas que mezclan libros y audio enseñan solo lo suyo. */
+  scope?: 'all' | 'books' | 'audio';
+  /** Abre la ficha de un título del servidor: la serie en Kavita, el tomo en Audiobookshelf. */
+  onOpenItem: (item: ServerItem) => void;
+  /** Abre una serie de audiolibros, que por ahora es su primer tomo. */
+  onOpenSeries: (series: ServerSeries) => void;
+}) {
+  const catalog = useServerCatalog();
+  const [seed, setSeed] = useState(1);
 
 
   /*
@@ -214,6 +225,25 @@ export function useServerRails({
       <Rail title={es ? 'Continuar en el servidor' : 'Continue on the server'} es={es}>
         {onDeck.map((item) => (
           <ServerContinueCard key={item.id} item={item} es={es} onOpen={onOpenItem} onHide={quitar} />
+        ))}
+      </Rail>
+    );
+  }
+
+  /*
+    «Popular en el servidor»: lo que más gente lee y escucha, de los dos servidores
+    mezclados. Sale de las estadísticas del servidor, que solo ve una cuenta de
+    administrador; sin ellas la fila no se pinta. Lleva libros y audiolibros, así que
+    la pestaña filtra lo de dentro y no la fila entera.
+  */
+  const popular = catalog.popular.filter((item) => (
+    scope === 'books' ? item.source === 'kavita' : scope === 'audio' ? item.source === 'audiobookshelf' : true
+  ));
+  if (popular.length > 0) {
+    rails['server-popular'] = (
+      <Rail title={es ? 'Popular en el servidor' : 'Popular on the server'} es={es}>
+        {popular.map((item) => (
+          <ServerCard key={item.id} item={item} es={es} onOpen={onOpenItem} />
         ))}
       </Rail>
     );
@@ -624,7 +654,7 @@ function ServerLibraryCard({
  * el tabulador y responde a Enter y a espacio sin escribir nada. Antes era un `div`,
  * y las seis filas de servidor de Inicio parecían pulsables sin serlo.
  */
-function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpen: (item: ServerItem) => void }) {
+export function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpen: (item: ServerItem) => void }) {
   const isAudio = item.source === 'audiobookshelf';
   return (
     <button
@@ -652,6 +682,10 @@ function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpe
         {typeof item.percent === 'number' && item.percent > 0
           ? `${item.percent} % ${isAudio ? (es ? 'escuchado' : 'listened') : (es ? 'leído' : 'read')}`
           : item.author
+          // En «Popular», cuánta gente lo lee, cuando no hay autor que poner.
+          || (item.readers
+            ? `${item.readers} ${es ? (item.readers === 1 ? 'lector' : 'lectores') : (item.readers === 1 ? 'reader' : 'readers')}`
+            : '')
           || (item.hours
             ? `~${Math.round(item.hours)} h ${es ? 'de lectura' : 'to read'}`
             : isAudio ? (es ? 'Audiolibro' : 'Audiobook') : 'Kavita')}
@@ -698,6 +732,45 @@ function SeriesStack({
           : series.count === 1 ? 'audiobook' : 'audiobooks'}
         {series.author ? ` · ${series.author}` : ''}
       </span>
+    </button>
+  );
+}
+
+/**
+ * Tarjeta de una colección del servidor, con la misma pila de portadas que las
+ * series. Abre la colección entera, que sale de la caché.
+ */
+export function ServerCollectionCard({
+  collection,
+  es,
+  onOpen,
+}: {
+  collection: ServerCollection;
+  es: boolean;
+  onOpen: (collection: ServerCollection) => void;
+}) {
+  const covers = collection.items.slice(0, 3).map((item) => item.cover);
+  const count = collection.items.length;
+  const isAudio = collection.source === 'audiobookshelf';
+  const unidad = isAudio
+    ? (es ? (count === 1 ? 'audiolibro' : 'audiolibros') : (count === 1 ? 'audiobook' : 'audiobooks'))
+    : (es ? (count === 1 ? 'serie' : 'series') : (count === 1 ? 'series' : 'series'));
+  return (
+    <button type="button" className="yoru-series-stack" title={collection.title} onClick={() => onOpen(collection)}>
+      <span className="yoru-series-stack-frame">
+        {covers.slice(1).map((cover, index) => (
+          <img
+            key={`${cover}-${index}`}
+            className={`yoru-series-stack-back is-${index + 1}`}
+            src={cover}
+            alt=""
+            loading="lazy"
+          />
+        ))}
+        <img className="yoru-series-stack-front" src={covers[0]} alt="" loading="lazy" />
+      </span>
+      <span className="yoru-poster-title">{collection.title}</span>
+      <span className="yoru-poster-meta">{count} {unidad}</span>
     </button>
   );
 }
