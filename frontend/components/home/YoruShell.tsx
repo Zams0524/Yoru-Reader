@@ -38,7 +38,7 @@ import NotificationsView from './NotificationsView';
 import NovedadesCard from './NovedadesCard';
 import { NOTICES_EVENT, pushNotice, unseenNoticeCount } from '../../utils/appNotices';
 import { anunciarNovedadEnAvisos } from '../../utils/novedades';
-import { AudiobookSeriesView, AudiobookshelfView, ServerEmptyState } from './ServerViews';
+import { AudiobookSeriesView, AudiobookshelfView, ServerCollectionView, ServerEmptyState } from './ServerViews';
 import { AudiobookPlayerProvider } from './AudiobookPlayerBar';
 import { ServerLibrarySection } from './HomeServerSections';
 import {
@@ -50,7 +50,7 @@ import { getDynamicCollections, type DynamicCollection } from '../../utils/colle
 import { descartar } from '../../utils/recomendaciones';
 import { getCachedServerCatalog } from '../../utils/serverCatalog';
 import { isKavitaConfigured } from '../../utils/kavitaService';
-import { serverItemId, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
+import { serverItemId, type ServerCollection, type ServerItem, type ServerSeries } from '../../utils/serverCatalog';
 import yoruMark from '../../assets/yoru-mark.png';
 import {
   authorGroups,
@@ -88,6 +88,7 @@ type View =
   | 'kavita'
   | 'audiobooks'
   | 'audioseries'
+  | 'servercollection'
   | 'shelf'
   | 'group'
   | 'detail';
@@ -288,6 +289,7 @@ export default function YoruShell({
   const [serverTarget, setServerTarget] = useState<{ kind: 'kavita' | 'audiobook'; id: string } | null>(null);
   /** La serie de audiolibros que se está mirando, por su nombre, que es su clave. */
   const [audioSeries, setAudioSeries] = useState<string | null>(null);
+  const [serverCollection, setServerCollection] = useState<string | null>(null);
 
   /*
     De dónde se venía al entrar en Ajustes.
@@ -386,6 +388,12 @@ export default function YoruShell({
     go('audioseries');
   }, [go]);
 
+  /** Una colección del servidor abre la colección entera, sacada de la caché. */
+  const openServerCollection = useCallback((collection: ServerCollection) => {
+    setServerCollection(collection.key);
+    go('servercollection');
+  }, [go]);
+
   const openDetail = useCallback((book: ShelfBook) => {
     setDetailId(book.id);
     setView('detail');
@@ -407,6 +415,7 @@ export default function YoruShell({
     [view === 'group', () => go(groupBackView(group))],
     // La serie de audiolibros se abre desde Inicio, así que atrás vuelve a Inicio.
     [view === 'audioseries', () => go('home')],
+    [view === 'servercollection', () => go('home')],
     // Ajustes sale por atrás igual que por su flecha: al sitio del que se venía.
     [view === 'settings', exitSettings],
     [view !== 'home', () => go('home')],
@@ -621,6 +630,17 @@ export default function YoruShell({
       );
     }
 
+    if (view === 'servercollection' && serverCollection) {
+      return (
+        <ServerCollectionView
+          collectionKey={serverCollection}
+          es={es}
+          onBack={() => go('home')}
+          onOpenItem={openServerItem}
+        />
+      );
+    }
+
     if (view === 'audioseries' && audioSeries) {
       return (
         <AudiobookSeriesView
@@ -765,6 +785,7 @@ export default function YoruShell({
         onOpenSeries={(entry) => openGroup('series', entry.key)}
         onOpenServerItem={openServerItem}
         onOpenServerSeries={openServerSeries}
+        onOpenServerCollection={openServerCollection}
       />
       </>
     );

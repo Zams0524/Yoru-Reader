@@ -13,7 +13,7 @@ import {
 } from '../../utils/audiobookshelfService';
 import type { AudiobookItem, AudiobookshelfLibrary } from '../../types/integrations';
 import { describeServerError } from '../../utils/serverHttp';
-import { getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
+import { cachedServerCollection, getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import { Rail } from './primitives';
 import { useAudiobookPlayer } from './AudiobookPlayerBar';
 import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
@@ -626,6 +626,84 @@ export function AudiobookSeriesView({
                 <span className="yoru-volume-listen">
                   <Headphones size={15} aria-hidden="true" />
                   <span>{es ? 'Escuchar' : 'Listen'}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Una colección del servidor (Kavita o Audiobookshelf), con todos sus títulos.
+ *
+ * Como la serie de audiolibros, sale entera de la caché del catálogo: aparece al
+ * instante y funciona sin red. Pulsar un título abre su ficha, igual que en Inicio.
+ */
+export function ServerCollectionView({
+  collectionKey,
+  es,
+  onBack,
+  onOpenItem,
+}: {
+  collectionKey: string;
+  es: boolean;
+  onBack: () => void;
+  onOpenItem: (item: ServerItem) => void;
+}) {
+  const collection = useMemo(() => cachedServerCollection(collectionKey), [collectionKey]);
+  const items = collection?.items || [];
+  const isAudio = collection?.source === 'audiobookshelf';
+
+  return (
+    <div>
+      <button type="button" className="yoru-detail-back" onClick={onBack}>
+        <ArrowLeft size={16} />
+        {es ? 'Volver' : 'Back'}
+      </button>
+
+      <div className="yoru-view-head">
+        <div className="yoru-series-head">
+          <span className="yoru-series-head-cover">
+            {items[0]?.cover ? <img src={items[0].cover} alt="" loading="lazy" /> : <span />}
+          </span>
+          <span>
+            <h1 className="yoru-view-title">{collection?.title || (es ? 'Colección' : 'Collection')}</h1>
+            <span className="yoru-view-sub">
+              {items.length}{' '}
+              {isAudio
+                ? (es ? (items.length === 1 ? 'audiolibro' : 'audiolibros') : (items.length === 1 ? 'audiobook' : 'audiobooks'))
+                : (es ? (items.length === 1 ? 'serie' : 'series') : 'series')}
+              {` · ${isAudio ? 'Audiobookshelf' : 'Kavita'}`}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="yoru-empty-note">
+          {es
+            ? 'De esta colección no queda nada en la lista guardada. Vuelve a Inicio con conexión al servidor para traerla otra vez.'
+            : 'Nothing from this collection is left in the saved list. Go back to Home while connected to the server to fetch it again.'}
+        </p>
+      ) : (
+        <ul className="yoru-link-list yoru-volume-list">
+          {items.map((item, index) => (
+            <li key={item.id}>
+              <button type="button" className="yoru-volume-row" onClick={() => onOpenItem(item)}>
+                <span className="yoru-volume-index">{index + 1}</span>
+                <span className="yoru-volume-cover">
+                  {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span />}
+                </span>
+                <span className="yoru-volume-text">
+                  <span className="yoru-link-title">{item.title}</span>
+                  {item.author && <span className="yoru-link-author">{item.author}</span>}
+                </span>
+                <span className="yoru-volume-listen">
+                  {isAudio ? <Headphones size={15} aria-hidden="true" /> : <BookOpen size={15} aria-hidden="true" />}
+                  <span>{isAudio ? (es ? 'Escuchar' : 'Listen') : (es ? 'Ver' : 'Open')}</span>
                 </span>
               </button>
             </li>
