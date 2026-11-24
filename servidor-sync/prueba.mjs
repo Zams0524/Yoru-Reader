@@ -14,7 +14,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync as escribir } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { abrirBase, crearServidor, GUILD_YORU, frenado, anotarFallo, ipDe, INTENTOS_ENTRADA, credencialesMedios, cargarEnvLocal } from './servidor.mjs';
+import { abrirBase, crearServidor, GUILD_YORU, frenado, anotarFallo, ipDe, INTENTOS_ENTRADA, credencialesMedios, cargarEnvLocal, guardarTexto, listarTextos } from './servidor.mjs';
+
+// El texto de los libros va a disco: a una carpeta temporal, nunca a la de verdad.
+process.env.YORU_SYNC_TEXTOS = mkdtempSync(join(tmpdir(), 'yoru-textos-'));
 
 /** Un Discord de mentira: un mapa de token a lo que contestaría Discord. */
 function discordDeMentira(cuentas) {
@@ -451,6 +454,44 @@ await prueba('solo nos creemos X-Forwarded-For si el que llama es el de casa', a
   assert.equal(ipDe({ socket: { remoteAddress: '127.0.0.1' }, headers: cabeceras }), '8.8.8.8');
   assert.equal(ipDe({ socket: { remoteAddress: '203.0.113.7' }, headers: cabeceras }), '203.0.113.7');
   assert.equal(ipDe({ socket: {}, headers: {} }), 'desconocida');
+});
+
+await prueba('el texto de un libro se sube una vez y lo baja el otro aparato', async () => {
+  const { token } = await (await entrar('tok-zams')).json();
+  const auth = { Authorization: `Bearer ${token}` };
+  const clave = 'ab12cd34ef56ab78';
+  const libro = { titulo: 'こころ', autor: '夏目漱石', cover: 'data:image/png;base64,AAAA', chapters: [{ title: '上', content: '私はその人を常に先生と呼んでいた。' }] };
+
+  assert.deepEqual((await (await pedir('/api/textos', { headers: auth })).json()).textos, []);
+  assert.equal((await pedir(`/api/textos/${clave}`, { headers: auth })).status, 404);
+  assert.equal((await pedir(`/api/textos/${clave}`, { method: 'PUT', headers: auth, cuerpo: libro })).status, 200);
+
+  const lista = (await (await pedir('/api/textos', { headers: auth })).json()).textos;
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].clave, clave);
+  const bajado = await (await pedir(`/api/textos/${clave}`, { headers: auth })).json();
+  assert.deepEqual(bajado, libro, 'llega igual que se subió');
+});
+
+await prueba('el texto de un miembro no lo ve otro', async () => {
+  const { token } = await (await entrar('tok-otro')).json();
+  const auth = { Authorization: `Bearer ${token}` };
+  assert.deepEqual((await (await pedir('/api/textos', { headers: auth })).json()).textos, []);
+  assert.equal((await pedir('/api/textos/ab12cd34ef56ab78', { headers: auth })).status, 404);
+  assert.equal((await pedir('/api/textos')).status, 401, 'y sin sesión, nada');
+});
+
+await prueba('el texto se rechaza vacío, con clave rara o pasado de cuota', async () => {
+  const { token } = await (await entrar('tok-zams')).json();
+  const auth = { Authorization: `Bearer ${token}` };
+  assert.equal((await pedir('/api/textos/ab12cd34ef56ab79', { method: 'PUT', headers: auth, cuerpo: { chapters: [] } })).status, 400);
+  assert.equal((await pedir('/api/textos/..%2F..%2Fyoru', { headers: auth })).status, 404, 'nada que sirva de ruta');
+  const carpeta = mkdtempSync(join(tmpdir(), 'yoru-cuota-'));
+  const grande = { chapters: [{ content: 'x'.repeat(1000) }] };
+  assert.equal(guardarTexto('111', 'aaaaaaaaaaaaaaaa', grande, carpeta, 10).motivo, 'sin-espacio');
+  assert.equal(guardarTexto('111', 'aaaaaaaaaaaaaaaa', grande, carpeta, 10_000).ok, true);
+  assert.equal(guardarTexto('../x', 'aaaaaaaaaaaaaaaa', grande, carpeta).ok, false);
+  assert.equal(listarTextos('111', carpeta).length, 1);
 });
 
 // Esta va al final a propósito: deja la puerta frenada para 127.0.0.1 y cualquier

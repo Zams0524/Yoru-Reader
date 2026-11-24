@@ -27,6 +27,8 @@ export const isTemporaryBookId = (id: string) => typeof id === 'string' && id.st
 export const temporaryBookId = (volumeId: number) => TEMPORARY_ID_PREFIX + 'kavita:' + volumeId;
 import { useConfirm } from './components/ConfirmModal';
 import stableManifest from '../stable.json';
+import { faltaTexto } from './utils/textosLibros';
+import { bajarTextoDeLibro } from './utils/yoruSyncService';
 import { YoruNotifications, configureUpdateNotices, ensureNotificationPermission, hasYoruNotifications, notificationSettings, refreshSrsReminders, type LaunchAction } from './utils/yoruNotifications';
 
 const isNewerAppVersion = (remoteVersion: string, localVersion: string) => {
@@ -661,6 +663,23 @@ export default function App() {
   // `startChapter` lo usa la ficha del libro del shell nuevo para abrir un capítulo
   // concreto: el lector arranca en `progress.currentChapter` y lo persiste al leer.
   const handleSelectBook = async (book: any, startChapter?: number, openAudiobook?: boolean) => {
+    /*
+      Un libro que llegó de otro aparato trae su ficha pero no su texto, que va aparte
+      para no inflar cada sincronización (`textosLibros.ts`). Se baja ahora, una vez.
+    */
+    if (faltaTexto(book)) {
+      const texto = await bajarTextoDeLibro(book);
+      if (!texto) {
+        const es = lang === 'es';
+        alert(es
+          ? 'Este libro está en tu catálogo, pero su texto sigue en el aparato donde lo agregaste. Abre Yoru allí con conexión para que lo suba, o impórtalo también en este aparato.'
+          : 'This book is in your catalog, but its text is still on the device where you added it. Open Yoru there while online so it uploads it, or import it on this device too.');
+        return;
+      }
+      const conTexto = await db.ponerTextoDeLibro(book.id, texto.chapters, texto.cover);
+      setBooks(conTexto);
+      book = conTexto.find((b: any) => b.id === book.id) || { ...book, chapters: texto.chapters };
+    }
     // Start of an open, for the timing line the native reader logs.
     startOpenTiming(book?.title || 'libro');
     let positioned = book;

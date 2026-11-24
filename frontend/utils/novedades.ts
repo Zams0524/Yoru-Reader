@@ -33,6 +33,11 @@ export interface Novedad {
 /** Las notas escritas a mano, de la más nueva a la más vieja. La primera es la que sale. */
 export const NOVEDADES: Novedad[] = [
   {
+    id: '2026-11-24-catalogo-sincronizado',
+    es: 'Los libros que agregas a tu catálogo ya aparecen en tus otros aparatos, con su estado y por dónde vas. La primera vez que abres uno en otro aparato, Yoru baja su texto (hace falta haber entrado con Discord).',
+    en: 'Books you add to your catalog now show up on your other devices, with their status and where you left off. The first time you open one on another device, Yoru downloads its text (you need to be signed in with Discord).',
+  },
+  {
     id: '2026-11-23-lectura-en-voz-sin-hueco',
     es: 'Al escuchar el libro en voz alta, el reproductor ya no se queda flotando a media pantalla cuando sacas las barras: se queda abajo, sin dejar un hueco vacío en la página.',
     en: 'When reading aloud, the player no longer floats halfway up the screen when you bring up the bars: it stays at the bottom, without leaving an empty gap on the page.',

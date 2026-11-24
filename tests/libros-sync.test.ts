@@ -1,6 +1,8 @@
-// Los libros importados viajan con la sincronización: `db.exportFullDatabase` los lee de
+// Los libros del catálogo viajan con la sincronización: `db.exportFullDatabase` los lee de
 // la estantería que usa la app y `db.importFullDatabase` los deja en esa misma estantería.
 // Hasta el 22 nov 2026 los dos miraban `books_list_<perfil>`, donde la app no escribe.
+// Viaja la ficha (estado, progreso, portada pequeña), no el texto: ese va aparte
+// (`textosLibros.ts`) y el otro aparato lo baja al abrir el libro.
 // Con un localStorage y un IndexedDB de mentira, sin red.
 // Ejecutar: node tests/run-libros-sync-test.mjs
 
@@ -64,6 +66,7 @@ const idbFalso = indexedDbDeMentira();
 
 const { db } = await import('../frontend/utils/db');
 const { mergeDatabaseExports } = await import('../frontend/utils/cloudMerge');
+const { claveTexto, faltaTexto, LIMITE_PORTADA } = await import('../frontend/utils/textosLibros');
 
 /* ------------------------------------------------------------------ datos */
 
@@ -94,14 +97,16 @@ function aparatoNuevo() {
 
 /* ----------------------------------------------------------------- pruebas */
 
-console.log('la exportación lleva los libros importados');
+console.log('la exportación lleva la ficha de los libros, no su texto');
 {
   aparatoNuevo();
   await db.saveBooks([libro()] as any);
   const exportado = await db.exportFullDatabase();
   const libros = exportado.profileData[PERFIL].books;
   check(libros.length === 1 && libros[0].title === 'こころ', 'el libro de la estantería sale en la exportación');
-  check(libros[0].chapters.length === 1 && libros[0].chapters[0].content.includes('先生'), 'sale con su texto');
+  check(libros[0].chapters.length === 0, 'sale sin su texto, que va aparte');
+  check(libros[0].textoAparte === true, 'pero dice que lo tiene');
+  check(libros[0].status === 'reading', 'con su estado en el catálogo');
   check(libros[0].progress.percent === 12, 'y con por dónde va');
   check(!idbFalso.almacen.has(`books_list_${PERFIL}`), 'nadie escribe ya en la clave vieja');
 }
@@ -118,7 +123,7 @@ console.log('la importación los deja donde la app los lee');
   await db.importFullDatabase(delPc);
   const enTelefono = await db.getBooks();
   check(enTelefono.length === 1 && enTelefono[0].title === 'こころ', 'el libro aparece en la biblioteca del teléfono');
-  check(enTelefono[0].chapters.length === 1, 'con su texto, listo para abrir');
+  check(enTelefono[0].chapters.length === 0 && faltaTexto(enTelefono[0]), 'sin texto todavía: se baja al abrirlo');
   check(enTelefono[0].progress.percent === 12, 'y por donde se dejó en el PC');
   check(idbFalso.almacen.has(ESTANTERIA) && !idbFalso.almacen.has(`books_list_${PERFIL}`), 'guardado en la estantería de la app');
 }
@@ -173,6 +178,69 @@ console.log('un libro borrado viaja sin su texto');
   const [resultado] = merged.profileData[PERFIL].books as any[];
   check(resultado.isDeleted === true && resultado.chapters.length === 0, 'borrado en el otro aparato: aquí se queda borrado y sin texto');
   check(resultado.progress.charactersRead === 900, 'pero conserva lo leído, que cuenta en las estadísticas');
+}
+
+console.log('el texto de este aparato no se pierde al recibir la ficha de vuelta');
+{
+  aparatoNuevo();
+  await db.saveBooks([libro()] as any);
+  const exportado = await db.exportFullDatabase();
+  // Otro aparato lo marca como terminado y la ficha vuelve, sin texto.
+  exportado.profileData[PERFIL].books[0] = { ...exportado.profileData[PERFIL].books[0], status: 'completed', updatedAt: '2026-11-23T00:00:00.000Z' };
+  await db.importFullDatabase(exportado);
+  const [aqui] = await db.getBooks() as any[];
+  check(aqui.status === 'completed', 'llega el estado nuevo');
+  check(aqui.chapters.length === 1, 'y el texto de aquí sigue en su sitio');
+}
+
+console.log('la portada grande viaja pequeña y no pisa la original');
+{
+  aparatoNuevo();
+  const grande = 'data:image/jpeg;base64,' + 'A'.repeat(LIMITE_PORTADA + 10);
+  await db.saveBooks([libro({ cover: grande })] as any);
+  const exportado = await db.exportFullDatabase();
+  const ficha = exportado.profileData[PERFIL].books[0];
+  check(ficha.portadaReducida === true && ficha.cover.length < LIMITE_PORTADA, 'en el bulto va la pequeña');
+  ficha.updatedAt = '2026-11-23T00:00:00.000Z';
+  await db.importFullDatabase(exportado);
+  const [aqui] = await db.getBooks() as any[];
+  check(aqui.cover === grande && !aqui.portadaReducida, 'aquí se queda la original');
+}
+
+console.log('el texto bajado se pone en su sitio sin tocar lo demás');
+{
+  aparatoNuevo();
+  await db.saveBooks([libro()] as any);
+  const delPc = await db.exportFullDatabase();
+  aparatoNuevo();
+  await db.importFullDatabase(delPc);
+  const [sinTexto] = await db.getBooks() as any[];
+  await db.ponerTextoDeLibro(sinTexto.id, libro().chapters, 'data:image/png;base64,BBBB');
+  const [conTexto] = await db.getBooks() as any[];
+  check(conTexto.chapters.length === 1 && !faltaTexto(conTexto), 'ya se puede abrir');
+  check(conTexto.updatedAt === sinTexto.updatedAt, 'sin parecer un cambio del lector');
+  check(conTexto.progress.percent === 12 && conTexto.status === 'reading', 'con su progreso y su estado');
+}
+
+console.log('importar aquí un libro que vino sin texto se lo da');
+{
+  aparatoNuevo();
+  await db.saveBooks([libro()] as any);
+  const delPc = await db.exportFullDatabase();
+  aparatoNuevo();
+  await db.importFullDatabase(delPc);
+  await db.addBooks([{ title: 'こころ', author: '夏目漱石', chapters: libro().chapters }] as any);
+  const libros = await db.getBooks() as any[];
+  check(libros.length === 1 && libros[0].chapters.length === 1, 'el mismo libro, ahora con texto');
+  check(libros[0].progress.percent === 12, 'y sin perder por dónde iba');
+}
+
+console.log('la clave del texto es la misma en todos los aparatos');
+{
+  check(claveTexto(libro()) === claveTexto(libro({ id: 'book-otro-aparato' })), 'no depende del id');
+  check(claveTexto(libro()) === claveTexto(libro({ title: ' こころ ', author: '夏目漱石' })), 'ni de espacios sueltos');
+  check(claveTexto(libro()) !== claveTexto(libro({ title: '坊っちゃん' })), 'y cambia con el libro');
+  check(/^[a-f0-9]{16,64}$/.test(claveTexto(libro())), 'y la acepta el servidor');
 }
 
 if (failures > 0) {
