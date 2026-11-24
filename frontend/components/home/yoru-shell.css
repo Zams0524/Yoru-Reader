@@ -2445,6 +2445,25 @@ span.yoru-series-stack-back > .yoru-poster-fallback { width: 100%; height: 100%;
 
 /* La lista de tomos no se encierra en su propio desplazamiento: la página ya tiene uno. */
 .yoru-volume-list { max-height: none; overflow-y: visible; }
+/* Secciones de una serie: historia principal, IF, relatos cortos, extras (ordenSerie.ts). */
+.yoru-volume-section + .yoru-volume-section { margin-top: 28px; }
+.yoru-volume-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.yoru-volume-section-count {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+}
 .yoru-volume-row {
   display: flex;
   align-items: center;
