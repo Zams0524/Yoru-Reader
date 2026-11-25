@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Check, Download, Headphones, Hand, Loader2, MousePointer2, Volume2, Zap } from 'lucide-react';
+import { BookOpen, Check, Download, Headphones, Hand, Library, Loader2, MousePointer2, RefreshCw, Search, Smartphone, Sparkles, Volume2, Zap } from 'lucide-react';
 import { getInstalledDictionaries } from '../../utils/yomitanDB';
 import { getPackProgress, installRecommendedPack, packItems, packStatus, subscribePackProgress, type PackItemId, type PackProgress } from '../../utils/dictionaryPack';
 import { isPhoneUI } from '../../utils/platform';
@@ -78,6 +78,49 @@ function SrsMock({ lang }: { lang: Lang }) {
   );
 }
 
+/** A collection: the new volume lands on its own, sections in order, the "complete" badge. */
+function LibraryMock({ lang }: { lang: Lang }) {
+  return (
+    <div className="guide-mock guide-mock-library" aria-hidden="true">
+      <div className="guide-mock-toast"><Sparkles size={12} />{tr(lang, 'Tomo 5 → Re:Zero (solo)', 'Vol. 5 → Re:Zero (auto)')}</div>
+      <div className="guide-mock-section">
+        <span>{tr(lang, 'Historia principal', 'Main story')}</span>
+        <em className="guide-mock-badge">✓ {tr(lang, 'Colección completa', 'Complete collection')}</em>
+      </div>
+      <div className="guide-mock-covers">
+        <i>1</i><i>2</i><i>3</i><i>4</i><i className="is-new">5</i>
+      </div>
+      <div className="guide-mock-section"><span>{tr(lang, 'Historias IF', 'IF stories')}</span></div>
+      <div className="guide-mock-covers small"><i>IF</i><i>IF</i></div>
+      <div className="guide-mock-section muted">
+        <span>{tr(lang, 'Relatos cortos · Extras', 'Short stories · Extras')}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Romaji search finds the Japanese title, and the catalogue reaches your other phone. */
+function SearchSyncMock({ lang }: { lang: Lang }) {
+  return (
+    <div className="guide-mock guide-mock-search" aria-hidden="true">
+      <div className="guide-mock-searchbox"><Search size={14} /><span>re zero</span></div>
+      <div className="guide-mock-result">
+        <i />
+        <div>
+          <strong>Ｒｅ：ゼロから始める異世界生活</strong>
+          <span>{tr(lang, 'encontrado en romaji', 'found in romaji')}</span>
+        </div>
+      </div>
+      <div className="guide-mock-sync">
+        <Smartphone size={26} />
+        <RefreshCw size={16} className="guide-mock-sync-arrows" />
+        <Smartphone size={26} />
+        <span>{tr(lang, 'El mismo catálogo en tus teléfonos', 'The same catalogue on your phones')}</span>
+      </div>
+    </div>
+  );
+}
+
 function GesturesMock({ lang, phone }: { lang: Lang; phone: boolean }) {
   if (!phone) {
     // Desktop: mouse and keyboard.
@@ -148,6 +191,24 @@ export function featureSlides(lang: Lang, phone: boolean = isPhoneUI()): GuideSl
         'Las palabras que aprendes pasan a Yoru SRS, con repasos espaciados (FSRS) para que no se te olviden.',
         'Words you learn go to Yoru SRS, with spaced reviews (FSRS) so you do not forget them.'),
       mock: <SrsMock lang={lang} />,
+    },
+    {
+      id: 'library',
+      icon: <Library size={16} />,
+      title: tr(lang, 'Tu biblioteca se ordena sola', 'Your library sorts itself'),
+      body: tr(lang,
+        'Los libros nuevos entran solos en sus colecciones, por título, serie o género. Cada serie va en orden: Historia principal, Historias IF, Relatos cortos y Extras. Si Kavita la marca como terminada, verás «✓ Colección completa».',
+        'New books join their collections on their own, by title, series or genre. Each series is in order: Main story, IF stories, Short stories and Extras. If Kavita marks it as finished, you will see “✓ Complete collection”.'),
+      mock: <LibraryMock lang={lang} />,
+    },
+    {
+      id: 'search-sync',
+      icon: <Search size={16} />,
+      title: tr(lang, 'Búscalo en romaji', 'Search in romaji'),
+      body: tr(lang,
+        'Escribe «re zero» y Yoru encuentra «Ｒｅ：ゼロから…», sin teclado japonés. Con la sincronización activada, los libros que añades aparecen también en tus otros teléfonos.',
+        'Type “re zero” and Yoru finds “Ｒｅ：ゼロから…”, no Japanese keyboard needed. With sync turned on, the books you add also show up on your other phones.'),
+      mock: <SearchSyncMock lang={lang} />,
     },
     {
       id: 'gestures',
