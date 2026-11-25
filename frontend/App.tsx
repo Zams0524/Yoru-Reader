@@ -14,6 +14,7 @@ import { resolveTheme, useResolvedTheme } from './utils/theme';
 import { ankiConnectRequest } from './utils/ankiConnect';
 import { flushJitenQueue, syncJitenWordStatus } from './utils/jitenSync';
 import { queueKavitaProgress } from './utils/kavitaService';
+import { guardarPosicionTemporal, leerEstadoTemporal, olvidarEstadoTemporal, retomarAqui } from './utils/estadoTemporal';
 import { refreshServerCatalog } from './utils/serverCatalog';
 import { markOpenTiming, startOpenTiming } from './utils/openTiming';
 import { useYoruSyncAutomatica } from './hooks/useYoruSync';
@@ -718,6 +719,9 @@ export default function App() {
     // Libro temporal: no se guarda aqui, pero su progreso si sube al servidor del que
     // salio. Se sale antes de tocar la base para no rozar el camino de siempre.
     if (isTemporaryBookId(bookId)) {
+      // La página exacta se apunta en el aparato: Kavita solo sabe el porcentaje, y con
+      // él se volvía al principio del capítulo en vez de a la página que se leía.
+      guardarPosicionTemporal(db.getActiveProfileId(), bookId, { currentChapter, currentPage, percent });
       setActiveBook((current: any) => (current && current.id === bookId
         ? { ...current, progress: { ...(current.progress || {}), currentChapter, currentPage, percent } }
         : current));
@@ -764,8 +768,32 @@ export default function App() {
     // Se retoma por donde lo dejo el servidor. Si no contesta, se empieza de cero.
     const percent = await progreso;
     markOpenTiming('progreso del servidor');
-    const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
-    const currentChapter = percent > 0 ? kavitaChapterForPercent(chapterPages, percent) : 0;
+    /*
+      Donde se retoma. Lo apuntado en el aparato (sección y párrafo exactos) manda,
+      salvo que el servidor vaya por delante porque se siguió leyendo en otro aparato.
+      Lo del servidor es un porcentaje: da el capítulo, y el lector necesita la sección
+      donde empieza ese capítulo y su primer párrafo (no el número de capítulo a secas).
+    */
+    const temporalId = temporaryBookId(kavitaBook.volumeId);
+    const guardado = leerEstadoTemporal(db.getActiveProfileId(), temporalId);
+    let currentChapter = 0;
+    let currentPage = 0;
+    let startPercent = percent;
+    if (retomarAqui(guardado?.progress, percent, Number(kavitaBook.pages) || 0)) {
+      currentChapter = guardado!.progress!.currentChapter;
+      currentPage = guardado!.progress!.currentPage;
+      startPercent = Math.max(percent, guardado!.progress!.percent || 0);
+    } else if (percent > 0) {
+      const chapterPages = (first.chapters || []).map((chapter: any) => chapter?.pages || 1);
+      const chapterIndex = kavitaChapterForPercent(chapterPages, percent);
+      const { computeSections } = await import('./components/reader/ReaderEngine');
+      const sections = computeSections(first);
+      const sectionIndex = sections.findIndex((section) => section.chapterIndex === chapterIndex);
+      if (sectionIndex >= 0) {
+        currentChapter = sectionIndex;
+        currentPage = sections[sectionIndex].startParagraphId;
+      }
+    }
     // Entra en la Biblioteca al abrirlo, no cuando el lector llegue al 1 %.
     const { markKavitaOpened } = await import('./utils/serverProgress');
     markKavitaOpened({
@@ -790,11 +818,14 @@ export default function App() {
     setActiveBook({
       ...first,
       ...(audio ? { __openAudiobook: true } : {}),
-      id: temporaryBookId(kavitaBook.volumeId),
+      id: temporalId,
       isTemporary: true,
       kavitaBook,
       parsedBook: first,
-      progress: { currentChapter, currentPage: 0, percent },
+      // Los marcadores y subrayados que se pusieron leyéndolo así, la vez anterior.
+      bookmarks: guardado?.bookmarks || [],
+      highlights: guardado?.highlights || [],
+      progress: { currentChapter, currentPage, percent: startPercent },
     });
   }, []);
 
@@ -828,7 +859,21 @@ export default function App() {
       if (percent > 0) {
         await db.updateBookProgress(stored.id, current.progress?.currentChapter || 0, current.progress?.currentPage || 0, percent);
       }
-      setActiveBook({ ...stored, progress: current.progress });
+      // Los marcadores y subrayados del temporal pasan al libro guardado.
+      const perfil = db.getActiveProfileId();
+      const temporal = leerEstadoTemporal(perfil, current.id);
+      const extras: any = {};
+      if (temporal?.bookmarks?.length) {
+        await db.saveBookBookmarks(stored.id, temporal.bookmarks);
+        extras.bookmarks = temporal.bookmarks;
+      }
+      if (temporal?.highlights?.length) {
+        const conSubrayados = await db.saveBookHighlights(stored.id, temporal.highlights);
+        setBooks(conSubrayados);
+        extras.highlights = temporal.highlights;
+      }
+      olvidarEstadoTemporal(perfil, current.id);
+      setActiveBook({ ...stored, ...extras, progress: current.progress });
     }
   }, []);
 

@@ -7,6 +7,7 @@ import { mergeBooks } from './cloudMerge';
 import { librosParaSincronizar } from './textosLibros';
 import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
 import { srsWordOfKey } from './srsCardKeys';
+import { esIdTemporal, guardarMarcadoresTemporales, guardarSubrayadosTemporales } from './estadoTemporal';
 
 /**
  * Los nombres de las colecciones manuales del perfil, leídos a mano.
@@ -706,6 +707,11 @@ export const db = {
   },
 
   saveBookBookmarks(bookId: string, bookmarks: any[]): Promise<Book[]> {
+    // Un libro leído del servidor sin descargar no tiene fila aquí: sus marcadores van aparte.
+    if (esIdTemporal(bookId)) {
+      guardarMarcadoresTemporales(this.getActiveProfileId(), bookId, bookmarks);
+      return this.getBooks();
+    }
     return serializeBookAccess(async () => {
       const books = await this._readBooks();
       const updatedBooks = books.map(book => {
@@ -723,6 +729,10 @@ export const db = {
   },
 
   saveBookHighlights(bookId: string, highlights: BookHighlight[]): Promise<Book[]> {
+    if (esIdTemporal(bookId)) {
+      guardarSubrayadosTemporales(this.getActiveProfileId(), bookId, highlights);
+      return this.getBooks();
+    }
     return serializeBookAccess(async () => {
       const books = await this._readBooks();
       const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
