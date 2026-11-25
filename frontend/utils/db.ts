@@ -6,6 +6,7 @@ import { migrarClavesIdb } from './migrarClaves';
 import { mergeBooks } from './cloudMerge';
 import { librosParaSincronizar } from './textosLibros';
 import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
+import { srsWordOfKey } from './srsCardKeys';
 
 /**
  * Los nombres de las colecciones manuales del perfil, leídos a mano.
@@ -605,8 +606,8 @@ export const db = {
   /**
    * Borra el progreso de lectura del perfil activo: por dónde va en cada libro, lo leído
    * (caracteres, tiempo, partes diarios y horas) y lo leído o escuchado de Kavita y
-   * Audiobookshelf, y el progreso de Yoru SRS (tarjetas a nuevas, historial y contadores
-   * de repasos). Los libros, marcadores, notas, palabras, mazos, tarjetas y ajustes se quedan.
+   * Audiobookshelf, y Yoru SRS entero (mazos, tarjetas, historial y contadores de repasos).
+   * Los libros, marcadores, notas, palabras conocidas y ajustes se quedan.
    *
    * Deja apuntado cuándo se hizo: esa marca viaja con la sincronización y hace que los
    * demás aparatos borren lo mismo en vez de devolverlo (ver `progresoBorrado.ts`).
@@ -663,10 +664,10 @@ export const db = {
   },
 
   /**
-   * El progreso de Yoru SRS de un perfil, con la marca: las tarjetas repasadas antes de
-   * ella vuelven a nuevas (las tarjetas sí viajan, y el combinador hace lo mismo con la
-   * copia de la cuenta), y el historial y los contadores diarios de repasos, que solo
-   * viven en este aparato, se vacían hasta el día de la marca. Mazos y tarjetas se quedan.
+   * Yoru SRS de un perfil, con la marca: los mazos y las tarjetas de antes de ella se
+   * borran (las tarjetas sí viajan, y el combinador hace lo mismo con la copia de la
+   * cuenta), sus palabras dejan de estar «aprendiendo», y el historial y los contadores
+   * diarios de repasos, que solo viven en este aparato, se vacían hasta el día de la marca.
    */
   _borrarProgresoSrs(profileId: string, marca: string): void {
     const limite = Date.parse(marca) || 0;
@@ -677,9 +678,13 @@ export const db = {
       const crudo = localStorage.getItem(claveTarjetas);
       if (crudo) {
         const tarjetas = JSON.parse(crudo);
-        const nuevas = tarjetasTrasBorrado(tarjetas, marca);
-        if (nuevas !== tarjetas) localStorage.setItem(claveTarjetas, JSON.stringify(nuevas));
+        const quedan = tarjetasTrasBorrado(tarjetas, marca);
+        if (quedan !== tarjetas) localStorage.setItem(claveTarjetas, JSON.stringify(quedan));
         if (srsDataCache?.storageKey === claveTarjetas) srsDataCache = null;
+        // Las palabras van con el perfil activo (`getWordStatuses`): solo se tocan desde él.
+        if (quedan !== tarjetas && profileId === (this.getActiveProfileId() || 'profile-default')) {
+          this._soltarPalabrasSinTarjeta(Object.keys(tarjetas).filter((clave) => !(clave in (quedan || {}))));
+        }
       }
 
       const claveHistorial = `yoru_reader_srs_history_${profileId}`;
@@ -856,6 +861,31 @@ export const db = {
     if (changed) localStorage.setItem(this._getKey(WORD_STATUS_TIMES_KEY), JSON.stringify(times));
   },
 
+  /**
+   * Después de borrar tarjetas: las palabras que estaban «aprendiendo» solo por ellas dejan
+   * de estarlo. Si no, el repaso (`SrsReviewModal`) las vuelve a sacar como tarjetas del
+   * mazo por defecto, y el mazo borrado reaparece (una importación de Anki marca así cada
+   * palabra que trae). Las que siguen teniendo otra tarjeta, y las «conocidas», se quedan.
+   */
+  _soltarPalabrasSinTarjeta(clavesBorradas: string[]) {
+    if (!clavesBorradas.length) return;
+    const srsData = this.getSrsData();
+    const conTarjeta = new Set(
+      Object.keys(srsData).filter((clave) => !clave.startsWith('_deck_')).map(srsWordOfKey),
+    );
+    const statuses = this.getWordStatuses();
+    let cambiado = false;
+    for (const clave of clavesBorradas) {
+      if (clave.startsWith('_deck_')) continue;
+      const palabra = srsWordOfKey(clave);
+      if (statuses[palabra] === 'learning' && !conTarjeta.has(palabra)) {
+        delete statuses[palabra];
+        cambiado = true;
+      }
+    }
+    if (cambiado) this.saveWordStatuses(statuses);
+  },
+
   setWordStatus(word: string, status: string | null) {
     const statuses = this.getWordStatuses();
     if (!status || status === 'unknown') {
@@ -1028,13 +1058,16 @@ export const db = {
     }
   },
 
-  /** Notes the removal time of keys saved as null, and forgets it for keys saved with a card. */
+  /**
+   * Notes the removal time of keys saved as null, and forgets it for keys saved with a card.
+   * Deck placeholders (`_deck_…`) count too: without their removal, a deleted deck came back
+   * from the other device's copy on the next sync (see `cloudMerge.mergeSrs`).
+   */
   _recordSrsRemovals(entries: Record<string, any>) {
     const removals = this.getSrsRemovals();
     const now = new Date().toISOString();
     let changed = false;
     for (const key of Object.keys(entries)) {
-      if (key.startsWith('_deck_')) continue;
       if (!entries[key]) {
         removals[key] = now;
         changed = true;
