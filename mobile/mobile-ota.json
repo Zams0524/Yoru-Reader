@@ -1,9 +1,9 @@
 {
-  "webVersion": "1.2.8.126",
+  "webVersion": "1.2.8.127",
   "nativeVersionCode": 180,
   "url": null,
-  "sha256": "e0acfd3a19504a90ab512ca6f7e5bf65e0c1b3e58feab05c406b34dca4095a02",
-  "size": 42257992,
-  "description": "Yoru Reader interface v1.2.8.126",
+  "sha256": "f57f684470554ff1bab78ff18e43096c776fab7c31014ebf1ed2cc01a842a7f4",
+  "size": 42258588,
+  "description": "Yoru Reader interface v1.2.8.127",
   "blockedReason": "Android native code changed without a versionCode bump; publish a new APK."
 }
