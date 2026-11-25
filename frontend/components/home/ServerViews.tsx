@@ -693,7 +693,7 @@ export function ServerCollectionView({
         : 'According to Kavita, every published volume of the main story is here'}
     >
       <Check size={12} strokeWidth={3} aria-hidden="true" />
-      {es ? 'Completa' : 'Complete'}
+      {es ? 'Colección completa' : 'Complete collection'}
     </span>
   );
 
