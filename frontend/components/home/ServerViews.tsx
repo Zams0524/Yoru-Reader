@@ -17,6 +17,7 @@ import { cachedServerCollection, getCachedServerCatalog, sample, serverItemId, t
 import type { ServerGroup } from '../../utils/serverEntities';
 import { nombreSeccion, ordenarSerie } from '../../utils/ordenSerie';
 import { useSeriesCompletas } from '../../utils/serieCompleta';
+import { textoTomos, useTomosSerie } from '../../utils/tomosSerie';
 import { Rail } from './primitives';
 import { useAudiobookPlayer } from './AudiobookPlayerBar';
 import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
@@ -639,6 +640,21 @@ export function AudiobookSeriesView({
 }
 
 /**
+ * El número de tomos de una serie de Kavita sobre su portada pequeña. Con un solo
+ * tomo, o mientras no se sabe, no sale nada.
+ */
+function TomosInsignia({ seriesId, es }: { seriesId: string; es: boolean }) {
+  const n = useTomosSerie(seriesId);
+  const texto = textoTomos(n, es);
+  if (!texto) return null;
+  return (
+    <span className="yoru-tomos-badge is-small" title={texto} aria-label={texto}>
+      {n}
+    </span>
+  );
+}
+
+/**
  * Una colección del servidor (Kavita o Audiobookshelf), con todos sus títulos.
  *
  * Como la serie de audiolibros, sale entera de la caché del catálogo: aparece al
@@ -749,6 +765,7 @@ export function ServerCollectionView({
                 <span className="yoru-volume-index">{index + 1}</span>
                 <span className="yoru-volume-cover">
                   {item.cover ? <img src={item.cover} alt="" loading="lazy" /> : <span />}
+                  {item.source === 'kavita' && <TomosInsignia seriesId={serverItemId(item)} es={es} />}
                 </span>
                 <span className="yoru-volume-text">
                   <span className="yoru-link-title">{item.title}</span>
