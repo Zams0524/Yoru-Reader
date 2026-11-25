@@ -3677,7 +3677,11 @@ export default function Reader({
                 {(
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'stretch' }}>
-                      <button type="button" onClick={marcarConocida} style={botonJiten(isKnown, '#8fd19e')}>
+                      {/*
+                        zams (25 nov 2026): al darle a «Never forget» el botón se pone blanco, no
+                        verde. Sobre papel claro el blanco no se vería, así que ahí va en tinta oscura.
+                      */}
+                      <button type="button" onClick={marcarConocida} style={botonJiten(isKnown, papelClaro ? '#18181b' : '#ffffff')}>
                         {nombres.saber}
                       </button>
                       <button
