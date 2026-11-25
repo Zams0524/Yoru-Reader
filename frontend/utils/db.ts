@@ -1,7 +1,7 @@
 import type { BookHighlight } from './highlights';
 import { borrarHorasDe, recordHourActivity } from './statsHabits';
 import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
-import { librosTrasBorrado, mapaTrasBorrado } from './progresoBorrado';
+import { diaDeMarca, librosTrasBorrado, mapaTrasBorrado, tarjetasTrasBorrado } from './progresoBorrado';
 import { migrarClavesIdb } from './migrarClaves';
 import { mergeBooks } from './cloudMerge';
 import { librosParaSincronizar } from './textosLibros';
@@ -131,6 +131,8 @@ export const ABS_LOCAL_PROGRESS_KEY = 'yoru_abs_local_progress';
 const PROGRESS_RESET_KEY = 'yoru_progress_reset';
 /** La última marca de borrado que este aparato ya aplicó a lo que no se sincroniza. */
 const PROGRESS_RESET_APPLIED_KEY = 'yoru_progress_reset_applied';
+/** Tiempo de estudio de Yoru SRS por día (`SrsReviewModal`), sin perfil: prefijo + AAAA-MM-DD. */
+const SRS_STUDY_TIME_PREFIX = 'yoru_reader_srs_study_time_';
 /** Avisa a Inicio de que «Continuar» puede haber cambiado. */
 export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
 
@@ -603,7 +605,8 @@ export const db = {
   /**
    * Borra el progreso de lectura del perfil activo: por dónde va en cada libro, lo leído
    * (caracteres, tiempo, partes diarios y horas) y lo leído o escuchado de Kavita y
-   * Audiobookshelf. Los libros, marcadores, notas, palabras, tarjetas y ajustes se quedan.
+   * Audiobookshelf, y el progreso de Yoru SRS (tarjetas a nuevas, historial y contadores
+   * de repasos). Los libros, marcadores, notas, palabras, mazos, tarjetas y ajustes se quedan.
    *
    * Deja apuntado cuándo se hizo: esa marca viaja con la sincronización y hace que los
    * demás aparatos borren lo mismo en vez de devolverlo (ver `progresoBorrado.ts`).
@@ -631,25 +634,69 @@ export const db = {
 
   /**
    * Lo que no viaja con la sincronización y hay que borrar en cada aparato: los partes
-   * diarios, las horas y la posición exacta del lector nativo. Se hace una vez por marca.
+   * diarios, las horas, la posición exacta del lector nativo y el historial y los
+   * contadores de Yoru SRS. Se hace una vez por marca.
    */
   async _borrarRestosDeProgreso(profileId: string, marca: string, libros: any[]): Promise<void> {
     const limite = Date.parse(marca) || 0;
     if (!limite) return;
     // Los partes diarios no van por perfil: solo se tocan por el perfil que se está usando.
-    if (profileId === (this.getActiveProfileId() || 'profile-default')) await borrarPartesHasta(limite);
+    const esActivo = profileId === (this.getActiveProfileId() || 'profile-default');
+    if (esActivo) await borrarPartesHasta(limite);
     borrarHorasDe(profileId);
+    this._borrarProgresoSrs(profileId, marca);
     try {
       const vaciados = new Set((libros || []).filter((libro) => libro && !libro.lastRead).map((libro) => String(libro.id)));
+      const diaMarca = diaDeMarca(marca);
       const sobran: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const clave = localStorage.key(i) || '';
         if (clave.startsWith('native-reader:position:') && vaciados.has(clave.slice(clave.lastIndexOf(':') + 1))) sobran.push(clave);
+        // El tiempo de estudio de Yoru SRS tampoco va por perfil, como los partes diarios.
+        if (esActivo && clave.startsWith(SRS_STUDY_TIME_PREFIX) && clave.slice(SRS_STUDY_TIME_PREFIX.length) <= diaMarca) sobran.push(clave);
       }
       for (const clave of sobran) localStorage.removeItem(clave);
       localStorage.setItem(`${PROGRESS_RESET_APPLIED_KEY}_${profileId}`, marca);
     } catch {
       /* Sin almacenamiento, se volverá a intentar con la siguiente sincronización. */
+    }
+  },
+
+  /**
+   * El progreso de Yoru SRS de un perfil, con la marca: las tarjetas repasadas antes de
+   * ella vuelven a nuevas (las tarjetas sí viajan, y el combinador hace lo mismo con la
+   * copia de la cuenta), y el historial y los contadores diarios de repasos, que solo
+   * viven en este aparato, se vacían hasta el día de la marca. Mazos y tarjetas se quedan.
+   */
+  _borrarProgresoSrs(profileId: string, marca: string): void {
+    const limite = Date.parse(marca) || 0;
+    if (!limite) return;
+    const diaMarca = diaDeMarca(marca);
+    try {
+      const claveTarjetas = `yoru_reader_srs_data_${profileId}`;
+      const crudo = localStorage.getItem(claveTarjetas);
+      if (crudo) {
+        const tarjetas = JSON.parse(crudo);
+        const nuevas = tarjetasTrasBorrado(tarjetas, marca);
+        if (nuevas !== tarjetas) localStorage.setItem(claveTarjetas, JSON.stringify(nuevas));
+        if (srsDataCache?.storageKey === claveTarjetas) srsDataCache = null;
+      }
+
+      const claveHistorial = `yoru_reader_srs_history_${profileId}`;
+      const historial = JSON.parse(localStorage.getItem(claveHistorial) || '[]');
+      if (Array.isArray(historial) && historial.length) {
+        const queda = historial.filter((entrada: any) => (Date.parse(entrada?.timestamp) || 0) > limite);
+        if (queda.length !== historial.length) localStorage.setItem(claveHistorial, JSON.stringify(queda));
+      }
+
+      for (const base of ['yoru_reader_srs_daily_reviews', 'yoru_reader_srs_daily_review_stats']) {
+        const clave = `${base}_${profileId}`;
+        const dias = readJsonObject(clave);
+        const quedan = Object.fromEntries(Object.entries(dias).filter(([dia]) => dia > diaMarca));
+        if (Object.keys(quedan).length !== Object.keys(dias).length) localStorage.setItem(clave, JSON.stringify(quedan));
+      }
+    } catch (error) {
+      console.error('[borrar-progreso] no se pudo borrar el progreso de Yoru SRS', error);
     }
   },
 

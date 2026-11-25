@@ -1,7 +1,7 @@
 // «Borrar mi progreso de lectura»: `progresoBorrado.ts` y cómo lo respeta el combinador
 // (`cloudMerge.ts`). Nada de red ni de almacenamiento.
 // Ejecutar: node tests/run-borrar-progreso-test.mjs
-import { librosTrasBorrado, mapaTrasBorrado, perfilTrasBorrado, ultimaMarca } from '../frontend/utils/progresoBorrado';
+import { diaDeMarca, librosTrasBorrado, mapaTrasBorrado, perfilTrasBorrado, tarjetasTrasBorrado, ultimaMarca } from '../frontend/utils/progresoBorrado';
 import { mergeDatabaseExports } from '../frontend/utils/cloudMerge';
 
 let failures = 0;
@@ -73,7 +73,42 @@ console.log('progresoBorrado');
   const datos = { books: [libro()], wordStatuses: { 猫: 'known' }, srsData: { 猫: { due: ANTES } } };
   check(perfilTrasBorrado(datos, null) === datos, 'sin marca el perfil no cambia');
   const tras = perfilTrasBorrado(datos, MARCA);
-  check(tras.wordStatuses === datos.wordStatuses && tras.srsData === datos.srsData, 'las palabras y las tarjetas no se tocan');
+  check(tras.wordStatuses === datos.wordStatuses && tras.srsData === datos.srsData, 'las palabras y las tarjetas sin repasar no se tocan');
+}
+
+console.log('Yoru SRS');
+{
+  const repasada = { word: '猫', reading: 'ねこ', source: 'Core 2k', state: 2, reps: 7, repetitions: 7, lapses: 1, stability: 30, difficulty: 5, due: '2026-12-20T00:00:00.000Z', lastReview: ANTES, last_review: ANTES, suspended: true };
+  const nueva = { word: '犬', source: 'Core 2k', state: 0, reps: 0, due: ANTES };
+  const despues = { word: '鳥', source: 'Core 2k', state: 1, reps: 1, lastReview: DESPUES, last_review: DESPUES };
+  const importada = { word: '魚', source: 'Core 2k', state: 2, reps: 4, lastReview: ANTES, importedAt: DESPUES };
+  const tarjetas = { 猫: repasada, 犬: nueva, 鳥: despues, 魚: importada, '_deck_Core 2k': { name: 'Core 2k' } };
+
+  const tras = tarjetasTrasBorrado(tarjetas, MARCA) as Record<string, any>;
+  check(tras.猫.state === 0 && tras.猫.reps === 0 && tras.猫.lapses === 0 && tras.猫.stability === 0, 'la tarjeta repasada vuelve a nueva');
+  check(!('lastReview' in tras.猫) && !('last_review' in tras.猫) && tras.猫.due === MARCA, 'sin fecha de repaso y para repasar desde la marca');
+  check(tras.猫.word === '猫' && tras.猫.reading === 'ねこ' && tras.猫.source === 'Core 2k' && tras.猫.suspended === true, 'la palabra, su mazo y si está suspendida se conservan');
+  check(tras.犬 === nueva, 'una tarjeta nueva se deja como está');
+  check(tras.鳥 === despues, 'lo repasado después de la marca se conserva');
+  check(tras.魚 === importada, 'un mazo importado después de la marca se conserva');
+  check(tras['_deck_Core 2k'] === tarjetas['_deck_Core 2k'], 'el mazo sigue ahí');
+  check(Object.keys(tras).length === Object.keys(tarjetas).length, 'no se borra ninguna tarjeta');
+  check(tarjetasTrasBorrado(tras, MARCA) === tras, 'aplicar la marca dos veces no cambia nada');
+
+  const perfil = perfilTrasBorrado({ srsData: tarjetas }, MARCA) as any;
+  check(perfil.srsData.猫.state === 0, 'el perfil con la marca lleva las tarjetas a nuevas');
+
+  // Este aparato borró; la cuenta aún guarda las tarjetas repasadas.
+  const local = exportacion({ srsData: tarjetasTrasBorrado({ 猫: repasada }, MARCA), progressResetAt: MARCA });
+  const nube = exportacion({ srsData: { 猫: repasada } });
+  const r = mergeDatabaseExports(local as any, nube as any, false);
+  check((r.merged.profileData.p as any).srsData.猫.state === 0 && r.cloudChanged, 'la cuenta no devuelve el progreso de Yoru SRS, y el borrado se sube');
+  const otro = mergeDatabaseExports(nube as any, r.merged as any, true);
+  check((otro.merged.profileData.p as any).srsData.猫.reps === 0 && otro.localNeedsReload, 'el otro aparato también lo borra');
+  const quieto = mergeDatabaseExports(r.merged as any, JSON.parse(JSON.stringify(r.merged)), false);
+  check(!quieto.localChanged && !quieto.cloudChanged, 'con las tarjetas ya a cero, combinar de nuevo no cambia nada');
+
+  check(diaDeMarca('2026-11-22T12:00:00') === '2026-11-22', 'el día de la marca es el día local');
 }
 
 console.log('el combinador respeta el borrado');
