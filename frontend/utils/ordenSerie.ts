@@ -134,6 +134,16 @@ const RE_EXTRA = new RegExp([
   /(?<![A-Za-z])(?:art|works)\s+(?:re:\s*)?box(?![A-Za-z])/.source,
   // Enciclopedias: «pedia» también pegado al nombre (Re:zeropedia).
   /pedia(?![A-Za-z])|ペディア|事典|辞典|大全|百科|(?<![A-Za-z])(?:encyclopedia|wiki)(?![A-Za-z])/.source,
+  // Mangas y cómics de la serie.
+  /コミカライズ|コミック|漫画|マンガ|(?<![A-Za-z])(?:comics?|manga)(?![A-Za-z])/.source,
+  /*
+    La adaptación de un arco: «第一章 王都の一日編», «第三章 Truth of Zero 1». Las
+    novelas numeran por 巻 o 部; un 第N章 con el nombre del arco detrás es el manga
+    de ese arco, no un tomo. Solo, al final del título («… 第3章»), no cuenta.
+  */
+  `第\\s*(?:\\d+|${KANJI_NUM})\\s*章\\s*\\S`,
+  // Colaboraciones con otra serie y números especiales de revista.
+  /コラボ|増刊|(?<![A-Za-z])collab(?:oration)?(?![A-Za-z])/.source,
 ].join('|'), 'i');
 
 /** Qué clase de tomo es, mirando solo el título. */

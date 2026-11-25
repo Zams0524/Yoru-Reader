@@ -50,6 +50,53 @@ prueba('tipo de tomo', () => {
   assert.equal(tipoDeTomo('Re:zeropedia'), 'extra');
   assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 Re:zeropedia2'), 'extra');
   assert.equal(tipoDeTomo('Box of Secrets 3'), 'principal'); // «box» suelto no cuenta
+  // El manga de un arco, los cómics y las colaboraciones también son Extras.
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 第一章 王都の一日編 2'), 'extra');
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活　第三章　Truth　of　Zero　１０'), 'extra');
+  assert.equal(tipoDeTomo('Re:ゼロから始める異世界生活 第5章 水の都と英雄の詩 1'), 'extra');
+  assert.equal(tipoDeTomo('ソードアート・オンライン コミック 3'), 'extra');
+  assert.equal(tipoDeTomo('Overlord Manga Vol. 2'), 'extra');
+  assert.equal(tipoDeTomo('『この素晴らしい世界に祝福を！』×『Re:ゼロから始める異世界生活』スペシャルコラボブック'), 'extra');
+  assert.equal(tipoDeTomo('本好きの下剋上 第三部 1'), 'principal'); // 部 es de la novela
+  assert.equal(tipoDeTomo('とある物語 第3章'), 'principal'); // 第N章 solo, sin arco detrás
+  assert.equal(tipoDeTomo('Mangaka-san 2'), 'principal'); // «manga» dentro de una palabra no cuenta
+});
+
+prueba('la colección Re:Zero de Kavita (25 nov 2026): la historia principal es la novela', () => {
+  // Los títulos tal como los da el servidor, en el orden de la colección.
+  const titulos = [
+    'Re ゼロから始める異世界生活 公式アンソロジーコミック',
+    'Re:ゼロから始める異世界生活 Animation Illust Works　-Re:START-',
+    'Re:ゼロから始める異世界生活 Ex2　剣鬼恋歌',
+    'Re:ゼロから始める異世界生活 第一章 王都の一日編 2',
+    'Re:ゼロから始める異世界生活 第三章 Truth of Zero 1',
+    'Re:ゼロから始める異世界生活 第五章 水の都と英雄の詩 １',
+    'Re：ゼロから始める異世界生活　短編集１０',
+    'Re:ゼロから始める異世界生活　第三章　Truth　of　Zero　１０',
+    'Re：ゼロから始める異世界生活',
+    'Re：ゼロから始める異世界生活 Ex4　最優紀行',
+    'Re：ゼロから始める異世界生活 Ex6　剣鬼戦歌',
+    'Re：ゼロから始める異世界生活 Re：IF 『ゼロカラカサネルイセカイセイカツ』',
+    'Re：ゼロから始める異世界生活 Re：IF 『ゼロカラツギハグイセカイセイカツ』',
+    'Re：ゼロから始める異世界生活 Re：IF 『レム』',
+    'Re：ゼロから始める異世界生活 第二章 屋敷の一週間編',
+    'Re：ゼロから始める異世界生活　Re：zeropedia 2',
+    '『この素晴らしい世界に祝福を！』×『Re:ゼロから始める異世界生活』スペシャルコラボブック　Re:ゼロから始めるこのすば生活　コミックキューン　2017年2月号増刊',
+    'Ｒｅ：ゼロから始める異世界生活 大塚真一郎 Art Works　Re：BOX',
+    'Ｒｅ：ゼロから始める異世界生活 大塚真一郎 Art Works　Re：BOX 2nd',
+    'Ｒｅ：ゼロから始める異世界生活Ex',
+    'Ｒｅ：ゼロから始める異世界生活　Re:zeropedia',
+    'Ｒｅ：ゼロから始める異世界生活　短編集１',
+    'Re:ゼロから始める異世界生活 氷結の絆',
+  ];
+  const secciones = ordenarSerie(titulos, (t) => t);
+  const de = (tipo: string) => secciones.find((s) => s.tipo === tipo)?.items || [];
+  // La serie de los tomos 1–46 abre la historia principal. 氷結の絆 no dice en el
+  // título qué es, así que se queda ahí, detrás.
+  assert.deepEqual(de('principal'), ['Re：ゼロから始める異世界生活', 'Re:ゼロから始める異世界生活 氷結の絆']);
+  assert.equal(de('if').length, 3);
+  assert.deepEqual(de('cortos').map((t) => infoTomo(t).numero), [1, 10, null]);
+  assert.equal(de('extra').length, 15);
 });
 
 prueba('la colección de Re:Zero de la captura queda en orden y separada', () => {
