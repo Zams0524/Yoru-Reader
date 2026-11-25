@@ -14,6 +14,7 @@ import {
 import type { RailId } from '../../utils/homeRails';
 import { audiobookList, isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
 import { LOCAL_PROGRESS_EVENT, forgetKavitaSeries } from '../../utils/serverProgress';
+import { textoTomos, useTomosSerie } from '../../utils/tomosSerie';
 
 /**
  * Las secciones de Inicio que viven en los servidores de casa.
@@ -656,15 +657,18 @@ function ServerLibraryCard({
  */
 export function ServerCard({ item, es, onOpen }: { item: ServerItem; es: boolean; onOpen: (item: ServerItem) => void }) {
   const isAudio = item.source === 'audiobookshelf';
+  // Una tarjeta de Kavita es una serie entera: cuántos tomos lleva, sobre la portada.
+  const tomos = textoTomos(useTomosSerie(isAudio ? null : serverItemId(item)), es);
   return (
     <button
       type="button"
       className={`yoru-poster${isAudio ? ' is-audio' : ''}`}
-      title={item.title}
+      title={tomos ? `${item.title} · ${tomos}` : item.title}
       onClick={() => onOpen(item)}
     >
       <span className="yoru-poster-frame">
         <img src={item.cover} alt="" loading="lazy" />
+        {tomos && <span className="yoru-tomos-badge">{tomos}</span>}
         {isAudio && (
           <span className="yoru-poster-play" aria-hidden="true">
             <Play size={18} />
