@@ -1597,7 +1597,11 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
 
     private static void drawUnderline(Canvas canvas, RectF run, Underline u, Config c, float inkLeft) {
         if (run == null || u == null) return;
-        float t = Math.max(1f, u.thickness * c.density);
+        // In vertical writing the line sits in the gap where the column to the left keeps its
+        // furigana: at full thickness it covered those readings. There it is half as thick (one
+        // CSS px at least) and hugs the text, so the furigana stays clear.
+        float css = c.vertical ? Math.max(1f, u.thickness * 0.5f) : u.thickness;
+        float t = Math.max(1f, css * c.density);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(0xFF000000 | u.color);
         paint.setStyle(Paint.Style.STROKE);
@@ -1607,7 +1611,7 @@ public class NativeReaderPlugin extends Plugin implements NativeReaderView.Liste
         // left edge sits on the furigana of the neighbouring column.
         float x0, y0, x1, y1;
         if (c.vertical) {
-            float gap = Math.max(1f, t * 0.6f);
+            float gap = Math.max(1f, t * 0.4f);
             float edge = Float.isNaN(inkLeft) ? run.left : inkLeft;
             x0 = x1 = edge - gap - t / 2;
             y0 = run.top;
