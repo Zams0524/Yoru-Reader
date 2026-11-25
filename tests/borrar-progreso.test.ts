@@ -73,7 +73,8 @@ console.log('progresoBorrado');
   const datos = { books: [libro()], wordStatuses: { 猫: 'known' }, srsData: { 猫: { due: ANTES } } };
   check(perfilTrasBorrado(datos, null) === datos, 'sin marca el perfil no cambia');
   const tras = perfilTrasBorrado(datos, MARCA);
-  check(tras.wordStatuses === datos.wordStatuses && tras.srsData === datos.srsData, 'las palabras y las tarjetas sin repasar no se tocan');
+  check(tras.wordStatuses === datos.wordStatuses, 'las palabras no se tocan');
+  check(Object.keys(tras.srsData).length === 0, 'una tarjeta de antes de la marca, aunque no se repasara, se borra');
 }
 
 console.log('Yoru SRS');
@@ -82,33 +83,59 @@ console.log('Yoru SRS');
   const nueva = { word: '犬', source: 'Core 2k', state: 0, reps: 0, due: ANTES };
   const despues = { word: '鳥', source: 'Core 2k', state: 1, reps: 1, lastReview: DESPUES, last_review: DESPUES };
   const importada = { word: '魚', source: 'Core 2k', state: 2, reps: 4, lastReview: ANTES, importedAt: DESPUES };
-  const tarjetas = { 猫: repasada, 犬: nueva, 鳥: despues, 魚: importada, '_deck_Core 2k': { name: 'Core 2k' } };
+  const creadaDespues = { word: '花', source: 'Mío', state: 0, due: DESPUES, dueDate: DESPUES };
+  // Un mazo de «+ Mazo» vence dentro de un año: su fecha de vencimiento no dice nada.
+  const mazoViejo = { word: '_deck_g', source: 'g', state: 0, due: '2027-11-20T00:00:00.000Z', isPlaceholder: true };
+  const mazoNuevo = { word: '_deck_Mío', source: 'Mío', state: 0, createdAt: DESPUES, due: '2027-11-23T00:00:00.000Z', isPlaceholder: true };
+  const tarjetas = {
+    猫: repasada, 犬: nueva, 鳥: despues, 魚: importada, 花: creadaDespues,
+    '_deck_Core 2k': { createdAt: ANTES }, _deck_g: mazoViejo, '_deck_Mío': mazoNuevo,
+  };
 
   const tras = tarjetasTrasBorrado(tarjetas, MARCA) as Record<string, any>;
-  check(tras.猫.state === 0 && tras.猫.reps === 0 && tras.猫.lapses === 0 && tras.猫.stability === 0, 'la tarjeta repasada vuelve a nueva');
-  check(!('lastReview' in tras.猫) && !('last_review' in tras.猫) && tras.猫.due === MARCA, 'sin fecha de repaso y para repasar desde la marca');
-  check(tras.猫.word === '猫' && tras.猫.reading === 'ねこ' && tras.猫.source === 'Core 2k' && tras.猫.suspended === true, 'la palabra, su mazo y si está suspendida se conservan');
-  check(tras.犬 === nueva, 'una tarjeta nueva se deja como está');
+  check(!('猫' in tras), 'la tarjeta repasada antes de la marca se borra');
+  check(!('犬' in tras), 'la tarjeta nueva de antes de la marca también');
+  check(!('_deck_Core 2k' in tras) && !('_deck_g' in tras), 'los mazos de antes se borran, aunque venzan dentro de un año');
   check(tras.鳥 === despues, 'lo repasado después de la marca se conserva');
   check(tras.魚 === importada, 'un mazo importado después de la marca se conserva');
-  check(tras['_deck_Core 2k'] === tarjetas['_deck_Core 2k'], 'el mazo sigue ahí');
-  check(Object.keys(tras).length === Object.keys(tarjetas).length, 'no se borra ninguna tarjeta');
+  check(tras.花 === creadaDespues && tras['_deck_Mío'] === mazoNuevo, 'un mazo y una tarjeta creados después se conservan');
   check(tarjetasTrasBorrado(tras, MARCA) === tras, 'aplicar la marca dos veces no cambia nada');
 
   const perfil = perfilTrasBorrado({ srsData: tarjetas }, MARCA) as any;
-  check(perfil.srsData.猫.state === 0, 'el perfil con la marca lleva las tarjetas a nuevas');
+  check(!('猫' in perfil.srsData) && !('_deck_g' in perfil.srsData), 'el perfil con la marca no lleva los mazos ni las tarjetas de antes');
 
-  // Este aparato borró; la cuenta aún guarda las tarjetas repasadas.
-  const local = exportacion({ srsData: tarjetasTrasBorrado({ 猫: repasada }, MARCA), progressResetAt: MARCA });
-  const nube = exportacion({ srsData: { 猫: repasada } });
+  // Este aparato borró; la cuenta aún guarda el mazo y sus tarjetas.
+  const local = exportacion({ srsData: tarjetasTrasBorrado({ 猫: repasada, _deck_g: mazoViejo }, MARCA), progressResetAt: MARCA });
+  const nube = exportacion({ srsData: { 猫: repasada, _deck_g: mazoViejo } });
   const r = mergeDatabaseExports(local as any, nube as any, false);
-  check((r.merged.profileData.p as any).srsData.猫.state === 0 && r.cloudChanged, 'la cuenta no devuelve el progreso de Yoru SRS, y el borrado se sube');
+  const srsR = (r.merged.profileData.p as any).srsData || {};
+  check(!('猫' in srsR) && !('_deck_g' in srsR) && r.cloudChanged, 'la cuenta no devuelve los mazos ni las tarjetas, y el borrado se sube');
   const otro = mergeDatabaseExports(nube as any, r.merged as any, true);
-  check((otro.merged.profileData.p as any).srsData.猫.reps === 0 && otro.localNeedsReload, 'el otro aparato también lo borra');
+  const srsOtro = (otro.merged.profileData.p as any).srsData || {};
+  check(!('猫' in srsOtro) && !('_deck_g' in srsOtro) && otro.localNeedsReload, 'el otro aparato también los borra');
   const quieto = mergeDatabaseExports(r.merged as any, JSON.parse(JSON.stringify(r.merged)), false);
-  check(!quieto.localChanged && !quieto.cloudChanged, 'con las tarjetas ya a cero, combinar de nuevo no cambia nada');
+  check(!quieto.localChanged && !quieto.cloudChanged, 'ya borrados, combinar de nuevo no cambia nada');
 
   check(diaDeMarca('2026-11-22T12:00:00') === '2026-11-22', 'el día de la marca es el día local');
+}
+
+console.log('eliminar un mazo');
+{
+  // Se eliminó el mazo «g» aquí; el otro aparato aún lo guarda (sin fecha de creación).
+  const BORRADO = '2026-11-24T10:00:00.000Z';
+  const mazo = { word: '_deck_g', source: 'g', state: 0, due: '2027-11-20T00:00:00.000Z', isPlaceholder: true };
+  const tarjeta = { word: '猫', source: 'g', state: 0, due: ANTES };
+  const local = exportacion({ srsData: {}, srsRemovals: { _deck_g: BORRADO, 猫: BORRADO } });
+  const nube = exportacion({ srsData: { _deck_g: mazo, 猫: tarjeta } });
+  const r = mergeDatabaseExports(local as any, nube as any, false);
+  const srs = (r.merged.profileData.p as any).srsData || {};
+  check(!('_deck_g' in srs) && !('猫' in srs), 'el mazo eliminado y sus tarjetas no vuelven del otro aparato');
+
+  // Se vuelve a crear con el mismo nombre después: se queda.
+  const otraVez = { ...mazo, createdAt: DESPUES.replace('23', '25') };
+  const nube2 = exportacion({ srsData: { _deck_g: otraVez } });
+  const r2 = mergeDatabaseExports(local as any, nube2 as any, false);
+  check(Boolean(((r2.merged.profileData.p as any).srsData || {})._deck_g), 'un mazo creado otra vez después del borrado se conserva');
 }
 
 console.log('el combinador respeta el borrado');

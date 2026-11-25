@@ -11,10 +11,10 @@
  * se queda a cero, y lo que se lea **después**, en cualquier aparato, cuenta de nuevo.
  *
  * Qué se borra: por dónde vas en cada libro, lo leído (caracteres y tiempo), lo leído
- * o escuchado directamente de Kavita y Audiobookshelf, y el progreso de Yoru SRS (las
- * tarjetas vuelven a nuevas; su historial y sus estadísticas se vacían en
+ * o escuchado directamente de Kavita y Audiobookshelf, y Yoru SRS entero: sus mazos y
+ * sus tarjetas, y su historial y sus estadísticas (que se vacían en
  * `db._borrarRestosDeProgreso`). Qué no: los libros, sus marcadores y notas, las
- * palabras, los mazos con sus tarjetas y los ajustes.
+ * palabras y los ajustes.
  *
  * Funciones puras, sin almacenamiento ni pantalla, para que las use el combinador y se
  * puedan probar solas.
@@ -102,52 +102,26 @@ export function mapaTrasBorrado(
   return cambiado ? salida : mapa;
 }
 
-/** Cuándo se repasó o se importó una tarjeta por última vez (0 si nunca). */
-function ultimaVezTarjeta(tarjeta: any): number {
-  return Math.max(ms(tarjeta?.lastReview), ms(tarjeta?.last_review), ms(tarjeta?.importedAt));
-}
-
-function tarjetaConProgreso(tarjeta: any): boolean {
-  if (!tarjeta || typeof tarjeta !== 'object') return false;
-  return Boolean(
-    (Number.isInteger(tarjeta.state) && tarjeta.state !== 0)
-    || Number(tarjeta.reps) > 0 || Number(tarjeta.repetitions) > 0 || Number(tarjeta.lapses) > 0
-    || tarjeta.lastReview || tarjeta.last_review,
-  );
-}
-
 /**
- * La misma tarjeta de Yoru SRS como nueva: sin repasos, sin memoria y para repasar
- * desde la marca. Se conserva todo lo demás (palabra, lectura, frase, mazo, si está
- * suspendida). Sale igual en todos los aparatos, para que combinar no vea diferencias.
+ * Cuándo se puso por última vez una entrada de Yoru SRS, con el mismo criterio que
+ * `cloudMerge.cardSavedTime`: para un mazo (`_deck_…`), cuándo se creó; para una
+ * tarjeta, su último repaso, su importación de Anki o, si nunca se repasó, su
+ * creación (que es cuando vence una tarjeta nueva). 0 si no hay fecha.
  */
-export function tarjetaSinProgreso<T extends Record<string, any>>(tarjeta: T, marca: string): T {
-  const nueva: Record<string, any> = {
-    ...tarjeta,
-    state: 0,
-    due: marca,
-    dueDate: marca,
-    stability: 0,
-    difficulty: 0,
-    elapsed_days: 0,
-    scheduled_days: 0,
-    learning_steps: 0,
-    reps: 0,
-    lapses: 0,
-    interval: 0,
-    repetitions: 0,
-    ease: 2.5,
-  };
-  delete nueva.lastReview;
-  delete nueva.last_review;
-  return nueva as T;
+export function ultimaVezEntradaSrs(clave: string, tarjeta: any): number {
+  if (!tarjeta || typeof tarjeta !== 'object') return 0;
+  if (clave.startsWith('_deck_')) return ms(tarjeta.createdAt);
+  const repaso = Math.max(ms(tarjeta.lastReview), ms(tarjeta.last_review));
+  const creada = !repaso && !tarjeta.state ? Math.max(ms(tarjeta.due), ms(tarjeta.dueDate)) : 0;
+  return Math.max(repaso, ms(tarjeta.importedAt), creada);
 }
 
 /**
- * Las tarjetas de Yoru SRS con la marca aplicada: las que se repasaron (o se importaron)
- * por última vez antes de ella vuelven a ser nuevas. Lo repasado o importado después,
- * en cualquier aparato, se conserva. Las tarjetas no se borran: los mazos se quedan.
- * Devuelve el mismo objeto si no había nada que tocar.
+ * Las tarjetas de Yoru SRS con la marca aplicada: los mazos y las tarjetas que ya
+ * estaban antes de ella se borran. Lo creado, importado o repasado después, en
+ * cualquier aparato, se conserva. Como el combinador lo aplica a las dos copias, el
+ * otro aparato o la cuenta no pueden devolverlos. Devuelve el mismo objeto si no
+ * había nada que quitar.
  */
 export function tarjetasTrasBorrado(
   tarjetas: Record<string, any> | undefined | null,
@@ -158,12 +132,11 @@ export function tarjetasTrasBorrado(
   let cambiado = false;
   const salida: Record<string, any> = {};
   for (const [clave, tarjeta] of Object.entries(tarjetas)) {
-    if (clave.startsWith('_deck_') || !tarjetaConProgreso(tarjeta) || ultimaVezTarjeta(tarjeta) > limite) {
+    if (ultimaVezEntradaSrs(clave, tarjeta) > limite) {
       salida[clave] = tarjeta;
       continue;
     }
     cambiado = true;
-    salida[clave] = tarjetaSinProgreso(tarjeta, marca);
   }
   return cambiado ? salida : tarjetas;
 }

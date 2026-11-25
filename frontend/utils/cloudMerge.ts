@@ -119,7 +119,10 @@ function cardTime(card: any): number {
 // When a card was last put in place, to weigh against its removal on another device: its last
 // review, its Anki import (cards last reviewed long ago but imported after the removal), or for a
 // card never reviewed, its creation, which is when a new card falls due.
-function cardSavedTime(card: any): number {
+function cardSavedTime(card: any, key = ''): number {
+  // A deck placeholder falls due a year after it is created, so its due date says nothing:
+  // only its creation time counts (none on old placeholders, so a removal always wins).
+  if (key.startsWith('_deck_')) return time(card?.createdAt);
   const created = !cardTime(card) && !card?.state ? Math.max(time(card?.due), time(card?.dueDate)) : 0;
   return Math.max(cardTime(card), time(card?.importedAt), created);
 }
@@ -148,7 +151,7 @@ function mergeSrs(local: ProfileData, cloud: ProfileData, preferCloud: boolean) 
   for (const [key, at] of Object.entries(removals)) {
     const card = srsData?.[key];
     if (!card) continue;
-    if (time(at) >= cardSavedTime(card)) delete srsData![key];
+    if (time(at) >= cardSavedTime(card, key)) delete srsData![key];
     else delete removals[key];
   }
   return { srsData, srsRemovals: Object.keys(removals).length ? removals : null };
