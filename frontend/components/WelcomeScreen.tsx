@@ -307,12 +307,12 @@ export default function WelcomeScreen({ onTerminar, settings = {}, onSaveSetting
   };
 
 
-  // La guía del primer día: bienvenida → 4 diapositivas → diccionario → a leer.
+  // La guía del primer día: bienvenida → 6 diapositivas → diccionario → a leer.
   // El paso del perfil ya no está: lo trae Discord.
   const slides = featureSlides(lang === 'es' ? 'es' : 'en');
   const guideLang: 'es' | 'en' = lang === 'es' ? 'es' : 'en';
   const [step, setStep] = useState(0);
-  const lastGuideStep = slides.length + 1; // 0 welcome, 1..4 slides, 5 dictionary, 6 profile
+  const lastGuideStep = slides.length + 1; // 0 welcome, 1..N slides, N+1 dictionary
   const dictionary = useDictionaryInstall(guideLang);
   /** La guía se da por vista una sola vez; después no vuelve a aparecer. */
   const terminar = () => {
