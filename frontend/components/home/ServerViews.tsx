@@ -16,6 +16,7 @@ import { describeServerError } from '../../utils/serverHttp';
 import { cachedServerCollection, getCachedServerCatalog, sample, serverItemId, type ServerItem } from '../../utils/serverCatalog';
 import type { ServerGroup } from '../../utils/serverEntities';
 import { nombreSeccion, ordenarSerie } from '../../utils/ordenSerie';
+import { useSeriesCompletas } from '../../utils/serieCompleta';
 import { Rail } from './primitives';
 import { useAudiobookPlayer } from './AudiobookPlayerBar';
 import { isAudiobookInList, toggleAudiobookInList } from '../../utils/audiobookList';
@@ -673,6 +674,29 @@ export function ServerCollectionView({
   if (partes.length === 0) partes.push(es ? '0 títulos' : '0 titles');
   const automaticos = items.filter((item) => item.auto).length;
 
+  /*
+    «Están todos los tomos»: lo dice Kavita de cada serie (serieCompleta.ts). La
+    historia principal lleva la insignia cuando todas sus series de Kavita están
+    completas; si Kavita no sabe el total de alguna, no se promete nada.
+  */
+  const principal = secciones.find((seccion) => seccion.tipo === 'principal');
+  const kavitaPrincipal = (principal?.items || []).filter((item) => item.source === 'kavita');
+  const estados = useSeriesCompletas(kavitaPrincipal.map((item) => serverItemId(item)));
+  const estadoDe = (item: ServerItem) => (item.source === 'kavita' ? estados[serverItemId(item)] ?? null : null);
+  const principalCompleta = kavitaPrincipal.length > 0
+    && kavitaPrincipal.every((item) => estadoDe(item)?.completa);
+  const insigniaCompleta = (
+    <span
+      className="yoru-complete-badge"
+      title={es
+        ? 'Según Kavita, están todos los tomos publicados de la historia principal'
+        : 'According to Kavita, every published volume of the main story is here'}
+    >
+      <Check size={12} strokeWidth={3} aria-hidden="true" />
+      {es ? 'Colección completa' : 'Complete collection'}
+    </span>
+  );
+
   return (
     <div>
       <button type="button" className="yoru-detail-back" onClick={onBack}>
@@ -695,6 +719,10 @@ export function ServerCollectionView({
                 ? ` · ${automaticos} ${automaticos === 1 ? 'añadido' : 'añadidos'} por Yoru`
                 : ` · ${automaticos} added by Yoru`)}
             </span>
+            {/* Sin títulos de sección no hay dónde ponerla: va bajo el nombre de la colección. */}
+            {principalCompleta && secciones.length === 1 && (
+              <span className="yoru-complete-badge-row">{insigniaCompleta}</span>
+            )}
           </span>
         </div>
       </div>
@@ -711,6 +739,7 @@ export function ServerCollectionView({
           <h2 className="yoru-volume-section-title">
             {nombreSeccion(seccion.tipo, es)}
             <span className="yoru-volume-section-count">{seccion.items.length}</span>
+            {seccion.tipo === 'principal' && principalCompleta && insigniaCompleta}
           </h2>
         )}
         <ul className="yoru-link-list yoru-volume-list">
@@ -723,12 +752,20 @@ export function ServerCollectionView({
                 </span>
                 <span className="yoru-volume-text">
                   <span className="yoru-link-title">{item.title}</span>
-                  {(item.author || item.auto) && (
+                  {(item.author || item.auto || estadoDe(item)) && (
                     <span className="yoru-link-author">
                       {[
                         item.author,
                         // Que se vea que esto no lo puso nadie en el servidor.
                         item.auto ? (es ? 'Añadido solo por Yoru' : 'Added automatically by Yoru') : '',
+                        (() => {
+                          const estado = estadoDe(item);
+                          if (!estado) return '';
+                          if (estado.completa) return es ? '✓ Todos los tomos' : '✓ All volumes';
+                          return es
+                            ? `Faltan tomos · ${estado.tiene} de ${estado.total}`
+                            : `Missing volumes · ${estado.tiene} of ${estado.total}`;
+                        })(),
                       ].filter(Boolean).join(' · ')}
                     </span>
                   )}

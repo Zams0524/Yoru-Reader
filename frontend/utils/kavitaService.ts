@@ -267,6 +267,8 @@ export async function getKavitaSeriesMetadata(seriesId: number): Promise<KavitaS
       releaseYear: Number(data.releaseYear) > 0 ? Number(data.releaseYear) : undefined,
       language: typeof data.language === 'string' && data.language.trim() ? data.language.trim() : undefined,
       publicationStatus: Number.isFinite(Number(data.publicationStatus)) ? Number(data.publicationStatus) : undefined,
+      totalCount: Number(data.totalCount) > 0 ? Number(data.totalCount) : undefined,
+      maxCount: Number(data.maxCount) > 0 ? Number(data.maxCount) : undefined,
       webLinks: links,
     };
   } catch (error) {
