@@ -1,10 +1,11 @@
-# Compila el APK de Yoru Reader para Android (mismo proceso que usaba Codex).
+# Compila el APK de Yoru Reader para Android.
 # Uso: clic derecho -> "Ejecutar con PowerShell", o desde PowerShell en esta carpeta: .\build-apk.ps1
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
-$node = 'C:\Users\Zams\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
-if (-not (Test-Path $node)) { $node = (Get-Command node -ErrorAction Stop).Source }
+# Node del PATH, o el que indique la variable YORU_NODE.
+$node = $env:YORU_NODE
+if (-not $node -or -not (Test-Path $node)) { $node = (Get-Command node -ErrorAction Stop).Source }
 
 $gradleFile = Get-Content -Raw 'android\app\build.gradle'
 $version = [regex]::Match($gradleFile, 'versionName\s+"([^"]+)"').Groups[1].Value

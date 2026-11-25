@@ -32,7 +32,7 @@ function saveRuntimeIssue(kind: string, message: string, stack = '') {
   try {
     const report = `[${new Date().toISOString()}] ${kind}\n${message}${stack ? `\n${stack}` : ''}`;
     localStorage.setItem('yoru_last_runtime_issue', report.slice(0, 30000));
-    // The last few issues too, so a QA run (docs/AUDITORIA_QA.md) sees every error, not only the last one.
+    // The last few issues too, so a QA run sees every error, not only the last one.
     const recent: string[] = JSON.parse(localStorage.getItem('yoru_runtime_issues') || '[]');
     recent.push(report.slice(0, 4000));
     localStorage.setItem('yoru_runtime_issues', JSON.stringify(recent.slice(-20)));

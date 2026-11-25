@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plain HTTP only to this device, to zams's home PC and to that PC over Tailscale; everything
+<!-- Plain HTTP only to this device, to the home media server and to that server over Tailscale; everything
      else stays HTTPS-only (Android's default).
      - 127.0.0.1 / localhost: AnkiConnect for Android listens on http://127.0.0.1:8765.
      - 192.168.1.196: the home PC running Kavita (:5000) and Audiobookshelf (:13378). It needs a
