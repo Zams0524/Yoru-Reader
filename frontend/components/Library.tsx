@@ -3355,6 +3355,8 @@ const Library = React.memo(function Library({
       db.saveSrsCard(`_deck_${trimmed}`, {
         word: `_deck_${trimmed}`,
         source: trimmed,
+        // Lo que pesa frente a un borrado anterior del mismo nombre al sincronizar.
+        createdAt: new Date().toISOString(),
         state: 0,
         dueDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
         due: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
@@ -3372,6 +3374,7 @@ const Library = React.memo(function Library({
         db.saveSrsCard(`_deck_${newName}`, {
           word: `_deck_${newName}`,
           source: newName,
+          createdAt: new Date().toISOString(),
           state: 0,
           dueDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           due: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
@@ -3407,14 +3410,32 @@ const Library = React.memo(function Library({
     setIsDeckPromptOpen(false);
   };
 
-  const handleDeckPromptDelete = () => {
+  const handleDeckPromptDelete = async () => {
     if (deckPromptTargetId) {
       const deckName = deckPromptTargetId;
-      if (confirm(lang === 'es' ? `¿Estás seguro de que deseas eliminar el mazo "${deckName}"?` : `Are you sure you want to delete the deck "${deckName}"?`)) {
-        // Delete the placeholder card
-        db.saveSrsCard(`_deck_${deckName}`, null);
+      /*
+        Con la ventana propia y no con `confirm()`: en la app de escritorio (Electron, Windows)
+        el diálogo nativo deja la ventana sin el foco del teclado, y después no se podía
+        escribir en ningún campo, como el nombre de un mazo nuevo, hasta cambiar de ventana.
+      */
+      const ok = await showConfirm({
+        title: lang === 'es' ? `¿Eliminar el mazo «${deckName}»?` : `Delete the deck "${deckName}"?`,
+        message: lang === 'es'
+          ? 'Se borran el mazo y todas sus tarjetas, aquí y en tus otros aparatos. No se puede deshacer.'
+          : 'The deck and all its cards are deleted, here and on your other devices. This cannot be undone.',
+        type: 'danger',
+        confirmText: lang === 'es' ? 'Eliminar mazo' : 'Delete deck',
+        cancelText: lang === 'es' ? 'Cancelar' : 'Cancel',
+      });
+      if (ok) {
+        /*
+          Todo se borra con `saveSrsCardsBatch(… null)`, que apunta cuándo se borró cada clave.
+          Antes las tarjetas se quitaban a mano y se guardaba el objeto entero, sin dejar nota:
+          al sincronizar, la copia del otro aparato (o de la cuenta) las devolvía, y el mazo
+          volvía a aparecer con ellas.
+        */
         const srsData = db.getSrsData();
-        delete srsData[`_deck_${deckName}`];
+        const borrar: Record<string, null> = { [`_deck_${deckName}`]: null };
         /*
           Las tarjetas sin origen son del mazo por defecto, y también se borran.
 
@@ -3425,11 +3446,13 @@ const Library = React.memo(function Library({
           tarjeta del lector.
         */
         Object.entries(srsData).forEach(([word, card]: [string, any]) => {
-          if (card && (card.source || DEFAULT_DECK_NAME).trim() === deckName) {
-            delete srsData[word];
+          if (!word.startsWith('_deck_') && card && (card.source || DEFAULT_DECK_NAME).trim() === deckName) {
+            borrar[word] = null;
           }
         });
-        db.saveSrsData(srsData);
+        db.saveSrsCardsBatch(borrar);
+        // Si no, el repaso volvería a sacar sus palabras «aprendiendo» como tarjetas sueltas.
+        db._soltarPalabrasSinTarjeta(Object.keys(borrar));
         onSaveSettings(withDeckOptions(settings, deckName, null));
         setSrsUpdateTrigger(t => t + 1);
         showToast(lang === 'es' ? 'Mazo eliminado' : 'Deck deleted', 'info');
@@ -4354,8 +4377,16 @@ const Library = React.memo(function Library({
               </h3>
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm(lang === 'es' ? '¿Estás seguro de que deseas limpiar el historial de repasos?' : 'Are you sure you want to clear the review history?')) {
+                onClick={async () => {
+                  // Ventana propia, no `confirm()`: el diálogo nativo deja sin teclado la app de escritorio.
+                  const ok = await showConfirm({
+                    title: lang === 'es' ? '¿Limpiar el historial de repasos?' : 'Clear the review history?',
+                    message: lang === 'es' ? 'No se puede deshacer.' : 'This cannot be undone.',
+                    type: 'danger',
+                    confirmText: lang === 'es' ? 'Limpiar' : 'Clear',
+                    cancelText: lang === 'es' ? 'Cancelar' : 'Cancel',
+                  });
+                  if (ok) {
                     db.clearSrsHistory();
                     setSrsUpdateTrigger(t => t + 1);
                     showToast(lang === 'es' ? 'Historial limpiado' : 'History cleared', 'info');

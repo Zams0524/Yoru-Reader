@@ -3901,7 +3901,10 @@ export default function Reader({
                         
                         // Register deck in srsData
                         const updatedSrs = db.getSrsData();
-                        updatedSrs[`_deck_${trimmed}`] = { createdAt: new Date().toISOString() };
+                        // Un mazo ya registrado conserva su fecha; uno nuevo (o borrado antes) la estrena.
+                        if (!updatedSrs[`_deck_${trimmed}`]) {
+                          db.saveSrsCard(`_deck_${trimmed}`, { createdAt: new Date().toISOString() });
+                        }
                         
                         const wordData = {
                           reading: selectedWord.reading || selectedWord.surface,
@@ -3935,14 +3938,15 @@ export default function Reader({
 
                       const handleDeleteDeck = (e: React.MouseEvent, deckName: string) => {
                         e.stopPropagation();
-                        const updatedSrs = db.getSrsData();
-                        delete updatedSrs[`_deck_${deckName}`];
-                        Object.entries(updatedSrs).forEach(([key, card]: [string, any]) => {
-                          if (card && card.source === deckName) {
-                            card.source = '';
+                        // Con `saveSrsCardsBatch` queda apuntado que el mazo se borró, para que
+                        // la sincronización no lo devuelva desde otro aparato.
+                        const cambios: Record<string, any> = { [`_deck_${deckName}`]: null };
+                        Object.entries(db.getSrsData()).forEach(([key, card]: [string, any]) => {
+                          if (!key.startsWith('_deck_') && card && card.source === deckName) {
+                            cambios[key] = { ...card, source: '' };
                           }
                         });
-                        db.saveSrsData(updatedSrs);
+                        db.saveSrsCardsBatch(cambios);
                         if (currentDeck === deckName) {
                           setSrsCard(db.getSrsCard(selectedWord.basicForm));
                         }
