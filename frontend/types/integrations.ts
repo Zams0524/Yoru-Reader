@@ -89,6 +89,13 @@ export interface KavitaSeriesMetadata {
   language?: string;
   /** Kavita PublicationStatus: 0 En curso, 1 Caducada, 2 Completada, 3 Cancelada, 4 Parada. */
   publicationStatus?: number;
+  /**
+   * Cuántos tomos tiene la serie publicada (`totalCount`) y hasta qué tomo hay en la
+   * biblioteca (`maxCount`). Kavita solo conoce el total si alguien lo escribió o lo
+   * trajeron sus metadatos; 0 o ausente es «no se sabe».
+   */
+  totalCount?: number;
+  maxCount?: number;
   webLinks: string[];
 }
 
