@@ -1,9 +1,9 @@
 #!/bin/bash
 # Script de configuración WSL para build Flatpak de Yoru-Reader
-# Ejecutar desde Ubuntu (WSL): bash /mnt/c/Users/zams/.gemini/antigravity/scratch/Yoru-Reader/build/setup-wsl-flatpak.sh
+# Ejecutar desde Ubuntu (WSL): bash <carpeta-del-repo>/build/setup-wsl-flatpak.sh
 
 set -e
-PROJECT="/mnt/c/Users/zams/.gemini/antigravity/scratch/Yoru-Reader"
+PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "========================================"
 echo " Setup WSL para Yoru-Reader Flatpak"
