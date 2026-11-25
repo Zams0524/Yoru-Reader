@@ -10,9 +10,11 @@
  * aplica a las dos copias antes de juntarlas: todo lo que se leyó **antes** de la marca
  * se queda a cero, y lo que se lea **después**, en cualquier aparato, cuenta de nuevo.
  *
- * Qué se borra: por dónde vas en cada libro, lo leído (caracteres y tiempo) y lo leído
- * o escuchado directamente de Kavita y Audiobookshelf. Qué no: los libros, sus
- * marcadores y notas, las palabras, las tarjetas y los ajustes.
+ * Qué se borra: por dónde vas en cada libro, lo leído (caracteres y tiempo), lo leído
+ * o escuchado directamente de Kavita y Audiobookshelf, y el progreso de Yoru SRS (las
+ * tarjetas vuelven a nuevas; su historial y sus estadísticas se vacían en
+ * `db._borrarRestosDeProgreso`). Qué no: los libros, sus marcadores y notas, las
+ * palabras, los mazos con sus tarjetas y los ajustes.
  *
  * Funciones puras, sin almacenamiento ni pantalla, para que las use el combinador y se
  * puedan probar solas.
@@ -100,11 +102,84 @@ export function mapaTrasBorrado(
   return cambiado ? salida : mapa;
 }
 
+/** Cuándo se repasó o se importó una tarjeta por última vez (0 si nunca). */
+function ultimaVezTarjeta(tarjeta: any): number {
+  return Math.max(ms(tarjeta?.lastReview), ms(tarjeta?.last_review), ms(tarjeta?.importedAt));
+}
+
+function tarjetaConProgreso(tarjeta: any): boolean {
+  if (!tarjeta || typeof tarjeta !== 'object') return false;
+  return Boolean(
+    (Number.isInteger(tarjeta.state) && tarjeta.state !== 0)
+    || Number(tarjeta.reps) > 0 || Number(tarjeta.repetitions) > 0 || Number(tarjeta.lapses) > 0
+    || tarjeta.lastReview || tarjeta.last_review,
+  );
+}
+
+/**
+ * La misma tarjeta de Yoru SRS como nueva: sin repasos, sin memoria y para repasar
+ * desde la marca. Se conserva todo lo demás (palabra, lectura, frase, mazo, si está
+ * suspendida). Sale igual en todos los aparatos, para que combinar no vea diferencias.
+ */
+export function tarjetaSinProgreso<T extends Record<string, any>>(tarjeta: T, marca: string): T {
+  const nueva: Record<string, any> = {
+    ...tarjeta,
+    state: 0,
+    due: marca,
+    dueDate: marca,
+    stability: 0,
+    difficulty: 0,
+    elapsed_days: 0,
+    scheduled_days: 0,
+    learning_steps: 0,
+    reps: 0,
+    lapses: 0,
+    interval: 0,
+    repetitions: 0,
+    ease: 2.5,
+  };
+  delete nueva.lastReview;
+  delete nueva.last_review;
+  return nueva as T;
+}
+
+/**
+ * Las tarjetas de Yoru SRS con la marca aplicada: las que se repasaron (o se importaron)
+ * por última vez antes de ella vuelven a ser nuevas. Lo repasado o importado después,
+ * en cualquier aparato, se conserva. Las tarjetas no se borran: los mazos se quedan.
+ * Devuelve el mismo objeto si no había nada que tocar.
+ */
+export function tarjetasTrasBorrado(
+  tarjetas: Record<string, any> | undefined | null,
+  marca: string,
+): Record<string, any> | undefined | null {
+  const limite = ms(marca);
+  if (!tarjetas || !limite) return tarjetas;
+  let cambiado = false;
+  const salida: Record<string, any> = {};
+  for (const [clave, tarjeta] of Object.entries(tarjetas)) {
+    if (clave.startsWith('_deck_') || !tarjetaConProgreso(tarjeta) || ultimaVezTarjeta(tarjeta) > limite) {
+      salida[clave] = tarjeta;
+      continue;
+    }
+    cambiado = true;
+    salida[clave] = tarjetaSinProgreso(tarjeta, marca);
+  }
+  return cambiado ? salida : tarjetas;
+}
+
+/** Día local (AAAA-MM-DD) de una marca, como los guardan los contadores de Yoru SRS. */
+export function diaDeMarca(marca: string): string {
+  const d = new Date(ms(marca));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** Los datos de un perfil con la marca aplicada. Sin marca, los mismos datos. */
 export function perfilTrasBorrado<T extends Record<string, any>>(datos: T, marca: string | null | undefined): T {
   if (!marca || !ms(marca)) return datos;
   const salida: Record<string, any> = { ...datos, progressResetAt: ultimaMarca(datos.progressResetAt, marca) };
   if (datos.books) salida.books = librosTrasBorrado(datos.books, marca);
+  if (datos.srsData) salida.srsData = tarjetasTrasBorrado(datos.srsData, marca);
   if (datos.serverProgress) {
     salida.serverProgress = {
       ...datos.serverProgress,

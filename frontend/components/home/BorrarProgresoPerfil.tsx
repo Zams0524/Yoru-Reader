@@ -13,8 +13,9 @@ import { describirEstado } from '../../utils/yoruSyncNucleo';
  * de sus listas.
  *
  * Lo que borra lo decide `db.borrarProgresoDeLectura` (ver `progresoBorrado.ts`): por
- * dónde va en cada libro, sus estadísticas y lo leído o escuchado del servidor, en
- * todos sus aparatos. Libros, marcadores, notas, palabras y tarjetas se quedan.
+ * dónde va en cada libro, sus estadísticas, lo leído o escuchado del servidor y el
+ * progreso de Yoru SRS (tarjetas a nuevas, historial y estadísticas), en todos sus
+ * aparatos. Libros, marcadores, notas, palabras, mazos y tarjetas se quedan.
  *
  * El botón lleva su propia confirmación y su propio aviso en vez de pedírselos a
  * `Library`: el perfil no vive dentro de la biblioteca. Mientras borra lo dice, y si
@@ -61,10 +62,10 @@ export default function BorrarProgresoPerfil({ es, fila = false }: { es: boolean
   const borrar = async () => {
     if (estado === 'borrando') return;
     const ok = await showConfirm({
-      title: es ? '¿Borrar tu progreso de lectura?' : 'Erase your reading progress?',
+      title: es ? '¿Borrar tu progreso de lectura y de Yoru SRS?' : 'Erase your reading and Yoru SRS progress?',
       message: es
-        ? 'Se pone a cero por dónde vas en cada libro, tus estadísticas y rachas, y lo leído o escuchado del servidor. Se borra también en tu cuenta de Yoru (la de Discord) y en tus otros aparatos. Tus libros, marcadores, notas, palabras y tarjetas se conservan. No se puede deshacer.'
-        : 'Your place in every book, your statistics and streaks, and what you read or listened to from the server are reset. It is also erased on your Yoru account (the Discord one) and on your other devices. Your books, bookmarks, notes, words and cards are kept. This cannot be undone.',
+        ? 'Se pone a cero por dónde vas en cada libro, tus estadísticas y rachas, lo leído o escuchado del servidor y tu progreso en Yoru SRS (las tarjetas vuelven a nuevas y se vacían su historial y sus estadísticas). Se borra también en tu cuenta de Yoru (la de Discord) y en tus otros aparatos. Tus libros, marcadores, notas, palabras, mazos y tarjetas se conservan. No se puede deshacer.'
+        : 'Your place in every book, your statistics and streaks, what you read or listened to from the server and your Yoru SRS progress (cards go back to new, and their history and statistics are cleared) are reset. It is also erased on your Yoru account (the Discord one) and on your other devices. Your books, bookmarks, notes, words, decks and cards are kept. This cannot be undone.',
       type: 'danger',
       confirmText: es ? 'Borrar progreso' : 'Erase progress',
       cancelText: es ? 'Cancelar' : 'Cancel',
@@ -100,8 +101,8 @@ export default function BorrarProgresoPerfil({ es, fila = false }: { es: boolean
   };
 
   const descripcion = es
-    ? 'Pone a cero por dónde vas en cada libro, tus estadísticas y rachas, y lo leído o escuchado del servidor, en tu cuenta de Yoru (Discord) y en todos tus aparatos. Conserva tus libros, marcadores, notas, palabras y tarjetas.'
-    : 'Resets your place in every book, your statistics and streaks, and what you read or listened to from the server, on your Yoru (Discord) account and all your devices. Keeps your books, bookmarks, notes, words and cards.';
+    ? 'Pone a cero por dónde vas en cada libro, tus estadísticas y rachas, lo leído o escuchado del servidor y tu progreso en Yoru SRS, en tu cuenta de Yoru (Discord) y en todos tus aparatos. Conserva tus libros, marcadores, notas, palabras, mazos y tarjetas.'
+    : 'Resets your place in every book, your statistics and streaks, what you read or listened to from the server and your Yoru SRS progress, on your Yoru (Discord) account and all your devices. Keeps your books, bookmarks, notes, words, decks and cards.';
 
   const avisos = (
     <>
@@ -132,7 +133,7 @@ export default function BorrarProgresoPerfil({ es, fila = false }: { es: boolean
     ? (es ? 'Borrando…' : 'Erasing…')
     : estado === 'subiendo'
       ? (es ? 'Borrando en tu cuenta…' : 'Erasing on your account…')
-      : (es ? 'Borrar mi progreso de lectura' : 'Erase my reading progress');
+      : (es ? 'Borrar mi progreso (lectura y Yoru SRS)' : 'Erase my progress (reading and Yoru SRS)');
 
   // En Ajustes → Perfil, debajo de «Cuenta de Discord»: una fila como las demás.
   if (fila) {
