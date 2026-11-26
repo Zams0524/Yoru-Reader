@@ -331,11 +331,12 @@ function hexWithAlpha(colour: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
-function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[] } {
+function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[]; vertical: string[] } {
   // Only the state's own effects: the shared reset in buildWordStyleCss clears the rest, so a
   // word with several states (e.g. "new frequent") keeps the effects of all of them.
   const base: string[] = [];
   const hover: string[] = [];
+  const vertical: string[] = [];
   const shadows: string[] = [];
 
   for (const effect of effects) {
@@ -349,6 +350,10 @@ function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[]
         if (effect.colour) base.push(`text-decoration-color: ${effect.colour} !important`);
         base.push(`text-decoration-thickness: ${effect.thickness || 2}px !important`);
         base.push('text-underline-offset: 3px');
+        // In vertical writing the line falls where the column to the left keeps its furigana:
+        // half as thick and right against the text, so it no longer covers those readings.
+        vertical.push(`text-decoration-thickness: ${Math.max(1, (effect.thickness || 2) / 2)}px !important`);
+        vertical.push('text-underline-offset: 1px !important');
         break;
       case 'background':
         if (effect.colour) base.push(`background-color: ${hexWithAlpha(effect.colour, effect.opacity ?? 1)} !important`);
@@ -365,7 +370,7 @@ function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[]
     }
   }
   if (shadows.length) base.push(`text-shadow: ${shadows.join(', ')} !important`);
-  return { base, hover };
+  return { base, hover, vertical };
 }
 
 export function buildWordStyleCss(config: WordStyleThemeConfig): string {
@@ -377,8 +382,11 @@ export function buildWordStyleCss(config: WordStyleThemeConfig): string {
   for (const [state, classes] of Object.entries(STATE_SELECTORS)) {
     const effects = config?.states?.[state]?.effects;
     if (!effects?.length) continue;
-    const { base, hover } = cssForEffects(effects);
+    const { base, hover, vertical } = cssForEffects(effects);
     if (base.length) rules.push(`${classes.map((cls) => `html .jiten-word.jiten-word.${cls}`).join(', ')} { ${base.join('; ')}; }`);
+    if (vertical.length) {
+      rules.push(`${classes.map((cls) => `html .book-content--writing-vertical-rl .jiten-word.jiten-word.${cls}`).join(', ')} { ${vertical.join('; ')}; }`);
+    }
     if (hover.length) {
       rules.push(`${classes.map((cls) => `html .jiten-word.jiten-word.${cls}:hover`).join(', ')} { ${hover.join('; ')}; }`);
     }

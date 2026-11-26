@@ -7706,3 +7706,14 @@ html:where(.yoru-compact) .srs-review-card {
     overflow: hidden !important;
   }
 }
+
+/*
+  Vertical writing: a word's underline sits in the gap where the column to the left keeps its
+  furigana, and at full thickness it covered those readings. Here it is thin and right against
+  the text. On Android the saved word styles add their own (half-thickness) vertical rule, which
+  outranks this one; this one covers the desktop styles, which come as .jiten-word.<state>.
+*/
+.book-content--writing-vertical-rl .jiten-word.jiten-word {
+  text-decoration-thickness: 1.5px !important;
+  text-underline-offset: 1px !important;
+}
