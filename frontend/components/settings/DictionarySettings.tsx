@@ -31,6 +31,7 @@ interface CatalogItem { asset: string; group: Group; match: (title: string) => b
 // Everything that ships inside the app (public/dictionaries). [es, en] texts.
 const CATALOG: CatalogItem[] = [
   { asset: 'JMdict_spanish.zip', group: 'terms', match: t => /^JMdict \(Spanish\)/i.test(t), name: ['JMdict · Español', 'JMdict · Spanish'], desc: ['Japonés → español', 'Japanese → Spanish'] },
+  { asset: 'JMdict_spanish_auto.zip', group: 'terms', match: t => /traducci(ó|o)n autom(á|a)tica/i.test(t), name: ['JMdict · Español (traducción automática)', 'JMdict · Spanish (machine-translated)'], desc: ['Las palabras que faltan en el español, traducidas del inglés', 'Words missing from the Spanish one, translated from English'] },
   { asset: 'JMdict_english.zip', group: 'terms', match: t => /^JMdict( \(English\))? \[/i.test(t), name: ['JMdict · Inglés', 'JMdict · English'], desc: ['Japonés → inglés', 'Japanese → English'] },
   { asset: 'frequency-novels.zip', group: 'frequency', match: t => /^Novels/i.test(t), name: ['Novelas', 'Novels'], desc: ['Palabras más usadas en novelas', 'Most used words in novels'] },
   { asset: 'frequency-jiten-anime.zip', group: 'frequency', match: t => /^Jiten \(Anime\)/i.test(t), name: ['Anime', 'Anime'], desc: ['Frecuencia en anime (jiten.moe)', 'Frequency in anime (jiten.moe)'] },

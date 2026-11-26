@@ -70,17 +70,29 @@ export function idiomaDeDiccionario(titulo: string): IdiomaDefiniciones | null {
 }
 
 /**
+ * Diccionario cuyas definiciones salen de una traducción automática, como el
+ * `JMdict (Spanish, traducción automática)` que trae la app para las palabras que no están
+ * en el JMdict español. Se usa para ponerlo detrás del hecho a mano.
+ */
+export function esTraduccionAutomatica(titulo: string): boolean {
+  return /traducci(ó|o)n autom(á|a)tica|machine[- ]translat/i.test(String(titulo || ''));
+}
+
+/**
  * El orden de siempre, pero con el idioma de la app por delante.
  *
  * Con la app en español, un JMdict inglés que se instaló antes —o que alguien dejó arriba
  * en Ajustes— ganaba todas las palabras que también estaban en español, y el popup salía
  * en inglés sin motivo. Ahora primero van los del idioma de la app, luego los que no se
- * sabe, y al final los de otro idioma. Dentro de cada grupo manda el orden de antes.
+ * sabe, y al final los de otro idioma. Dentro de cada grupo manda el orden de antes, salvo que
+ * un diccionario traducido a máquina va siempre detrás de los hechos a mano de su idioma.
  */
 export function ordenPorIdioma(orden: string[], idioma: IdiomaDefiniciones): string[] {
   const peso = (titulo: string) => {
     const suyo = idiomaDeDiccionario(titulo);
-    return suyo === idioma ? 0 : suyo === null ? 1 : 2;
+    // Los traducidos a máquina, detrás de los hechos a mano del mismo idioma.
+    if (suyo === idioma) return esTraduccionAutomatica(titulo) ? 0.5 : 0;
+    return suyo === null ? 1 : 2;
   };
   return orden
     .map((titulo, i) => ({ titulo, i, p: peso(titulo) }))

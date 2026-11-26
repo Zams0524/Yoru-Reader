@@ -411,6 +411,16 @@ export default function App() {
         } catch (importErr) {
           console.warn('[App] Bundled dictionary setup failed:', importErr);
         }
+        // Spanish readers who already had the JMdict get the machine-translated one once,
+        // so words missing from the Spanish JMdict stop showing up in English.
+        try {
+          if (lang === 'es' && db.getProfiles().length > 0) {
+            const { ensureTranslatedSpanishDictionary } = await import('./utils/dictionaryPack');
+            await ensureTranslatedSpanishDictionary();
+          }
+        } catch (importErr) {
+          console.warn('[App] Translated Spanish dictionary setup failed:', importErr);
+        }
       } catch (err) {
         console.warn("[App] Background maintenance failed:", err);
       }
