@@ -4,6 +4,7 @@ import { frequencyBadges, frequencyListName } from '../utils/frequencyBadge';
 import { tokenizeText } from '../utils/japanese';
 import { lookupWord, mensajeSinDefinicion } from '../utils/dictionary';
 import { sitioEnVertical } from '../utils/posicionPopupVertical';
+import { sitioEnHorizontal } from '../utils/posicionPopupHorizontal';
 
 /** El ancho que la tarjeta del diccionario querría tener, y lo mínimo con que sigue siendo legible. */
 const ANCHO_POPUP = 380;
@@ -845,7 +846,11 @@ export default function Reader({
 
     // Phones: dock the popup to the screen edge opposite the word (bottom sheet / top sheet),
     // so the tapped word and the lines next to it stay visible.
-    if (window.innerWidth < 768) {
+    // Solo en táctil: una ventana de escritorio estrecha no es un móvil, y ahí la tarjeta tiene
+    // que salir junto a la palabra, no en el borde contrario de la pantalla.
+    const esTactil = Capacitor.isNativePlatform()
+      || (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
+    if (window.innerWidth < 768 && esTactil) {
       // Stay clear of the status bar / gesture bar (edge-to-edge insets injected by Capacitor).
       const rootStyle = getComputedStyle(document.documentElement);
       const safeTop = parseFloat(rootStyle.getPropertyValue('--safe-area-inset-top')) || 0;
@@ -882,9 +887,12 @@ export default function Reader({
       Y cuando por el lado leído no cabe —una palabra en la primera columna de la página,
       que en vertical está pegada al borde derecho— no se pone justo al otro lado, que
       sería taparle lo siguiente que va a leer. Se manda al **extremo** de la página: en
-      vertical, al borde izquierdo, que son las últimas columnas de la hoja; en
-      horizontal, abajo del todo. Eso también tapa texto, pero texto que no va a tocar
-      hasta dentro de un rato, y para entonces el diccionario ya estará cerrado.
+      vertical, al borde izquierdo, que son las últimas columnas de la hoja. Eso también
+      tapa texto, pero texto que no va a tocar hasta dentro de un rato.
+
+      En horizontal ya no se hace así: abajo del todo quedaba lejísimos de una palabra
+      de la parte alta, y zams (26 nov 2026) la quiere cerca. Si no cabe encima, va justo
+      debajo de la palabra (posicionPopupHorizontal).
     */
     const bounds = popup.getBoundingClientRect();
 
@@ -910,7 +918,7 @@ export default function Reader({
       return;
     }
 
-    const maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2,
+    let maxHeight = Math.max(120, Math.min(window.innerHeight - margin * 2,
       Math.max(popupPos.targetTop - margin - gap, window.innerHeight - popupPos.targetBottom - margin - gap)));
     let left: number;
     let top: number;
@@ -937,14 +945,27 @@ export default function Reader({
       anchorBottom = false;
       setPopupMaxWidth(current => current === sitio.ancho ? current : sitio.ancho);
     } else {
+      // Pegada a la palabra: encima si cabe y, si no, justo debajo (ver posicionPopupHorizontal).
       setPopupMaxWidth(current => current === ANCHO_POPUP ? current : ANCHO_POPUP);
-      const altoPrevisto = Math.min(popup.scrollHeight, 360);
-      const cabeEncima = popupPos.targetTop - margin - gap >= altoPrevisto;
-      anchorBottom = cabeEncima;
-      left = Math.min(Math.max(margin, popupPos.x), Math.max(margin, window.innerWidth - bounds.width - margin));
-      top = cabeEncima
-        ? Math.max(margin, popupPos.targetTop - gap)
-        : Math.max(popupPos.targetBottom + gap, window.innerHeight - margin - bounds.height);
+      const sitio = sitioEnHorizontal({
+        anchoVentana: window.innerWidth,
+        altoVentana: window.innerHeight,
+        palabra: {
+          top: popupPos.targetTop,
+          bottom: popupPos.targetBottom,
+          left: popupPos.targetLeft,
+          right: popupPos.targetRight,
+        },
+        anchoTarjeta: bounds.width,
+        altoPrevisto: Math.min(popup.scrollHeight, 360),
+        margen: margin,
+        hueco: gap,
+        altoMinimo: 120,
+      });
+      left = sitio.left;
+      top = sitio.top;
+      anchorBottom = sitio.encima;
+      maxHeight = sitio.altoMaximo;
     }
 
     setPopupMaxHeight(current => current === maxHeight ? current : maxHeight);
