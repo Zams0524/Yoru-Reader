@@ -11,6 +11,15 @@
  * localStorage y se guardan solo los libros abiertos más recientes.
  */
 
+import {
+  claveMarcador,
+  claveSubrayado,
+  combinarMarcasDeLibro,
+  sellarCambios,
+  type Borrados,
+  type MarcasTemporales,
+} from './marcasSync';
+
 export interface PosicionTemporal {
   currentChapter: number;
   currentPage: number;
@@ -22,6 +31,9 @@ export interface EstadoTemporal {
   progress?: PosicionTemporal;
   bookmarks?: any[];
   highlights?: any[];
+  /** Cuándo se quitó cada marcador o subrayado, para que otro aparato no lo devuelva. */
+  bookmarksRemoved?: Borrados;
+  highlightsRemoved?: Borrados;
   at: string;
 }
 
@@ -87,11 +99,54 @@ export function guardarPosicionTemporal(
 }
 
 export function guardarMarcadoresTemporales(profileId: string | null | undefined, bookId: string, bookmarks: any[]): void {
-  actualizar(profileId, bookId, { bookmarks: Array.isArray(bookmarks) ? bookmarks : [] });
+  if (!esIdTemporal(bookId)) return;
+  const antes = leerTodo(profileId)[bookId];
+  const { items, borrados } = sellarCambios(antes?.bookmarks, bookmarks, antes?.bookmarksRemoved, claveMarcador);
+  actualizar(profileId, bookId, { bookmarks: items, bookmarksRemoved: borrados });
 }
 
 export function guardarSubrayadosTemporales(profileId: string | null | undefined, bookId: string, highlights: any[]): void {
-  actualizar(profileId, bookId, { highlights: Array.isArray(highlights) ? highlights : [] });
+  if (!esIdTemporal(bookId)) return;
+  const antes = leerTodo(profileId)[bookId];
+  const { items, borrados } = sellarCambios(antes?.highlights, highlights, antes?.highlightsRemoved, claveSubrayado);
+  actualizar(profileId, bookId, { highlights: items, highlightsRemoved: borrados });
+}
+
+/**
+ * Las marcas de los libros temporales de un perfil, para la sincronización: sin la
+ * posición, que se retoma con lo que diga el servidor (`retomarAqui`).
+ */
+export function exportarMarcasTemporales(profileId: string | null | undefined): MarcasTemporales {
+  const salida: MarcasTemporales = {};
+  for (const [id, estado] of Object.entries(leerTodo(profileId))) {
+    if (!esIdTemporal(id)) continue;
+    const marcas: MarcasTemporales[string] = {};
+    if (estado?.bookmarks?.length) marcas.bookmarks = estado.bookmarks;
+    if (estado?.highlights?.length) marcas.highlights = estado.highlights;
+    if (estado?.bookmarksRemoved && Object.keys(estado.bookmarksRemoved).length) marcas.bookmarksRemoved = estado.bookmarksRemoved;
+    if (estado?.highlightsRemoved && Object.keys(estado.highlightsRemoved).length) marcas.highlightsRemoved = estado.highlightsRemoved;
+    if (Object.keys(marcas).length) salida[id] = marcas;
+  }
+  return salida;
+}
+
+/** Lo que llega de la sincronización, ya combinado: se pone encima de cada libro, sin tocar su posición. */
+export function importarMarcasTemporales(profileId: string | null | undefined, marcas: MarcasTemporales | null | undefined): void {
+  if (!marcas || typeof marcas !== 'object') return;
+  const todo = leerTodo(profileId);
+  let cambiado = false;
+  for (const [id, entrada] of Object.entries(marcas)) {
+    if (!esIdTemporal(id) || !entrada) continue;
+    const actual = todo[id];
+    // Lo guardado aquí mientras iba y volvía la sincronización tampoco se pierde.
+    const combinado = combinarMarcasDeLibro(actual, entrada);
+    const siguiente = { ...(actual || {}), ...combinado, at: actual?.at || new Date(0).toISOString() } as EstadoTemporal;
+    if (JSON.stringify(siguiente) !== JSON.stringify(actual)) {
+      todo[id] = siguiente;
+      cambiado = true;
+    }
+  }
+  if (cambiado) escribirTodo(profileId, todo);
 }
 
 /** Al guardar el libro en la biblioteca, lo temporal ya no hace falta. */

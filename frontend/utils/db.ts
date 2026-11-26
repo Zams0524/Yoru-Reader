@@ -7,7 +7,14 @@ import { mergeBooks } from './cloudMerge';
 import { librosParaSincronizar } from './textosLibros';
 import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
 import { srsWordOfKey } from './srsCardKeys';
-import { esIdTemporal, guardarMarcadoresTemporales, guardarSubrayadosTemporales } from './estadoTemporal';
+import {
+  esIdTemporal,
+  exportarMarcasTemporales,
+  guardarMarcadoresTemporales,
+  guardarSubrayadosTemporales,
+  importarMarcasTemporales,
+} from './estadoTemporal';
+import { claveMarcador, claveSubrayado, sellarCambios } from './marcasSync';
 
 /**
  * Los nombres de las colecciones manuales del perfil, leídos a mano.
@@ -720,9 +727,14 @@ export const db = {
       const books = await this._readBooks();
       const updatedBooks = books.map(book => {
         if (book.id === bookId) {
+          // Con fecha cada uno, y los quitados apuntados, para combinarlos uno a uno con
+          // los de otros aparatos (marcasSync.ts). `bookmarksAt` sigue para las versiones
+          // que solo miran la lista entera.
+          const { items, borrados } = sellarCambios(book.bookmarks, bookmarks, (book as any).bookmarksRemoved, claveMarcador);
           return {
             ...book,
-            bookmarks,
+            bookmarks: items,
+            bookmarksRemoved: borrados,
             bookmarksAt: new Date().toISOString(),
           };
         }
@@ -740,7 +752,11 @@ export const db = {
     }
     return serializeBookAccess(async () => {
       const books = await this._readBooks();
-      const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights, highlightsAt: new Date().toISOString() } : book));
+      const updatedBooks = books.map(book => {
+        if (book.id !== bookId) return book;
+        const { items, borrados } = sellarCambios(book.highlights, highlights, (book as any).highlightsRemoved, claveSubrayado);
+        return { ...book, highlights: items, highlightsRemoved: borrados, highlightsAt: new Date().toISOString() };
+      });
       await this._writeBooks(updatedBooks);
       return updatedBooks;
     });
@@ -1171,6 +1187,10 @@ export const db = {
       // 6. Cuándo se borró el progreso de lectura, si se borró alguna vez.
       const progressResetAt = localStorage.getItem(`${PROGRESS_RESET_KEY}_${p.id}`);
       if (progressResetAt) dbExport.profileData[p.id].progressResetAt = progressResetAt;
+      // 7. Marcadores y subrayados de lo leído del servidor sin descargar: hasta el 26 nov
+      // 2026 se quedaban en este aparato (estadoTemporal.ts).
+      const marcasTemporales = exportarMarcasTemporales(p.id);
+      if (Object.keys(marcasTemporales).length) dbExport.profileData[p.id].marcasTemporales = marcasTemporales;
     }
 
     return dbExport;
@@ -1229,6 +1249,8 @@ export const db = {
           localStorage.setItem(`${ABS_LOCAL_PROGRESS_KEY}_${p.id}`, JSON.stringify(pData.serverProgress.audiobooks || {}));
           progresoServidorCambiado = true;
         }
+        // 5b. Marcadores y subrayados de los libros leídos del servidor sin descargar.
+        if (pData.marcasTemporales) importarMarcasTemporales(p.id, pData.marcasTemporales);
         // 6. El progreso se borró en otro aparato: aquí se borra también lo que no viaja.
         const marca = typeof pData.progressResetAt === 'string' ? pData.progressResetAt : '';
         if (marca && Date.parse(marca)) {
