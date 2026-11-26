@@ -387,17 +387,15 @@ export function engineWordCss(config: WordStyleThemeConfig, textColor: number, b
   const rules: string[] = [];
   const styled = new Set<string>();
   const underlines: EngineUnderline[] = [];
-  // Modo limpio: las palabras van del color del texto. Solo se quita el color de la
-  // letra; subrayados y fondos siguen marcando el estado de cada palabra.
-  let limpio = false;
-  try { limpio = localStorage.getItem('reader:modoLimpio') === 'true'; } catch { /* sin almacenamiento */ }
+  // El modo limpio ya no quita el color de las palabras: el teléfono las pinta como el PC
+  // (lo pidió zams, 26 nov 2026), con los colores del tema de estilos guardado.
   ENGINE_STATES.forEach((state, index) => {
     const effects: WordEffect[] = config?.states?.[state]?.effects || [];
     let color: number | null = null;
     let background: number | null = null;
     let underline: WordEffect | undefined;
     for (const effect of effects) {
-      if (effect.type === 'text-colour' && effect.colour && !limpio) color = parseHex(effect.colour);
+      if (effect.type === 'text-colour' && effect.colour) color = parseHex(effect.colour);
       if (effect.type === 'underline') underline = effect;
       if (effect.type === 'background' && effect.colour) {
         const bg = parseHex(effect.colour);

@@ -53,8 +53,8 @@ export interface ReaderSettingsState {
    */
   dictPopupPlacement: 'leido' | 'clasico';
   /**
-   * Modo limpio: el libro con todas las palabras del color del texto (el subrayado y el
-   * resto de marcas del análisis se quedan) y el audiolibro como barra fija a lo ancho,
+   * Modo limpio: el libro con las palabras en los colores del análisis, igual que en el
+   * PC, y el audiolibro como barra fija a lo ancho,
    * abajo. Al encenderlo se ponen además el color «Grafito» y la fuente Noto Serif JP,
    * que luego se pueden cambiar por separado.
    */
