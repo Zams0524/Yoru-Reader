@@ -1,4 +1,5 @@
 import { IDLE, publish } from './dictionaryPackProgress';
+import { esTraduccionAutomatica } from './ordenDiccionarios';
 import { deleteDictionary, getInstalledDictionaries, installBundledDictionary, isBundledInstallRunning } from './yomitanDB';
 
 /**
@@ -8,7 +9,7 @@ import { deleteDictionary, getInstalledDictionaries, installBundledDictionary, i
  * subscribePackProgress (the app-wide toast does).
  */
 
-export type PackItemId = 'dictionary' | 'frequency' | 'pitch';
+export type PackItemId = 'dictionary' | 'translated' | 'frequency' | 'pitch';
 type Lang = 'es' | 'en';
 
 export interface PackItem {
@@ -32,6 +33,16 @@ export const isFrequencyDictionary = (dictionary: any) => {
   return dictionary?.hasFreqs === true || FREQUENCY.test(dictionary?.title || '');
 };
 
+export const isTranslatedDictionary = (dictionary: any) => esTraduccionAutomatica(dictionary?.title || '');
+
+/**
+ * In Spanish the set has a second dictionary: the JMdict Spanish has ~34 000 entries and the
+ * English one we ship ~61 000, so many words (こみ上げる…) only had an English meaning.
+ * JMdict_spanish_auto.zip has those words with the English meanings machine-translated into
+ * Spanish (build/make-jmdict-spanish-auto.py), so the popup always answers in Spanish.
+ */
+export const TRANSLATED_ASSET = 'JMdict_spanish_auto.zip';
+
 export function packItems(lang: Lang): PackItem[] {
   const es = lang === 'es';
   return [
@@ -40,6 +51,11 @@ export function packItems(lang: Lang): PackItem[] {
       asset: es ? 'JMdict_spanish.zip' : 'JMdict_english.zip',
       label: es ? 'Diccionario japonés → español (JMdict)' : 'Japanese → English dictionary (JMdict)'
     },
+    ...(es ? [{
+      id: 'translated' as const,
+      asset: TRANSLATED_ASSET,
+      label: 'Palabras que faltan en español (traducción automática)'
+    }] : []),
     { id: 'frequency', asset: 'frequency-novels.zip', label: es ? 'Frecuencia de palabras (novelas)' : 'Word frequency (novels)' },
     { id: 'pitch', asset: 'pitch-accent-japanese.zip', label: es ? 'Acento tonal' : 'Pitch accent' },
   ];
@@ -49,7 +65,8 @@ export function packItems(lang: Lang): PackItem[] {
 export function packStatus(installed: any[]): Record<PackItemId, boolean> {
   const ready = (installed || []).filter(dictionary => dictionary.importState !== 'installing');
   return {
-    dictionary: ready.some(isTermDictionary),
+    dictionary: ready.some(dictionary => isTermDictionary(dictionary) && !isTranslatedDictionary(dictionary)),
+    translated: ready.some(isTranslatedDictionary),
     frequency: ready.some(isFrequencyDictionary),
     pitch: ready.some(isPitchDictionary),
   };
@@ -87,6 +104,21 @@ export function installRecommendedPack(lang: Lang, only?: PackItemId[]): Promise
     }
   })().finally(() => { running = null; });
   return running;
+}
+
+/**
+ * Once per device: if the Spanish JMdict is installed but the machine-translated one is not, add it.
+ * Desktop only (Android skips startup installs): there the reader popup installs it the first time
+ * it has to show a word in English (components/reader/InstalarTraduccion.tsx).
+ */
+const TRANSLATED_SETUP_KEY = 'yoru_es_auto_dictionary_v1';
+
+export async function ensureTranslatedSpanishDictionary(): Promise<void> {
+  if (localStorage.getItem(TRANSLATED_SETUP_KEY) === 'done') return;
+  const status = packStatus(await getInstalledDictionaries());
+  if (!status.dictionary) return; // first run: the welcome guide installs the whole set
+  if (!status.translated) await installRecommendedPack('es', ['translated']);
+  localStorage.setItem(TRANSLATED_SETUP_KEY, 'done');
 }
 
 export { dismissPackProgress, getPackProgress, subscribePackProgress, type PackProgress } from './dictionaryPackProgress';

@@ -233,7 +233,7 @@ export function useDictionaryInstall(lang: Lang) {
     try {
       setStatus(packStatus(await getInstalledDictionaries()));
     } catch {
-      setStatus({ dictionary: false, frequency: false, pitch: false });
+      setStatus({ dictionary: false, translated: false, frequency: false, pitch: false });
     }
   }, []);
 

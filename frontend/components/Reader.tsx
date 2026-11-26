@@ -35,6 +35,7 @@ import { pintarFrase, rangoDeFrase } from '../utils/anclajeFrase';
 import { capituloVecino } from '../utils/capitulos';
 import ReadAloudSettings from './reader/ReadAloudSettings';
 import ReaderPageBar from './reader/ReaderPageBar';
+import InstalarTraduccion from './reader/InstalarTraduccion';
 import BookSearchPanel from './reader/BookSearchPanel';
 import HighlightNoteDialog from './reader/HighlightNoteDialog';
 import {
@@ -3817,6 +3818,13 @@ export default function Reader({
                   <p style={{ margin: 0, fontSize: '0.7rem', color: colors.textMuted, fontStyle: 'italic' }}>
                     {t(dictEntry.otroIdioma === 'en' ? 'defsEnIngles' : 'defsEnEspanol', lang)}
                   </p>
+                )}
+                {/* Sin el JMdict traducido instalado, se instala solo y la palabra vuelve a buscarse, ya en español. */}
+                {!dictLoading && es && dictEntry?.otroIdioma === 'en' && !dictEntry?.isFallback && (
+                  <InstalarTraduccion
+                    color={colors.textMuted}
+                    onInstalled={() => void lookupAlternative(dictEntry.word || headword, dictEntry.reading || '')}
+                  />
                 )}
 
                 {/* Senses */}
