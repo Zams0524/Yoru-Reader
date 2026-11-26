@@ -7328,16 +7328,9 @@ html.yoru-compact #root {
 .audio-sync-player.is-covered { visibility: hidden; }
 
 /*
-  ── Modo limpio: las palabras, del color del texto ───────────────────────
-  Solo cambia el color de la letra. Subrayados, fondos y el resto de marcas del
-  análisis se quedan, que son los que dicen en qué estado está cada palabra. Va con
-  la clase repetida para ganar a las reglas del análisis, vengan de la extensión o
-  de los estilos guardados, que también llevan `!important`.
+  Modo limpio: las palabras conservan los colores del análisis (nuevas en violeta,
+  etc.), igual en el teléfono que en el PC. Antes aquí se ponían del color del texto.
 */
-html .reader-container.reader-limpio .jiten-word.jiten-word.jiten-word,
-html .reader-container.reader-limpio .jiten-word.jiten-word.jiten-word rt {
-  color: inherit !important;
-}
 
 /* «Volver a la narración»: a lo ancho de la barra, solo mientras el texto va por libre. */
 .audio-sync-return {

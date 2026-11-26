@@ -70,6 +70,21 @@ function bookTitleKey(book: any): string {
   return claveTituloAutor(book);
 }
 
+/**
+ * La lista (marcadores o subrayados) de la copia que la tocó más tarde, según su sello. Sin
+ * sello en ninguna de las dos (datos de antes de este cambio) se queda la del libro más nuevo,
+ * como hasta ahora.
+ */
+function listaMasReciente(newer: any, older: any, campo: string, sello: string): Record<string, unknown> {
+  const deNewer = time(newer?.[sello]);
+  const deOlder = time(older?.[sello]);
+  const gana = deOlder > deNewer ? older : newer;
+  const resultado: Record<string, unknown> = {};
+  if (gana?.[campo] !== undefined) resultado[campo] = gana[campo];
+  if (gana?.[sello] !== undefined) resultado[sello] = gana[sello];
+  return resultado;
+}
+
 function mergeBook(local: any, cloud: any): any {
   const newer = bookTime(cloud) > bookTime(local) ? cloud : local;
   const older = newer === local ? cloud : local;
@@ -90,6 +105,10 @@ function mergeBook(local: any, cloud: any): any {
       charactersRead: Math.max(newerProgress.charactersRead || 0, olderProgress.charactersRead || 0),
       secondsRead: Math.max(newerProgress.secondsRead || 0, olderProgress.secondsRead || 0),
     },
+    // Marcadores y subrayados van por su cuenta: poner uno en el PC no cambia lastRead, así que
+    // si el teléfono había leído después, su lista (sin el marcador nuevo) ganaba siempre.
+    ...listaMasReciente(newer, older, 'bookmarks', 'bookmarksAt'),
+    ...listaMasReciente(newer, older, 'highlights', 'highlightsAt'),
     // The text never travels in the bundle (textosLibros.ts), so the cover that came with it
     // may be the small one: the device that has the original keeps it.
   }, local, cloud);

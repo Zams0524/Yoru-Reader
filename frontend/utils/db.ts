@@ -45,7 +45,11 @@ export interface Book {
   createdAt: string;
   lastRead?: string;
   bookmarks?: any[];
+  /** Cuándo se tocaron los marcadores por última vez: el sync se queda con la lista más reciente. */
+  bookmarksAt?: string;
   highlights?: BookHighlight[];
+  /** Igual que bookmarksAt, para los subrayados. */
+  highlightsAt?: string;
   isDeleted?: boolean;
   vocabularyCoverage?: number;
   vocabStats?: Record<string, any>;
@@ -718,7 +722,8 @@ export const db = {
         if (book.id === bookId) {
           return {
             ...book,
-            bookmarks
+            bookmarks,
+            bookmarksAt: new Date().toISOString(),
           };
         }
         return book;
@@ -735,7 +740,7 @@ export const db = {
     }
     return serializeBookAccess(async () => {
       const books = await this._readBooks();
-      const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights } : book));
+      const updatedBooks = books.map(book => (book.id === bookId ? { ...book, highlights, highlightsAt: new Date().toISOString() } : book));
       await this._writeBooks(updatedBooks);
       return updatedBooks;
     });
