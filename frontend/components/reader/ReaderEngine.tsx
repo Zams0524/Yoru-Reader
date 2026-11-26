@@ -4,8 +4,18 @@ import { tokenizeJapaneseText, setupNativeYoruParser, jitenPlainText, renderJite
 import { reflejarFuriganaDeExtension } from '../../utils/parserSettingsStore';
 import { isPhoneUI } from '../../utils/platform';
 import { t } from '../../utils/i18n';
-import { getCachedJitenTokens, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
+import { getCachedJitenTokens, getJitenOverride, getJitenWord, isJitenParserEnabled, onJitenChange, parseWithJiten } from '../../utils/jitenSync';
 import { finishOpenTiming } from '../../utils/openTiming';
+
+/*
+  Las palabras que juntaste tú a mano (seleccionando varios trozos) y marcaste: lo que Yoru
+  acaba de marcar y Jiten aún no confirma, o si no, la marca guardada en Yoru, en los
+  nombres de estado de Jiten. Así se pintan enteras aunque Jiten las parta.
+*/
+const ESTADO_JITEN: Record<string, string> = { known: 'mastered', ignored: 'blacklisted', learning: 'young' };
+function estadoUnidoJiten(wordStatuses: Record<string, string>) {
+  return (spelling: string) => getJitenOverride(spelling) ?? ESTADO_JITEN[wordStatuses[spelling] || ''];
+}
 
 export interface Chapter {
   title: string;
@@ -188,7 +198,7 @@ function renderSectionContent(
     const jitenText = jitenPending ? jitenPlainText(processed) : '';
     const jitenTokens = jitenText ? getCachedJitenTokens(jitenText) : undefined;
     if (jitenTokens) {
-      tokenizedHtml = renderJitenParagraph(processed, jitenTokens, getJitenWord);
+      tokenizedHtml = renderJitenParagraph(processed, jitenTokens, getJitenWord, estadoUnidoJiten(wordStatuses));
     } else {
       tokenizedHtml = tokenizeJapaneseText(processed, wordStatuses);
       if (jitenPending && jitenText.trim()) jitenPending.push({ paragraphId, text: jitenText, html: processed });
@@ -212,7 +222,7 @@ export function renderLineWords(line: string, wordStatuses: Record<string, strin
   const jitenText = isJitenParserEnabled() ? jitenPlainText(processed) : '';
   const jitenTokens = jitenText ? getCachedJitenTokens(jitenText) : undefined;
   return jitenTokens
-    ? renderJitenParagraph(processed, jitenTokens, getJitenWord)
+    ? renderJitenParagraph(processed, jitenTokens, getJitenWord, estadoUnidoJiten(wordStatuses))
     : tokenizeJapaneseText(processed, wordStatuses);
 }
 
@@ -1435,7 +1445,7 @@ function ReaderEngineComponent({
         const tokens = getCachedJitenTokens(item.text);
         const element = content.querySelector(`p.chapter-content[index="${item.paragraphId}"]`);
         if (tokens && element && !element.querySelector('[data-jiten]')) {
-          element.innerHTML = renderJitenParagraph(item.html, tokens, getJitenWord);
+          element.innerHTML = renderJitenParagraph(item.html, tokens, getJitenWord, estadoUnidoJiten(wordStatuses));
         }
       }
     });

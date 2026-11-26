@@ -223,6 +223,11 @@ export function getJitenWord(key: string): JitenWordInfo | undefined {
   return override ? { ...info, states: [override] } : info;
 }
 
+/** The state Yoru marked by hand on a spelling and Jiten has not confirmed yet, if any. */
+export function getJitenOverride(spelling: string): string | undefined {
+  return stateOverrides.get(spelling);
+}
+
 function rememberParse(text: string, tokens: JitenToken[]) {
   parseCache.set(text, tokens);
   if (parseCache.size > PARSE_CACHE_LIMIT) {

@@ -369,8 +369,9 @@ export function renderJitenParagraph(
   text: string,
   tokens: JitenRenderToken[],
   getWord: (key: string) => JitenRenderWord | undefined,
+  joinedState?: (spelling: string) => string | undefined,
 ): string {
-  const { units } = splitParagraphUnits(text);
+  const { plain, units } = splitParagraphUnits(text);
   let html = '';
   let tokenIndex = 0;
   let openEnd = -1;
@@ -394,7 +395,34 @@ export function renderJitenParagraph(
     if (openEnd < 0 && isText) {
       while (tokenIndex < tokens.length && tokens[tokenIndex].end <= unit.start) tokenIndex++;
       const token = tokens[tokenIndex];
-      if (token && token.start < unit.end && token.end > unit.start) {
+      /*
+        Una palabra que juntaste tú a mano.
+
+        zams (25 nov 2026): Jiten parte ヤバい en dos trozos; zams selecciona los dos con el
+        ratón y le da a «Never forget», pero en el texto solo cambiaba de color un trozo, o
+        ninguno, porque la marca se guarda con la palabra entera y cada trozo se busca por
+        separado. Ahora, si dos a cuatro trozos seguidos forman una palabra que marcaste, se
+        pintan como una sola, con su estado.
+      */
+      let unidos = -1;
+      let estadoUnido = '';
+      if (joinedState && token && token.start < unit.end && token.end > unit.start) {
+        for (let j = Math.min(tokens.length - 1, tokenIndex + 3); j > tokenIndex; j--) {
+          const junta = plain.slice(token.start, tokens[j].end);
+          if (junta.length > 12) continue;
+          const estado = joinedState(junta);
+          if (estado && estado !== 'new') { unidos = j; estadoUnido = estado; break; }
+        }
+      }
+      if (unidos > 0) {
+        const junta = plain.slice(token.start, tokens[unidos].end);
+        html += `<span class="jiten-word ${escapeHtmlText(estadoUnido)}" data-jiten="${escapeHtmlText(token.key)}" data-word="${escapeHtmlText(junta)}">`;
+        openEnd = tokens[unidos].end;
+        tokenIndex = unidos + 1;
+        furiganaWord = undefined;
+        wordStart = html.length;
+        wordText = '';
+      } else if (token && token.start < unit.end && token.end > unit.start) {
         const word = getWord(token.key);
         const states = word?.states?.length ? word.states.join(' ') : 'new';
         const spelling = word?.spelling || '';
