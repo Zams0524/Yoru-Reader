@@ -221,7 +221,29 @@ export function tokenizeJapaneseText(
     if (tokenizer) {
       try {
         const rawTokens = tokenizeWithCache(tokenizer, part);
+        /*
+          Lo mismo que con Jiten: si Kuromoji parte una palabra que juntaste a mano y marcaste
+          (ヤバい en ヤバ + い), los trozos se pintan como una sola palabra con su marca.
+        */
+        const limites: { start: number; end: number }[] = [];
+        let posicion = 0;
         for (const token of rawTokens) {
+          limites.push({ start: posicion, end: posicion + token.surface.length });
+          posicion += token.surface.length;
+        }
+        const textoTrozo = rawTokens.map((token) => token.surface).join('');
+        const marcaYoru = (palabra: string) => wordStatuses[palabra];
+        const dentroDeTrozo = posicionesDentroDeTrozos(textoTrozo.length, limites);
+        for (let n = 0; n < rawTokens.length; n++) {
+          const token = rawTokens[n];
+          const unida = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(token.surface)
+            ? buscarPalabraUnida(textoTrozo, limites[n].start, limites[n].end, dentroDeTrozo, marcaYoru)
+            : null;
+          if (unida) {
+            resultHtml += `<span class="${getStatusClass(unida.estado)}" data-word="${escapeAttribute(unida.palabra)}">${escapeText(unida.palabra)}</span>`;
+            while (n + 1 < rawTokens.length && limites[n + 1].start < unida.fin) n++;
+            continue;
+          }
           const surface = token.surface;
           const pos = token.pos;
 
@@ -364,6 +386,39 @@ export function jitenPlainText(text: string): string {
   return splitParagraphUnits(text).plain;
 }
 
+/** Lo más largo que se mira al buscar una palabra unida a mano (lo mismo que deja seleccionar el lector). */
+const MAX_PALABRA_UNIDA = 12;
+
+/** Las posiciones del texto que caen dentro de un trozo (no en su borde): ahí no puede acabar una palabra. */
+export function posicionesDentroDeTrozos(longitud: number, tokens: { start: number; end: number }[]): Uint8Array {
+  const dentro = new Uint8Array(longitud + 1);
+  for (const t of tokens) for (let i = t.start + 1; i < t.end && i <= longitud; i++) dentro[i] = 1;
+  return dentro;
+}
+
+/**
+ * Una palabra que juntaste a mano y marcaste, empezando en `inicio`: la más larga que acabe en
+ * el borde de un trozo o en texto que no es de ningún trozo, nunca partiendo uno por la mitad.
+ * Solo cuenta si es más larga que el trozo de `inicio` y tiene una marca que no sea `new`.
+ */
+export function buscarPalabraUnida(
+  plain: string,
+  inicio: number,
+  finTrozo: number,
+  dentroDeTrozo: Uint8Array,
+  estadoDe: (spelling: string) => string | undefined,
+): { palabra: string; estado: string; fin: number } | null {
+  const tope = Math.min(plain.length, inicio + MAX_PALABRA_UNIDA);
+  for (let fin = tope; fin > finTrozo; fin--) {
+    if (dentroDeTrozo[fin]) continue;
+    const palabra = plain.slice(inicio, fin);
+    if (/\s/.test(palabra)) continue;
+    const estado = estadoDe(palabra);
+    if (estado && estado !== 'new') return { palabra, estado, fin };
+  }
+  return null;
+}
+
 /** Renders a paragraph with Jiten's word boundaries and card states. */
 export function renderJitenParagraph(
   text: string,
@@ -372,6 +427,7 @@ export function renderJitenParagraph(
   joinedState?: (spelling: string) => string | undefined,
 ): string {
   const { plain, units } = splitParagraphUnits(text);
+  let dentroDeTrozo: Uint8Array | undefined;
   let html = '';
   let tokenIndex = 0;
   let openEnd = -1;
@@ -401,24 +457,18 @@ export function renderJitenParagraph(
         zams (25 nov 2026): Jiten parte ヤバい en dos trozos; zams selecciona los dos con el
         ratón y le da a «Never forget», pero en el texto solo cambiaba de color un trozo, o
         ninguno, porque la marca se guarda con la palabra entera y cada trozo se busca por
-        separado. Ahora, si dos a cuatro trozos seguidos forman una palabra que marcaste, se
-        pintan como una sola, con su estado.
+        separado. Ahora, si el texto que empieza en este trozo forma una palabra que marcaste
+        (hasta 12 caracteres, acabando en un borde de trozo o en texto que no es de ninguno), se
+        pinta como una sola, con su estado. La primera versión (25 nov) exigía que acabara justo
+        en el final de un trozo y no bastó.
       */
-      let unidos = -1;
-      let estadoUnido = '';
-      if (joinedState && token && token.start < unit.end && token.end > unit.start) {
-        for (let j = Math.min(tokens.length - 1, tokenIndex + 3); j > tokenIndex; j--) {
-          const junta = plain.slice(token.start, tokens[j].end);
-          if (junta.length > 12) continue;
-          const estado = joinedState(junta);
-          if (estado && estado !== 'new') { unidos = j; estadoUnido = estado; break; }
-        }
-      }
-      if (unidos > 0) {
-        const junta = plain.slice(token.start, tokens[unidos].end);
-        html += `<span class="jiten-word ${escapeHtmlText(estadoUnido)}" data-jiten="${escapeHtmlText(token.key)}" data-word="${escapeHtmlText(junta)}">`;
-        openEnd = tokens[unidos].end;
-        tokenIndex = unidos + 1;
+      const unida = joinedState && token && token.start === unit.start
+        ? buscarPalabraUnida(plain, token.start, token.end, dentroDeTrozo || (dentroDeTrozo = posicionesDentroDeTrozos(plain.length, tokens)), joinedState)
+        : null;
+      if (unida) {
+        html += `<span class="jiten-word ${escapeHtmlText(unida.estado)}" data-jiten="${escapeHtmlText(token.key)}" data-word="${escapeHtmlText(unida.palabra)}">`;
+        openEnd = unida.fin;
+        while (tokenIndex < tokens.length && tokens[tokenIndex].start < unida.fin) tokenIndex++;
         furiganaWord = undefined;
         wordStart = html.length;
         wordText = '';
