@@ -351,9 +351,10 @@ function cssForEffects(effects: WordEffect[]): { base: string[]; hover: string[]
         base.push(`text-decoration-thickness: ${effect.thickness || 2}px !important`);
         base.push('text-underline-offset: 3px');
         // In vertical writing the line falls where the column to the left keeps its furigana:
-        // half as thick and right against the text, so it no longer covers those readings.
-        vertical.push(`text-decoration-thickness: ${Math.max(1, (effect.thickness || 2) / 2)}px !important`);
-        vertical.push('text-underline-offset: 1px !important');
+        // a third as thick and pulled into the letter's own side bearing (negative offset), out
+        // of the gap where those readings reach, so it no longer covers them.
+        vertical.push(`text-decoration-thickness: ${Math.max(1, Math.round((effect.thickness || 2) / 3))}px !important`);
+        vertical.push('text-underline-offset: -0.07em !important');
         break;
       case 'background':
         if (effect.colour) base.push(`background-color: ${hexWithAlpha(effect.colour, effect.opacity ?? 1)} !important`);
