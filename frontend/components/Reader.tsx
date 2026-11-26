@@ -3809,6 +3809,16 @@ export default function Reader({
                   </div>
                 )}
 
+                {/*
+                  Aviso cuando las definiciones no están en el idioma de la app: ningún
+                  diccionario en ese idioma tenía la palabra y ha contestado el de respaldo.
+                */}
+                {!dictLoading && dictEntry?.otroIdioma && !dictEntry?.isFallback && (
+                  <p style={{ margin: 0, fontSize: '0.7rem', color: colors.textMuted, fontStyle: 'italic' }}>
+                    {t(dictEntry.otroIdioma === 'en' ? 'defsEnIngles' : 'defsEnEspanol', lang)}
+                  </p>
+                )}
+
                 {/* Senses */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {dictLoading ? (

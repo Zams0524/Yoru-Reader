@@ -1,5 +1,6 @@
 import { searchYomitanDB } from './yomitanDB';
 import { modoAnalizador } from './parserSettingsStore';
+import { idiomaDeDiccionario, idiomaDeLaApp, type IdiomaDefiniciones } from './ordenDiccionarios';
 
 // Japanese-English Dictionary Utility
 
@@ -17,6 +18,11 @@ export interface DictionaryEntry {
   fuente?: FuenteDefiniciones;
   frequencies?: any[];
   pitches?: any[];
+  /**
+   * Las definiciones están en otro idioma que el de la app, y cuál. Solo pasa cuando ningún
+   * diccionario en el idioma de la app tiene la palabra: es el respaldo, y la tarjeta lo dice.
+   */
+  otroIdioma?: IdiomaDefiniciones;
 }
 
 export interface DictionaryDefinition {
@@ -94,11 +100,25 @@ export function mereceBuscarseFuera(pos: string): boolean {
 
 /** La app está puesta en español. `db.ts` deja esta copia escrita en cada cambio de idioma. */
 function appEnEspanol(): boolean {
-  try {
-    return (localStorage.getItem('app_language') || 'en').toLowerCase().startsWith('es');
-  } catch {
-    return false;
+  return idiomaDeLaApp() === 'es';
+}
+
+/**
+ * En qué idioma están unas definiciones, si es otro que el de la app.
+ *
+ * Solo cuenta lo que se sabe: una glosa sin diccionario, o de un diccionario sin idioma
+ * reconocible, no hace que se avise. Y basta con que una acepción esté en el idioma de la
+ * app para que no se avise.
+ */
+export function idiomaAjeno(definitions: (string | DictionaryDefinition)[], idiomaApp: IdiomaDefiniciones): IdiomaDefiniciones | undefined {
+  let ajeno: IdiomaDefiniciones | undefined;
+  for (const def of definitions || []) {
+    if (typeof def === 'string') return undefined;
+    const idioma = idiomaDeDiccionario(def?.dictionary || '');
+    if (idioma === null || idioma === idiomaApp) return undefined;
+    ajeno = idioma;
   }
+  return ajeno;
 }
 
 /** Acentos y palabras que en inglés no salen; sirven para una glosa suelta, sin nombre de diccionario. */
@@ -310,6 +330,16 @@ export async function lookupWord(word: string, reading: string = '', pos: string
       sinConexion: noSePudoPreguntar,
       fuente,
     };
+  } else {
+    /*
+      Si lo que se enseña está en otro idioma, que la tarjeta lo diga.
+
+      Pasa cuando ningún diccionario en el idioma de la app tiene la palabra y responde el de
+      respaldo —el JMdict inglés o Jiten, que solo tiene inglés—. Antes la palabra salía en
+      inglés sin más, y parecía que el idioma de la app no se respetaba.
+    */
+    const otro = idiomaAjeno(entry.definitions, idiomaDeLaApp());
+    entry = { ...entry, otroIdioma: otro };
   }
 
   return entry;

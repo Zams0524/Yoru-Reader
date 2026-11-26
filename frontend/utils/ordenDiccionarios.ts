@@ -51,3 +51,48 @@ export function rangoDeDiccionario(titulo: string, orden: string[]): number {
   const i = orden.indexOf(titulo);
   return i === -1 ? orden.length : i;
 }
+
+export type IdiomaDefiniciones = 'es' | 'en';
+
+/**
+ * En qué idioma explica un diccionario, mirando su título. `null` si no se sabe.
+ *
+ * Los JMdict que trae la app se llaman `JMdict (Spanish) [...]` y `JMdict (English) [...]`;
+ * el inglés más antiguo se llamaba solo `JMdict [...]`. Jiten solo tiene inglés.
+ * Un diccionario importado sin pista en el título (un monolingüe japonés, por ejemplo)
+ * queda como desconocido: ni se adelanta ni se aparta.
+ */
+export function idiomaDeDiccionario(titulo: string): IdiomaDefiniciones | null {
+  const t = String(titulo || '');
+  if (/spanish|espa(ñ|n)ol|\(es\)|\[es\]|日西|西和/i.test(t)) return 'es';
+  if (/english|ingl(é|e)s|\(en\)|\[en\]|日英|英和|^jiten$/i.test(t) || /^JMdict \[/i.test(t)) return 'en';
+  return null;
+}
+
+/**
+ * El orden de siempre, pero con el idioma de la app por delante.
+ *
+ * Con la app en español, un JMdict inglés que se instaló antes —o que alguien dejó arriba
+ * en Ajustes— ganaba todas las palabras que también estaban en español, y el popup salía
+ * en inglés sin motivo. Ahora primero van los del idioma de la app, luego los que no se
+ * sabe, y al final los de otro idioma. Dentro de cada grupo manda el orden de antes.
+ */
+export function ordenPorIdioma(orden: string[], idioma: IdiomaDefiniciones): string[] {
+  const peso = (titulo: string) => {
+    const suyo = idiomaDeDiccionario(titulo);
+    return suyo === idioma ? 0 : suyo === null ? 1 : 2;
+  };
+  return orden
+    .map((titulo, i) => ({ titulo, i, p: peso(titulo) }))
+    .sort((a, b) => a.p - b.p || a.i - b.i)
+    .map((d) => d.titulo);
+}
+
+/** El idioma de la app. `db.ts` deja `app_language` escrito en cada cambio de idioma. */
+export function idiomaDeLaApp(): IdiomaDefiniciones {
+  try {
+    return (localStorage.getItem('app_language') || 'en').toLowerCase().startsWith('es') ? 'es' : 'en';
+  } catch {
+    return 'en';
+  }
+}
