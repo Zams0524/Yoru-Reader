@@ -7714,6 +7714,8 @@ html:where(.yoru-compact) .srs-review-card {
   outranks this one; this one covers the desktop styles, which come as .jiten-word.<state>.
 */
 .book-content--writing-vertical-rl .jiten-word.jiten-word {
-  text-decoration-thickness: 1.5px !important;
-  text-underline-offset: 1px !important;
+  text-decoration-thickness: 1px !important;
+  /* Negative: the line moves off the em box's edge into the letter's own side bearing, out of
+     the gap where the furigana of the column to the left reaches. */
+  text-underline-offset: -0.07em !important;
 }
