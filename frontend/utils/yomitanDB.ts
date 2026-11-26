@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { ordenEfectivo, rangoDeDiccionario } from './ordenDiccionarios';
+import { idiomaDeDiccionario, idiomaDeLaApp, ordenEfectivo, ordenPorIdioma, rangoDeDiccionario } from './ordenDiccionarios';
 
 const DB_NAME = 'yoru_yomitan_db';
 const DB_VERSION = 4;
@@ -972,8 +972,9 @@ async function collectTerms(indexName: 'term' | 'reading', key: string, accept: 
  * text or reading go in `alternatives`, so tapping ご shows 御 and offers 五・語・碁 as chips.
  */
 export async function searchYomitanDB(word: string, reading: string = '', pos: string = ''): Promise<any> {
-  // Cache hit
-  const cacheKey = `${word}|${reading}|${pos}`;
+  // Cache hit. El idioma va en la clave: cambia qué diccionario manda.
+  const idioma = idiomaDeLaApp();
+  const cacheKey = `${word}|${reading}|${pos}|${idioma}`;
   if (_searchCache.has(cacheKey)) return _searchCache.get(cacheKey);
 
   const { dictOrder, disabledDicts } = getCachedSettings();
@@ -1002,16 +1003,26 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
         primero que la tiene, eso significaba que el idioma en que la lees salía por
         suerte. Ver `ordenEfectivo`.
       */
-      const orden = ordenEfectivo(await getCachedInstalledList(), dictOrder);
+      /*
+        Y el idioma de la app va por delante del orden.
+
+        Con la app en español, un JMdict inglés instalado antes que el español —o puesto
+        arriba en Ajustes— se quedaba con todas las palabras, aunque el español las tuviera.
+        El inglés queda como respaldo: solo sale cuando ningún diccionario en español tiene
+        la palabra. Ver `ordenPorIdioma`.
+      */
+      const orden = ordenPorIdioma(ordenEfectivo(await getCachedInstalledList(), dictOrder), idioma);
       const dictRank = (dictionary: string) => rangoDeDiccionario(dictionary, orden);
+      const enSuIdioma = (dictionary: string) => idiomaDeDiccionario(dictionary) === idioma;
 
       // Group the rows into words (term + reading) and rank the words.
-      const groups = new Map<string, { term: string; reading: string; rank: number; rows: TermRow[] }>();
+      const groups = new Map<string, { term: string; reading: string; rank: number; rows: TermRow[]; suIdioma: boolean }>();
       for (const row of results) {
-        const key = `${row.term}\u0000${row.reading}`;
+        // La lectura en hiragana: un diccionario la da en katakana y otro no, y es la misma palabra.
+        const key = `${row.term}\u0000${toHiragana(row.reading || '')}`;
         let group = groups.get(key);
         if (!group) {
-          group = { term: row.term, reading: row.reading, rank: -Infinity, rows: [] };
+          group = { term: row.term, reading: row.reading, rank: -Infinity, rows: [], suIdioma: false };
           groups.set(key, group);
         }
         const tags = row.tags.split(' ');
@@ -1023,8 +1034,11 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
         if (byReading && wantedPos.some(tag => tags.includes(tag))) rank += 1e7;
         group.rank = Math.max(group.rank, rank);
         group.rows.push(row);
+        if (enSuIdioma(row.dictionary)) group.suIdioma = true;
       }
-      const ranked = [...groups.values()].sort((a, b) => b.rank - a.rank);
+      // A igualdad de puntos, la palabra que tiene definición en el idioma de la app. No se
+      // le da más ventaja que esa: cambiar de palabra por el idioma sería enseñar otra palabra.
+      const ranked = [...groups.values()].sort((a, b) => b.rank - a.rank || Number(b.suIdioma) - Number(a.suIdioma));
       const main = ranked[0];
       main.rows.sort((a, b) => dictRank(a.dictionary) - dictRank(b.dictionary) || b.score - a.score);
 
@@ -1076,7 +1090,7 @@ export async function searchYomitanDB(word: string, reading: string = '', pos: s
       for (const group of ranked.slice(1)) {
         if (alternatives.length >= 6) break;
         if (alternatives.some(alt => alt.term === group.term && alt.reading === group.reading)) continue;
-        const first = [...group.rows].sort((a, b) => b.score - a.score)[0];
+        const first = [...group.rows].sort((a, b) => dictRank(a.dictionary) - dictRank(b.dictionary) || b.score - a.score)[0];
         alternatives.push({ term: group.term, reading: group.reading, glossary: splitSense(first.definitions).glossary });
       }
 

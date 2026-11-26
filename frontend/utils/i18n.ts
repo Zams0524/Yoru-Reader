@@ -115,6 +115,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     noDefNinguno: 'No está en tus diccionarios ni en Jiten.',
     noDefJitenVacio: 'Jiten no tiene esta palabra.',
     noDefJitenCaido: 'No se pudo consultar Jiten.',
+    // Ningún diccionario en español tiene la palabra y responde el de respaldo.
+    defsEnIngles: 'No está en tu diccionario en español; se muestra en inglés.',
+    defsEnEspanol: 'No está en tu diccionario en español; se muestra en español.',
     mineToAnki: 'Minar a Anki',
     listenPronunciation: 'Escuchar pronunciación',
     statusNew: 'Nuevo',
@@ -242,6 +245,8 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     noDefNinguno: 'Not in your dictionaries, and not in Jiten.',
     noDefJitenVacio: 'Jiten does not have this word.',
     noDefJitenCaido: 'Jiten could not be reached.',
+    defsEnIngles: 'Not in your English dictionary; shown in English.',
+    defsEnEspanol: 'Not in your English dictionary; shown in Spanish.',
     mineToAnki: 'Mine to Anki',
     listenPronunciation: 'Listen pronunciation',
     statusNew: 'New',
