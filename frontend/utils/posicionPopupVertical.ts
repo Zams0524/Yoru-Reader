@@ -42,10 +42,12 @@ export interface SitioTarjeta {
   ancho: number;
   /**
    * `derecha`: sobre lo leído, al lado de la palabra. `encima`: sobre lo leído de su propia
-   * columna. `extremo`: no había hueco en lo leído y se va al borde izquierdo, que son las
-   * últimas columnas de la hoja: tapa texto sin leer, pero el que falta más para llegar.
+   * columna. `izquierda`: no había hueco en lo leído y va pegada a la izquierda de la palabra.
+   * `debajo`: pantalla tan estrecha que tampoco cabe a la izquierda.
+   * Antes existía `extremo`, que la mandaba al borde izquierdo de la pantalla, lejos de la
+   * palabra; zams (26 nov 2026) la quiere junto a la columna de la palabra.
    */
-  donde: 'derecha' | 'encima' | 'extremo';
+  donde: 'derecha' | 'encima' | 'izquierda' | 'debajo';
 }
 
 const entre = (valor: number, minimo: number, maximo: number) =>
@@ -84,6 +86,25 @@ export function sitioEnVertical(pedido: SitioPedido): SitioTarjeta {
     };
   }
 
-  // 3) No hay hueco en lo leído: al borde izquierdo, las últimas columnas de la hoja.
-  return { left: margen, top: topJuntoALaPalabra, ancho: anchoCabiendo, donde: 'extremo' };
+  /*
+    3) No hay hueco en lo leído: a la izquierda de la palabra, **pegada a ella**. Antes se iba al
+    borde izquierdo de la pantalla, y con la palabra en la primera columna (pegada al borde
+    derecho) la tarjeta quedaba en la otra punta. zams (26 nov 2026) la quiere junto a la
+    columna de la palabra, aunque tape las columnas que siguen.
+  */
+  const libreIzquierda = palabra.left - hueco - margen;
+  if (libreIzquierda >= anchoMinimo) {
+    const ancho = Math.min(anchoDeseado, libreIzquierda);
+    return { left: palabra.left - hueco - ancho, top: topJuntoALaPalabra, ancho, donde: 'izquierda' };
+  }
+
+  // 4) Pantalla muy estrecha: debajo de la palabra si cabe.
+  const libreDebajo = altoVentana - palabra.bottom - hueco - margen;
+  const leftAlineada = entre(palabra.right - anchoCabiendo, margen, anchoVentana - anchoCabiendo - margen);
+  if (libreDebajo >= altoTarjeta) {
+    return { left: leftAlineada, top: palabra.bottom + hueco, ancho: anchoCabiendo, donde: 'debajo' };
+  }
+
+  // 5) No cabe en ningún lado: lo más cerca posible sin salirse.
+  return { left: leftAlineada, top: topJuntoALaPalabra, ancho: anchoCabiendo, donde: 'izquierda' };
 }

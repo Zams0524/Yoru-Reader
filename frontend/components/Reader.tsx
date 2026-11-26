@@ -884,15 +884,12 @@ export default function Reader({
       Vertical, que se lee de derecha a izquierda: lo leído queda a la derecha, así que
       va a la derecha, y el alto se alinea con la palabra en vez de pegarse a un borde.
 
-      Y cuando por el lado leído no cabe —una palabra en la primera columna de la página,
-      que en vertical está pegada al borde derecho— no se pone justo al otro lado, que
-      sería taparle lo siguiente que va a leer. Se manda al **extremo** de la página: en
-      vertical, al borde izquierdo, que son las últimas columnas de la hoja. Eso también
-      tapa texto, pero texto que no va a tocar hasta dentro de un rato.
-
-      En horizontal ya no se hace así: abajo del todo quedaba lejísimos de una palabra
-      de la parte alta, y zams (26 nov 2026) la quiere cerca. Si no cabe encima, va justo
-      debajo de la palabra (posicionPopupHorizontal).
+      Cuando por el lado leído no cabe —una palabra en la primera columna de la página,
+      pegada al borde derecho, o en la primera línea— antes se mandaba al **extremo**
+      contrario de la pantalla. Quedaba lejísimos de la palabra, y zams (26 nov 2026) la
+      quiere cerca: ahora va justo al otro lado de la palabra, pegada a ella (debajo en
+      horizontal, a su izquierda en vertical). Ver posicionPopupHorizontal y
+      posicionPopupVertical.
     */
     const bounds = popup.getBoundingClientRect();
 
