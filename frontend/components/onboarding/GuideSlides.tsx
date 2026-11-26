@@ -231,11 +231,12 @@ export function useDictionaryInstall(lang: Lang) {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(packStatus(await getInstalledDictionaries()));
+      // El JMdict tiene que estar en el idioma elegido en la bienvenida (QA-PC-20261023-04).
+      setStatus(packStatus(await getInstalledDictionaries(), lang));
     } catch {
       setStatus({ dictionary: false, frequency: false, pitch: false });
     }
-  }, []);
+  }, [lang]);
 
   useEffect(() => {
     void refresh();
@@ -251,7 +252,7 @@ export function useDictionaryInstall(lang: Lang) {
   // Runs in the background: the guide can move on while the app-wide toast shows the progress.
   const install = useCallback(() => {
     setError('');
-    installRecommendedPack(lang)
+    installRecommendedPack(lang, undefined, true)
       .then(refresh)
       .catch((err: any) => setError(err?.message || 'Error'));
   }, [lang, refresh]);
