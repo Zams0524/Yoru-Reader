@@ -92,7 +92,22 @@ function time(value: unknown): number {
 }
 
 function bookTime(book: any): number {
-  return Math.max(time(book?.lastRead), time(book?.updatedAt), time(book?.createdAt));
+  return Math.max(time(book?.lastRead), time(book?.updatedAt), time(book?.createdAt), time(book?.deletedAt));
+}
+
+/**
+ * Cuál de las dos copias de un libro es la más reciente.
+ *
+ * Con la misma fecha y una de las dos borrada, gana la borrada: hasta el 27 nov 2026 borrar
+ * un libro no le ponía fecha (`deletedAt`), así que una copia borrada y la misma sin borrar
+ * empataban, aunque el borrado fue lo último que pasó. Sin esto, cada aparato se quedaba
+ * con la suya y el PC no podía subir su borrado (zams, 27 nov 2026).
+ */
+function newerBook(local: any, cloud: any): any {
+  const cloudTime = bookTime(cloud);
+  const localTime = bookTime(local);
+  if (cloudTime !== localTime) return cloudTime > localTime ? cloud : local;
+  return cloud?.isDeleted && !local?.isDeleted ? cloud : local;
 }
 
 // Books get a new random id on each device they are imported on, so match by title too.
@@ -121,7 +136,7 @@ export function selloDePosicion(book: any): number {
 }
 
 function mergeBook(local: any, cloud: any): any {
-  const newer = bookTime(cloud) > bookTime(local) ? cloud : local;
+  const newer = newerBook(local, cloud);
   const older = newer === local ? cloud : local;
   const newerProgress = newer.progress || {};
   const olderProgress = older.progress || {};
@@ -403,7 +418,34 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
   };
 }
 
-/** Books not marked deleted, across all profiles: used to refuse an upload that would lose some. */
+/**
+ * Libros de `cloud` (vivos) que no están en `merged` ni vivos ni borrados: los que una subida
+ * perdería sin que nadie los haya borrado. Es lo que se mira antes de subir.
+ *
+ * Hasta el 27 nov 2026 se comparaba cuántos libros vivos había a cada lado, y eso cuenta un
+ * borrado hecho a propósito como un libro perdido: borrar en el PC un libro que el servidor
+ * tenía dejaba la sincronización parada para siempre («No se pudo sincronizar»). Un libro
+ * borrado sigue en la lista, marcado `isDeleted`; uno perdido, no está.
+ */
+export function lostBooks(merged: DbExport | null | undefined, cloud: DbExport | null | undefined): any[] {
+  const kept = new Set<string>();
+  for (const p of Object.values(merged?.profileData || {})) {
+    for (const book of p?.books || []) {
+      if (book?.id) kept.add(`id:${book.id}`);
+      kept.add(`t:${bookTitleKey(book)}`);
+    }
+  }
+  const lost: any[] = [];
+  for (const p of Object.values(cloud?.profileData || {})) {
+    for (const book of p?.books || []) {
+      if (!book || book.isDeleted) continue;
+      if (!kept.has(`id:${book.id}`) && !kept.has(`t:${bookTitleKey(book)}`)) lost.push(book);
+    }
+  }
+  return lost;
+}
+
+/** Books not marked deleted, across all profiles. */
 export function countLiveBooks(data: DbExport | null | undefined): number {
   if (!data?.profileData) return 0;
   return Object.values(data.profileData).reduce(

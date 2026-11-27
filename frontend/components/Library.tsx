@@ -24,7 +24,7 @@ import { getInstalledDictionaries, exportDictionaryDataToZip, importAllDictionar
 import { tokenizeText } from '../utils/japanese';
 import { DEFAULT_DECK_NAME, getDeckLimitsLeft, getDeckOptions, withDeckOptions, type SrsDeckOptions } from '../utils/srsDeckOptions';
 import { t } from '../utils/i18n';
-import { mergeDatabaseExports, countLiveBooks } from '../utils/cloudMerge';
+import { mergeDatabaseExports, lostBooks } from '../utils/cloudMerge';
 import { sincronizarConYoru, useEstadoYoruSync } from '../hooks/useYoruSync';
 import YoruSyncSettings from './settings/YoruSyncSettings';
 import { googleDriveService, signInWithGoogle, DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET, LAST_SYNC_STORAGE_KEY, readLastSyncMs, formatSyncTime, isGoogleSessionRevoked } from '../utils/googleDriveService';
@@ -1091,8 +1091,9 @@ const Library = React.memo(function Library({
         await db.importFullDatabase(merged);
       }
       if (cloudChanged) {
-        if (countLiveBooks(merged) < countLiveBooks(cloudData)) {
-          throw new Error('Refusing to upload a library with fewer books than the copy in Google Drive');
+        // A book deleted here on purpose does not count: it travels marked as deleted.
+        if (lostBooks(merged, cloudData).length) {
+          throw new Error('Refusing to upload a library missing books from the copy in Google Drive');
         }
         await googleDriveService.uploadSyncFile(tokens, clientId, merged, clientSecret);
       }
