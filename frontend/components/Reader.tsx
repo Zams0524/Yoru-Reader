@@ -563,6 +563,13 @@ export default function Reader({
     }, 3500);
   }, []);
 
+  // Reabierto aquí porque llegó una página más adelante leída en otro aparato (App).
+  useEffect(() => {
+    if (!book.__progresoDeOtroAparato) return;
+    showToast(lang === 'es' ? 'Sigues donde lo dejaste en el otro aparato.' : 'Picked up where you left off on your other device.', 'info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The last read-aloud error, for the player in the notification (cleared when the voice goes on).
   const [readAloudError, setReadAloudError] = useState('');
   const readAloud = useReadAloud({

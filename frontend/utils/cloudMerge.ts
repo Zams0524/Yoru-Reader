@@ -76,11 +76,38 @@ function bookTitleKey(book: any): string {
   return claveTituloAutor(book);
 }
 
+/**
+ * Cuándo se llegó a la página en la que está esta copia del libro.
+ *
+ * `lastRead` no sirve para esto: cambia con solo abrir el libro (App.handleSelectBook) y
+ * con cada recuento de segundos. Si el teléfono abría el libro en la página vieja —antes
+ * de enterarse de lo leído en el PC, o porque se quedó abierto—, su `lastRead` era el más
+ * nuevo y su página vieja ganaba, y luego la subía y le quitaba la suya al PC (zams, 27
+ * nov 2026). `positionStamp` solo cambia al pasar de página (db.updateBookProgress).
+ *
+ * El sello vale solo si apunta a la página que tiene la copia: una versión anterior de la
+ * app guarda la ficha con el sello que le llegó, pero mueve la página sin tocarlo. Entonces
+ * se vuelve a `lastRead`, como antes.
+ */
+export function selloDePosicion(book: any): number {
+  const stamp = book?.positionStamp;
+  const progress = book?.progress || {};
+  if (stamp && stamp.chapter === progress.currentChapter && stamp.page === progress.currentPage) return time(stamp.at);
+  return bookTime(book);
+}
+
 function mergeBook(local: any, cloud: any): any {
   const newer = bookTime(cloud) > bookTime(local) ? cloud : local;
   const older = newer === local ? cloud : local;
   const newerProgress = newer.progress || {};
   const olderProgress = older.progress || {};
+  // La página va aparte del resto de la ficha: la lleva la copia que la movió más tarde.
+  const placeFrom = selloDePosicion(cloud) > selloDePosicion(local) ? cloud : local;
+  const placeProgress = placeFrom.progress || {};
+  const place: any = {};
+  for (const key of ['currentChapter', 'currentPage', 'percent']) {
+    if (key in placeProgress) place[key] = placeProgress[key];
+  }
   return conPortadaOriginal({
     ...older,
     ...newer,
@@ -92,10 +119,13 @@ function mergeBook(local: any, cloud: any): any {
     progress: {
       ...olderProgress,
       ...newerProgress,
+      ...place,
       // Reading totals only grow; adding both would count shared history twice.
       charactersRead: Math.max(newerProgress.charactersRead || 0, olderProgress.charactersRead || 0),
       secondsRead: Math.max(newerProgress.secondsRead || 0, olderProgress.secondsRead || 0),
     },
+    // Sin sello en la copia que lleva la página, ninguno: el de la otra apuntaría a otra.
+    positionStamp: placeFrom.positionStamp,
     // Marcadores y subrayados van por su cuenta, uno a uno: poner uno en el PC no cambia
     // lastRead, así que si el teléfono había leído después, su lista (sin el marcador nuevo)
     // ganaba siempre. Ver marcasSync.ts.

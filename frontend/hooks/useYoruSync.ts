@@ -67,9 +67,19 @@ export async function sincronizarConYoru(modo: ModoSync, forzada = false): Promi
     poner({ estado: 'al-dia', detalle: '', ultima: ultimaSincronizacion() });
   }
   // Recargar con un libro abierto echaría al lector de su página. Lo combinado ya está
-  // guardado; la pantalla lo enseña la próxima vez que se cargue.
-  if (!leyendoAhora) recargarSiHizoFalta(resultado);
+  // guardado; la pantalla lo enseña la próxima vez que se cargue. El libro abierto, en
+  // cambio, no puede esperar: si llegó una página más adelante de otro aparato y el lector
+  // sigue en la vieja, al pasar de página guardaría la vieja y se la quitaría al otro.
+  // `App` mira si es el caso y lleva el lector allí (EVENTO_PROGRESO_LLEGADO).
+  if (leyendoAhora) {
+    if (resultado.cambioLocal) window.dispatchEvent(new Event(EVENTO_PROGRESO_LLEGADO));
+  } else {
+    recargarSiHizoFalta(resultado);
+  }
 }
+
+/** Lo combinado con el servidor cambió algo mientras había un libro abierto. */
+export const EVENTO_PROGRESO_LLEGADO = 'yoru-sync-progreso-llegado';
 
 /** El estado de la sincronización, para pintarlo. */
 export function useEstadoYoruSync(): EstadoYoruSync {
@@ -89,9 +99,11 @@ function bajarYSubir(): void {
  *
  * Cuándo se **trae** lo del servidor (y se sube lo de aquí):
  *  - al abrir la app;
- *  - al volver a ella —del fondo en el teléfono, a la ventana en el PC— si no hay un
+ *  - al volver a ella —del fondo en el teléfono, a la ventana en el PC—, también con un
  *    libro abierto. Es el momento en que se cambia de aparato: sin esto, una app que
- *    se quedó abierta no se enteraba nunca de lo leído en el otro.
+ *    se quedó abierta no se enteraba nunca de lo leído en el otro. Hasta el 27 nov 2026
+ *    se saltaba con un libro abierto, y quien dejaba el teléfono en el libro, seguía en
+ *    el PC y volvía, encontraba la página vieja; al pasar de página, la vieja ganaba.
  *
  * Cuándo **solo se sube**:
  *  - al irse la app al fondo, haya o no un libro abierto, y sin esperar turno;
@@ -106,7 +118,6 @@ function bajarYSubir(): void {
  * @param leyendo si hay un libro abierto.
  */
 export function useYoruSyncAutomatica(dentro: boolean, leyendo: boolean): void {
-  const leyendoRef = useRef(leyendo);
   const leyendoAntes = useRef(leyendo);
   const dentroRef = useRef(dentro);
   dentroRef.current = dentro;
@@ -128,7 +139,6 @@ export function useYoruSyncAutomatica(dentro: boolean, leyendo: boolean): void {
   }, [dentro]);
 
   useEffect(() => {
-    leyendoRef.current = leyendo;
     leyendoAhora = leyendo;
     const acabaDeCerrar = leyendoAntes.current && !leyendo;
     leyendoAntes.current = leyendo;
@@ -141,7 +151,7 @@ export function useYoruSyncAutomatica(dentro: boolean, leyendo: boolean): void {
   useEffect(() => {
     if (!sincronizacionDisponible()) return undefined;
     const alVolver = () => {
-      if (!dentroRef.current || document.visibilityState !== 'visible' || leyendoRef.current) return;
+      if (!dentroRef.current || document.visibilityState !== 'visible') return;
       if (!tocaBajarAlVolver(Date.now(), ultimaBajada)) return;
       bajarYSubir();
     };
