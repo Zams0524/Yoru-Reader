@@ -23,7 +23,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { db } from './db';
-import { mergeDatabaseExports, countLiveBooks } from './cloudMerge';
+import { mergeDatabaseExports, lostBooks } from './cloudMerge';
 import { claveTexto, tieneTexto } from './textosLibros';
 import { leerSesion, tokenAccesoFresco } from './discordAuth';
 import { serverRequest, ServerHttpError } from './serverHttp';
@@ -394,8 +394,9 @@ export async function sincronizarConServidorYoru(
       }
 
       if (cloudChanged) {
-        if (countLiveBooks(merged) < countLiveBooks(remoto.datos)) {
-          throw new Error('No se sube una biblioteca con menos libros que la del servidor');
+        // Un libro borrado aquí a propósito no cuenta: viaja marcado como borrado.
+        if (lostBooks(merged, remoto.datos).length) {
+          throw new Error('No se sube una biblioteca a la que le faltan libros del servidor');
         }
         try {
           await subirProgreso(base, sesion, merged, remoto.version);

@@ -84,6 +84,11 @@ export interface Book {
   /** Igual que bookmarksAt, para los subrayados. */
   highlightsAt?: string;
   isDeleted?: boolean;
+  /**
+   * Cuándo se borró. Sin esto el borrado no tenía fecha, y el sync no sabía si iba antes o
+   * después de lo leído en otro aparato (cloudMerge.ts, `mergeBook`).
+   */
+  deletedAt?: string;
   vocabularyCoverage?: number;
   vocabStats?: Record<string, any>;
   series?: string;
@@ -484,7 +489,11 @@ export const db = {
           || !(books[existingIdx].chapters || []).length
           || sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
           // Restore a deleted book, or refresh readings without changing text positions.
-          if (books[existingIdx].isDeleted) books[existingIdx].isDeleted = false;
+          if (books[existingIdx].isDeleted) {
+            books[existingIdx].isDeleted = false;
+            // Más nuevo que el borrado, para que el sync no lo vuelva a borrar.
+            books[existingIdx].updatedAt = new Date().toISOString();
+          }
           books[existingIdx].chapters = book.chapters || [];
           await this._writeBooks(books);
         }
@@ -530,8 +539,9 @@ export const db = {
             books[existingIdx].chapters = book.chapters || [];
             addedCount++;
           } else if (books[existingIdx].isDeleted) {
-            // Restore/undelete it!
+            // Restore/undelete it! Más nuevo que el borrado, para que el sync no lo vuelva a borrar.
             books[existingIdx].isDeleted = false;
+            books[existingIdx].updatedAt = new Date(now).toISOString();
             books[existingIdx].chapters = book.chapters || [];
             addedCount++;
           } else if (sameTextExceptReadings(books[existingIdx].chapters || [], book.chapters || [])) {
@@ -827,7 +837,7 @@ export const db = {
       const settings = this.getSettings();
       let updatedBooks: Book[];
       if (settings.keepStatsOnDelete !== false) {
-        updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, chapters: [] } : b);
+        updatedBooks = books.map(b => b.id === bookId ? { ...b, isDeleted: true, deletedAt: new Date().toISOString(), chapters: [] } : b);
       } else {
         const book = books.find(b => b.id === bookId);
         if (book && book.title) {
@@ -846,7 +856,7 @@ export const db = {
       const settings = this.getSettings();
       let updatedBooks: Book[];
       if (settings.keepStatsOnDelete !== false) {
-        updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, chapters: [] } : b);
+        updatedBooks = books.map(b => bookIds.includes(b.id) ? { ...b, isDeleted: true, deletedAt: new Date().toISOString(), chapters: [] } : b);
       } else {
         const deletedBooks = books.filter(b => bookIds.includes(b.id));
         for (const b of deletedBooks) {

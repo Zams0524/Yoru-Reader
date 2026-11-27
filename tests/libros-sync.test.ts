@@ -65,7 +65,7 @@ const idbFalso = indexedDbDeMentira();
 (globalThis as any).indexedDB = idbFalso;
 
 const { db } = await import('../frontend/utils/db');
-const { mergeDatabaseExports } = await import('../frontend/utils/cloudMerge');
+const { mergeDatabaseExports, lostBooks } = await import('../frontend/utils/cloudMerge');
 const { claveTexto, faltaTexto, LIMITE_PORTADA } = await import('../frontend/utils/textosLibros');
 
 /* ------------------------------------------------------------------ datos */
@@ -241,6 +241,40 @@ console.log('la clave del texto es la misma en todos los aparatos');
   check(claveTexto(libro()) === claveTexto(libro({ title: ' こころ ', author: '夏目漱石' })), 'ni de espacios sueltos');
   check(claveTexto(libro()) !== claveTexto(libro({ title: '坊っちゃん' })), 'y cambia con el libro');
   check(/^[a-f0-9]{16,64}$/.test(claveTexto(libro())), 'y la acepta el servidor');
+}
+
+console.log('borrar un libro que el servidor tiene no para la sincronización');
+{
+  // Lo que había el 27 nov 2026: el PC lo borró (sin fecha, como borraba entonces) y el
+  // servidor lo tenía vivo, con las mismas fechas. El PC no podía subir nunca su borrado.
+  const lado = (libros: any[]) => ({ version: 2, activeProfileId: PERFIL, profiles: [{ id: PERFIL, name: 'zams' }], profileData: { [PERFIL]: { books: libros } } });
+  const vivo = libro({ lastRead: null, updatedAt: '2026-11-26T21:06:04.007Z', chapters: [] });
+  const borradoSinFecha = { ...vivo, isDeleted: true };
+  const desdePc = mergeDatabaseExports(lado([borradoSinFecha]) as any, lado([vivo]) as any, true);
+  check((desdePc.merged.profileData[PERFIL].books as any[])[0].isDeleted === true, 'con las mismas fechas gana el borrado (fue lo último que pasó)');
+  check(desdePc.cloudChanged, 'y el PC tiene algo que subir');
+  check(lostBooks(desdePc.merged, lado([vivo]) as any).length === 0, 'un libro borrado a propósito no cuenta como perdido');
+  const desdeTelefono = mergeDatabaseExports(lado([vivo]) as any, lado([borradoSinFecha]) as any, false);
+  check((desdeTelefono.merged.profileData[PERFIL].books as any[])[0].isDeleted === true, 'el teléfono se entera del borrado en vez de devolverlo');
+  check(lostBooks(lado([]) as any, lado([vivo]) as any).length === 1, 'un libro que falta sin más sí cuenta como perdido');
+  check(lostBooks(lado([libro({ id: 'book-otro-aparato' })]) as any, lado([vivo]) as any).length === 0, 'el mismo libro con otro id no se pierde');
+}
+
+console.log('borrar pone fecha, y volver a importar la supera');
+{
+  aparatoNuevo();
+  await db.saveBooks([libro()] as any);
+  await db.deleteBook('book-1');
+  const [borrado] = await db.getBooks() as any[];
+  check(borrado.isDeleted === true && Date.parse(borrado.deletedAt) > Date.parse(libro().lastRead), 'el borrado lleva su fecha');
+  const lado = (libros: any[]) => ({ version: 2, activeProfileId: PERFIL, profiles: [{ id: PERFIL, name: 'zams' }], profileData: { [PERFIL]: { books: libros } } });
+  const { merged } = mergeDatabaseExports(lado([borrado]) as any, lado([libro()]) as any, true);
+  check((merged.profileData[PERFIL].books as any[])[0].isDeleted === true, 'y gana a una copia leída antes de borrarlo');
+  await new Promise((r) => setTimeout(r, 5));
+  await db.addBooks([{ title: 'こころ', author: '夏目漱石', chapters: libro().chapters }] as any);
+  const [vuelto] = await db.getBooks() as any[];
+  const otra = mergeDatabaseExports(lado([vuelto]) as any, lado([borrado]) as any, true);
+  check(!vuelto.isDeleted && !(otra.merged.profileData[PERFIL].books as any[])[0].isDeleted, 'importarlo otra vez lo devuelve, y el borrado viejo no lo vuelve a borrar');
 }
 
 if (failures > 0) {
