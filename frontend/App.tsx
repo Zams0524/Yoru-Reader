@@ -17,7 +17,7 @@ import { queueKavitaProgress } from './utils/kavitaService';
 import { guardarPosicionTemporal, leerEstadoTemporal, olvidarEstadoTemporal, retomarAqui } from './utils/estadoTemporal';
 import { refreshServerCatalog } from './utils/serverCatalog';
 import { markOpenTiming, startOpenTiming } from './utils/openTiming';
-import { useYoruSyncAutomatica } from './hooks/useYoruSync';
+import { EVENTO_PROGRESO_LLEGADO, useYoruSyncAutomatica } from './hooks/useYoruSync';
 
 /**
  * Un libro que se esta leyendo del servidor sin guardarlo. Lleva este prefijo en el
@@ -120,6 +120,16 @@ export default function App() {
   const [wordStatuses, setWordStatuses] = useState<Record<string, string>>({});
   // El libro abierto, accesible desde callbacks memorizados sin dependencias.
   const activeBookRef = useRef<any>(null);
+  /*
+    Cuántas veces se reabrió el lector porque llegó de otro aparato una página más
+    adelante. Va en la `key` del lector y en sus guardados: el lector que se cierra para
+    reabrirse guarda su última página al desmontarse, y esa (la vieja) no debe pisar la
+    que acaba de llegar.
+  */
+  const [generacionLector, setGeneracionLector] = useState(0);
+  const generacionLectorRef = useRef(0);
+  /** La última página que guardó el lector abierto, para saber si la de la base es de otro aparato. */
+  const paginaGuardadaRef = useRef<{ bookId: string; chapter: number; page: number } | null>(null);
   // The reader's code loads while the library sits idle, so opening the first book does not wait
   // for it ("Loading reader..." before the book's own loading screen).
   useEffect(() => {
@@ -712,6 +722,11 @@ export default function App() {
     }
     // Bandera de apertura, solo en memoria: no se guarda con el libro.
     const target = openAudiobook ? { ...positioned, __openAudiobook: true } : positioned;
+    paginaGuardadaRef.current = {
+      bookId: String(positioned.id),
+      chapter: Number(positioned.progress?.currentChapter) || 0,
+      page: Number(positioned.progress?.currentPage) || 0,
+    };
     setActiveBook(target);
     /*
       Abrir un libro ya es empezarlo. El lector no guarda progreso hasta que se pasa de
@@ -725,7 +740,10 @@ export default function App() {
     setBooks(loadedBooks);
   };
 
-  const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number) => {
+  const handleUpdateProgress = useCallback(async (bookId: string, currentChapter: number, currentPage: number, percent: number, generacion?: number) => {
+    // Un lector que se cerró para reabrirse en la página de otro aparato: su página es la vieja.
+    if (typeof generacion === 'number' && generacion !== generacionLectorRef.current) return;
+    if (!isTemporaryBookId(bookId)) paginaGuardadaRef.current = { bookId: String(bookId), chapter: currentChapter, page: currentPage };
     // Libro temporal: no se guarda aqui, pero su progreso si sube al servidor del que
     // salio. Se sale antes de tocar la base para no rozar el camino de siempre.
     if (isTemporaryBookId(bookId)) {
@@ -886,6 +904,13 @@ export default function App() {
       setActiveBook({ ...stored, ...extras, progress: current.progress });
     }
   }, []);
+
+  // El guardado de página de cada lector lleva su generación (ver generacionLector).
+  const handleUpdateProgressDelLector = useCallback(
+    (bookId: string, currentChapter: number, currentPage: number, percent: number) =>
+      handleUpdateProgress(bookId, currentChapter, currentPage, percent, generacionLector),
+    [handleUpdateProgress, generacionLector],
+  );
 
   const handleIncrementReadingStats = useCallback(async (bookId: string, chars: number, seconds: number) => {
     // El temporal no tiene fila en la base. Las estadisticas de verdad (las del parte
@@ -1186,6 +1211,38 @@ export default function App() {
   }, [activeBook]);
 
   /*
+    La sincronización trajo cambios con un libro abierto (useYoruSync). Si la página de
+    ese libro en la base ya no es la que guardó este lector, es que se leyó más en otro
+    aparato: el lector se reabre allí. Si no, al pasar de página guardaría la vieja con
+    la hora de ahora y le quitaría la suya al otro aparato en la próxima subida.
+  */
+  useEffect(() => {
+    const alLlegarProgreso = async () => {
+      const abierto = activeBookRef.current;
+      if (!abierto || isTemporaryBookId(abierto.id)) return;
+      const libros = await db.getBooks();
+      setBooks(libros);
+      const guardado: any = libros.find((b: any) => b.id === abierto.id);
+      const ahora = activeBookRef.current;
+      if (!guardado || !ahora || ahora.id !== abierto.id) return;
+      const chapter = Number(guardado.progress?.currentChapter) || 0;
+      const page = Number(guardado.progress?.currentPage) || 0;
+      const escrita = paginaGuardadaRef.current;
+      if (escrita && escrita.bookId === String(abierto.id) && escrita.chapter === chapter && escrita.page === page) return;
+      paginaGuardadaRef.current = { bookId: String(abierto.id), chapter, page };
+      generacionLectorRef.current += 1;
+      setGeneracionLector(generacionLectorRef.current);
+      setActiveBook({ ...ahora, ...guardado, __openAudiobook: undefined, _savedSection: undefined, __progresoDeOtroAparato: true });
+    };
+    const oyente = () => { void alLlegarProgreso(); };
+    window.addEventListener(EVENTO_PROGRESO_LLEGADO, oyente);
+    return () => window.removeEventListener(EVENTO_PROGRESO_LLEGADO, oyente);
+  }, []);
+
+  useEffect(() => {
+  }, [activeBook]);
+
+  /*
     La puerta de Discord. Yoru es para los miembros del servidor, asi que antes de
     cualquier otra vista hay que saber si quien abre la app lo es.
 
@@ -1332,7 +1389,8 @@ export default function App() {
         {pantalla === 'guia' ? (
           <WelcomeScreen onTerminar={() => setTutorialVisto(true)} settings={settings} onSaveSettings={handleSaveSettings} />
         ) : activeBook ? (
-          <Reader 
+          <Reader
+            key={`lector-${generacionLector}`}
             book={activeBook}
             onBack={(targetTab) => {
               setActiveBook(null);
@@ -1342,7 +1400,7 @@ export default function App() {
                 setLibraryTab('library');
               }
             }}
-            onUpdateProgress={handleUpdateProgress}
+            onUpdateProgress={handleUpdateProgressDelLector}
             onIncrementReadingStats={handleIncrementReadingStats}
             onSaveReadingStats={handleSaveReadingStats}
             onKeepTemporary={handleKeepTemporary}

@@ -51,6 +51,12 @@ export interface Book {
   status: 'unread' | 'reading' | 'completed';
   createdAt: string;
   lastRead?: string;
+  /**
+   * Cuándo se movió la página por última vez, y a cuál. El sync decide con esto qué
+   * aparato lleva la posición (cloudMerge.ts), no con `lastRead`, que cambia con solo
+   * abrir el libro o contar segundos. Ver `selloDePosicion` en cloudMerge.ts.
+   */
+  positionStamp?: { at: string; chapter: number; page: number };
   bookmarks?: any[];
   /** Cuándo se tocaron los marcadores por última vez: el sync se queda con la lista más reciente. */
   bookmarksAt?: string;
@@ -555,6 +561,13 @@ export const db = {
         if (book.id === bookId) {
           // A finished book stays finished when it is opened again: only the user moves it back to "reading".
           const newStatus = percent >= 99 || book.status === 'completed' ? 'completed' : (percent > 0 ? 'reading' : book.status);
+          const now = new Date().toISOString();
+          // Solo un cambio de página es leer más: guardar la misma página (al abrir, al
+          // cerrar) no le quita la posición al aparato que de verdad avanzó.
+          const samePlace = book.progress?.currentChapter === currentChapter && book.progress?.currentPage === currentPage;
+          const positionStamp = samePlace && book.positionStamp
+            ? book.positionStamp
+            : (samePlace ? undefined : { at: now, chapter: currentChapter, page: currentPage });
           return {
             ...book,
             progress: { 
@@ -564,7 +577,8 @@ export const db = {
               percent 
             },
             status: newStatus as 'unread' | 'reading' | 'completed',
-            lastRead: new Date().toISOString()
+            lastRead: now,
+            ...(positionStamp ? { positionStamp } : {}),
           };
         }
         return book;
