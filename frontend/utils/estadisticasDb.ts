@@ -19,6 +19,8 @@
  * Sin React ni el resto de `db.ts`, para poder probarlo en un navegador.
  */
 
+import { aportesDe, combinarParte, conTotales, sumarAporte, type Aporte } from './estadisticasSync';
+
 /** Un parte de lectura: un libro, un dia. `listeningTime` puede faltar en los viejos. */
 export interface DailyStatRecord {
   title: string;
@@ -29,6 +31,27 @@ export interface DailyStatRecord {
   listeningTime?: number;
   sessionsCount?: number;
   lastStatisticModified?: number;
+  /** Lo de cada aparato (estadisticasSync.ts). Falta en los partes de antes del 27 nov 2026. */
+  aparatos?: Record<string, Aporte>;
+}
+
+const CLAVE_APARATO = 'yoru_aparato_id';
+
+/**
+ * Un nombre fijo para este aparato (esta instalación), con el que se apunta lo que se lee
+ * y se repasa aquí. No sale de la cuenta ni dice nada del aparato: es un número al azar.
+ */
+export function idDeEsteAparato(): string {
+  try {
+    let id = localStorage.getItem(CLAVE_APARATO);
+    if (!id) {
+      id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(CLAVE_APARATO, id);
+    }
+    return id;
+  } catch {
+    return 'local';
+  }
 }
 
 const BASE = 'books';
@@ -157,26 +180,80 @@ export async function sumarAlParte(
       const hoy = new Date().toLocaleDateString('sv').slice(0, 10);
       const consulta = almacen.get([title, hoy]);
       consulta.onsuccess = () => {
-        const parte = consulta.result;
-        if (parte) {
-          parte.charactersRead = (parte.charactersRead || 0) + caracteres;
-          parte.readingTime = (parte.readingTime || 0) + segundos;
-          parte.listeningTime = (parte.listeningTime || 0) + escuchado;
-          parte.sessionsCount = (parte.sessionsCount || 0) + sesiones;
-          parte.lastStatisticModified = Date.now();
-          almacen.put(parte);
-        } else {
-          almacen.put({
-            title,
-            dateKey: hoy,
-            charactersRead: caracteres,
-            readingTime: segundos,
-            listeningTime: escuchado,
-            sessionsCount: sesiones,
-            lastStatisticModified: Date.now(),
-          });
-        }
+        // Lo de este aparato va en su casilla (`aparatos`), para que al combinarlo con lo
+        // de otro aparato no se cuente dos veces ni se pierda (estadisticasSync.ts).
+        almacen.put(sumarAporte(
+          consulta.result,
+          { title, dateKey: hoy },
+          idDeEsteAparato(),
+          { c: caracteres, r: segundos, l: escuchado, s: sesiones },
+          Date.now(),
+        ));
       };
+      tx.oncomplete = () => acabar(true);
+      tx.onerror = () => acabar(false);
+      tx.onabort = () => acabar(false);
+    } catch {
+      acabar(false);
+    }
+  });
+}
+
+/**
+ * Guarda los partes que llegan de la sincronización, ya combinados: cada uno se vuelve a
+ * combinar con el que hay ahora (lo leído mientras iba y venía la red no se pierde), y lo
+ * de cada libro borrado en otro aparato (`quitados`, título → fecha) se quita también aquí.
+ */
+export async function guardarPartesCombinados(
+  llegados: DailyStatRecord[],
+  quitados: Record<string, string> | null | undefined,
+): Promise<boolean> {
+  const marcas = Object.entries(quitados || {}).map(([titulo, cuando]) => [titulo, Date.parse(cuando) || 0] as const).filter(([, t]) => t);
+  if (!llegados.length && !marcas.length) return true;
+  const base = await abrirPartes(true);
+  if (!base) return false;
+  const aparato = idDeEsteAparato();
+  const limiteDe = new Map(marcas);
+  /** El parte sin lo de antes de que se borraran las estadísticas de su libro; `null` si no queda nada. */
+  const sinQuitado = (parte: DailyStatRecord): DailyStatRecord | null => {
+    const limite = limiteDe.get(parte.title);
+    if (!limite) return parte;
+    const todos = aportesDe(parte, aparato);
+    const quedan = Object.fromEntries(Object.entries(todos).filter(([, a]) => (Number(a.t) || 0) > limite));
+    if (!Object.keys(quedan).length) return null;
+    return Object.keys(quedan).length === Object.keys(todos).length ? parte : conTotales(parte, quedan);
+  };
+  return new Promise((resolve) => {
+    const acabar = (ok: boolean) => {
+      base.close();
+      resolve(ok);
+    };
+    try {
+      const tx = base.transaction(ALMACEN, 'readwrite');
+      const almacen = tx.objectStore(ALMACEN);
+      for (const parte of llegados) {
+        if (!parte?.title || !parte?.dateKey) continue;
+        const consulta = almacen.get([parte.title, parte.dateKey]);
+        consulta.onsuccess = () => {
+          const actual = consulta.result as DailyStatRecord | undefined;
+          const junto = sinQuitado(actual ? combinarParte(actual, parte, aparato) : conTotales(parte, aportesDe(parte, aparato)));
+          if (junto) almacen.put(junto);
+          else if (actual) almacen.delete([parte.title, parte.dateKey]);
+        };
+      }
+      // Lo de los libros cuyas estadísticas se borraron en otro aparato, también aquí.
+      if (limiteDe.size) {
+        const cursor = almacen.openCursor();
+        cursor.onsuccess = () => {
+          const actual = cursor.result;
+          if (!actual) return;
+          const parte = actual.value as DailyStatRecord;
+          const queda = sinQuitado(parte);
+          if (!queda) actual.delete();
+          else if (queda !== parte) actual.update(queda);
+          actual.continue();
+        };
+      }
       tx.oncomplete = () => acabar(true);
       tx.onerror = () => acabar(false);
       tx.onabort = () => acabar(false);

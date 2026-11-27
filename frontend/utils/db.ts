@@ -1,9 +1,29 @@
 import type { BookHighlight } from './highlights';
 import { borrarHorasDe, recordHourActivity } from './statsHabits';
-import { borrarPartesDe, borrarPartesHasta, leerPartes, sumarAlParte, type DailyStatRecord } from './estadisticasDb';
-import { diaDeMarca, librosTrasBorrado, mapaTrasBorrado, tarjetasTrasBorrado } from './progresoBorrado';
+import {
+  borrarPartesDe,
+  borrarPartesHasta,
+  guardarPartesCombinados,
+  idDeEsteAparato,
+  leerPartes,
+  sumarAlParte,
+  type DailyStatRecord,
+} from './estadisticasDb';
+import { diaDeMarca, librosTrasBorrado, mapaTrasBorrado, tarjetasTrasBorrado, ultimaMarca } from './progresoBorrado';
 import { migrarClavesIdb } from './migrarClaves';
-import { mergeBooks } from './cloudMerge';
+import { mergeBooks, mergeSrs } from './cloudMerge';
+import {
+  combinarDiasSrs,
+  combinarHistorialSrs,
+  combinarQuitados,
+  diasSrsDespuesDe,
+  historialDespuesDe,
+  partesParaSincronizar,
+  segundosDeOtros,
+  sumarDiasDeOtros,
+  type DiaSrs,
+  type DiasSrsPorAparato,
+} from './estadisticasSync';
 import { librosParaSincronizar } from './textosLibros';
 import { etiquetasParaLibroNuevo } from './coleccionesInteligentes';
 import { srsWordOfKey } from './srsCardKeys';
@@ -152,6 +172,21 @@ const PROGRESS_RESET_KEY = 'yoru_progress_reset';
 const PROGRESS_RESET_APPLIED_KEY = 'yoru_progress_reset_applied';
 /** Tiempo de estudio de Yoru SRS por día (`SrsReviewModal`), sin perfil: prefijo + AAAA-MM-DD. */
 const SRS_STUDY_TIME_PREFIX = 'yoru_reader_srs_study_time_';
+/**
+ * Los días de Yoru SRS de los demás aparatos (repasos, palabras nuevas, tiempo), por
+ * perfil: aparato → día → `DiaSrs`. Los contadores de siempre (`yoru_reader_srs_daily_*`)
+ * cuentan solo lo hecho en este aparato; las pantallas ven la suma (estadisticasSync.ts).
+ */
+const SRS_DAYS_OTHERS_KEY = 'yoru_srs_dias_aparatos';
+/** Cuándo se limpió el historial de repasos de un perfil (viaja), y la última vez que se aplicó aquí. */
+const SRS_HISTORY_CLEARED_KEY = 'yoru_srs_historial_borrado';
+const SRS_HISTORY_CLEARED_APPLIED_KEY = 'yoru_srs_historial_borrado_aplicado';
+/** Cuándo se borraron las estadísticas de cada libro (título → ISO). Sin perfil, como los partes. */
+const READING_STATS_REMOVALS_KEY = 'yoru_partes_quitados';
+
+function localYmd(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 /** Avisa a Inicio de que «Continuar» puede haber cambiado. */
 export const LOCAL_PROGRESS_EVENT = 'yoru-local-progress-updated';
 
@@ -626,6 +661,12 @@ export const db = {
   },
 
   deleteReadingStatsForBook(title: string): Promise<void> {
+    // Apuntado con fecha, para que el otro aparato no devuelva lo borrado (estadisticasSync.ts).
+    try {
+      const quitados = readJsonObject(READING_STATS_REMOVALS_KEY);
+      quitados[title] = new Date().toISOString();
+      localStorage.setItem(READING_STATS_REMOVALS_KEY, JSON.stringify(quitados));
+    } catch { /* sin almacenamiento, el borrado se queda en este aparato */ }
     return borrarPartesDe(title);
   },
 
@@ -726,6 +767,10 @@ export const db = {
         const quedan = Object.fromEntries(Object.entries(dias).filter(([dia]) => dia > diaMarca));
         if (Object.keys(quedan).length !== Object.keys(dias).length) localStorage.setItem(clave, JSON.stringify(quedan));
       }
+      // Lo de los demás aparatos, igual.
+      const claveOtros = `${SRS_DAYS_OTHERS_KEY}_${profileId}`;
+      const otros = readJsonObject(claveOtros);
+      if (Object.keys(otros).length) localStorage.setItem(claveOtros, JSON.stringify(diasSrsDespuesDe(otros, diaMarca)));
     } catch (error) {
       console.error('[borrar-progreso] no se pudo borrar el progreso de Yoru SRS', error);
     }
@@ -1205,6 +1250,16 @@ export const db = {
       // 2026 se quedaban en este aparato (estadoTemporal.ts).
       const marcasTemporales = exportarMarcasTemporales(p.id);
       if (Object.keys(marcasTemporales).length) dbExport.profileData[p.id].marcasTemporales = marcasTemporales;
+      // 8. Las estadísticas de Yoru SRS y de lectura (estadisticasSync.ts). Hasta el 27 nov
+      // 2026 se quedaban en cada aparato: cada uno tenía su racha y su límite de nuevas.
+      Object.assign(dbExport.profileData[p.id], this._estadisticasSrsParaSincronizar(p.id, p.id === activeProfileId));
+      // Los partes diarios no van por perfil: viajan con el perfil que se está usando.
+      if (p.id === activeProfileId) {
+        const aparato = idDeEsteAparato();
+        dbExport.profileData[p.id].readingStats = partesParaSincronizar(await leerPartes(), aparato);
+        const quitados = readJsonObject(READING_STATS_REMOVALS_KEY);
+        if (Object.keys(quitados).length) dbExport.profileData[p.id].readingStatsRemovals = combinarQuitados(quitados, null);
+      }
     }
 
     return dbExport;
@@ -1248,14 +1303,26 @@ export const db = {
         if (pData.wordStatusTimes) {
           localStorage.setItem(`${WORD_STATUS_TIMES_KEY}_${p.id}`, JSON.stringify(pData.wordStatusTimes));
         }
-        // 4. SRS data
+        // 4. SRS data. Como la estantería, combinada con lo que hay ahora: un repaso hecho
+        // mientras iba y venía la red no se pierde.
         if (pData.srsData) {
           const srsKey = `yoru_reader_srs_data_${p.id}`;
-          localStorage.setItem(srsKey, JSON.stringify(pData.srsData));
-        if (srsDataCache?.storageKey === srsKey) srsDataCache = null;
-        }
-        if (pData.srsRemovals) {
+          const removalsKey = `${SRS_REMOVALS_KEY}_${p.id}`;
+          const actuales = { srsData: readJsonObject(srsKey), srsRemovals: readJsonObject(removalsKey) };
+          const junto = mergeSrs(actuales, { srsData: pData.srsData, srsRemovals: pData.srsRemovals || null }, true);
+          localStorage.setItem(srsKey, JSON.stringify(junto.srsData || {}));
+          if (junto.srsRemovals) localStorage.setItem(removalsKey, JSON.stringify(junto.srsRemovals));
+          if (srsDataCache?.storageKey === srsKey) srsDataCache = null;
+        } else if (pData.srsRemovals) {
           localStorage.setItem(`${SRS_REMOVALS_KEY}_${p.id}`, JSON.stringify(pData.srsRemovals));
+        }
+        // 4b. Historial, contadores y tiempo de estudio de Yoru SRS.
+        this._guardarEstadisticasSrs(p.id, pData);
+        // 4c. Los partes diarios de lectura, con el perfil que se está usando.
+        if (p.id === dbExport.activeProfileId && (Array.isArray(pData.readingStats) || pData.readingStatsRemovals)) {
+          const quitados = combinarQuitados(readJsonObject(READING_STATS_REMOVALS_KEY), pData.readingStatsRemovals);
+          if (Object.keys(quitados).length) localStorage.setItem(READING_STATS_REMOVALS_KEY, JSON.stringify(quitados));
+          await guardarPartesCombinados(Array.isArray(pData.readingStats) ? pData.readingStats : [], quitados);
         }
         // 5. Progreso de Kavita y Audiobookshelf
         if (pData.serverProgress) {
@@ -1304,38 +1371,159 @@ export const db = {
     }
   },
 
-  getSrsDailyReviews(): Record<string, number> {
+  /**
+   * Tarjetas respondidas cada día. Por defecto, las de todos los aparatos (lo que tienen
+   * que ver el mapa de calor y la racha); con `soloEsteAparato`, solo las de aquí, que es
+   * lo que se guarda y lo que hay que tocar al apuntar o deshacer un repaso.
+   */
+  getSrsDailyReviews(soloEsteAparato = false): Record<string, number> {
     try {
       const data = localStorage.getItem(this._getKey('yoru_reader_srs_daily_reviews'));
-      return data ? JSON.parse(data) : {};
+      const propios = data ? JSON.parse(data) : {};
+      if (soloEsteAparato) return propios;
+      return sumarDiasDeOtros({ daily: propios, stats: {} }, this._srsDiasDeOtros(), idDeEsteAparato()).daily;
     } catch (e) {
       return {};
     }
   },
 
-  getSrsDailyReviewStats(): Record<string, { reviews: number; newWords: string[] }> {
+  /** Repasos y palabras nuevas de cada día; como `getSrsDailyReviews`, de todos los aparatos salvo `soloEsteAparato`. */
+  getSrsDailyReviewStats(soloEsteAparato = false): Record<string, { reviews: number; newWords: string[] }> {
     try {
       const data = localStorage.getItem(this._getKey('yoru_reader_srs_daily_review_stats'));
       const parsed = data ? JSON.parse(data) : {};
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      return parsed;
+      const propios = !parsed || typeof parsed !== 'object' || Array.isArray(parsed) ? {} : parsed;
+      if (soloEsteAparato) return propios;
+      return sumarDiasDeOtros({ daily: {}, stats: propios }, this._srsDiasDeOtros(), idDeEsteAparato()).stats;
     } catch (e) {
       return {};
     }
+  },
+
+  /** Segundos estudiados en Yoru SRS un día (AAAA-MM-DD), aquí y en los demás aparatos. */
+  getSrsStudySeconds(ymd: string): number {
+    let propios = 0;
+    try { propios = Number(localStorage.getItem(`${SRS_STUDY_TIME_PREFIX}${ymd}`)) || 0; } catch { /* nada */ }
+    return propios + segundosDeOtros(this._srsDiasDeOtros(), idDeEsteAparato(), ymd);
+  },
+
+  _srsDiasDeOtros(profileId = this.getActiveProfileId()): DiasSrsPorAparato {
+    return readJsonObject(`${SRS_DAYS_OTHERS_KEY}_${profileId}`) as DiasSrsPorAparato;
+  },
+
+  /**
+   * Lo de Yoru SRS que viaja aparte de las tarjetas: el historial, lo de cada día de este
+   * aparato junto a lo que ya se sabe de los demás, y cuándo se limpió el historial.
+   * El tiempo de estudio no va por perfil: solo sale con el perfil que se está usando.
+   */
+  _estadisticasSrsParaSincronizar(profileId: string, esActivo: boolean): Record<string, any> {
+    const salida: Record<string, any> = {};
+    try {
+      const historial = JSON.parse(localStorage.getItem(`yoru_reader_srs_history_${profileId}`) || '[]');
+      const daily = readJsonObject(`yoru_reader_srs_daily_reviews_${profileId}`);
+      const stats = readJsonObject(`yoru_reader_srs_daily_review_stats_${profileId}`);
+      const propios: Record<string, DiaSrs> = {};
+      const dia = (ymd: string) => propios[ymd] || (propios[ymd] = { n: 0, r: 0, w: [], s: 0 });
+      for (const [ymd, n] of Object.entries(daily)) if (Number(n) > 0) dia(ymd).n = Number(n);
+      for (const [ymd, valor] of Object.entries(stats)) {
+        if (!valor || typeof valor !== 'object') continue;
+        if (Number(valor.reviews) > 0) dia(ymd).r = Number(valor.reviews);
+        if (Array.isArray(valor.newWords) && valor.newWords.length) dia(ymd).w = valor.newWords.map(String);
+      }
+      if (esActivo) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const clave = localStorage.key(i) || '';
+          if (!clave.startsWith(SRS_STUDY_TIME_PREFIX)) continue;
+          const segundos = Number(localStorage.getItem(clave)) || 0;
+          if (segundos > 0) dia(clave.slice(SRS_STUDY_TIME_PREFIX.length)).s = segundos;
+        }
+      }
+      const otros = this._srsDiasDeOtros(profileId);
+      const aparato = idDeEsteAparato();
+      // Lo de este aparato sale de sus contadores, que mandan sobre lo que se subió antes.
+      const sinEste = Object.fromEntries(Object.entries(otros).filter(([id]) => id !== aparato)) as DiasSrsPorAparato;
+      const dias = combinarDiasSrs(sinEste, Object.keys(propios).length ? { [aparato]: propios } : {});
+      // Los repasos sin aparato son de antes de esto, y por tanto de aquí: salen con su nombre.
+      if (Array.isArray(historial) && historial.length) {
+        salida.srsHistory = combinarHistorialSrs(historial.map((e: any) => (e && typeof e === 'object' && !e.aparato ? { ...e, aparato } : e)), null);
+      }
+      if (Object.keys(dias).length) salida.srsDays = dias;
+      const limpiado = localStorage.getItem(`${SRS_HISTORY_CLEARED_KEY}_${profileId}`);
+      if (limpiado) salida.srsHistoryClearedAt = limpiado;
+    } catch (error) {
+      console.error('[sync] no se pudieron leer las estadísticas de Yoru SRS', error);
+    }
+    return salida;
+  },
+
+  /** Lo que llega de la sincronización para Yoru SRS (ver `_estadisticasSrsParaSincronizar`). */
+  _guardarEstadisticasSrs(profileId: string, pData: any): void {
+    try {
+      // La marca que llega o la de aquí, la más reciente: una copia de antes de limpiar
+      // (una restauración, por ejemplo) no puede devolver lo limpiado.
+      const llegada = typeof pData.srsHistoryClearedAt === 'string' && Date.parse(pData.srsHistoryClearedAt) ? pData.srsHistoryClearedAt : '';
+      const limpiado = ultimaMarca(llegada, localStorage.getItem(`${SRS_HISTORY_CLEARED_KEY}_${profileId}`)) || '';
+      if (limpiado) {
+        localStorage.setItem(`${SRS_HISTORY_CLEARED_KEY}_${profileId}`, limpiado);
+        const aplicado = Date.parse(localStorage.getItem(`${SRS_HISTORY_CLEARED_APPLIED_KEY}_${profileId}`) || '') || 0;
+        if (Date.parse(limpiado) > aplicado) this._limpiarHistorialSrsHasta(profileId, limpiado);
+      }
+      const limite = limpiado ? Date.parse(limpiado) : 0;
+      if (Array.isArray(pData.srsHistory)) {
+        const clave = `yoru_reader_srs_history_${profileId}`;
+        const actual = JSON.parse(localStorage.getItem(clave) || '[]');
+        let junto = combinarHistorialSrs(Array.isArray(actual) ? actual : [], pData.srsHistory);
+        if (limite) junto = historialDespuesDe(junto, limite);
+        localStorage.setItem(clave, JSON.stringify(junto));
+      }
+      if (pData.srsDays && typeof pData.srsDays === 'object') {
+        const clave = `${SRS_DAYS_OTHERS_KEY}_${profileId}`;
+        // Lo de este aparato no se guarda aquí: lo llevan sus contadores.
+        const aparato = idDeEsteAparato();
+        const llegados = Object.fromEntries(Object.entries(pData.srsDays as DiasSrsPorAparato).filter(([id]) => id !== aparato));
+        let junto = combinarDiasSrs(this._srsDiasDeOtros(profileId), llegados);
+        if (limpiado) junto = diasSrsDespuesDe(junto, diaDeMarca(limpiado));
+        localStorage.setItem(clave, JSON.stringify(junto));
+      }
+    } catch (error) {
+      console.error('[sync] no se pudieron guardar las estadísticas de Yoru SRS', error);
+    }
+  },
+
+  /** Limpia el historial y los contadores diarios de Yoru SRS hasta una marca (incluido su día). */
+  _limpiarHistorialSrsHasta(profileId: string, marca: string): void {
+    const limite = Date.parse(marca) || 0;
+    if (!limite) return;
+    const diaMarca = diaDeMarca(marca);
+    const claveHistorial = `yoru_reader_srs_history_${profileId}`;
+    const historial = JSON.parse(localStorage.getItem(claveHistorial) || '[]');
+    if (Array.isArray(historial)) localStorage.setItem(claveHistorial, JSON.stringify(historialDespuesDe(historial, limite)));
+    for (const base of ['yoru_reader_srs_daily_reviews', 'yoru_reader_srs_daily_review_stats']) {
+      const clave = `${base}_${profileId}`;
+      const dias = readJsonObject(clave);
+      localStorage.setItem(clave, JSON.stringify(Object.fromEntries(Object.entries(dias).filter(([dia]) => dia > diaMarca))));
+    }
+    const claveOtros = `${SRS_DAYS_OTHERS_KEY}_${profileId}`;
+    localStorage.setItem(claveOtros, JSON.stringify(diasSrsDespuesDe(readJsonObject(claveOtros), diaMarca)));
+    localStorage.setItem(`${SRS_HISTORY_CLEARED_APPLIED_KEY}_${profileId}`, marca);
   },
 
   recordSrsDailyReview(dateStr?: string, details?: { word?: string; isNew?: boolean; reviewState?: number }) {
     try {
       const now = new Date();
       const ymd = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const daily = this.getSrsDailyReviews();
-      const dailyStats = this.getSrsDailyReviewStats();
+      const daily = this.getSrsDailyReviews(true);
+      const dailyStats = this.getSrsDailyReviewStats(true);
 
       // Seed the structured counters from retained history once, then keep
       // them independent of the 500-entry history display limit.
       if (!dailyStats[ymd] || typeof dailyStats[ymd] !== 'object' || Array.isArray(dailyStats[ymd])) {
+        // Solo lo repasado aquí: el historial también trae lo de los demás aparatos, que
+        // ya cuentan sus propios contadores.
+        const aparato = idDeEsteAparato();
         const legacyToday = this.getSrsHistory().filter((entry: any) => {
           if (!entry?.timestamp) return false;
+          if (entry.aparato && entry.aparato !== aparato) return false;
           const date = new Date(entry.timestamp);
           return Number.isFinite(date.getTime())
             && `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === ymd;
@@ -1375,7 +1563,9 @@ export const db = {
         deckName,
         isNew,
         reviewState,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // De qué aparato es, para no contarlo dos veces al combinar (estadisticasSync.ts).
+        aparato: idDeEsteAparato(),
       };
       this.recordSrsDailyReview(undefined, { word, isNew, reviewState });
       history.unshift(entry); // Add to the top
@@ -1395,8 +1585,8 @@ export const db = {
    */
   mergeImportedSrsReviewDays(days: Record<string, { total: number; reviews: number; newWords: string[] }>) {
     try {
-      const daily = this.getSrsDailyReviews();
-      const dailyStats = this.getSrsDailyReviewStats();
+      const daily = this.getSrsDailyReviews(true);
+      const dailyStats = this.getSrsDailyReviewStats(true);
       for (const [ymd, day] of Object.entries(days)) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
         daily[ymd] = Math.max(Number(daily[ymd]) || 0, day.total);
@@ -1434,6 +1624,11 @@ export const db = {
       localStorage.removeItem(this._getKey('yoru_reader_srs_history'));
       localStorage.removeItem(this._getKey('yoru_reader_srs_daily_reviews'));
       localStorage.removeItem(this._getKey('yoru_reader_srs_daily_review_stats'));
+      // Con fecha, para que los demás aparatos lo limpien también en vez de devolverlo.
+      const profileId = this.getActiveProfileId() || 'profile-default';
+      const marca = new Date().toISOString();
+      localStorage.setItem(`${SRS_HISTORY_CLEARED_KEY}_${profileId}`, marca);
+      this._limpiarHistorialSrsHasta(profileId, marca);
     } catch (e) {
       console.error('Error clearing SRS history:', e);
     }

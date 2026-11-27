@@ -20,6 +20,8 @@
  * puedan probar solas.
  */
 
+import { diasSrsDespuesDe, historialDespuesDe, partesSinLoAnteriorA } from './estadisticasSync';
+
 function ms(valor: unknown): number {
   const t = typeof valor === 'string' ? Date.parse(valor) : 0;
   return Number.isNaN(t) ? 0 : t;
@@ -153,6 +155,10 @@ export function perfilTrasBorrado<T extends Record<string, any>>(datos: T, marca
   const salida: Record<string, any> = { ...datos, progressResetAt: ultimaMarca(datos.progressResetAt, marca) };
   if (datos.books) salida.books = librosTrasBorrado(datos.books, marca);
   if (datos.srsData) salida.srsData = tarjetasTrasBorrado(datos.srsData, marca);
+  // Las estadísticas que viajan (estadisticasSync.ts): lo de antes de la marca se va.
+  if (datos.readingStats) salida.readingStats = partesSinLoAnteriorA(datos.readingStats, ms(marca), 'local');
+  if (datos.srsHistory) salida.srsHistory = historialDespuesDe(datos.srsHistory, ms(marca));
+  if (datos.srsDays) salida.srsDays = diasSrsDespuesDe(datos.srsDays, diaDeMarca(marca));
   if (datos.serverProgress) {
     salida.serverProgress = {
       ...datos.serverProgress,
