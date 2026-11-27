@@ -270,21 +270,18 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       return `${year}-${month}-${day}`;
     };
     
-    const todayKey = `yoru_reader_srs_study_time_${formatDate(checkDate)}`;
-    const todayTime = Number(localStorage.getItem(todayKey) || 0);
+    const todayTime = db.getSrsStudySeconds(formatDate(checkDate));
     
     if (todayTime === 0) {
       checkDate.setDate(checkDate.getDate() - 1);
-      const yesterdayKey = `yoru_reader_srs_study_time_${formatDate(checkDate)}`;
-      const yesterdayTime = Number(localStorage.getItem(yesterdayKey) || 0);
+      const yesterdayTime = db.getSrsStudySeconds(formatDate(checkDate));
       if (yesterdayTime === 0) {
         return 0;
       }
     }
     
     while (streak < 365) {
-      const key = `yoru_reader_srs_study_time_${formatDate(checkDate)}`;
-      const time = Number(localStorage.getItem(key) || 0);
+      const time = db.getSrsStudySeconds(formatDate(checkDate));
       if (time > 0) {
         streak++;
         checkDate.setDate(checkDate.getDate() - 1);
@@ -559,8 +556,8 @@ export default function SrsReviewModal({ isOpen, onClose, filterDeck = null }: S
       prevNewCardsLearned: newCardsLearned,
       prevShowAnswer: showAnswer,
       prevHistory: db.getSrsHistory(),
-      prevDailyReviews: db.getSrsDailyReviews(),
-      prevDailyReviewStats: db.getSrsDailyReviewStats(),
+      prevDailyReviews: db.getSrsDailyReviews(true),
+      prevDailyReviewStats: db.getSrsDailyReviewStats(true),
       prevPendingCards: [...pendingCards],
     }]);
   };

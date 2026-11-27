@@ -3830,7 +3830,7 @@ const Library = React.memo(function Library({
     };
 
     // --- Study Stats Calculations ---
-    const studyTimeTodaySeconds = Number(localStorage.getItem(`yoru_reader_srs_study_time_${todayStr}`) || 0);
+    const studyTimeTodaySeconds = db.getSrsStudySeconds(todayStr);
 
     const formatStudyTime = (seconds: number) => {
       if (seconds < 60) {

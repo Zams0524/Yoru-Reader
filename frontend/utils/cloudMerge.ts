@@ -5,7 +5,18 @@
  * win (the more recently read book, the more recently reviewed card).
  */
 
-import { perfilTrasBorrado, ultimaMarca } from './progresoBorrado';
+import { diaDeMarca, perfilTrasBorrado, ultimaMarca } from './progresoBorrado';
+import {
+  combinarDiasSrs,
+  combinarHistorialSrs,
+  combinarPartes,
+  combinarQuitados,
+  diasSrsDespuesDe,
+  historialDespuesDe,
+  partesSinQuitados,
+  type DiasSrsPorAparato,
+  type ParteDiario,
+} from './estadisticasSync';
 import { claveTituloAutor, conPortadaOriginal } from './textosLibros';
 import { combinarMarcasDeLibro, combinarMarcasTemporales, type MarcasTemporales } from './marcasSync';
 
@@ -41,6 +52,19 @@ type ProfileData = {
    * temporal (`tmp:kavita:<tomo>`, el mismo en todos los aparatos). Ver marcasSync.ts.
    */
   marcasTemporales?: MarcasTemporales | null;
+  /**
+   * Los partes diarios de lectura (un libro, un día), con lo de cada aparato por separado.
+   * Ver estadisticasSync.ts. Van en el perfil activo de cada aparato.
+   */
+  readingStats?: ParteDiario[] | null;
+  /** Cuándo se borraron las estadísticas de un libro, por título. */
+  readingStatsRemovals?: Record<string, string> | null;
+  /** Los últimos repasos de Yoru SRS (db.getSrsHistory). */
+  srsHistory?: any[] | null;
+  /** Repasos, palabras nuevas y tiempo de estudio de cada día, por aparato. */
+  srsDays?: DiasSrsPorAparato | null;
+  /** Cuándo se limpió el historial de repasos por última vez. */
+  srsHistoryClearedAt?: string | null;
 };
 
 type ServerProgress = {
@@ -167,7 +191,7 @@ function cardSavedTime(card: any, key = ''): number {
   return Math.max(cardTime(card), time(card?.importedAt), created);
 }
 
-function mergeSrs(local: ProfileData, cloud: ProfileData, preferCloud: boolean) {
+export function mergeSrs(local: ProfileData, cloud: ProfileData, preferCloud: boolean) {
   const removals: Record<string, string> = { ...(cloud.srsRemovals || {}) };
   for (const [key, at] of Object.entries(local.srsRemovals || {})) {
     if (time(at) > time(removals[key])) removals[key] = at;
@@ -287,8 +311,41 @@ export function mergeProfileData(local: ProfileData, cloud: ProfileData, preferC
   const marcasTemporales = combinarMarcasTemporales(l.marcasTemporales, c.marcasTemporales);
   if (Object.keys(marcasTemporales).length) result.marcasTemporales = marcasTemporales;
   if (progressResetAt) result.progressResetAt = progressResetAt;
+  Object.assign(result, mergeStats(l, c));
   return result;
 }
+
+/**
+ * Las estadísticas de lectura y de Yoru SRS (estadisticasSync.ts). Cada campo solo sale si
+ * alguno de los dos lados lo traía, para que una copia de una versión anterior no parezca
+ * distinta solo por no tenerlo.
+ */
+function mergeStats(l: ProfileData, c: ProfileData): Partial<ProfileData> {
+  const result: Partial<ProfileData> = {};
+  const has = (key: keyof ProfileData) => l[key] != null || c[key] != null;
+  const removals = combinarQuitados(l.readingStatsRemovals, c.readingStatsRemovals);
+  if (has('readingStatsRemovals')) result.readingStatsRemovals = removals;
+  if (has('readingStats')) result.readingStats = partesSinQuitados(combinarPartes(l.readingStats, c.readingStats), removals, 'local');
+  const clearedAt = ultimaMarca(l.srsHistoryClearedAt, c.srsHistoryClearedAt);
+  if (clearedAt) result.srsHistoryClearedAt = clearedAt;
+  if (has('srsHistory')) {
+    const history = combinarHistorialSrs(l.srsHistory, c.srsHistory);
+    result.srsHistory = clearedAt ? historialDespuesDe(history, time(clearedAt)) : history;
+  }
+  if (has('srsDays')) {
+    const days = combinarDiasSrs(l.srsDays, c.srsDays);
+    result.srsDays = clearedAt ? diasSrsDespuesDe(days, diaDeMarca(clearedAt)) : days;
+  }
+  return result;
+}
+
+const STATS_KEYS = ['readingStats', 'readingStatsRemovals', 'srsHistory', 'srsDays'] as const;
+const STATS_EMPTY: Record<(typeof STATS_KEYS)[number], unknown> = {
+  readingStats: [],
+  readingStatsRemovals: {},
+  srsHistory: [],
+  srsDays: {},
+};
 
 /**
  * @param preferCloud true when another device synced after this one last did, so the Drive copy
@@ -328,11 +385,20 @@ export function mergeDatabaseExports(local: DbExport, cloud: DbExport, preferClo
     profiles.some(({ id }) =>
       !sameJson(normalProgress(side.profileData?.[id]?.serverProgress), normalProgress(profileData[id].serverProgress)));
 
+  // Las estadísticas se leen al abrir cada pantalla: no hace falta recargar por ellas.
+  const statsDiffer = (side: DbExport) =>
+    profiles.some(({ id }) => {
+      const s = side.profileData?.[id] || {};
+      const m = profileData[id];
+      return STATS_KEYS.some((key) => !sameJson(s[key] ?? STATS_EMPTY[key], m[key] ?? STATS_EMPTY[key]))
+        || (s.srsHistoryClearedAt || null) !== (m.srsHistoryClearedAt || null);
+    });
+
   const localNeedsReload = differs(local);
   return {
     merged,
-    localChanged: localNeedsReload || progressDiffers(local),
-    cloudChanged: differs(cloud) || progressDiffers(cloud),
+    localChanged: localNeedsReload || progressDiffers(local) || statsDiffer(local),
+    cloudChanged: differs(cloud) || progressDiffers(cloud) || statsDiffer(cloud),
     localNeedsReload,
   };
 }
